@@ -1,0 +1,12 @@
+[project]
+name = "jaxpint"
+version = "0.1.0"
+description = "JAX-accelerated pulsar timing (port of PINT)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "jax[cpu]>=0.4.20",
+    "equinox>=0.11.0",
+    "pytest>=7.0",
+    "jaxtyping>=0.3.9",
+]
