@@ -168,6 +168,39 @@ class ParameterVector(eqx.Module):
     bounds: tuple[tuple[Optional[float], Optional[float]], ...] = eqx.field(static=True)
     epoch_int_values: dict[str, float] = eqx.field(static=True)
 
+    def __check_init__(self):
+        n = len(self.names)
+
+        for field_name in ("frozen_mask", "units", "components", "bounds"):
+            if len(getattr(self, field_name)) != n:
+                raise ValueError(
+                    f"len({field_name}) = {len(getattr(self, field_name))}, "
+                    f"expected {n}"
+                )
+
+        if self.values.shape[0] != n:
+            raise ValueError(
+                f"values.shape[0] = {self.values.shape[0]}, expected {n}"
+            )
+
+        if set(self._name_to_index) != set(self.names):
+            raise ValueError(
+                f"_name_to_index keys {set(self._name_to_index)} "
+                f"do not match names {set(self.names)}"
+            )
+
+        for name, idx in self._name_to_index.items():
+            if not (0 <= idx < n):
+                raise ValueError(
+                    f"_name_to_index[{name!r}] = {idx} is out of range [0, {n})"
+                )
+
+        extra = set(self.epoch_int_values) - set(self.names)
+        if extra:
+            raise ValueError(
+                f"epoch_int_values keys {extra} are not in names"
+            )
+
     # -- Lookup helpers --
 
     def param_index(self, name: str) -> int:
