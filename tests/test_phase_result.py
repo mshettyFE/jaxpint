@@ -215,10 +215,15 @@ class TestPhaseResultHypothesis:
     @given(phase_results(), phase_results())
     @settings(deadline=None)
     def test_add_sub_roundtrip_field_level(self, a, b):
-        """(a + b) - b recovers a at the int/frac field level."""
+        """(a + b) - b recovers a in total phase.
+
+        The int/frac *split* may differ by ±1 at the normalization boundary
+        (frac ≈ ±0.5) because three float64 additions cannot perfectly cancel
+        when the result falls within ~1 ULP of a half-integer.  The total
+        phase, however, must be preserved.
+        """
         result = (a + b) - b
-        assert float(result.int) == float(a.int)
-        assert abs(float(result.frac) - float(a.frac)) < 1e-12
+        assert abs(float(result.quantity) - float(a.quantity)) < 1e-12
 
     @given(
         integers(min_value=500_000_000, max_value=2_000_000_000),

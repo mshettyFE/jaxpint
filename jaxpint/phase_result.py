@@ -33,8 +33,13 @@ class PhaseResult(eqx.Module):
         int_part = jnp.asarray(int_part, dtype=jnp.float64)
         frac_part = jnp.asarray(frac_part, dtype=jnp.float64)
 
-        # Carry overflow from frac into int
-        carry = jnp.floor(frac_part + 0.5)
+        # Carry overflow from frac into int.
+        # Avoid ``floor(frac + 0.5)`` — the intermediate addition loses
+        # precision near half-integers, making normalization non-idempotent.
+        # Instead compute the fractional remainder of floor directly.
+        fl = jnp.floor(frac_part)
+        remainder = frac_part - fl          # in [0, 1), precise
+        carry = jnp.where(remainder >= 0.5, fl + 1.0, fl)
         ff = frac_part - carry
         ii = int_part + carry
 
@@ -61,7 +66,12 @@ class PhaseResult(eqx.Module):
         return PhaseResult.create(self.int - other.int, self.frac - other.frac)
 
     def __neg__(self) -> PhaseResult:
-        return PhaseResult.create(-self.int, -self.frac)
+        # Bypass create so that negation is exact and a - b == a + (-b)
+        # by construction (both paths feed identical values into create).
+        # The only out-of-range value this can produce is frac = 0.5
+        # (when the input had frac = -0.5); create normalizes it on the
+        # next arithmetic operation.
+        return PhaseResult(int=-self.int, frac=-self.frac)
 
     def __mul__(self, scalar) -> PhaseResult:
         scalar = jnp.asarray(scalar, dtype=jnp.float64)
