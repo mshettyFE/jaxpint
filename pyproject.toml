@@ -11,4 +11,5 @@ dependencies = [
     "jaxtyping>=0.3.9",
     "git-filter-repo>=2.47.0",
     "hypothesis>=6.0",
+    "pint-pulsar>=1.0",
 ]
