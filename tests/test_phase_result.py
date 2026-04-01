@@ -11,6 +11,15 @@ jax.config.update("jax_enable_x64", True)
 
 from jaxpint.phase_result import PhaseResult
 
+# Uniform tolerance: 2 ULP of float64 at the scale of the expected value
+_EPS64 = np.finfo(np.float64).eps
+
+
+def ulp_tol(expected):
+    """2 ULP of float64 at the magnitude of `expected`."""
+    mag = float(np.max(np.abs(np.asarray(expected))))
+    return 2 * _EPS64 * max(mag, 1.0)
+
 
 # ---------------------------------------------------------------------------
 # Hypothesis strategies
@@ -57,24 +66,24 @@ class TestPhaseResult:
         frac_in = jnp.array([0.7, -1.3, 0.49999])
         p = PhaseResult.create(int_in, frac_in)
         expected = int_in + frac_in
-        assert jnp.allclose(p.quantity, expected, atol=1e-12)
+        assert jnp.allclose(p.quantity, expected, atol=ulp_tol(expected))
 
     def test_add_sub_roundtrip(self):
         """(a + b) - b should approximately equal a."""
         a = PhaseResult.create(jnp.array([10.0]), jnp.array([0.3]))
         b = PhaseResult.create(jnp.array([5.0]), jnp.array([-0.2]))
         result = (a + b) - b
-        assert jnp.allclose(result.quantity, a.quantity, atol=1e-12)
+        assert jnp.allclose(result.quantity, a.quantity, atol=ulp_tol(a.quantity))
 
     def test_mul_scalar(self):
         p = PhaseResult.create(jnp.array([1.0]), jnp.array([0.25]))
         doubled = p * 2.0
-        assert jnp.allclose(doubled.quantity, jnp.array([2.5]), atol=1e-12)
+        assert jnp.allclose(doubled.quantity, jnp.array([2.5]), atol=ulp_tol(2.5))
 
     def test_rmul(self):
         p = PhaseResult.create(jnp.array([1.0]), jnp.array([0.25]))
         doubled = 2.0 * p
-        assert jnp.allclose(doubled.quantity, jnp.array([2.5]), atol=1e-12)
+        assert jnp.allclose(doubled.quantity, jnp.array([2.5]), atol=ulp_tol(2.5))
 
     def test_negative_double(self):
         """Double negation should be identity."""
@@ -85,7 +94,7 @@ class TestPhaseResult:
 
     def test_quantity(self):
         p = PhaseResult.create(jnp.array([5.0]), jnp.array([0.3]))
-        assert jnp.allclose(p.quantity, jnp.array([5.3]), atol=1e-12)
+        assert jnp.allclose(p.quantity, jnp.array([5.3]), atol=ulp_tol(5.3))
 
     def test_jit_compatible(self):
         a = PhaseResult.create(jnp.array([1.0]), jnp.array([0.2]))
@@ -96,7 +105,7 @@ class TestPhaseResult:
             return x + y
 
         result = add_phases(a, b)
-        assert jnp.allclose(result.quantity, jnp.array([3.5]), atol=1e-12)
+        assert jnp.allclose(result.quantity, jnp.array([3.5]), atol=ulp_tol(3.5))
 
     def test_grad_through_phase(self):
         """Gradient should flow through PhaseResult arithmetic."""
@@ -107,7 +116,7 @@ class TestPhaseResult:
             return jnp.sum(p.quantity ** 2)
 
         g = loss(jnp.array([0.3]))
-        assert jnp.allclose(g, 2.0 * 0.3, atol=1e-12)
+        assert jnp.allclose(g, 2.0 * 0.3, atol=ulp_tol(2.0 * 0.3))
 
 
 # ===========================================================================
@@ -135,7 +144,7 @@ class TestPhaseResultHypothesis:
         int_in, frac_in = raw
         p = PhaseResult.create(jnp.array(int_in), jnp.array(frac_in))
         expected = int_in + frac_in
-        assert abs(float(p.quantity) - expected) < 1e-10
+        assert abs(float(p.quantity) - expected) <= ulp_tol(expected)
 
     # -- Addition properties --
 
@@ -154,7 +163,7 @@ class TestPhaseResultHypothesis:
         """(a + b) + c ≈ a + (b + c) in total phase."""
         lhs = (a + b) + c
         rhs = a + (b + c)
-        assert jnp.allclose(lhs.quantity, rhs.quantity, atol=1e-10)
+        assert jnp.allclose(lhs.quantity, rhs.quantity, atol=ulp_tol(lhs.quantity))
 
     @given(phase_results())
     @settings(deadline=None)
@@ -170,7 +179,7 @@ class TestPhaseResultHypothesis:
     def test_additive_inverse(self, a):
         """a + (-a) has quantity ≈ 0."""
         result = a + (-a)
-        assert abs(float(result.quantity)) < 1e-10
+        assert abs(float(result.quantity)) <= ulp_tol(0)
 
     # -- Subtraction / negation properties --
 
@@ -200,8 +209,7 @@ class TestPhaseResultHypothesis:
         b = PhaseResult.create(jnp.array(42.0), jnp.array(0.123))
         lhs = s * (a + b)
         rhs = (s * a) + (s * b)
-        atol = max(1e-8, abs(s) * 1e-10)
-        assert jnp.allclose(lhs.quantity, rhs.quantity, atol=atol)
+        assert jnp.allclose(lhs.quantity, rhs.quantity, atol=ulp_tol(lhs.quantity))
 
     @given(phase_results())
     @settings(deadline=None)
@@ -224,7 +232,7 @@ class TestPhaseResultHypothesis:
         phase, however, must be preserved.
         """
         result = (a + b) - b
-        assert abs(float(result.quantity) - float(a.quantity)) < 1e-12
+        assert abs(float(result.quantity) - float(a.quantity)) <= ulp_tol(a.quantity)
 
     @given(
         integers(min_value=500_000_000, max_value=2_000_000_000),
@@ -247,7 +255,7 @@ class TestPhaseResultHypothesis:
         assert float(roundtrip.int) == float(a.int)
         # The tiny frac must survive the roundtrip
         frac_err = abs(float(roundtrip.frac) - float(a.frac))
-        assert frac_err < 1e-15, (
+        assert frac_err <= ulp_tol(a.frac), (
             f"Tiny frac {tiny_frac} lost precision: err={frac_err}"
         )
 
@@ -354,10 +362,11 @@ class TestNormalizationEdgeCases:
     ])
     def test_normalization(self, int_in, frac_in, expected_int, expected_frac):
         p = PhaseResult.create(jnp.array(int_in), jnp.array(frac_in))
-        assert float(p.int) == pytest.approx(expected_int, abs=1e-12), (
+        tol = ulp_tol(int_in + frac_in)
+        assert float(p.int) == pytest.approx(expected_int, abs=tol), (
             f"int: got {float(p.int)}, expected {expected_int}"
         )
-        assert float(p.frac) == pytest.approx(expected_frac, abs=1e-12), (
+        assert float(p.frac) == pytest.approx(expected_frac, abs=tol), (
             f"frac: got {float(p.frac)}, expected {expected_frac}"
         )
 
@@ -387,7 +396,7 @@ class TestNormalizationEdgeCases:
         assert float(p.frac) >= -0.5
         assert float(p.frac) < 0.5
         # Total phase must match the (already-rounded) float64 input
-        assert abs(float(p.quantity) - raw_frac) < 1e-8
+        assert abs(float(p.quantity) - raw_frac) <= ulp_tol(raw_frac)
 
 
 # ===========================================================================
@@ -404,7 +413,7 @@ class TestCatastrophicCancellation:
         b = PhaseResult.create(jnp.array(1e12), jnp.array(0.3 + eps))
         diff = b - a
         assert float(diff.int) == 0.0
-        assert abs(float(diff.frac) - eps) < 1e-15
+        assert abs(float(diff.frac) - eps) <= ulp_tol(eps)
 
         # Demonstrate that plain float64 cannot do this
         a_f64 = 1e12 + 0.3
@@ -423,7 +432,7 @@ class TestCatastrophicCancellation:
         b = PhaseResult.create(jnp.array(5.7e11), jnp.array(0.12345678901234 + residual_cycles))
         diff = b - a
         assert float(diff.int) == 0.0
-        assert abs(float(diff.frac) - residual_cycles) < 1e-15
+        assert abs(float(diff.frac) - residual_cycles) <= ulp_tol(residual_cycles)
 
     def test_difference_spanning_int_frac_boundary(self):
         """Difference where frac wraps across the normalization boundary."""
@@ -432,14 +441,14 @@ class TestCatastrophicCancellation:
         # b - a: int diff = 1, frac diff = -0.9999998, total = 0.0000002
         diff = b - a
         expected = 0.0000002
-        assert abs(float(diff.quantity) - expected) < 1e-7
+        assert abs(float(diff.quantity) - expected) <= ulp_tol(expected)
 
     def test_cancellation_with_different_ints(self):
         a = PhaseResult.create(jnp.array(1_000_000_001.0), jnp.array(-0.3))
         b = PhaseResult.create(jnp.array(1_000_000_000.0), jnp.array(0.3))
         diff = a - b
         # total diff = (1e9+1 - 0.3) - (1e9 + 0.3) = 0.4
-        assert abs(float(diff.quantity) - 0.4) < 1e-12
+        assert abs(float(diff.quantity) - 0.4) <= ulp_tol(0.4)
 
     @given(big_int_phase_results(), small_perturbations())
     @settings(deadline=None)
@@ -447,7 +456,7 @@ class TestCatastrophicCancellation:
         """Add tiny eps to frac, subtract original, recover eps."""
         b = PhaseResult.create(a.int, a.frac + jnp.array(eps))
         diff = b - a
-        assert abs(float(diff.quantity) - eps) < max(1e-15, eps * 1e-3)
+        assert abs(float(diff.quantity) - eps) <= ulp_tol(eps)
 
 
 # ===========================================================================
@@ -469,10 +478,7 @@ class TestLongdoubleOracle:
         result = a + b
         ld_result = self._pr_to_ld(a) + self._pr_to_ld(b)
         pr_total = self._pr_to_ld(result)
-        # Tolerance: 1 ULP of float64 at the scale of the result magnitude
-        scale = max(abs(float(ld_result)), 1.0)
-        atol = scale * np.finfo(np.float64).eps
-        assert abs(float(pr_total - ld_result)) < atol
+        assert abs(float(pr_total - ld_result)) <= ulp_tol(ld_result)
 
     @given(phase_results(), phase_results())
     @settings(deadline=None)
@@ -484,13 +490,11 @@ class TestLongdoubleOracle:
         can represent in the individual int/frac fields.
         """
         result = a - b
-        ld_result = self._pr_to_ld(a) - self._pr_to_ld(b)
+        ld_a, ld_b = self._pr_to_ld(a), self._pr_to_ld(b)
+        ld_result = ld_a - ld_b
         pr_total = self._pr_to_ld(result)
-        # Scale by operand magnitude: the int subtraction is exact, but the
-        # frac was originally a float64 whose precision is limited by |int|.
-        operand_scale = max(abs(float(a.int)), abs(float(b.int)), 1.0)
-        atol = 2 * operand_scale * np.finfo(np.float64).eps
-        assert abs(float(pr_total - ld_result)) < atol
+        # Use operand scale: subtraction can cancel, making |result| << |operands|
+        assert abs(float(pr_total - ld_result)) <= ulp_tol(max(abs(ld_a), abs(ld_b)))
 
     @given(phase_results(), scalars())
     @settings(deadline=None)
@@ -498,8 +502,7 @@ class TestLongdoubleOracle:
         result = a * s
         ld_result = self._pr_to_ld(a) * np.longdouble(s)
         pr_total = self._pr_to_ld(result)
-        atol = max(5e-16, abs(float(ld_result)) * 1e-15)
-        assert abs(float(pr_total - ld_result)) < atol
+        assert abs(float(pr_total - ld_result)) <= ulp_tol(ld_result)
 
     @given(phase_results(), phase_results(), phase_results())
     @settings(deadline=None)
@@ -508,10 +511,7 @@ class TestLongdoubleOracle:
         result = (a + b) - c
         ld_result = (self._pr_to_ld(a) + self._pr_to_ld(b)) - self._pr_to_ld(c)
         pr_total = self._pr_to_ld(result)
-        # Two operations, so allow ~2 ULP
-        scale = max(abs(float(ld_result)), 1.0)
-        atol = 2 * scale * np.finfo(np.float64).eps
-        assert abs(float(pr_total - ld_result)) < atol
+        assert abs(float(pr_total - ld_result)) <= ulp_tol(ld_result)
 
     def test_accumulated_sum_oracle(self):
         """Sum 1000 tiny increments; compare against longdouble accumulation."""
@@ -524,7 +524,7 @@ class TestLongdoubleOracle:
 
         ld_expected = np.longdouble(delta) * np.longdouble(N)
         pr_total = self._pr_to_ld(acc)
-        assert abs(float(pr_total - ld_expected)) < 1e-24, (
+        assert abs(float(pr_total - ld_expected)) <= ulp_tol(ld_expected), (
             f"Accumulated error: {float(pr_total - ld_expected)}"
         )
 
@@ -537,9 +537,9 @@ class TestLongdoubleOracle:
         for _ in range(N):
             acc = acc + increment
 
-        assert float(acc.int) == pytest.approx(1e9 + N, abs=1.0)
+        assert float(acc.int) == pytest.approx(1e9 + N, abs=ulp_tol(1e9 + N))
         ld_expected_frac = np.longdouble(delta) * np.longdouble(N)
-        assert abs(float(acc.frac) - float(ld_expected_frac)) < 1e-12
+        assert abs(float(acc.frac) - float(ld_expected_frac)) <= ulp_tol(ld_expected_frac)
 
     def test_alternating_sign_accumulation(self):
         """Add +delta then -delta N times; result should be ~zero."""
@@ -551,7 +551,7 @@ class TestLongdoubleOracle:
         for _ in range(N):
             acc = acc + plus
             acc = acc + minus
-        assert abs(float(acc.quantity)) < 1e-24
+        assert abs(float(acc.quantity)) <= ulp_tol(0)
 
 
 # ===========================================================================
@@ -581,8 +581,8 @@ class TestPINTPhaseComparison:
             PhaseResult.create(jnp.array(float(ii1)), jnp.array(ff1))
             + PhaseResult.create(jnp.array(float(ii2)), jnp.array(ff2))
         )
-        assert float(jax_result.int) == pytest.approx(float(pint_result.int[0]), abs=1e-12)
-        assert float(jax_result.frac) == pytest.approx(float(pint_result.frac[0]), abs=1e-12)
+        assert float(jax_result.int) == pytest.approx(float(pint_result.int[0]), abs=ulp_tol(pint_result.int[0]))
+        assert float(jax_result.frac) == pytest.approx(float(pint_result.frac[0]), abs=ulp_tol(pint_result.frac[0]))
 
     @pytest.mark.parametrize("int_in, frac_in, expected_int, expected_frac", [
         (0, 0.0, 0.0, 0.0),
@@ -596,8 +596,8 @@ class TestPINTPhaseComparison:
         """PhaseResult normalization matches PINT Phase for integer int_parts."""
         pint_p = self.PINTPhase(int_in, frac_in)
         jax_p = PhaseResult.create(jnp.array(float(int_in)), jnp.array(frac_in))
-        assert float(jax_p.int) == pytest.approx(float(pint_p.int[0]), abs=1e-12)
-        assert float(jax_p.frac) == pytest.approx(float(pint_p.frac[0]), abs=1e-12)
+        assert float(jax_p.int) == pytest.approx(float(pint_p.int[0]), abs=ulp_tol(pint_p.int[0]))
+        assert float(jax_p.frac) == pytest.approx(float(pint_p.frac[0]), abs=ulp_tol(pint_p.frac[0]))
 
     def test_precision_agreement(self):
         """PINT's test_precision case: Phase(1e5, 0.1) + Phase(0, 1e-9)."""
@@ -606,8 +606,8 @@ class TestPINTPhaseComparison:
             PhaseResult.create(jnp.array(1e5), jnp.array(0.1))
             + PhaseResult.create(jnp.array(0.0), jnp.array(1e-9))
         )
-        assert float(jax_result.int) == pytest.approx(float(pint_result.int[0]), abs=1e-12)
-        assert float(jax_result.frac) == pytest.approx(float(pint_result.frac[0]), abs=1e-14)
+        assert float(jax_result.int) == pytest.approx(float(pint_result.int[0]), abs=ulp_tol(pint_result.int[0]))
+        assert float(jax_result.frac) == pytest.approx(float(pint_result.frac[0]), abs=ulp_tol(pint_result.frac[0]))
 
     def test_negation_total_phase_agreement(self):
         """JaxPINT __neg__ skips create; PINT re-normalizes. Total phase must match."""
@@ -616,7 +616,7 @@ class TestPINTPhaseComparison:
             jax_neg = -PhaseResult.create(jnp.array(float(ii)), jnp.array(ff))
             pint_total = float(pint_neg.int[0]) + float(pint_neg.frac[0])
             jax_total = float(jax_neg.int) + float(jax_neg.frac)
-            assert jax_total == pytest.approx(pint_total, abs=1e-14)
+            assert jax_total == pytest.approx(pint_total, abs=ulp_tol(pint_total))
 
     @given(
         integers(min_value=-100_000, max_value=100_000),
@@ -635,7 +635,7 @@ class TestPINTPhaseComparison:
         )
         pint_total = float(pint_result.int[0]) + float(pint_result.frac[0])
         jax_total = float(jax_result.quantity)
-        assert jax_total == pytest.approx(pint_total, abs=1e-12)
+        assert jax_total == pytest.approx(pint_total, abs=ulp_tol(pint_total))
 
 
 # ===========================================================================
@@ -692,7 +692,7 @@ class TestRealisticScales:
         )
 
         diff = phase2 - phase1
-        assert abs(float(diff.quantity) - expected_delta_phase) < 1e-12
+        assert abs(float(diff.quantity) - expected_delta_phase) <= ulp_tol(expected_delta_phase)
 
     def test_barycentric_correction_roundtrip(self):
         """Add ~500s Roemer delay (311061 cycles at 622 Hz), subtract back."""
@@ -705,16 +705,16 @@ class TestRealisticScales:
         recovered = corrected - roemer
 
         assert float(recovered.int) == float(base.int)
-        assert abs(float(recovered.frac) - float(base.frac)) < 1e-14
+        assert abs(float(recovered.frac) - float(base.frac)) <= ulp_tol(base.frac)
 
     def test_dm_delay_roundtrip(self):
         """DM delay: ~0.622 cycles, add to large phase and subtract back."""
         dm_phase = PhaseResult.create(jnp.array(0.0), jnp.array(0.622))
         # After normalization, should be (1, -0.378)
         assert float(dm_phase.int) == 1.0
-        assert abs(float(dm_phase.frac) - (-0.378)) < 1e-14
+        assert abs(float(dm_phase.frac) - (-0.378)) <= ulp_tol(-0.378)
 
         base = PhaseResult.create(jnp.array(5.89e11), jnp.array(0.1))
         roundtrip = (base + dm_phase) - dm_phase
         assert float(roundtrip.int) == float(base.int)
-        assert abs(float(roundtrip.frac) - float(base.frac)) < 1e-14
+        assert abs(float(roundtrip.frac) - float(base.frac)) <= ulp_tol(base.frac)
