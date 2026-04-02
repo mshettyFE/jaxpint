@@ -22,7 +22,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.utils import compute_pulsar_direction
+from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
 
 # ---------------------------------------------------------------------------
 # Constants (JPL Solar System Constants)
@@ -88,7 +88,8 @@ class SolarSystemShapiroDelay(DelayComponent):
     Parameters
     ----------
     raj_name, decj_name : str
-        Names of the RA/DEC parameters in the ``ParameterVector`` (radians).
+        Names of the RA/DEC (or ELONG/ELAT) parameters in the
+        ``ParameterVector`` (radians).
     pmra_name, pmdec_name : str or None
         Names of proper-motion parameters (mas/yr).  None disables PM.
     posepoch_name : str or None
@@ -96,6 +97,9 @@ class SolarSystemShapiroDelay(DelayComponent):
     planet_shapiro : bool
         If True, include Jupiter, Saturn, Venus, Uranus, and Neptune
         contributions in addition to the Sun.
+    obliquity_arcsec : float or None
+        When not None, the direction parameters are interpreted as ecliptic
+        coordinates and rotated to ICRS using this obliquity (arcseconds).
     """
 
     raj_name: str = eqx.field(static=True, default="RAJ")
@@ -104,6 +108,7 @@ class SolarSystemShapiroDelay(DelayComponent):
     pmdec_name: Optional[str] = eqx.field(static=True, default=None)
     posepoch_name: Optional[str] = eqx.field(static=True, default=None)
     planet_shapiro: bool = eqx.field(static=True, default=False)
+    obliquity_arcsec: Optional[float] = eqx.field(static=True, default=None)
 
     def __call__(
         self,
@@ -135,6 +140,10 @@ class SolarSystemShapiroDelay(DelayComponent):
             pmdec_name=self.pmdec_name,
             posepoch_name=self.posepoch_name,
         )
+
+        # When using ecliptic coordinates, rotate direction to ICRS.
+        if self.obliquity_arcsec is not None:
+            psr_dir = psr_dir @ ecl_to_icrs_rotation(self.obliquity_arcsec)
 
         # Sun contribution (always).
         result = _ss_obj_shapiro_delay(toa_data.obs_sun_pos, psr_dir, _TSUN)

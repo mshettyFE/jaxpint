@@ -285,6 +285,43 @@ def woodbury_dot(
 
 
 # ---------------------------------------------------------------------------
+# Ecliptic obliquity constants and rotation
+# ---------------------------------------------------------------------------
+
+# Obliquity values in arcseconds (from PINT's ecliptic.dat).
+OBLIQUITY_ARCSEC: dict[str, float] = {
+    "IAU1976": 84381.448,
+    "IERS1992": 84381.412,
+    "DE403": 84381.412,
+    "IERS2003": 84381.4059,
+    "IERS2010": 84381.406,
+    "IAU2005": 84381.406,
+    "DEFAULT": 84381.406,
+}
+
+# Arcseconds to radians.
+ARCSEC_TO_RAD: float = jnp.pi / (180.0 * 3600.0)
+
+
+def ecl_to_icrs_rotation(obliquity_arcsec: float) -> Float[Array, "3 3"]:
+    """Rotation matrix from ecliptic to ICRS (row-vector convention).
+
+    Usage: ``L_icrs = L_ecl @ ecl_to_icrs_rotation(obl)``
+
+    This is the transpose of astropy's ``rotation_matrix(obl, 'x')``,
+    adapted for row-vector multiplication.
+    """
+    obl_rad = obliquity_arcsec * ARCSEC_TO_RAD
+    c = jnp.cos(obl_rad)
+    s = jnp.sin(obl_rad)
+    return jnp.array([
+        [1.0, 0.0, 0.0],
+        [0.0, c, s],
+        [0.0, -s, c],
+    ])
+
+
+# ---------------------------------------------------------------------------
 # Pulsar direction (shared by astrometry and Shapiro delay)
 # ---------------------------------------------------------------------------
 
@@ -349,3 +386,43 @@ def compute_pulsar_direction(
         L_hat = jnp.broadcast_to(L_hat[None, :], (toa_data.n_toas, 3))
 
     return L_hat
+
+
+def compute_pulsar_direction_ecl(
+    toa_data: "TOAData",
+    params: "ParameterVector",
+    elong_name: str,
+    elat_name: str,
+    pmelong_name: Optional[str],
+    pmelat_name: Optional[str],
+    posepoch_name: Optional[str],
+    obliquity_arcsec: float,
+) -> Float[Array, "n_toas 3"]:
+    """Unit vector from SSB to pulsar in ICRS, computed from ecliptic coordinates.
+
+    Computes the direction in ecliptic frame (reusing the same lon/lat → xyz
+    math as ``compute_pulsar_direction``), then rotates to ICRS.
+
+    Parameters
+    ----------
+    toa_data : TOAData
+    params : ParameterVector
+    elong_name, elat_name : str
+        Parameter names for ecliptic longitude and latitude (radians).
+    pmelong_name, pmelat_name : str or None
+        Proper motion parameter names (mas/yr).  None disables PM.
+    posepoch_name : str or None
+        Epoch parameter for proper-motion reference.
+    obliquity_arcsec : float
+        Obliquity of the ecliptic in arcseconds.
+    """
+    L_hat_ecl = compute_pulsar_direction(
+        toa_data, params,
+        raj_name=elong_name,
+        decj_name=elat_name,
+        pmra_name=pmelong_name,
+        pmdec_name=pmelat_name,
+        posepoch_name=posepoch_name,
+    )
+    rot = ecl_to_icrs_rotation(obliquity_arcsec)
+    return L_hat_ecl @ rot

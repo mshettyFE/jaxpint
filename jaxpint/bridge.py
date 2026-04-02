@@ -691,6 +691,7 @@ def build_timing_model(pint_model: PINTTimingModel):
     from pint.models.spindown import Spindown as PINTSpindown
     from pint.models.dispersion_model import DispersionDM as PINTDispersionDM
     from pint.models.astrometry import AstrometryEquatorial as PINTAstrometryEquatorial
+    from pint.models.astrometry import AstrometryEcliptic as PINTAstrometryEcliptic
     from pint.models.noise_model import ScaleToaError as PINTScaleToaError
     from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
     from pint.models.solar_system_shapiro import SolarSystemShapiro as PINTSolarSystemShapiro
@@ -699,7 +700,7 @@ def build_timing_model(pint_model: PINTTimingModel):
     from jaxpint.model import TimingModel
     from jaxpint.spin import Spindown
     from jaxpint.dispersion_dm import DispersionDM
-    from jaxpint.astrometry import AstrometryEquatorial
+    from jaxpint.astrometry import AstrometryEquatorial, AstrometryEcliptic
     from jaxpint.noise import ScaleToaError
     from jaxpint.shapiro import SolarSystemShapiroDelay
     from jaxpint.troposphere import TroposphereDelay
@@ -714,6 +715,7 @@ def build_timing_model(pint_model: PINTTimingModel):
     _astro_pmra = None
     _astro_pmdec = None
     _astro_posepoch = None
+    _astro_obliquity_arcsec = None
 
     # Components that are handled implicitly (not mapped to JaxPINT components)
     _IMPLICIT = {"AbsPhase"}
@@ -753,6 +755,43 @@ def build_timing_model(pint_model: PINTTimingModel):
                 )
             )
 
+        elif isinstance(comp, PINTAstrometryEcliptic):
+            from jaxpint.utils import OBLIQUITY_ARCSEC
+
+            _astro_raj = "ELONG"
+            _astro_decj = "ELAT"
+
+            if hasattr(comp, "PMELONG") and comp.PMELONG.value is not None and comp.PMELONG.value != 0.0:
+                _astro_pmra = "PMELONG"
+            if hasattr(comp, "PMELAT") and comp.PMELAT.value is not None and comp.PMELAT.value != 0.0:
+                _astro_pmdec = "PMELAT"
+
+            px_name = None
+            if hasattr(comp, "PX") and comp.PX.value is not None and comp.PX.value != 0.0:
+                px_name = "PX"
+
+            # POSEPOCH needed only when proper motion is active
+            if _astro_pmra is not None or _astro_pmdec is not None:
+                _astro_posepoch = "POSEPOCH"
+                if comp.POSEPOCH.value is None:
+                    _astro_posepoch = "PEPOCH"
+
+            # Resolve obliquity from ECL parameter
+            ecl_name = comp.ECL.value if comp.ECL.value else "IERS2010"
+            _astro_obliquity_arcsec = OBLIQUITY_ARCSEC[ecl_name]
+
+            delay_components.append(
+                AstrometryEcliptic(
+                    elong_name=_astro_raj,
+                    elat_name=_astro_decj,
+                    pmelong_name=_astro_pmra,
+                    pmelat_name=_astro_pmdec,
+                    px_name=px_name,
+                    posepoch_name=_astro_posepoch,
+                    obliquity_arcsec=_astro_obliquity_arcsec,
+                )
+            )
+
         elif isinstance(comp, PINTDispersionDM):
             # Collect DM Taylor terms that are set (value not None)
             dm_names = ["DM"]
@@ -786,6 +825,7 @@ def build_timing_model(pint_model: PINTTimingModel):
                     pmdec_name=_astro_pmdec,
                     posepoch_name=_astro_posepoch,
                     planet_shapiro=bool(comp.PLANET_SHAPIRO.value),
+                    obliquity_arcsec=_astro_obliquity_arcsec,
                 )
             )
 
