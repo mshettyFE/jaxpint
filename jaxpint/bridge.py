@@ -352,6 +352,14 @@ def pint_model_to_params(model: PINTTimingModel) -> ParameterVector:
             values.append(val_rad)
             units.append("rad")
 
+        elif isinstance(param, maskParameter) and (
+            pname.startswith("EQUAD") or pname.startswith("ECORR")
+        ):
+            # EQUAD/ECORR are stored in microseconds in PINT; convert to
+            # seconds to match TOAData.error convention.
+            values.append(float(param.quantity.to(u.s).value))
+            units.append("s")
+
         else:
             # floatParameter, prefixParameter, maskParameter, etc.
             values.append(float(param.value))
@@ -410,6 +418,13 @@ def params_to_pint_model(
             native_value = float((val * u.rad).to(param.units).value)
             param.value = native_value
 
+        elif isinstance(param, maskParameter) and (
+            pname.startswith("EQUAD") or pname.startswith("ECORR")
+        ):
+            # Convert seconds back to the parameter's native unit (microseconds)
+            native_value = float((val * u.s).to(param.units).value)
+            param.value = native_value
+
         else:
             param.value = val
 
@@ -420,8 +435,8 @@ def build_timing_model(pint_model: PINTTimingModel):
     """Construct a JaxPINT :class:`~jaxpint.model.TimingModel` from a PINT model.
 
     Inspects the PINT model's component list and creates the corresponding
-    JaxPINT delay and phase components.  Unrecognised components are logged
-    as warnings and skipped.
+    JaxPINT delay, phase, and noise components.  Unrecognised components are
+    logged as warnings and skipped.
 
     Parameters
     ----------
@@ -430,19 +445,24 @@ def build_timing_model(pint_model: PINTTimingModel):
 
     Returns
     -------
-    jaxpint.model.TimingModel
+    (jaxpint.model.TimingModel, Optional[jaxpint.noise.ScaleToaError])
+        The timing model and, if the PINT model contains a ``ScaleToaError``
+        component, the corresponding JaxPINT noise model.
     """
     from pint.models.spindown import Spindown as PINTSpindown
     from pint.models.dispersion_model import DispersionDM as PINTDispersionDM
     from pint.models.astrometry import AstrometryEquatorial as PINTAstrometryEquatorial
+    from pint.models.noise_model import ScaleToaError as PINTScaleToaError
 
     from jaxpint.model import TimingModel
     from jaxpint.spin import Spindown
     from jaxpint.dispersion_dm import DispersionDM
     from jaxpint.astrometry import AstrometryEquatorial
+    from jaxpint.noise import ScaleToaError
 
     delay_components = []
     phase_components = []
+    noise_model = None
 
     # Components that are handled implicitly (not mapped to JaxPINT components)
     _IMPLICIT = {"AbsPhase", "TroposphereDelay"}
@@ -506,6 +526,16 @@ def build_timing_model(pint_model: PINTTimingModel):
                 )
             )
 
+        elif isinstance(comp, PINTScaleToaError):
+            # Extract EFAC and EQUAD parameter names from the PINT component
+            comp.setup()
+            efac_names = tuple(sorted(comp.EFACs.keys()))
+            equad_names = tuple(sorted(comp.EQUADs.keys()))
+            noise_model = ScaleToaError(
+                efac_names=efac_names,
+                equad_names=equad_names,
+            )
+
         else:
             log.warning(
                 "Skipping PINT component %r (%s) — not yet ported to JaxPINT",
@@ -513,7 +543,8 @@ def build_timing_model(pint_model: PINTTimingModel):
                 type(comp).__name__,
             )
 
-    return TimingModel(
+    timing_model = TimingModel(
         delay_components=tuple(delay_components),
         phase_components=tuple(phase_components),
     )
+    return timing_model, noise_model

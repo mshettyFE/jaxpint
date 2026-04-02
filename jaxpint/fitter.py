@@ -15,6 +15,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.model import TimingModel
+from jaxpint.noise import ScaleToaError
 from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import normalize_designmatrix
@@ -197,10 +198,12 @@ class WLSFitter:
         model: TimingModel,
         toa_data: TOAData,
         params: ParameterVector,
+        noise_model: Optional[ScaleToaError] = None,
     ):
         self.model = model
         self.toa_data = toa_data
         self.params = params
+        self.noise_model = noise_model
         self.result: Optional[WLSFitResult] = None
 
     def fit_toas(
@@ -225,11 +228,19 @@ class WLSFitter:
         if threshold is None:
             threshold = 1e-14 * max(self.toa_data.n_toas, self.params.n_free)
 
-        sigma = self.toa_data.error
         covariance = None
         norms = None
 
         for _ in range(maxiter):
+            # 0. Compute scaled uncertainties (recomputed each iteration
+            #    in case noise params are being fit)
+            if self.noise_model is not None:
+                sigma = self.noise_model.scaled_sigma(
+                    self.toa_data, self.params
+                )
+            else:
+                sigma = self.toa_data.error
+
             # 1. Time residuals
             time_resid = compute_time_residuals(
                 self.model, self.toa_data, self.params
@@ -248,7 +259,12 @@ class WLSFitter:
             new_free = self.params.free_values() + dpars
             self.params = self.params.with_free_values(new_free)
 
-        # Final residuals and chi2
+        # Final residuals and chi2 with final noise-scaled sigma
+        if self.noise_model is not None:
+            sigma = self.noise_model.scaled_sigma(self.toa_data, self.params)
+        else:
+            sigma = self.toa_data.error
+
         final_resid = compute_time_residuals(
             self.model, self.toa_data, self.params
         )
