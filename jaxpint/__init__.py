@@ -10,6 +10,7 @@ from .spin import Spindown
 from .dispersion_dm import DispersionDM
 from .bridge import pint_toas_to_jax, pint_model_to_params, params_to_pint_model, build_timing_model
 from .model import TimingModel
+from .fitter import WLSFitter, WLSFitResult
 from .utils import (
     taylor_horner,
     taylor_horner_deriv,
@@ -28,6 +29,8 @@ __all__ = [
     "Spindown",
     "DispersionDM",
     "TimingModel",
+    "WLSFitter",
+    "WLSFitResult",
     "pint_toas_to_jax",
     "pint_model_to_params",
     "params_to_pint_model",

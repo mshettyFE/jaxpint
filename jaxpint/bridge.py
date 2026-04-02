@@ -418,10 +418,12 @@ def build_timing_model(pint_model: PINTTimingModel):
     """
     from pint.models.spindown import Spindown as PINTSpindown
     from pint.models.dispersion_model import DispersionDM as PINTDispersionDM
+    from pint.models.astrometry import AstrometryEquatorial as PINTAstrometryEquatorial
 
     from jaxpint.model import TimingModel
     from jaxpint.spin import Spindown
     from jaxpint.dispersion_dm import DispersionDM
+    from jaxpint.astrometry import AstrometryEquatorial
 
     delay_components = []
     phase_components = []
@@ -436,6 +438,36 @@ def build_timing_model(pint_model: PINTTimingModel):
         if isinstance(comp, PINTSpindown):
             spin_names = tuple(comp.F_terms)
             phase_components.append(Spindown(spin_param_names=spin_names))
+
+        elif isinstance(comp, PINTAstrometryEquatorial):
+            pmra_name = None
+            pmdec_name = None
+            px_name = None
+            posepoch_name = None
+
+            if hasattr(comp, "PMRA") and comp.PMRA.value is not None and comp.PMRA.value != 0.0:
+                pmra_name = "PMRA"
+            if hasattr(comp, "PMDEC") and comp.PMDEC.value is not None and comp.PMDEC.value != 0.0:
+                pmdec_name = "PMDEC"
+            if hasattr(comp, "PX") and comp.PX.value is not None and comp.PX.value != 0.0:
+                px_name = "PX"
+
+            # POSEPOCH needed only when proper motion is active
+            if pmra_name is not None or pmdec_name is not None:
+                posepoch_name = "POSEPOCH"
+                if comp.POSEPOCH.value is None:
+                    posepoch_name = "PEPOCH"
+
+            delay_components.append(
+                AstrometryEquatorial(
+                    raj_name="RAJ",
+                    decj_name="DECJ",
+                    pmra_name=pmra_name,
+                    pmdec_name=pmdec_name,
+                    px_name=px_name,
+                    posepoch_name=posepoch_name,
+                )
+            )
 
         elif isinstance(comp, PINTDispersionDM):
             # Collect DM Taylor terms that are set (value not None)
