@@ -39,6 +39,32 @@ _NUMERIC_PARAM_TYPES = frozenset({"floatParameter", "MJDParameter", "AngleParame
 
 _PLANETS = ("jupiter", "saturn", "venus", "uranus", "neptune", "earth")
 
+
+def _convert_deg_to_rad(quantity):
+    """Convert a quantity with degree-based units to radian-based units.
+
+    Uses astropy's ``dimensionless_angles()`` equivalency to replace
+    degrees with radians in any compound unit (e.g. deg → rad, deg/yr → rad/s).
+
+    Returns (value, unit_string) if conversion was applied, or None if the
+    quantity does not contain degrees.
+    """
+    try:
+        unit = quantity.unit
+        if u.deg not in unit.bases:
+            return None
+    except (AttributeError, TypeError):
+        return None
+
+    # Build the target unit by replacing deg with rad in the decomposition
+    rad_unit = unit
+    for base, power in zip(unit.bases, unit.powers):
+        if base == u.deg:
+            rad_unit = rad_unit * (u.rad / u.deg) ** power
+
+    converted = quantity.to(rad_unit, equivalencies=u.dimensionless_angles())
+    return float(converted.value), str(converted.unit)
+
 # JD to MJD offset
 _JD_MJD_OFFSET = 2_400_000.5
 
@@ -362,8 +388,16 @@ def pint_model_to_params(model: PINTTimingModel) -> ParameterVector:
 
         else:
             # floatParameter, prefixParameter, maskParameter, etc.
-            values.append(float(param.value))
-            units.append(str(param.units))
+            # Convert degree-based units to radian-based (e.g. OM deg → rad,
+            # OMDOT deg/yr → rad/s) so binary models get radians throughout.
+            deg_result = _convert_deg_to_rad(param.quantity)
+            if deg_result is not None:
+                val, unit_str = deg_result
+                values.append(val)
+                units.append(unit_str)
+            else:
+                values.append(float(param.value))
+                units.append(str(param.units))
 
         names.append(pname)
         frozen_mask.append(param.frozen)
@@ -426,9 +460,166 @@ def params_to_pint_model(
             param.value = native_value
 
         else:
-            param.value = val
+            # If we converted deg→rad on the way in, convert back using
+            # the stored unit string to reconstruct the radian-based unit.
+            stored_unit_str = params.units[i]
+            native_unit = param.units
+            if native_unit is not None and stored_unit_str != str(native_unit):
+                stored_unit = u.Unit(stored_unit_str)
+                native_value = float(
+                    (val * stored_unit).to(
+                        native_unit, equivalencies=u.dimensionless_angles()
+                    ).value
+                )
+                param.value = native_value
+            else:
+                param.value = val
 
     return model
+
+
+def _param_is_set(pint_model, name):
+    """Check if a PINT parameter is set (non-None, non-zero)."""
+    if not hasattr(pint_model, name):
+        return False
+    p = getattr(pint_model, name)
+    return p.value is not None and p.value != 0.0
+
+
+def _opt_name(pint_model, name):
+    """Return parameter name if set, else None."""
+    return name if _param_is_set(pint_model, name) else None
+
+
+def _build_binary_component(comp, pint_model):
+    """Construct the appropriate JaxPINT binary DelayComponent from a PINT binary component."""
+    from jaxpint.binary.bt import BinaryBT
+    from jaxpint.binary.dd import BinaryDD, BinaryDDS, BinaryDDH
+    from jaxpint.binary.ell1 import BinaryELL1, BinaryELL1H, BinaryELL1k
+
+    bname = comp.binary_model_name
+
+    if bname == "BT":
+        return BinaryBT(
+            pb_name="PB", t0_name="T0", a1_name="A1",
+            ecc_name="ECC", om_name="OM",
+            pbdot_name=_opt_name(pint_model, "PBDOT"),
+            omdot_name=_opt_name(pint_model, "OMDOT"),
+            edot_name=_opt_name(pint_model, "EDOT"),
+            a1dot_name=_opt_name(pint_model, "A1DOT"),
+            gamma_name=_opt_name(pint_model, "GAMMA"),
+            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+        )
+
+    elif bname == "DD":
+        return BinaryDD(
+            pb_name="PB", t0_name="T0", a1_name="A1",
+            ecc_name="ECC", om_name="OM",
+            pbdot_name=_opt_name(pint_model, "PBDOT"),
+            omdot_name=_opt_name(pint_model, "OMDOT"),
+            edot_name=_opt_name(pint_model, "EDOT"),
+            a1dot_name=_opt_name(pint_model, "A1DOT"),
+            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+            gamma_name=_opt_name(pint_model, "GAMMA"),
+            dr_name=_opt_name(pint_model, "DR"),
+            dth_name=_opt_name(pint_model, "DTH"),
+            a0_name=_opt_name(pint_model, "A0"),
+            b0_name=_opt_name(pint_model, "B0"),
+            m2_name=_opt_name(pint_model, "M2"),
+            sini_name=_opt_name(pint_model, "SINI"),
+            shapiro_mode="standard",
+        )
+
+    elif bname == "DDS":
+        return BinaryDDS(
+            pb_name="PB", t0_name="T0", a1_name="A1",
+            ecc_name="ECC", om_name="OM",
+            pbdot_name=_opt_name(pint_model, "PBDOT"),
+            omdot_name=_opt_name(pint_model, "OMDOT"),
+            edot_name=_opt_name(pint_model, "EDOT"),
+            a1dot_name=_opt_name(pint_model, "A1DOT"),
+            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+            gamma_name=_opt_name(pint_model, "GAMMA"),
+            dr_name=_opt_name(pint_model, "DR"),
+            dth_name=_opt_name(pint_model, "DTH"),
+            a0_name=_opt_name(pint_model, "A0"),
+            b0_name=_opt_name(pint_model, "B0"),
+            m2_name=_opt_name(pint_model, "M2"),
+            shapmax_name="SHAPMAX",
+        )
+
+    elif bname == "DDH":
+        return BinaryDDH(
+            pb_name="PB", t0_name="T0", a1_name="A1",
+            ecc_name="ECC", om_name="OM",
+            pbdot_name=_opt_name(pint_model, "PBDOT"),
+            omdot_name=_opt_name(pint_model, "OMDOT"),
+            edot_name=_opt_name(pint_model, "EDOT"),
+            a1dot_name=_opt_name(pint_model, "A1DOT"),
+            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+            gamma_name=_opt_name(pint_model, "GAMMA"),
+            dr_name=_opt_name(pint_model, "DR"),
+            dth_name=_opt_name(pint_model, "DTH"),
+            a0_name=_opt_name(pint_model, "A0"),
+            b0_name=_opt_name(pint_model, "B0"),
+            h3_name="H3",
+            stigma_name="STIGMA",
+        )
+
+    elif bname == "ELL1":
+        return BinaryELL1(
+            pb_name="PB", tasc_name="TASC", a1_name="A1",
+            eps1_name="EPS1", eps2_name="EPS2",
+            pbdot_name=_opt_name(pint_model, "PBDOT"),
+            a1dot_name=_opt_name(pint_model, "A1DOT"),
+            eps1dot_name=_opt_name(pint_model, "EPS1DOT"),
+            eps2dot_name=_opt_name(pint_model, "EPS2DOT"),
+            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+            m2_name=_opt_name(pint_model, "M2"),
+            sini_name=_opt_name(pint_model, "SINI"),
+            shapiro_mode="standard" if _param_is_set(pint_model, "M2") else "none",
+        )
+
+    elif bname == "ELL1H":
+        # Determine Shapiro mode: H3+STIGMA or H3+H4
+        if _param_is_set(pint_model, "STIGMA"):
+            shapiro_mode = "h3stigma"
+        elif _param_is_set(pint_model, "H4"):
+            shapiro_mode = "h3h4"
+        else:
+            shapiro_mode = "h3stigma"
+        return BinaryELL1H(
+            pb_name="PB", tasc_name="TASC", a1_name="A1",
+            eps1_name="EPS1", eps2_name="EPS2",
+            pbdot_name=_opt_name(pint_model, "PBDOT"),
+            a1dot_name=_opt_name(pint_model, "A1DOT"),
+            eps1dot_name=_opt_name(pint_model, "EPS1DOT"),
+            eps2dot_name=_opt_name(pint_model, "EPS2DOT"),
+            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+            h3_name="H3",
+            stigma_name=_opt_name(pint_model, "STIGMA"),
+            h4_name=_opt_name(pint_model, "H4"),
+            shapiro_mode=shapiro_mode,
+        )
+
+    elif bname == "ELL1k":
+        return BinaryELL1k(
+            pb_name="PB", tasc_name="TASC", a1_name="A1",
+            eps1_name="EPS1", eps2_name="EPS2",
+            pbdot_name=_opt_name(pint_model, "PBDOT"),
+            a1dot_name=_opt_name(pint_model, "A1DOT"),
+            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+            omdot_name=_opt_name(pint_model, "OMDOT"),
+            lnedot_name=_opt_name(pint_model, "LNEDOT"),
+            m2_name=_opt_name(pint_model, "M2"),
+            sini_name=_opt_name(pint_model, "SINI"),
+            shapiro_mode="standard" if _param_is_set(pint_model, "M2") else "none",
+        )
+
+    else:
+        raise NotImplementedError(
+            f"Binary model {bname!r} is not yet ported to JaxPINT"
+        )
 
 
 def build_timing_model(pint_model: PINTTimingModel):
@@ -453,6 +644,7 @@ def build_timing_model(pint_model: PINTTimingModel):
     from pint.models.dispersion_model import DispersionDM as PINTDispersionDM
     from pint.models.astrometry import AstrometryEquatorial as PINTAstrometryEquatorial
     from pint.models.noise_model import ScaleToaError as PINTScaleToaError
+    from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
 
     from jaxpint.model import TimingModel
     from jaxpint.spin import Spindown
@@ -525,6 +717,9 @@ def build_timing_model(pint_model: PINTTimingModel):
                     dmepoch_name=dmepoch_name,
                 )
             )
+
+        elif isinstance(comp, PINTPulsarBinary):
+            delay_components.append(_build_binary_component(comp, pint_model))
 
         elif isinstance(comp, PINTScaleToaError):
             # Extract EFAC and EQUAD parameter names from the PINT component
