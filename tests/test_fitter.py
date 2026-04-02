@@ -284,7 +284,7 @@ class TestNGC6440EAstrometry:
         fitter = WLSFitter(jax_model, toa_data, params)
         fitter.fit_toas(maxiter=5)
 
-        # With missing components (SolarSystemShapiro, SolarWindDispersion)
+        # With missing components (SolarWindDispersion)
         # the reduced chi2 won't be ~1, but the fit should still converge.
         assert fitter.result.reduced_chi2 < 1000
         assert "RAJ" in fitter.result.params.free_names()

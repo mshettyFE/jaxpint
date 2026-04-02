@@ -6,12 +6,26 @@ All functions are JIT-compatible and operate on raw float64 arrays (no units).
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
 import jax.scipy.linalg
-from jaxtyping import Array, Float, Bool 
+from jaxtyping import Array, Float, Bool
+
+if TYPE_CHECKING:
+    from jaxpint.types import TOAData, ParameterVector
+
+
+# ---------------------------------------------------------------------------
+# Constants used by multiple modules
+# ---------------------------------------------------------------------------
+
+# Julian year in days (IAU definition).
+DAYS_PER_JULIAN_YEAR: float = 365.25
+
+# Radians per milliarcsecond.
+RAD_PER_MAS: float = jnp.pi / (180.0 * 3600.0 * 1000.0)
 
 
 # ---------------------------------------------------------------------------
@@ -268,3 +282,70 @@ def woodbury_dot(
     logdet_C = logdet_N + logdet_Phi + logdet_Sigma
 
     return x_Cinv_y, logdet_C
+
+
+# ---------------------------------------------------------------------------
+# Pulsar direction (shared by astrometry and Shapiro delay)
+# ---------------------------------------------------------------------------
+
+def compute_pulsar_direction(
+    toa_data: "TOAData",
+    params: "ParameterVector",
+    raj_name: str,
+    decj_name: str,
+    pmra_name: Optional[str],
+    pmdec_name: Optional[str],
+    posepoch_name: Optional[str],
+) -> Float[Array, "n_toas 3"]:
+    """Unit vector from SSB to pulsar in ICRS Cartesian coordinates.
+
+    Without proper motion the direction is constant; with proper motion
+    a linear correction is applied per TOA.
+
+    Parameters
+    ----------
+    toa_data : TOAData
+        Pre-extracted TOA data (needs ``tdb_int``, ``tdb_frac``, ``n_toas``).
+    params : ParameterVector
+        Timing-model parameters.
+    raj_name, decj_name : str
+        Parameter names for RA and DEC (radians).
+    pmra_name, pmdec_name : str or None
+        Parameter names for proper motion (mas/yr).  None disables PM.
+    posepoch_name : str or None
+        Epoch parameter for proper-motion reference.
+    """
+    ra0 = params.param_value(raj_name)
+    dec0 = params.param_value(decj_name)
+
+    if pmra_name is not None or pmdec_name is not None:
+        posepoch_int, posepoch_frac = params.epoch_value(posepoch_name)
+        dt_int = toa_data.tdb_int - posepoch_int
+        dt_frac = toa_data.tdb_frac - posepoch_frac
+        dt_yr = (dt_int + dt_frac) / DAYS_PER_JULIAN_YEAR
+
+        if pmra_name is not None:
+            pmra = params.param_value(pmra_name)  # mas/yr
+            ra = ra0 + (pmra * RAD_PER_MAS / jnp.cos(dec0)) * dt_yr
+        else:
+            ra = jnp.broadcast_to(ra0, dt_yr.shape)
+
+        if pmdec_name is not None:
+            pmdec = params.param_value(pmdec_name)  # mas/yr
+            dec = dec0 + (pmdec * RAD_PER_MAS) * dt_yr
+        else:
+            dec = jnp.broadcast_to(dec0, dt_yr.shape)
+    else:
+        ra = ra0
+        dec = dec0
+
+    cos_dec = jnp.cos(dec)
+    x = jnp.cos(ra) * cos_dec
+    y = jnp.sin(ra) * cos_dec
+    z = jnp.sin(dec)
+    L_hat = jnp.stack([x, y, z], axis=-1)
+
+    if L_hat.ndim == 1:
+        L_hat = jnp.broadcast_to(L_hat[None, :], (toa_data.n_toas, 3))
+
+    return L_hat

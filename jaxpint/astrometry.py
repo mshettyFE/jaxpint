@@ -26,6 +26,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
 from jaxpint.types import TOAData, ParameterVector
+from jaxpint.utils import compute_pulsar_direction
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -33,12 +34,6 @@ from jaxpint.types import TOAData, ParameterVector
 
 # Speed of light in km/s (ssb_obs_pos is in km, result in seconds).
 _C_KM_PER_S: float = 299792.458
-
-# Julian year in days (IAU definition).
-_DAYS_PER_JULIAN_YEAR: float = 365.25
-
-# Radians per milliarcsecond.
-_RAD_PER_MAS: float = jnp.pi / (180.0 * 3600.0 * 1000.0)
 
 # 1 kpc in km (for parallax distance conversion).
 _KPC_TO_KM: float = 3.0856775814913673e16
@@ -85,43 +80,14 @@ class AstrometryEquatorial(DelayComponent):
         Without proper motion the direction is constant; with proper motion
         a linear correction is applied per TOA.
         """
-        ra0 = params.param_value(self.raj_name)
-        dec0 = params.param_value(self.decj_name)
-
-        if self.pmra_name is not None or self.pmdec_name is not None:
-            # Proper-motion corrected position (linear approximation).
-            posepoch_int, posepoch_frac = params.epoch_value(self.posepoch_name)
-            dt_int = toa_data.tdb_int - posepoch_int
-            dt_frac = toa_data.tdb_frac - posepoch_frac
-            dt_yr = (dt_int + dt_frac) / _DAYS_PER_JULIAN_YEAR
-
-            if self.pmra_name is not None:
-                pmra = params.param_value(self.pmra_name)  # mas/yr
-                # PMRA is mu_alpha*cos(delta); divide by cos(dec) for RA rate
-                ra = ra0 + (pmra * _RAD_PER_MAS / jnp.cos(dec0)) * dt_yr
-            else:
-                ra = jnp.broadcast_to(ra0, dt_yr.shape)
-
-            if self.pmdec_name is not None:
-                pmdec = params.param_value(self.pmdec_name)  # mas/yr
-                dec = dec0 + (pmdec * _RAD_PER_MAS) * dt_yr
-            else:
-                dec = jnp.broadcast_to(dec0, dt_yr.shape)
-        else:
-            ra = ra0
-            dec = dec0
-
-        cos_dec = jnp.cos(dec)
-        x = jnp.cos(ra) * cos_dec
-        y = jnp.sin(ra) * cos_dec
-        z = jnp.sin(dec)
-        L_hat = jnp.stack([x, y, z], axis=-1)
-
-        # Ensure shape is (n_toas, 3) even for constant direction.
-        if L_hat.ndim == 1:
-            L_hat = jnp.broadcast_to(L_hat[None, :], (toa_data.n_toas, 3))
-
-        return L_hat
+        return compute_pulsar_direction(
+            toa_data, params,
+            raj_name=self.raj_name,
+            decj_name=self.decj_name,
+            pmra_name=self.pmra_name,
+            pmdec_name=self.pmdec_name,
+            posepoch_name=self.posepoch_name,
+        )
 
     # ------------------------------------------------------------------
     # Public API

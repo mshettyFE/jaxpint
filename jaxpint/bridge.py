@@ -645,16 +645,25 @@ def build_timing_model(pint_model: PINTTimingModel):
     from pint.models.astrometry import AstrometryEquatorial as PINTAstrometryEquatorial
     from pint.models.noise_model import ScaleToaError as PINTScaleToaError
     from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
+    from pint.models.solar_system_shapiro import SolarSystemShapiro as PINTSolarSystemShapiro
 
     from jaxpint.model import TimingModel
     from jaxpint.spin import Spindown
     from jaxpint.dispersion_dm import DispersionDM
     from jaxpint.astrometry import AstrometryEquatorial
     from jaxpint.noise import ScaleToaError
+    from jaxpint.shapiro import SolarSystemShapiroDelay
 
     delay_components = []
     phase_components = []
     noise_model = None
+
+    # Cached astrometry param names (reused by Shapiro component).
+    _astro_raj = "RAJ"
+    _astro_decj = "DECJ"
+    _astro_pmra = None
+    _astro_pmdec = None
+    _astro_posepoch = None
 
     # Components that are handled implicitly (not mapped to JaxPINT components)
     _IMPLICIT = {"AbsPhase", "TroposphereDelay"}
@@ -668,32 +677,29 @@ def build_timing_model(pint_model: PINTTimingModel):
             phase_components.append(Spindown(spin_param_names=spin_names))
 
         elif isinstance(comp, PINTAstrometryEquatorial):
-            pmra_name = None
-            pmdec_name = None
-            px_name = None
-            posepoch_name = None
-
             if hasattr(comp, "PMRA") and comp.PMRA.value is not None and comp.PMRA.value != 0.0:
-                pmra_name = "PMRA"
+                _astro_pmra = "PMRA"
             if hasattr(comp, "PMDEC") and comp.PMDEC.value is not None and comp.PMDEC.value != 0.0:
-                pmdec_name = "PMDEC"
+                _astro_pmdec = "PMDEC"
+
+            px_name = None
             if hasattr(comp, "PX") and comp.PX.value is not None and comp.PX.value != 0.0:
                 px_name = "PX"
 
             # POSEPOCH needed only when proper motion is active
-            if pmra_name is not None or pmdec_name is not None:
-                posepoch_name = "POSEPOCH"
+            if _astro_pmra is not None or _astro_pmdec is not None:
+                _astro_posepoch = "POSEPOCH"
                 if comp.POSEPOCH.value is None:
-                    posepoch_name = "PEPOCH"
+                    _astro_posepoch = "PEPOCH"
 
             delay_components.append(
                 AstrometryEquatorial(
-                    raj_name="RAJ",
-                    decj_name="DECJ",
-                    pmra_name=pmra_name,
-                    pmdec_name=pmdec_name,
+                    raj_name=_astro_raj,
+                    decj_name=_astro_decj,
+                    pmra_name=_astro_pmra,
+                    pmdec_name=_astro_pmdec,
                     px_name=px_name,
-                    posepoch_name=posepoch_name,
+                    posepoch_name=_astro_posepoch,
                 )
             )
 
@@ -720,6 +726,18 @@ def build_timing_model(pint_model: PINTTimingModel):
 
         elif isinstance(comp, PINTPulsarBinary):
             delay_components.append(_build_binary_component(comp, pint_model))
+
+        elif isinstance(comp, PINTSolarSystemShapiro):
+            delay_components.append(
+                SolarSystemShapiroDelay(
+                    raj_name=_astro_raj,
+                    decj_name=_astro_decj,
+                    pmra_name=_astro_pmra,
+                    pmdec_name=_astro_pmdec,
+                    posepoch_name=_astro_posepoch,
+                    planet_shapiro=bool(comp.PLANET_SHAPIRO.value),
+                )
+            )
 
         elif isinstance(comp, PINTScaleToaError):
             # Extract EFAC and EQUAD parameter names from the PINT component

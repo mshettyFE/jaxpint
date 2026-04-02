@@ -573,15 +573,18 @@ class TestVsPINT:
         assert isinstance(jax_model.phase_components[0], Spindown)
         assert jax_model.phase_components[0].spin_param_names == ("F0", "F1")
 
-        # Should have AstrometryEquatorial + DispersionDM delay components
+        # Should have AstrometryEquatorial + SolarSystemShapiroDelay + DispersionDM delay components
         from jaxpint.astrometry import AstrometryEquatorial
+        from jaxpint.shapiro import SolarSystemShapiroDelay
 
-        assert len(jax_model.delay_components) == 2
+        assert len(jax_model.delay_components) == 3
         assert isinstance(jax_model.delay_components[0], AstrometryEquatorial)
-        assert isinstance(jax_model.delay_components[1], DispersionDM)
-        assert jax_model.delay_components[1].dm_param_names == ("DM",)
+        assert isinstance(jax_model.delay_components[1], SolarSystemShapiroDelay)
+        assert jax_model.delay_components[1].planet_shapiro is False
+        assert isinstance(jax_model.delay_components[2], DispersionDM)
+        assert jax_model.delay_components[2].dm_param_names == ("DM",)
         # NGC6440E has no DMEPOCH, should fall back to PEPOCH
-        assert jax_model.delay_components[1].dmepoch_name == "PEPOCH"
+        assert jax_model.delay_components[2].dmepoch_name == "PEPOCH"
 
     def test_build_timing_model_phase_matches(self, ngc6440e):
         """build_timing_model produces a model whose phase is finite and consistent."""

@@ -248,7 +248,7 @@ UNITS         TDB
         m = models.get_model(io.StringIO(par))
         # Remove components not yet ported to JaxPINT
         for comp_name in list(m.components):
-            if comp_name in ("SolarSystemShapiro", "TroposphereDelay"):
+            if comp_name in ("TroposphereDelay",):
                 m.remove_component(comp_name)
         # Create fake TOAs with two "backends"
         t1 = make_fake_toas_uniform(
