@@ -41,6 +41,8 @@ def _make_toa_data(t_mjd):
         obs_indices=jnp.zeros(n, dtype=jnp.int32),
         flag_masks={}, planet_positions={},
         dm_values=None, dm_errors=None,
+        tropo_alt=None, tropo_alt_valid=None,
+        obs_geodetic_lat=None, obs_height_km=None,
         tzr_tdb_int=jnp.array(54000.0), tzr_tdb_frac=jnp.array(0.5),
         tzr_freq=jnp.array(jnp.inf), tzr_ssb_obs_pos=jnp.zeros(3),
         n_toas=n, obs_names=("fake",),

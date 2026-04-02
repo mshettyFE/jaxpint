@@ -12,6 +12,7 @@ from .bridge import pint_toas_to_jax, pint_model_to_params, params_to_pint_model
 from .model import TimingModel
 from .noise import ScaleToaError
 from .shapiro import SolarSystemShapiroDelay
+from .troposphere import TroposphereDelay
 from .fitter import WLSFitter, WLSFitResult
 from .utils import (
     taylor_horner,
@@ -33,6 +34,7 @@ __all__ = [
     "TimingModel",
     "ScaleToaError",
     "SolarSystemShapiroDelay",
+    "TroposphereDelay",
     "WLSFitter",
     "WLSFitResult",
     "pint_toas_to_jax",

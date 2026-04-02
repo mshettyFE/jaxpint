@@ -40,6 +40,8 @@ def _make_toa_data(n_toas, errors, flag_masks):
         planet_positions=None,
         dm_values=None,
         dm_errors=None,
+        tropo_alt=None, tropo_alt_valid=None,
+        obs_geodetic_lat=None, obs_height_km=None,
         n_toas=n_toas,
         obs_names=("fake",),
     )
@@ -246,10 +248,6 @@ CLOCK         TT(BIPM2019)
 UNITS         TDB
 """
         m = models.get_model(io.StringIO(par))
-        # Remove components not yet ported to JaxPINT
-        for comp_name in list(m.components):
-            if comp_name in ("TroposphereDelay",):
-                m.remove_component(comp_name)
         # Create fake TOAs with two "backends"
         t1 = make_fake_toas_uniform(
             54000, 56000, 50, model=m, obs="gbt", freq=1400.0,
@@ -325,10 +323,10 @@ UNITS         TDB
         fitter = WLSFitter(jax_model, toa_data, params, noise_model=noise_model)
         jax_chi2 = fitter.fit_toas(maxiter=1)
 
-        # rtol=0.05: JaxPINT skips TroposphereDelay (handled implicitly),
-        # which introduces small residual differences vs PINT.
+        # rtol=0.005: remaining gap is from float64 vs longdouble precision
+        # in the WLS fit step, not from the delay model.
         np.testing.assert_allclose(
-            jax_chi2, pint_chi2, rtol=0.05,
+            jax_chi2, pint_chi2, rtol=0.005,
             err_msg=f"JaxPINT chi2 ({jax_chi2}) != PINT chi2 ({pint_chi2})",
         )
 

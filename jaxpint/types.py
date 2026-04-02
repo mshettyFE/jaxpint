@@ -69,6 +69,16 @@ class TOAData(eqx.Module):
     dm_values: Optional[Float[Array, " n_toas"]]
     dm_errors: Optional[Float[Array, " n_toas"]]
 
+    # Optional troposphere pre-computed data (from bridge)
+    #   tropo_alt:        radians, target elevation angle (invalid replaced with pi/2)
+    #   tropo_alt_valid:  True if altitude is physically valid
+    #   obs_geodetic_lat: radians, observatory geodetic latitude
+    #   obs_height_km:    km, observatory height above geoid
+    tropo_alt: Optional[Float[Array, " n_toas"]]
+    tropo_alt_valid: Optional[Bool[Array, " n_toas"]]
+    obs_geodetic_lat: Optional[Float[Array, " n_toas"]]
+    obs_height_km: Optional[Float[Array, " n_toas"]]
+
     # Static metadata (not JAX-traced)
     n_toas: int = eqx.field(static=True)
     obs_names: tuple[str, ...] = eqx.field(static=True)

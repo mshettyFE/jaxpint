@@ -47,6 +47,8 @@ def _make_toa_data(n_toas=10, with_planets=False, with_dm=False):
         planet_positions=planet_positions,
         dm_values=dm_values,
         dm_errors=dm_errors,
+        tropo_alt=None, tropo_alt_valid=None,
+        obs_geodetic_lat=None, obs_height_km=None,
         n_toas=n_toas,
         obs_names=("GBT",),
     )

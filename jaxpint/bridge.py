@@ -25,6 +25,8 @@ from pint.models.parameter import (
     strParameter,
 )
 from pint.models.timing_model import TimingModel as PINTTimingModel
+from pint.observatory import get_observatory
+from pint.observatory.topo_obs import TopoObs
 from pint.toa import TOAs
 
 from jaxpint.types import ParameterVector, TOAData
@@ -286,6 +288,48 @@ def pint_toas_to_jax(
         dm_values = toas.get_dms().to(u.pc / u.cm**3).value
         dm_errors = toas.get_dm_errors().to(u.pc / u.cm**3).value
 
+    # -- Optional troposphere data ------------------------------------------
+    tropo_alt: Optional[np.ndarray] = None
+    tropo_alt_valid: Optional[np.ndarray] = None
+    obs_geodetic_lat: Optional[np.ndarray] = None
+    obs_height_km: Optional[np.ndarray] = None
+
+    if model is not None and "TroposphereDelay" in model.components:
+        tropo_comp = model.components["TroposphereDelay"]
+        if tropo_comp.CORRECT_TROPOSPHERE.value:
+            from astropy.coordinates import AltAz, SkyCoord
+
+            radec = tropo_comp._get_target_skycoord()
+
+            alt_arr = np.zeros(n_toas, dtype=np.float64)
+            lat_arr = np.zeros(n_toas, dtype=np.float64)
+            height_arr = np.zeros(n_toas, dtype=np.float64)
+            valid_arr = np.zeros(n_toas, dtype=bool)
+
+            for key, grp in toas.get_obs_groups():
+                obsobj = get_observatory(key)
+                if not isinstance(obsobj, TopoObs):
+                    # Non-topocentric: leave as zeros, valid=False
+                    continue
+
+                obs = obsobj.earth_location_itrf()
+                alt = tropo_comp._get_target_altitude(obs, tbl[grp], radec)
+
+                alt_arr[grp] = alt.to(u.rad).value
+                lat_arr[grp] = obs.lat.to(u.rad).value
+                height_arr[grp] = obs.height.to(u.km).value
+                valid_arr[grp] = True
+
+            # Validate altitudes: must be in [0, pi/2]
+            bad = (alt_arr < 0.0) | (alt_arr > np.pi / 2.0)
+            valid_arr[bad] = False
+            alt_arr[bad] = np.pi / 2.0  # replace invalid with zenith
+
+            tropo_alt = alt_arr
+            tropo_alt_valid = valid_arr
+            obs_geodetic_lat = lat_arr
+            obs_height_km = height_arr
+
     # -- TZR TOA for absolute phase -----------------------------------------
     tzr_tdb_int = None
     tzr_tdb_frac = None
@@ -323,6 +367,10 @@ def pint_toas_to_jax(
         planet_positions=jnp_planets,
         dm_values=to_jnp(dm_values) if dm_values is not None else None,
         dm_errors=to_jnp(dm_errors) if dm_errors is not None else None,
+        tropo_alt=to_jnp(tropo_alt) if tropo_alt is not None else None,
+        tropo_alt_valid=jnp.asarray(tropo_alt_valid, dtype=jnp.bool_) if tropo_alt_valid is not None else None,
+        obs_geodetic_lat=to_jnp(obs_geodetic_lat) if obs_geodetic_lat is not None else None,
+        obs_height_km=to_jnp(obs_height_km) if obs_height_km is not None else None,
         tzr_tdb_int=tzr_tdb_int,
         tzr_tdb_frac=tzr_tdb_frac,
         tzr_freq=tzr_freq,
@@ -646,6 +694,7 @@ def build_timing_model(pint_model: PINTTimingModel):
     from pint.models.noise_model import ScaleToaError as PINTScaleToaError
     from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
     from pint.models.solar_system_shapiro import SolarSystemShapiro as PINTSolarSystemShapiro
+    from pint.models.troposphere_delay import TroposphereDelay as PINTTroposphereDelay
 
     from jaxpint.model import TimingModel
     from jaxpint.spin import Spindown
@@ -653,6 +702,7 @@ def build_timing_model(pint_model: PINTTimingModel):
     from jaxpint.astrometry import AstrometryEquatorial
     from jaxpint.noise import ScaleToaError
     from jaxpint.shapiro import SolarSystemShapiroDelay
+    from jaxpint.troposphere import TroposphereDelay
 
     delay_components = []
     phase_components = []
@@ -666,7 +716,7 @@ def build_timing_model(pint_model: PINTTimingModel):
     _astro_posepoch = None
 
     # Components that are handled implicitly (not mapped to JaxPINT components)
-    _IMPLICIT = {"AbsPhase", "TroposphereDelay"}
+    _IMPLICIT = {"AbsPhase"}
 
     for name, comp in pint_model.components.items():
         if name in _IMPLICIT:
@@ -738,6 +788,10 @@ def build_timing_model(pint_model: PINTTimingModel):
                     planet_shapiro=bool(comp.PLANET_SHAPIRO.value),
                 )
             )
+
+        elif isinstance(comp, PINTTroposphereDelay):
+            if comp.CORRECT_TROPOSPHERE.value:
+                delay_components.append(TroposphereDelay())
 
         elif isinstance(comp, PINTScaleToaError):
             # Extract EFAC and EQUAD parameter names from the PINT component

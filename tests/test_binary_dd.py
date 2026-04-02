@@ -53,6 +53,8 @@ def _make_toa_data(t_mjd):
         planet_positions={},
         dm_values=None,
         dm_errors=None,
+        tropo_alt=None, tropo_alt_valid=None,
+        obs_geodetic_lat=None, obs_height_km=None,
         tzr_tdb_int=jnp.array(54000.0),
         tzr_tdb_frac=jnp.array(0.5),
         tzr_freq=jnp.array(jnp.inf),
