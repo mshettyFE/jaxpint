@@ -365,11 +365,10 @@ class TestPINTOracle:
     def pint_setup(self):
         """Build a PINT model with DM and compute its dispersion delay.
 
-        PINT's ``constant_dispersion_delay`` uses the barycentric
-        (Doppler-corrected) frequency, whereas JaxPINT currently uses
-        the topocentric frequency stored in ``TOAData.freq``.  To get
-        an apples-to-apples comparison we compute PINT's delay using the
-        topocentric frequency directly via ``dispersion_time_delay``.
+        Both PINT and JaxPINT use barycentric (Doppler-corrected) frequency
+        for dispersion calculations.  We compare against PINT's
+        ``dispersion_type_delay`` which internally calls
+        ``barycentric_radio_freq``.
         """
         from io import StringIO
         import astropy.units as u
@@ -403,12 +402,10 @@ PLANET_SHAPIRO       N
         toas.compute_TDBs()
         toas.compute_posvels()
 
-        # Compute PINT's DM value and delay using topocentric frequency
+        # Compute PINT's dispersion delay (uses barycentric frequency internally)
         dm_comp = model.components["DispersionDM"]
-        dm_values = dm_comp.base_dm(toas)
-        topo_freq = toas.table["freq"].quantity
         pint_delay = np.array(
-            dm_comp.dispersion_time_delay(dm_values, topo_freq).to("s").value,
+            dm_comp.dispersion_type_delay(toas).to("s").value,
             dtype=np.float64,
         )
 

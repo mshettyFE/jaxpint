@@ -144,7 +144,11 @@ def extract_tzr_toa(
         np.asarray(tz_tbl["tdbld"])
     )
 
-    freq = float(tz_toas.get_freqs().to(u.MHz).value[0])
+    try:
+        freq = float(model.barycentric_radio_freq(tz_toas).to(u.MHz).value[0])
+    except AttributeError:
+        log.warning("Model has no barycentric_radio_freq; using topocentric TZR frequency")
+        freq = float(tz_toas.get_freqs().to(u.MHz).value[0])
 
     ssb_obs_pos = np.asarray(tz_tbl["ssb_obs_pos"], dtype=np.float64)[0]
 
@@ -195,7 +199,19 @@ def pint_toas_to_jax(
 
     # -- Unit-validated scalar columns -----------------------------------
     error_s = toas.get_errors().to(u.s).value
-    freq_mhz = toas.get_freqs().to(u.MHz).value
+    if model is not None:
+        try:
+            freq_mhz = np.asarray(
+                model.barycentric_radio_freq(toas).to(u.MHz).value,
+                dtype=np.float64,
+            )
+        except AttributeError:
+            log.warning(
+                "Model has no barycentric_radio_freq; using topocentric frequency"
+            )
+            freq_mhz = toas.get_freqs().to(u.MHz).value
+    else:
+        freq_mhz = toas.get_freqs().to(u.MHz).value
 
     # -- Position / velocity (validate units, then extract) --------------
     _check_column_unit(tbl, "ssb_obs_pos", u.km)

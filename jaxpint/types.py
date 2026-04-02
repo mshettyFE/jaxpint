@@ -34,7 +34,7 @@ class TOAData(eqx.Module):
         mjd_int, mjd_frac:      days (integer MJD + fractional day in [0, 1))
         tdb_int, tdb_frac:      days (TDB timescale, same split)
         error:                  seconds
-        freq:                   MHz
+        freq:                   MHz (barycentric, Doppler-corrected)
         ssb_obs_pos:            km,   shape (n_toas, 3)
         ssb_obs_vel:            km/s, shape (n_toas, 3)
         obs_sun_pos:            km,   shape (n_toas, 3)
@@ -79,7 +79,7 @@ class TOAData(eqx.Module):
     # these values is handled by the orchestration layer (compute_phase / model.py),
     # not by individual phase components.
     #   tdb: days (int/frac split, same as tdb_int/tdb_frac)
-    #   freq: MHz (TZRFRQ; inf means no dispersion delay)
+    #   freq: MHz (barycentric Doppler-corrected TZRFRQ; inf means no dispersion delay)
     #   ssb_obs_pos: km, shape (3,) — SSB observer position at TZR epoch
     tzr_tdb_int: Optional[float] = eqx.field(static=True, default=None)
     tzr_tdb_frac: Optional[float] = eqx.field(static=True, default=None)

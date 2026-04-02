@@ -120,6 +120,19 @@ class TestPintToasToJax:
         td = pint_toas_to_jax(toas)
         assert jnp.all(td.freq > 0)
 
+    def test_freq_is_barycentric(self, ngc6440e):
+        """When model is provided, freq should be barycentric (Doppler-corrected)."""
+        import astropy.units as u
+
+        model, toas = ngc6440e
+        td = pint_toas_to_jax(toas, model)
+
+        expected = np.asarray(
+            model.barycentric_radio_freq(toas).to(u.MHz).value,
+            dtype=np.float64,
+        )
+        np.testing.assert_allclose(np.asarray(td.freq), expected, rtol=1e-14)
+
     def test_observatory_names(self, ngc6440e):
         _, toas = ngc6440e
         td = pint_toas_to_jax(toas)
