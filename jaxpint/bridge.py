@@ -117,6 +117,31 @@ def _split_epoch_jd(quantity) -> tuple[float, float]:
 # ---------------------------------------------------------------------------
 
 
+def extract_tzr_tdb(
+    model: TimingModel,
+    toas: TOAs,
+) -> tuple[float, float]:
+    """Extract the TZR TOA's TDB time from PINT's AbsPhase component.
+
+    If the model does not already have an AbsPhase component, one is
+    auto-generated from the TOAs (first TOA after PEPOCH), matching
+    PINT's guarantee in ``timing_model.phase()``.
+
+    Returns ``(tdb_int, tdb_frac)`` in days (MJD, float64).
+    """
+    if "AbsPhase" not in model.components:
+        log.info("No AbsPhase in model; auto-generating TZR TOA from TOAs.")
+        model.add_tzr_toa(toas)
+
+    abs_phase = model.components["AbsPhase"]
+    tz_toas = abs_phase.get_TZR_toa(toas)
+
+    tdb_int, tdb_frac = _split_mjd_longdouble(
+        np.asarray(tz_toas.table["tdbld"])
+    )
+    return float(tdb_int[0]), float(tdb_frac[0])
+
+
 def pint_toas_to_jax(
     toas: TOAs,
     model: Optional[TimingModel] = None,
@@ -205,6 +230,12 @@ def pint_toas_to_jax(
         dm_values = toas.get_dms().to(u.pc / u.cm**3).value
         dm_errors = toas.get_dm_errors().to(u.pc / u.cm**3).value
 
+    # -- TZR TDB time for absolute phase -----------------------------------
+    tzr_tdb_int = None
+    tzr_tdb_frac = None
+    if model is not None:
+        tzr_tdb_int, tzr_tdb_frac = extract_tzr_tdb(model, toas)
+
     # -- Assemble TOAData ------------------------------------------------
     to_jnp = lambda arr: jnp.asarray(arr, dtype=jnp.float64)
     jnp_flag_masks = {k: jnp.asarray(v, dtype=jnp.bool_) for k, v in flag_masks.items()}
@@ -230,6 +261,8 @@ def pint_toas_to_jax(
         planet_positions=jnp_planets,
         dm_values=to_jnp(dm_values) if dm_values is not None else None,
         dm_errors=to_jnp(dm_errors) if dm_errors is not None else None,
+        tzr_tdb_int=tzr_tdb_int,
+        tzr_tdb_frac=tzr_tdb_frac,
         n_toas=n_toas,
         obs_names=obs_names,
     )

@@ -7,6 +7,7 @@ jax.config.update("jax_enable_x64", True)
 from .types import PhaseResult, TOAData, ParameterVector
 from .components import PhaseComponent, DelayComponent
 from .spin import Spindown
+from .dispersion_dm import DispersionDM
 from .bridge import pint_toas_to_jax, pint_model_to_params, params_to_pint_model
 from .utils import (
     taylor_horner,
@@ -24,6 +25,7 @@ __all__ = [
     "PhaseComponent",
     "DelayComponent",
     "Spindown",
+    "DispersionDM",
     "pint_toas_to_jax",
     "pint_model_to_params",
     "params_to_pint_model",

@@ -73,6 +73,14 @@ class TOAData(eqx.Module):
     n_toas: int = eqx.field(static=True)
     obs_names: tuple[str, ...] = eqx.field(static=True)
 
+    # TZR (time-zero reference) TDB time for absolute phase (days, int/frac split).
+    # Extracted once by the bridge from PINT's AbsPhase component (auto-generated
+    # if not in par file, matching PINT's guarantee). The phase subtraction using
+    # these values is handled by the orchestration layer (compute_phase / model.py),
+    # not by individual phase components.
+    tzr_tdb_int: Optional[float] = eqx.field(static=True, default=None)
+    tzr_tdb_frac: Optional[float] = eqx.field(static=True, default=None)
+
 
 # ---------------------------------------------------------------------------
 # ParameterVector
