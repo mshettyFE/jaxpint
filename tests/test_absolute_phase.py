@@ -11,7 +11,7 @@ import pint.models as models
 import pint.toa as toa
 from pint.config import examplefile
 
-from jaxpint.bridge import extract_tzr_tdb, pint_toas_to_jax
+from jaxpint.bridge import extract_tzr_toa, pint_toas_to_jax
 
 
 @pytest.fixture
@@ -49,7 +49,8 @@ class TestExtractTzrTdb:
     def test_tzr_tdb_matches_pint(self, ngc6440e):
         """Extracted TZR TDB matches PINT's TZR TOA TDB within float64."""
         model, toas = ngc6440e
-        tdb_int, tdb_frac = extract_tzr_tdb(model, toas)
+        tzr_info = extract_tzr_toa(model, toas)
+        tdb_int, tdb_frac = tzr_info["tdb_int"], tzr_info["tdb_frac"]
 
         # Get PINT's TZR TOA TDB for comparison
         tz_toas = model.components["AbsPhase"].get_TZR_toa(toas)
@@ -70,13 +71,29 @@ class TestExtractTzrTdb:
     def test_tzr_tdb_frac_in_unit_interval(self, ngc6440e):
         """Fractional day should be in [0, 1)."""
         model, toas = ngc6440e
-        tdb_int, tdb_frac = extract_tzr_tdb(model, toas)
+        tzr_info = extract_tzr_toa(model, toas)
 
-        assert 0.0 <= tdb_frac < 1.0
+        assert 0.0 <= tzr_info["tdb_frac"] < 1.0
 
     def test_tzr_tdb_int_is_integer(self, ngc6440e):
         """Integer day should be a whole number."""
         model, toas = ngc6440e
-        tdb_int, tdb_frac = extract_tzr_tdb(model, toas)
+        tzr_info = extract_tzr_toa(model, toas)
 
-        assert tdb_int == int(tdb_int)
+        assert tzr_info["tdb_int"] == int(tzr_info["tdb_int"])
+
+    def test_tzr_freq_extracted(self, ngc6440e):
+        """TZR frequency is extracted."""
+        model, toas = ngc6440e
+        tzr_info = extract_tzr_toa(model, toas)
+
+        assert tzr_info["freq"] is not None
+        assert tzr_info["freq"] > 0
+
+    def test_tzr_ssb_obs_pos_extracted(self, ngc6440e):
+        """TZR SSB observer position is extracted."""
+        model, toas = ngc6440e
+        tzr_info = extract_tzr_toa(model, toas)
+
+        assert tzr_info["ssb_obs_pos"] is not None
+        assert tzr_info["ssb_obs_pos"].shape == (3,)

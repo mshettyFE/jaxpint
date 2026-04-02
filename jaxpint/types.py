@@ -73,13 +73,18 @@ class TOAData(eqx.Module):
     n_toas: int = eqx.field(static=True)
     obs_names: tuple[str, ...] = eqx.field(static=True)
 
-    # TZR (time-zero reference) TDB time for absolute phase (days, int/frac split).
+    # TZR (time-zero reference) TOA for absolute phase.
     # Extracted once by the bridge from PINT's AbsPhase component (auto-generated
     # if not in par file, matching PINT's guarantee). The phase subtraction using
     # these values is handled by the orchestration layer (compute_phase / model.py),
     # not by individual phase components.
+    #   tdb: days (int/frac split, same as tdb_int/tdb_frac)
+    #   freq: MHz (TZRFRQ; inf means no dispersion delay)
+    #   ssb_obs_pos: km, shape (3,) — SSB observer position at TZR epoch
     tzr_tdb_int: Optional[float] = eqx.field(static=True, default=None)
     tzr_tdb_frac: Optional[float] = eqx.field(static=True, default=None)
+    tzr_freq: Optional[float] = eqx.field(static=True, default=None)
+    tzr_ssb_obs_pos: Optional[Float[Array, " 3"]] = eqx.field(default=None)
 
 
 # ---------------------------------------------------------------------------

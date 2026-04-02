@@ -24,7 +24,7 @@ from pint.models.parameter import (
     maskParameter,
     strParameter,
 )
-from pint.models.timing_model import TimingModel
+from pint.models.timing_model import TimingModel as PINTTimingModel
 from pint.toa import TOAs
 
 from jaxpint.types import ParameterVector, TOAData
@@ -117,17 +117,20 @@ def _split_epoch_jd(quantity) -> tuple[float, float]:
 # ---------------------------------------------------------------------------
 
 
-def extract_tzr_tdb(
-    model: TimingModel,
+def extract_tzr_toa(
+    model: PINTTimingModel,
     toas: TOAs,
-) -> tuple[float, float]:
-    """Extract the TZR TOA's TDB time from PINT's AbsPhase component.
+) -> dict:
+    """Extract the TZR TOA data from PINT's AbsPhase component.
 
     If the model does not already have an AbsPhase component, one is
     auto-generated from the TOAs (first TOA after PEPOCH), matching
     PINT's guarantee in ``timing_model.phase()``.
 
-    Returns ``(tdb_int, tdb_frac)`` in days (MJD, float64).
+    Returns a dict with keys:
+        ``tdb_int``, ``tdb_frac`` — TDB time in days (MJD, float64)
+        ``freq`` — observing frequency in MHz (float; inf = no dispersion)
+        ``ssb_obs_pos`` — SSB observer position in km, shape (3,)
     """
     if "AbsPhase" not in model.components:
         log.info("No AbsPhase in model; auto-generating TZR TOA from TOAs.")
@@ -135,16 +138,27 @@ def extract_tzr_tdb(
 
     abs_phase = model.components["AbsPhase"]
     tz_toas = abs_phase.get_TZR_toa(toas)
+    tz_tbl = tz_toas.table
 
     tdb_int, tdb_frac = _split_mjd_longdouble(
-        np.asarray(tz_toas.table["tdbld"])
+        np.asarray(tz_tbl["tdbld"])
     )
-    return float(tdb_int[0]), float(tdb_frac[0])
+
+    freq = float(tz_toas.get_freqs().to(u.MHz).value[0])
+
+    ssb_obs_pos = np.asarray(tz_tbl["ssb_obs_pos"], dtype=np.float64)[0]
+
+    return {
+        "tdb_int": float(tdb_int[0]),
+        "tdb_frac": float(tdb_frac[0]),
+        "freq": freq,
+        "ssb_obs_pos": ssb_obs_pos,
+    }
 
 
 def pint_toas_to_jax(
     toas: TOAs,
-    model: Optional[TimingModel] = None,
+    model: Optional[PINTTimingModel] = None,
 ) -> TOAData:
     """Convert PINT TOAs to a JaxPINT :class:`TOAData`.
 
@@ -230,11 +244,17 @@ def pint_toas_to_jax(
         dm_values = toas.get_dms().to(u.pc / u.cm**3).value
         dm_errors = toas.get_dm_errors().to(u.pc / u.cm**3).value
 
-    # -- TZR TDB time for absolute phase -----------------------------------
+    # -- TZR TOA for absolute phase -----------------------------------------
     tzr_tdb_int = None
     tzr_tdb_frac = None
+    tzr_freq = None
+    tzr_ssb_obs_pos = None
     if model is not None:
-        tzr_tdb_int, tzr_tdb_frac = extract_tzr_tdb(model, toas)
+        tzr_info = extract_tzr_toa(model, toas)
+        tzr_tdb_int = tzr_info["tdb_int"]
+        tzr_tdb_frac = tzr_info["tdb_frac"]
+        tzr_freq = tzr_info["freq"]
+        tzr_ssb_obs_pos = jnp.asarray(tzr_info["ssb_obs_pos"], dtype=jnp.float64)
 
     # -- Assemble TOAData ------------------------------------------------
     to_jnp = lambda arr: jnp.asarray(arr, dtype=jnp.float64)
@@ -263,12 +283,14 @@ def pint_toas_to_jax(
         dm_errors=to_jnp(dm_errors) if dm_errors is not None else None,
         tzr_tdb_int=tzr_tdb_int,
         tzr_tdb_frac=tzr_tdb_frac,
+        tzr_freq=tzr_freq,
+        tzr_ssb_obs_pos=tzr_ssb_obs_pos,
         n_toas=n_toas,
         obs_names=obs_names,
     )
 
 
-def pint_model_to_params(model: TimingModel) -> ParameterVector:
+def pint_model_to_params(model: PINTTimingModel) -> ParameterVector:
     """Convert a PINT TimingModel to a JaxPINT :class:`ParameterVector`.
 
     Iterates all parameters, skipping non-numeric types (str, bool, int,
@@ -343,8 +365,8 @@ def pint_model_to_params(model: TimingModel) -> ParameterVector:
 
 def params_to_pint_model(
     params: ParameterVector,
-    model: TimingModel,
-) -> TimingModel:
+    model: PINTTimingModel,
+) -> PINTTimingModel:
     """Write JaxPINT parameter values back into a PINT TimingModel.
 
     Modifies *model* in-place and returns it.  The caller should copy
@@ -376,3 +398,74 @@ def params_to_pint_model(
             param.value = val
 
     return model
+
+
+def build_timing_model(pint_model: PINTTimingModel):
+    """Construct a JaxPINT :class:`~jaxpint.model.TimingModel` from a PINT model.
+
+    Inspects the PINT model's component list and creates the corresponding
+    JaxPINT delay and phase components.  Unrecognised components are logged
+    as warnings and skipped.
+
+    Parameters
+    ----------
+    pint_model : pint.models.TimingModel
+        The PINT timing model to convert.
+
+    Returns
+    -------
+    jaxpint.model.TimingModel
+    """
+    from pint.models.spindown import Spindown as PINTSpindown
+    from pint.models.dispersion_model import DispersionDM as PINTDispersionDM
+
+    from jaxpint.model import TimingModel
+    from jaxpint.spin import Spindown
+    from jaxpint.dispersion_dm import DispersionDM
+
+    delay_components = []
+    phase_components = []
+
+    # Components that are handled implicitly (not mapped to JaxPINT components)
+    _IMPLICIT = {"AbsPhase", "TroposphereDelay"}
+
+    for name, comp in pint_model.components.items():
+        if name in _IMPLICIT:
+            continue
+
+        if isinstance(comp, PINTSpindown):
+            spin_names = tuple(comp.F_terms)
+            phase_components.append(Spindown(spin_param_names=spin_names))
+
+        elif isinstance(comp, PINTDispersionDM):
+            # Collect DM Taylor terms that are set (value not None)
+            dm_names = ["DM"]
+            for idx in sorted(pint_model.get_prefix_mapping("DM")):
+                pname = pint_model.get_prefix_mapping("DM")[idx]
+                param = getattr(pint_model, pname)
+                if param.value is not None and param.value != 0.0:
+                    dm_names.append(pname)
+
+            # Determine epoch name: use DMEPOCH if set, else fall back to PEPOCH
+            dmepoch_name = "DMEPOCH"
+            if comp.DMEPOCH.value is None:
+                dmepoch_name = "PEPOCH"
+
+            delay_components.append(
+                DispersionDM(
+                    dm_param_names=tuple(dm_names),
+                    dmepoch_name=dmepoch_name,
+                )
+            )
+
+        else:
+            log.warning(
+                "Skipping PINT component %r (%s) — not yet ported to JaxPINT",
+                name,
+                type(comp).__name__,
+            )
+
+    return TimingModel(
+        delay_components=tuple(delay_components),
+        phase_components=tuple(phase_components),
+    )

@@ -8,7 +8,8 @@ from .types import PhaseResult, TOAData, ParameterVector
 from .components import PhaseComponent, DelayComponent
 from .spin import Spindown
 from .dispersion_dm import DispersionDM
-from .bridge import pint_toas_to_jax, pint_model_to_params, params_to_pint_model
+from .bridge import pint_toas_to_jax, pint_model_to_params, params_to_pint_model, build_timing_model
+from .model import TimingModel
 from .utils import (
     taylor_horner,
     taylor_horner_deriv,
@@ -26,9 +27,11 @@ __all__ = [
     "DelayComponent",
     "Spindown",
     "DispersionDM",
+    "TimingModel",
     "pint_toas_to_jax",
     "pint_model_to_params",
     "params_to_pint_model",
+    "build_timing_model",
     "taylor_horner",
     "taylor_horner_deriv",
     "weighted_mean",
