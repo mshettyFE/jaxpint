@@ -37,7 +37,7 @@ class TestBinaryIntegration:
         # --- JaxPINT binary delay ---
         toa_data = pint_toas_to_jax(toas)
         params = pint_model_to_params(pint_model)
-        tm, _ = build_timing_model(pint_model)
+        tm, _, _ecorr = build_timing_model(pint_model)
 
         # Find the binary component and call it directly
         from jaxpint.binary.dd import BinaryDD
@@ -57,7 +57,7 @@ class TestBinaryIntegration:
         pint_model, toas = b1855
         toa_data = pint_toas_to_jax(toas)
         params = pint_model_to_params(pint_model)
-        tm, _ = build_timing_model(pint_model)
+        tm, _, _ecorr = build_timing_model(pint_model)
 
         binary_comp = [c for c in tm.delay_components if isinstance(c, BinaryDD)][0]
         jitted = jax.jit(binary_comp)
@@ -74,7 +74,7 @@ class TestBinaryIntegration:
         pint_model, toas = b1855
         toa_data = pint_toas_to_jax(toas)
         params = pint_model_to_params(pint_model)
-        tm, _ = build_timing_model(pint_model)
+        tm, _, _ecorr = build_timing_model(pint_model)
 
         binary_comp = [c for c in tm.delay_components if isinstance(c, BinaryDD)][0]
         n = toa_data.n_toas

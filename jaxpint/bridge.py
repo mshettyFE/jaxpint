@@ -670,7 +670,85 @@ def _build_binary_component(comp, pint_model):
         )
 
 
-def build_timing_model(pint_model: PINTTimingModel):
+def _build_quantization_matrix(
+    tdb_times_s: np.ndarray,
+    ecorr_masks: dict[str, np.ndarray],
+    dt: float = 1.0,
+    nmin: int = 2,
+) -> tuple[np.ndarray, dict[str, tuple[int, int]]]:
+    """Build the ECORR quantization matrix (NumPy, not JIT-compatible).
+
+    Groups TOAs within *dt* seconds into epochs and creates a binary
+    matrix ``U`` mapping TOAs to epochs.  Only epochs with at least
+    *nmin* TOAs are kept.  This mirrors PINT's
+    ``create_ecorr_quantization_matrix``.
+
+    Parameters
+    ----------
+    tdb_times_s : (n_toas,) float64
+        TOA times in TDB seconds.
+    ecorr_masks : dict[str, ndarray]
+        Boolean masks keyed by ECORR parameter name.
+    dt, nmin : float, int
+        Epoch grouping threshold (seconds) and minimum TOAs per epoch.
+
+    Returns
+    -------
+    U : (n_toas, n_total_epochs)
+        Binary quantization matrix.
+    epoch_slices : dict[str, (int, int)]
+        Column-index range for each ECORR parameter.
+    """
+    n_toas = len(tdb_times_s)
+    columns: list[np.ndarray] = []
+    epoch_slices: dict[str, tuple[int, int]] = {}
+    col_offset = 0
+
+    for ecorr_name in sorted(ecorr_masks):
+        mask = ecorr_masks[ecorr_name]
+        subset_indices = np.where(mask)[0]
+        if len(subset_indices) == 0:
+            epoch_slices[ecorr_name] = (col_offset, col_offset)
+            continue
+
+        subset_times = tdb_times_s[subset_indices]
+        isort = np.argsort(subset_times)
+        sorted_times = subset_times[isort]
+        sorted_indices = subset_indices[isort]
+
+        # Group into epochs
+        epochs: list[list[int]] = [[sorted_indices[0]]]
+        ref_time = sorted_times[0]
+        for j in range(1, len(sorted_times)):
+            if sorted_times[j] - ref_time < dt:
+                epochs[-1].append(sorted_indices[j])
+            else:
+                epochs.append([sorted_indices[j]])
+                ref_time = sorted_times[j]
+
+        # Keep only epochs with >= nmin TOAs
+        epochs = [ep for ep in epochs if len(ep) >= nmin]
+
+        start = col_offset
+        for ep in epochs:
+            col = np.zeros(n_toas, dtype=np.float64)
+            col[ep] = 1.0
+            columns.append(col)
+        col_offset += len(epochs)
+        epoch_slices[ecorr_name] = (start, col_offset)
+
+    if columns:
+        U = np.column_stack(columns)
+    else:
+        U = np.zeros((n_toas, 0), dtype=np.float64)
+
+    return U, epoch_slices
+
+
+def build_timing_model(
+    pint_model: PINTTimingModel,
+    toas: Optional[TOAs] = None,
+):
     """Construct a JaxPINT :class:`~jaxpint.model.TimingModel` from a PINT model.
 
     Inspects the PINT model's component list and creates the corresponding
@@ -681,18 +759,23 @@ def build_timing_model(pint_model: PINTTimingModel):
     ----------
     pint_model : pint.models.TimingModel
         The PINT timing model to convert.
+    toas : pint.toa.TOAs, optional
+        If provided and the model has an ``EcorrNoise`` component, the
+        quantization matrix is built and an :class:`EcorrNoise` instance
+        is returned.
 
     Returns
     -------
-    (jaxpint.model.TimingModel, Optional[jaxpint.noise.ScaleToaError])
-        The timing model and, if the PINT model contains a ``ScaleToaError``
-        component, the corresponding JaxPINT noise model.
+    (TimingModel, Optional[ScaleToaError], Optional[EcorrNoise])
+        The timing model, optional white noise model, and optional ECORR
+        noise model.
     """
     from pint.models.spindown import Spindown as PINTSpindown
     from pint.models.dispersion_model import DispersionDM as PINTDispersionDM
     from pint.models.astrometry import AstrometryEquatorial as PINTAstrometryEquatorial
     from pint.models.astrometry import AstrometryEcliptic as PINTAstrometryEcliptic
     from pint.models.noise_model import ScaleToaError as PINTScaleToaError
+    from pint.models.noise_model import EcorrNoise as PINTEcorrNoise
     from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
     from pint.models.solar_system_shapiro import SolarSystemShapiro as PINTSolarSystemShapiro
     from pint.models.troposphere_delay import TroposphereDelay as PINTTroposphereDelay
@@ -701,13 +784,14 @@ def build_timing_model(pint_model: PINTTimingModel):
     from jaxpint.spin import Spindown
     from jaxpint.dispersion_dm import DispersionDM
     from jaxpint.astrometry import AstrometryEquatorial, AstrometryEcliptic
-    from jaxpint.noise import ScaleToaError
+    from jaxpint.noise import EcorrNoise, ScaleToaError
     from jaxpint.shapiro import SolarSystemShapiroDelay
     from jaxpint.troposphere import TroposphereDelay
 
     delay_components = []
     phase_components = []
     noise_model = None
+    ecorr_noise = None
 
     # Cached astrometry param names (reused by Shapiro component).
     _astro_raj = "RAJ"
@@ -843,6 +927,41 @@ def build_timing_model(pint_model: PINTTimingModel):
                 equad_names=equad_names,
             )
 
+        elif isinstance(comp, PINTEcorrNoise):
+            comp.setup()
+            ecorr_names_sorted = tuple(sorted(comp.ECORRs.keys()))
+            if toas is not None and len(ecorr_names_sorted) > 0:
+                # Need TDB times in seconds for epoch grouping
+                if "tdbld" not in toas.table.colnames:
+                    toas.compute_TDBs()
+                tdb_ld = np.asarray(toas.table["tdbld"])
+                tdb_s = np.float64(tdb_ld) * 86400.0
+
+                # Collect masks (must match flag_masks built by pint_toas_to_jax)
+                ecorr_masks = {}
+                for ename in ecorr_names_sorted:
+                    param = getattr(pint_model, ename)
+                    idx = param.select_toa_mask(toas)
+                    mask = np.zeros(toas.ntoas, dtype=bool)
+                    if len(idx) > 0:
+                        mask[idx] = True
+                    ecorr_masks[ename] = mask
+
+                U, eslices = _build_quantization_matrix(tdb_s, ecorr_masks)
+                ecorr_epoch_slices = tuple(
+                    eslices[n] for n in ecorr_names_sorted
+                )
+                ecorr_noise = EcorrNoise(
+                    ecorr_names=ecorr_names_sorted,
+                    quantization_matrix=jnp.asarray(U),
+                    ecorr_epoch_slices=ecorr_epoch_slices,
+                )
+            elif toas is None and len(ecorr_names_sorted) > 0:
+                log.warning(
+                    "EcorrNoise component found but no TOAs provided to "
+                    "build_timing_model — ECORR will not be available"
+                )
+
         else:
             log.warning(
                 "Skipping PINT component %r (%s) — not yet ported to JaxPINT",
@@ -854,4 +973,4 @@ def build_timing_model(pint_model: PINTTimingModel):
         delay_components=tuple(delay_components),
         phase_components=tuple(phase_components),
     )
-    return timing_model, noise_model
+    return timing_model, noise_model, ecorr_noise

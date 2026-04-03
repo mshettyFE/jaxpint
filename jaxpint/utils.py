@@ -284,6 +284,50 @@ def woodbury_dot(
     return x_Cinv_y, logdet_C
 
 
+def woodbury_solve(
+    Ndiag: Float[Array, " n"],
+    U: Float[Array, "n k"],
+    Phidiag: Float[Array, " k"],
+    B: Float[Array, "n m"],
+) -> Float[Array, "n m"]:
+    r"""Compute :math:`C^{-1} B` where :math:`C = \mathrm{diag}(N) + U\,\mathrm{diag}(\Phi)\,U^T`.
+
+    Uses the Woodbury identity::
+
+        C^{-1} = N^{-1} - N^{-1} U Σ^{-1} U^T N^{-1}
+
+    where :math:`\Sigma = \Phi^{-1} + U^T N^{-1} U`.
+
+    Parameters
+    ----------
+    Ndiag : 1-D array, shape (n,)
+        Diagonal of *N* (positive).
+    U : 2-D array, shape (n, k)
+        Low-rank update basis.
+    Phidiag : 1-D array, shape (k,)
+        Diagonal of :math:`\Phi` (positive).
+    B : 2-D array, shape (n, m)
+        Right-hand side matrix.
+
+    Returns
+    -------
+    Cinv_B : array, shape (n, m)
+        The product :math:`C^{-1} B`.
+    """
+    Ninv = 1.0 / Ndiag
+    Ninv_B = Ninv[:, None] * B              # (n, m)
+    Ninv_U = Ninv[:, None] * U              # (n, k)
+
+    Sigma = jnp.diag(1.0 / Phidiag) + U.T @ Ninv_U   # (k, k)
+    Sigma_cf = jax.scipy.linalg.cho_factor(Sigma)
+
+    # Σ^{-1} (U^T N^{-1} B)
+    UtNinvB = U.T @ Ninv_B                  # (k, m)
+    Sigma_inv_UtNinvB = jax.scipy.linalg.cho_solve(Sigma_cf, UtNinvB)  # (k, m)
+
+    return Ninv_B - Ninv_U @ Sigma_inv_UtNinvB
+
+
 # ---------------------------------------------------------------------------
 # Ecliptic obliquity constants and rotation
 # ---------------------------------------------------------------------------

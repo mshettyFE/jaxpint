@@ -10,11 +10,11 @@ from .spin import Spindown
 from .dispersion_dm import DispersionDM
 from .bridge import pint_toas_to_jax, pint_model_to_params, params_to_pint_model, build_timing_model
 from .model import TimingModel
-from .noise import ScaleToaError
+from .noise import ScaleToaError, EcorrNoise
 from .astrometry import AstrometryEcliptic
 from .shapiro import SolarSystemShapiroDelay
 from .troposphere import TroposphereDelay
-from .fitter import WLSFitter, WLSFitResult
+from .fitter import WLSFitter, WLSFitResult, GLSFitter, GLSFitResult
 from .utils import (
     taylor_horner,
     taylor_horner_deriv,
@@ -22,6 +22,7 @@ from .utils import (
     normalize_designmatrix,
     sherman_morrison_dot,
     woodbury_dot,
+    woodbury_solve,
 )
 
 __all__ = [
@@ -49,4 +50,8 @@ __all__ = [
     "normalize_designmatrix",
     "sherman_morrison_dot",
     "woodbury_dot",
+    "woodbury_solve",
+    "EcorrNoise",
+    "GLSFitter",
+    "GLSFitResult",
 ]

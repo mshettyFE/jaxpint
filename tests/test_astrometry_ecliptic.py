@@ -244,7 +244,7 @@ class TestBridge:
 
     def test_bridge_creates_ecliptic_component(self, ecl_px):
         _, _, _, pint_model = ecl_px
-        jax_model, _ = build_timing_model(pint_model)
+        jax_model, _, _ecorr = build_timing_model(pint_model)
 
         ecl_comps = [
             c for c in jax_model.delay_components
@@ -256,7 +256,7 @@ class TestBridge:
     def test_bridge_full_phase_finite(self, ecl_px):
         """Full model phase is finite with ecliptic astrometry."""
         toa_data, params, _, pint_model = ecl_px
-        jax_model, _ = build_timing_model(pint_model)
+        jax_model, _, _ecorr = build_timing_model(pint_model)
 
         phase = jax_model.compute_phase(toa_data, params)
         total = phase.int + phase.frac
@@ -375,7 +375,7 @@ def jax_fit_result(fit_data):
     m_true, toas = fit_data
     toa_data = pint_toas_to_jax(toas, model=m_true)
     params = pint_model_to_params(m_true)
-    jax_model, _noise = build_timing_model(m_true)
+    jax_model, _noise, _ecorr = build_timing_model(m_true)
     fitter = WLSFitter(jax_model, toa_data, params)
     fitter.fit_toas(maxiter=3)
     return fitter
@@ -459,7 +459,7 @@ class TestB1855Delay:
         # JaxPINT delay — extract only the astrometry component
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model)
-        jax_model, _ = build_timing_model(pint_model)
+        jax_model, _, _ecorr = build_timing_model(pint_model)
 
         ecl_comps = [
             c for c in jax_model.delay_components
@@ -478,7 +478,7 @@ class TestB1855Delay:
         pint_model, toas = b1855
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model)
-        jax_model, _ = build_timing_model(pint_model)
+        jax_model, _, _ecorr = build_timing_model(pint_model)
 
         ecl_comp = [
             c for c in jax_model.delay_components

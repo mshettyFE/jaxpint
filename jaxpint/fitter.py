@@ -1,7 +1,11 @@
-"""Weighted Least Squares fitter for JaxPINT.
+"""WLS and GLS fitters for JaxPINT.
 
-Implements a Gauss-Newton WLS fitter that uses JAX autodiff for the
-design matrix and JAX's native ``jnp.linalg.svd`` for the SVD solve.
+Implements Gauss-Newton fitters that use JAX autodiff for the design
+matrix and JAX's native linear-algebra routines for the solve step.
+
+* ``WLSFitter`` — Weighted Least Squares (diagonal covariance).
+* ``GLSFitter`` — Generalised Least Squares (supports ECORR via
+  low-rank covariance updates).
 """
 
 from __future__ import annotations
@@ -15,10 +19,10 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.model import TimingModel
-from jaxpint.noise import ScaleToaError
+from jaxpint.noise import EcorrNoise, ScaleToaError
 from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.utils import normalize_designmatrix
+from jaxpint.utils import normalize_designmatrix, woodbury_dot, woodbury_solve
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +289,379 @@ class WLSFitter:
             dof=dof,
             reduced_chi2=chi2_val / dof,
             residuals=final_resid,
+        )
+
+        return chi2_val
+
+
+# ---------------------------------------------------------------------------
+# GLS (Generalised Least Squares) fitter
+# ---------------------------------------------------------------------------
+
+
+def _subtract_gls_weighted_mean(
+    residuals: Float[Array, " n"],
+    Ndiag: Float[Array, " n"],
+    U: Float[Array, "n k"],
+    Phidiag: Float[Array, " k"],
+) -> Float[Array, " n"]:
+    """Subtract the GLS-weighted mean from *residuals*.
+
+    The GLS weighted mean is ``(1^T C^{-1} r) / (1^T C^{-1} 1)``
+    where ``C = diag(N) + U diag(Phi) U^T``.
+    """
+    ones = jnp.ones_like(residuals)
+    numerator, _ = woodbury_dot(Ndiag, U, Phidiag, ones, residuals)
+    denominator, _ = woodbury_dot(Ndiag, U, Phidiag, ones, ones)
+    wmean = numerator / denominator
+    return residuals - wmean
+
+
+def gls_step_fullcov(
+    residuals: Float[Array, " n_toas"],
+    Ndiag: Float[Array, " n_toas"],
+    U: Float[Array, "n_toas n_epochs"],
+    Phidiag: Float[Array, " n_epochs"],
+    M: Float[Array, "n_toas n_free"],
+    threshold: float,
+) -> tuple[
+    Float[Array, " n_free"],
+    Float[Array, "n_free n_free"],
+    Float[Array, " n_free"],
+]:
+    """One GLS solve via full (Woodbury) covariance inversion + SVD.
+
+    Computes ``M^T C^{-1} M`` and ``M^T C^{-1} r`` using
+    :func:`~jaxpint.utils.woodbury_solve`, then SVD-solves the
+    ``(n_free, n_free)`` normal equations.
+
+    Returns
+    -------
+    dpars : (n_free,)
+    covariance : (n_free, n_free)
+    norms : (n_free,)
+    """
+    # C^{-1} M  and  C^{-1} r  via Woodbury (never forms n_toas×n_toas)
+    Mr = jnp.column_stack([M, residuals[:, None]])          # (n, n_free+1)
+    Cinv_Mr = woodbury_solve(Ndiag, U, Phidiag, Mr)         # (n, n_free+1)
+    Cinv_M = Cinv_Mr[:, :-1]                                # (n, n_free)
+    Cinv_r = Cinv_Mr[:, -1]                                 # (n,)
+
+    mtcm = M.T @ Cinv_M                                     # (n_free, n_free)
+    mtcy = M.T @ Cinv_r                                     # (n_free,)
+
+    # Normalize for numerical stability
+    M2, norms, _degen = normalize_designmatrix(mtcm)
+    # normalize_designmatrix works on (n, p) — we want column norms of mtcm
+    # but mtcm is square (n_free, n_free).  Use column norms directly.
+    norms_col = jnp.sqrt(jnp.diag(mtcm))
+    norms_col = jnp.where(norms_col == 0.0, 1.0, norms_col)
+    mtcm_n = mtcm / norms_col / norms_col[:, None]
+    mtcy_n = mtcy / norms_col
+
+    # SVD solve of the (n_free, n_free) system
+    Usv, S, Vt = jnp.linalg.svd(mtcm_n, full_matrices=False)
+    S_safe = jnp.where(S <= threshold * S[0], jnp.inf, S)
+
+    dpars_n = Vt.T @ ((Usv.T @ mtcy_n) / S_safe)
+    dpars = dpars_n / norms_col
+
+    Sigma_n = (Vt.T / S_safe**2) @ Vt
+    covariance = (Sigma_n / norms_col).T / norms_col
+
+    return dpars, covariance, norms_col
+
+
+def gls_step_augmented(
+    residuals: Float[Array, " n_toas"],
+    Ndiag: Float[Array, " n_toas"],
+    U: Float[Array, "n_toas n_epochs"],
+    Phidiag: Float[Array, " n_epochs"],
+    M: Float[Array, "n_toas n_free"],
+    threshold: float,
+) -> tuple[
+    Float[Array, " n_free"],
+    Float[Array, "n_free n_free"],
+    Float[Array, " n_aug"],
+    Float[Array, " n_epochs"],
+]:
+    """One GLS solve via the augmented design-matrix approach.
+
+    Augments the design matrix as ``M_aug = [M | U]`` and solves with
+    diagonal weighting ``N^{-1}`` plus a prior on noise amplitudes.
+
+    Returns
+    -------
+    dpars : (n_free,)
+        Timing parameter updates.
+    covariance : (n_free, n_free)
+        Timing parameter covariance.
+    norms : (n_free + n_epochs,)
+        Column norms of the augmented system (diagnostic).
+    noise_realizations : (n_epochs,)
+        MAP noise amplitude estimates.
+    """
+    n_free = M.shape[1]
+    n_epochs = U.shape[1]
+    n_aug = n_free + n_epochs
+
+    # Augmented design matrix
+    M_aug = jnp.concatenate([M, U], axis=1)                 # (n_toas, n_aug)
+
+    # Diagonal weighting
+    Ninv = 1.0 / Ndiag
+    r_w = residuals * Ninv
+    M_w = M_aug * Ninv[:, None]
+
+    # M_aug^T N^{-1} M_aug
+    mtcm = M_aug.T @ M_w                                    # (n_aug, n_aug)
+    mtcy = M_aug.T @ r_w                                    # (n_aug,)
+
+    # Add prior: uninformative (1e-40) on timing cols, 1/Phi on noise cols
+    prior_inv = jnp.concatenate([
+        jnp.full(n_free, 1e-40),
+        1.0 / Phidiag,
+    ])
+    mtcm = mtcm + jnp.diag(prior_inv)
+
+    # Normalize columns
+    norms = jnp.sqrt(jnp.diag(mtcm))
+    norms = jnp.where(norms == 0.0, 1.0, norms)
+    mtcm_n = mtcm / norms / norms[:, None]
+    mtcy_n = mtcy / norms
+
+    # SVD solve
+    Usv, S, Vt = jnp.linalg.svd(mtcm_n, full_matrices=False)
+    S_safe = jnp.where(S <= threshold * S[0], jnp.inf, S)
+
+    xhat_n = Vt.T @ ((Usv.T @ mtcy_n) / S_safe)
+    xhat = xhat_n / norms
+
+    xvar_n = (Vt.T / S_safe**2) @ Vt
+    xvar = (xvar_n / norms).T / norms
+
+    # Extract timing parameters and noise realizations
+    dpars = xhat[:n_free]
+    noise_realizations = xhat[n_free:]
+    covariance = xvar[:n_free, :n_free]
+
+    return dpars, covariance, norms, noise_realizations
+
+
+def compute_gls_chi2(
+    residuals: Float[Array, " n_toas"],
+    Ndiag: Float[Array, " n_toas"],
+    U: Float[Array, "n_toas n_epochs"],
+    Phidiag: Float[Array, " n_epochs"],
+) -> Float[Array, ""]:
+    """GLS chi-squared: ``r^T C^{-1} r``."""
+    chi2, _ = woodbury_dot(Ndiag, U, Phidiag, residuals, residuals)
+    return chi2
+
+
+# ---------------------------------------------------------------------------
+# GLS result container
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class GLSFitResult:
+    """Result of a GLS fit."""
+
+    params: ParameterVector
+    covariance_matrix: Float[Array, "n_free n_free"]
+    correlation_matrix: Float[Array, "n_free n_free"]
+    parameter_uncertainties: Float[Array, " n_free"]
+    chi2: float
+    dof: int
+    reduced_chi2: float
+    residuals: Float[Array, " n_toas"]
+    noise_realizations: Optional[Float[Array, " n_epochs"]]
+
+
+# ---------------------------------------------------------------------------
+# GLS fitter class
+# ---------------------------------------------------------------------------
+
+
+class GLSFitter:
+    """Generalised Least Squares fitter (supports ECORR).
+
+    When no ``ecorr_noise`` is provided the GLS fitter reduces to
+    standard WLS (diagonal covariance).
+
+    Parameters
+    ----------
+    model : TimingModel
+        JaxPINT timing model.
+    toa_data : TOAData
+        Pre-extracted TOA data.
+    params : ParameterVector
+        Initial parameter values.
+    noise_model : ScaleToaError, optional
+        White noise model (EFAC/EQUAD).
+    ecorr_noise : EcorrNoise, optional
+        Correlated noise model (ECORR).
+    """
+
+    def __init__(
+        self,
+        model: TimingModel,
+        toa_data: TOAData,
+        params: ParameterVector,
+        noise_model: Optional[ScaleToaError] = None,
+        ecorr_noise: Optional[EcorrNoise] = None,
+    ):
+        self.model = model
+        self.toa_data = toa_data
+        self.params = params
+        self.noise_model = noise_model
+        self.ecorr_noise = ecorr_noise
+        self.result: Optional[GLSFitResult] = None
+
+    def fit_toas(
+        self,
+        maxiter: int = 1,
+        threshold: Optional[float] = None,
+        full_cov: bool = False,
+    ) -> float:
+        """Run the GLS fit.
+
+        Parameters
+        ----------
+        maxiter : int
+            Number of Gauss-Newton iterations.
+        threshold : float, optional
+            SVD threshold (default ``1e-14 * dim``).
+        full_cov : bool
+            If True, use Woodbury-based full covariance inversion.
+            If False (default), use the augmented design-matrix approach.
+
+        Returns
+        -------
+        float
+            Final chi-squared value.
+        """
+        n_toas = self.toa_data.n_toas
+
+        # Set up ECORR components (or empty arrays for pure WLS)
+        if self.ecorr_noise is not None:
+            U = self.ecorr_noise.quantization_matrix
+        else:
+            U = jnp.zeros((n_toas, 0))
+
+        n_epochs = U.shape[1]
+
+        if threshold is None:
+            if full_cov:
+                dim = self.params.n_free
+            else:
+                dim = self.params.n_free + n_epochs
+            threshold = 1e-14 * max(n_toas, dim)
+
+        covariance = None
+        noise_realizations = None
+
+        for _ in range(maxiter):
+            # 0. White noise
+            if self.noise_model is not None:
+                sigma = self.noise_model.scaled_sigma(
+                    self.toa_data, self.params
+                )
+            else:
+                sigma = self.toa_data.error
+            Ndiag = sigma ** 2
+
+            # 1. ECORR weights
+            if self.ecorr_noise is not None:
+                Phidiag = self.ecorr_noise.ecorr_weights(self.params)
+            else:
+                Phidiag = jnp.zeros(0)
+
+            # 2. Time residuals
+            time_resid = compute_time_residuals(
+                self.model, self.toa_data, self.params
+            )
+
+            # 3. Subtract GLS weighted mean
+            if n_epochs > 0:
+                time_resid = _subtract_gls_weighted_mean(
+                    time_resid, Ndiag, U, Phidiag
+                )
+            else:
+                time_resid = _subtract_weighted_mean(time_resid, sigma)
+
+            # 4. Design matrix
+            M = compute_design_matrix(
+                self.model, self.toa_data, self.params
+            )
+
+            # 5. GLS solve
+            if full_cov:
+                dpars, covariance, _norms = gls_step_fullcov(
+                    time_resid, Ndiag, U, Phidiag, M, threshold
+                )
+                noise_realizations = None
+            else:
+                if n_epochs > 0:
+                    dpars, covariance, _norms, noise_realizations = (
+                        gls_step_augmented(
+                            time_resid, Ndiag, U, Phidiag, M, threshold
+                        )
+                    )
+                else:
+                    # Pure WLS path — no augmentation needed
+                    dpars, covariance, _norms = wls_step(
+                        time_resid, sigma, M, threshold
+                    )
+                    noise_realizations = None
+
+            # 6. Update parameters
+            new_free = self.params.free_values() + dpars
+            self.params = self.params.with_free_values(new_free)
+
+        # Final residuals and chi2
+        if self.noise_model is not None:
+            sigma = self.noise_model.scaled_sigma(self.toa_data, self.params)
+        else:
+            sigma = self.toa_data.error
+        Ndiag = sigma ** 2
+
+        if self.ecorr_noise is not None:
+            Phidiag = self.ecorr_noise.ecorr_weights(self.params)
+        else:
+            Phidiag = jnp.zeros(0)
+
+        final_resid = compute_time_residuals(
+            self.model, self.toa_data, self.params
+        )
+        if n_epochs > 0:
+            final_resid = _subtract_gls_weighted_mean(
+                final_resid, Ndiag, U, Phidiag
+            )
+        else:
+            final_resid = _subtract_weighted_mean(final_resid, sigma)
+
+        if n_epochs > 0:
+            chi2_val = float(compute_gls_chi2(final_resid, Ndiag, U, Phidiag))
+        else:
+            chi2_val = float(compute_chi2(final_resid, sigma))
+
+        dof = n_toas - self.params.n_free
+
+        errors = jnp.sqrt(jnp.diag(covariance))
+        correlation = (covariance / errors).T / errors
+
+        self.result = GLSFitResult(
+            params=self.params,
+            covariance_matrix=covariance,
+            correlation_matrix=correlation,
+            parameter_uncertainties=errors,
+            chi2=chi2_val,
+            dof=dof,
+            reduced_chi2=chi2_val / dof,
+            residuals=final_resid,
+            noise_realizations=noise_realizations,
         )
 
         return chi2_val

@@ -282,7 +282,7 @@ UNITS         TDB
         # JaxPINT
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model)
-        _tm, noise_model = build_timing_model(pint_model)
+        _tm, noise_model, _ecorr = build_timing_model(pint_model)
 
         assert noise_model is not None
         jax_sigma = noise_model.scaled_sigma(toa_data, params)
@@ -317,7 +317,7 @@ UNITS         TDB
         # --- JaxPINT WLS fit ---
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model)
-        jax_model, noise_model = build_timing_model(pint_model)
+        jax_model, noise_model, _ecorr = build_timing_model(pint_model)
 
         assert noise_model is not None
         fitter = WLSFitter(jax_model, toa_data, params, noise_model=noise_model)
