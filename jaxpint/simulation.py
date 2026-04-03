@@ -69,18 +69,13 @@ def zero_residuals(
     params: ParameterVector,
     *,
     maxiter: int = 10,
-    tolerance: float = 1e-7,
+    tolerance: float = 1e-9,
 ) -> TOAData:
     """Iteratively adjust TOA times until residuals are approximately zero.
 
     Each iteration computes time residuals and subtracts them from the
     TOA timestamps, converging in ~2-3 iterations.  After convergence
     the TOA timestamps encode the full deterministic timing model.
-
-    The default tolerance (100 ns) accounts for the float64 precision
-    floor: for a 100 Hz pulsar over 2000 days, the absolute phase
-    reaches ~8.6e9 cycles, limiting time-residual precision to ~10 ns.
-    This is well below typical measurement uncertainties (microseconds).
 
     Parameters
     ----------
@@ -94,7 +89,7 @@ def zero_residuals(
         Maximum number of iterations.
     tolerance : float
         Convergence threshold on ``max(|residual|)`` in seconds.
-        Default is 1e-7 s (100 ns).
+        Default is 1e-9 s (1 ns).
 
     Returns
     -------

@@ -20,6 +20,7 @@ from .simulation import apply_delay_to_toas, zero_residuals
 from .utils import (
     taylor_horner,
     taylor_horner_deriv,
+    taylor_horner_phase,
     weighted_mean,
     normalize_designmatrix,
     sherman_morrison_dot,
@@ -49,6 +50,7 @@ __all__ = [
     "build_timing_model",
     "taylor_horner",
     "taylor_horner_deriv",
+    "taylor_horner_phase",
     "weighted_mean",
     "normalize_designmatrix",
     "sherman_morrison_dot",

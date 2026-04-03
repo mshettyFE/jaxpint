@@ -21,7 +21,7 @@ from jaxpint.components import PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.utils import taylor_horner, taylor_horner_deriv
+from jaxpint.utils import taylor_horner, taylor_horner_deriv, taylor_horner_phase
 
 
 class Spindown(PhaseComponent):
@@ -111,13 +111,11 @@ class Spindown(PhaseComponent):
         PhaseResult
             Pulse phase in cycles (dimensionless), split as int + frac.
         """
-        dt = self._compute_dt(toa_data, params, delay)
+        pepoch_int, pepoch_frac = params.epoch_value(self.pepoch_name)
+        dt_int_days = toa_data.tdb_int - pepoch_int
+        dt_frac_days = toa_data.tdb_frac - pepoch_frac
         coeffs = self._get_spin_coeffs(params)
-        phase = taylor_horner(dt, coeffs)
-
-        phase_int = jnp.floor(phase)
-        phase_frac = phase - phase_int
-        return PhaseResult.create(phase_int, phase_frac)
+        return taylor_horner_phase(dt_int_days, dt_frac_days, delay, coeffs)
 
     def change_pepoch(
         self,

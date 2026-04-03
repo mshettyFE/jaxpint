@@ -16,7 +16,8 @@ from jaxtyping import Array, Float, Bool
 if TYPE_CHECKING:
     from jaxpint.types import TOAData, ParameterVector
 
-from jaxpint.constants import ARCSEC_TO_RAD, DAYS_PER_JULIAN_YEAR, OBLIQUITY_ARCSEC, RAD_PER_MAS
+from jaxpint.constants import ARCSEC_TO_RAD, DAYS_PER_JULIAN_YEAR, OBLIQUITY_ARCSEC, RAD_PER_MAS, SECS_PER_DAY
+from jaxpint.phase_result import PhaseResult
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +95,77 @@ def taylor_horner_deriv(
         return result * x / fact + coeff
 
     return jax.lax.fori_loop(0, n_terms, body, jnp.zeros_like(x))
+
+
+def taylor_horner_phase(
+    dt_int_days: Float[Array, " n"],
+    dt_frac_days: Float[Array, " n"],
+    delay: Float[Array, " n"],
+    coeffs: Float[Array, " n_coeffs"],
+) -> PhaseResult:
+    """Evaluate a Taylor series with phase precision via int/frac Horner.
+
+    Uses the day decomposition ``dt = dt_int_days * 86400 + dt_frac_s``
+    to split each Horner multiplication into integer (exact) and
+    fractional (precise) parts, avoiding the precision loss that occurs
+    when a large absolute phase (~10^10 cycles) is computed as a single
+    float64.
+
+    Parameters
+    ----------
+    dt_int_days : (n_toas,)
+        Integer MJD day difference from epoch (exact).
+    dt_frac_days : (n_toas,)
+        Fractional MJD day difference from epoch.
+    delay : (n_toas,)
+        Accumulated signal delay in seconds.
+    coeffs : (n_coeffs,)
+        Taylor coefficients: ``coeffs[k]`` multiplies ``dt**k / k!``.
+
+    Returns
+    -------
+    PhaseResult
+        Phase in cycles, split as integer + fractional part.
+    """
+    dt_int_days = jnp.asarray(dt_int_days, dtype=jnp.float64)
+    dt_frac_days = jnp.asarray(dt_frac_days, dtype=jnp.float64)
+    delay = jnp.asarray(delay, dtype=jnp.float64)
+    coeffs = jnp.asarray(coeffs, dtype=jnp.float64)
+
+    x_int_s = dt_int_days * SECS_PER_DAY            # exact integer seconds
+    x_frac_s = dt_frac_days * SECS_PER_DAY - delay  # fractional seconds
+
+    n_coeffs = coeffs.shape[0]
+
+    def body(i, state):
+        phase_int, phase_frac = state
+        coeff = coeffs[n_coeffs - 1 - i]
+        fact = jnp.asarray(n_coeffs - i, dtype=jnp.float64)
+
+        # Split phase_frac into integer + remainder in [-0.5, 0.5).
+        # Using round (not floor) so tiny negative values like -1e-15
+        # stay in the remainder instead of producing a -1 carry.
+        pf_int = jnp.round(phase_frac)
+        pf_rem = phase_frac - pf_int
+        c_int = phase_int + pf_int
+
+        # Multiply by x/fact, keeping integer and fractional separate.
+        # c_int * x_int_s is int × int (exact when product < 2^53).
+        new_int = c_int * (x_int_s / fact)
+        new_frac = (c_int * (x_frac_s / fact)
+                    + pf_rem * (x_int_s / fact)
+                    + pf_rem * (x_frac_s / fact)
+                    + coeff)
+
+        # Normalize: carry overflow from frac to int.
+        # Using round (not floor) so the remainder stays in [-0.5, 0.5),
+        # consistent with the round-based split at the start.
+        overflow = jnp.round(new_frac)
+        return new_int + overflow, new_frac - overflow
+
+    z = jnp.zeros_like(dt_int_days)
+    result_int, result_frac = jax.lax.fori_loop(0, n_coeffs, body, (z, z))
+    return PhaseResult.create(result_int, result_frac)
 
 
 # ---------------------------------------------------------------------------

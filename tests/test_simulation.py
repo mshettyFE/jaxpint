@@ -196,9 +196,9 @@ class TestZeroResiduals:
     """Tests for zero_residuals."""
 
     def test_converges_from_raw(self, jax_objects_raw):
-        """Starting from unzeroed TOAs, residuals should converge."""
+        """Starting from unzeroed TOAs, residuals should converge to < 1 ns."""
         model, toa_data, params = jax_objects_raw
-        tol = 1e-7  # 100 nanoseconds (float64 precision floor)
+        tol = 1e-9  # 1 nanosecond
 
         # Raw TOAs have large residuals (milliseconds)
         raw_resids = compute_time_residuals(model, toa_data, params)
@@ -213,7 +213,7 @@ class TestZeroResiduals:
     def test_already_zeroed_is_noop(self, jax_objects_zeroed):
         """If residuals are already below tolerance, TOAs should not change."""
         model, toa_data, params = jax_objects_zeroed
-        tol = 1e-7
+        tol = 1e-9
 
         zeroed = zero_residuals(model, toa_data, params, tolerance=tol)
         zeroed_again = zero_residuals(model, zeroed, params, tolerance=tol)
@@ -224,13 +224,9 @@ class TestZeroResiduals:
         np.testing.assert_array_equal(zeroed.tdb_int, zeroed_again.tdb_int)
 
     def test_vs_pint(self, jax_objects_raw):
-        """JaxPINT zero_residuals should produce residuals comparable to PINT.
-
-        Both produce TOAs with residuals well below measurement noise.
-        The float64 precision floor (~10 ns) is acceptable.
-        """
+        """JaxPINT zero_residuals should produce sub-nanosecond residuals."""
         model, toa_data, params = jax_objects_raw
-        tol = 1e-7
+        tol = 1e-9
 
         jax_zeroed = zero_residuals(model, toa_data, params, tolerance=tol)
         jax_resids = compute_time_residuals(model, jax_zeroed, params)
