@@ -13,6 +13,7 @@ C_M_PER_S: float = 299_792_458.0       # Speed of light (m/s)
 
 AU_KM: float = 149_597_870.7           # Astronomical unit (km), IAU 2012
 KPC_TO_KM: float = 3.0856775814913673e16  # 1 kiloparsec (km)
+PC_TO_KM: float = 3.0856775814913673e13   # 1 parsec (km)
 TSUN: float = 4.92549094830932e-6      # GM_sun / c^3 (s)
 EARTH_R_KM: float = 6356.766           # Earth radius at 45 deg latitude (km)
 

@@ -274,6 +274,7 @@ def build_timing_model(
     from pint.models.noise_model import EcorrNoise as PINTEcorrNoise
     from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
     from pint.models.solar_system_shapiro import SolarSystemShapiro as PINTSolarSystemShapiro
+    from pint.models.solar_wind_dispersion import SolarWindDispersion as PINTSolarWindDispersion
     from pint.models.troposphere_delay import TroposphereDelay as PINTTroposphereDelay
 
     from jaxpint.model import TimingModel
@@ -282,6 +283,7 @@ def build_timing_model(
     from jaxpint.astrometry import AstrometryEquatorial, AstrometryEcliptic
     from jaxpint.noise import EcorrNoise, ScaleToaError
     from jaxpint.shapiro import SolarSystemShapiroDelay
+    from jaxpint.solar_wind import SolarWindDispersion
     from jaxpint.troposphere import TroposphereDelay
 
     delay_components = []
@@ -405,6 +407,42 @@ def build_timing_model(
                     pmdec_name=_astro_pmdec,
                     posepoch_name=_astro_posepoch,
                     planet_shapiro=bool(comp.PLANET_SHAPIRO.value),
+                    obliquity_arcsec=_astro_obliquity_arcsec,
+                )
+            )
+
+        elif isinstance(comp, PINTSolarWindDispersion):
+            # Skip if NE_SW is zero and no derivatives are set (no effect).
+            ne_sw_names = ["NE_SW"]
+            for idx in sorted(pint_model.get_prefix_mapping("NE_SW")):
+                pname = pint_model.get_prefix_mapping("NE_SW")[idx]
+                param = getattr(pint_model, pname)
+                if param.value is not None and param.value != 0.0:
+                    ne_sw_names.append(pname)
+
+            if len(ne_sw_names) == 1 and comp.NE_SW.value == 0.0:
+                log.info(
+                    "Skipping SolarWindDispersion — NE_SW is zero"
+                )
+                continue
+
+            swm = comp.SWM.value
+            swepoch_name = "SWEPOCH"
+            if comp.SWEPOCH.value is None:
+                swepoch_name = "PEPOCH"
+            swp_name = "SWP" if swm == 1 else None
+
+            delay_components.append(
+                SolarWindDispersion(
+                    ne_sw_param_names=tuple(ne_sw_names),
+                    swepoch_name=swepoch_name,
+                    swm=swm,
+                    swp_name=swp_name,
+                    raj_name=_astro_raj,
+                    decj_name=_astro_decj,
+                    pmra_name=_astro_pmra,
+                    pmdec_name=_astro_pmdec,
+                    posepoch_name=_astro_posepoch,
                     obliquity_arcsec=_astro_obliquity_arcsec,
                 )
             )

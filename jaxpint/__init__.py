@@ -13,6 +13,7 @@ from .model import TimingModel
 from .noise import ScaleToaError, EcorrNoise
 from .astrometry import AstrometryEcliptic
 from .shapiro import SolarSystemShapiroDelay
+from .solar_wind import SolarWindDispersion
 from .troposphere import TroposphereDelay
 from .fitter import WLSFitter, WLSFitResult, GLSFitter, GLSFitResult
 from .utils import (
@@ -37,6 +38,7 @@ __all__ = [
     "ScaleToaError",
     "AstrometryEcliptic",
     "SolarSystemShapiroDelay",
+    "SolarWindDispersion",
     "TroposphereDelay",
     "WLSFitter",
     "WLSFitResult",
