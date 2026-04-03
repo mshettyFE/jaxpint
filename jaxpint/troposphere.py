@@ -52,6 +52,14 @@ def _herring_map(
 
     Maps zenith delay to the delay at elevation angle ``alt``.
     At zenith (sin_alt=1) this returns 1.0.
+
+    Parameters
+    ----------
+    sin_alt : (n,)
+        Sine of the source elevation angle.
+    a, b, c : (n,)
+        Continued-fraction coefficients, interpolated from latitude
+        and seasonal tables (Niell 1996, Table 1).
     """
     numer = 1.0 + a / (1.0 + b / (1.0 + c))
     denom = sin_alt + a / (sin_alt + b / (sin_alt + c))
@@ -64,7 +72,19 @@ def _herring_map_scalar(
     b: float,
     c: float,
 ) -> Float[Array, " n"]:
-    """Herring map with scalar coefficients (for height correction)."""
+    """Herring continued-fraction mapping with scalar coefficients.
+
+    Same formula as :func:`_herring_map` but takes scalar ``a``, ``b``,
+    ``c`` (used for the height-correction mapping where the coefficients
+    are fixed constants, not latitude-dependent).
+
+    Parameters
+    ----------
+    sin_alt : (n,)
+        Sine of the source elevation angle.
+    a, b, c : float
+        Fixed continued-fraction coefficients.
+    """
     numer = 1.0 + a / (1.0 + b / (1.0 + c))
     denom = sin_alt + a / (sin_alt + b / (sin_alt + c))
     return numer / denom
@@ -74,9 +94,19 @@ def _interp_lat(
     abs_lat_rad: Float[Array, " n"],
     coeff: Float[Array, " 7"],
 ) -> Float[Array, " n"]:
-    """Linear interpolation into a 7-element latitude coefficient array.
+    """Linearly interpolate a Niell latitude coefficient table.
 
-    Uses ``jnp.searchsorted`` for vectorized bin lookup — no Python loops.
+    The Niell (1996) mapping function tables have 7 entries at
+    latitudes [15, 30, 45, 60, 75, 90] degrees (stored in
+    ``NIELL_LAT_BREAKS`` as radians, with a 0-degree sentinel).
+    This function interpolates between entries for arbitrary latitudes.
+
+    Parameters
+    ----------
+    abs_lat_rad : (n,)
+        Absolute geodetic latitude in radians.
+    coeff : (7,)
+        Coefficient table (one value per latitude break).
     """
     idx = jnp.searchsorted(NIELL_LAT_BREAKS, abs_lat_rad, side="right") - 1
     idx = jnp.clip(idx, 0, 5)
@@ -94,8 +124,12 @@ def _year_fraction(
 ) -> Float[Array, " n"]:
     """Fractional year from TDB MJD, with southern hemisphere offset."""
     season_offset = jnp.where(lat_rad < 0.0, 0.5, 0.0)
+    # NIELL_DOY_OFFSET due to seasonal variation of troposphere. 
+    # Shifting "start of year" so that troposphere model aligns with the peak in this variation
+    days_since_J2000  =  (tdb_mjd - 51544.5 + NIELL_DOY_OFFSET)
+    # Convert to years, then add back in year 2000, plus have a year offset if in southern hemisphere
     return jnp.mod(
-        2000.0 + (tdb_mjd - 51544.5 + NIELL_DOY_OFFSET) / 365.25 + season_offset,
+        2000.0 + days_since_J2000 / 365.25 + season_offset,
         1.0,
     )
 

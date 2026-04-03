@@ -74,7 +74,7 @@ def _geometric_delay(
         # Using 1.0 as safe denominator is fine: re_sqr==0 implies re_dot_L==0,
         # so the numerator (re_sqr / L_km) is also 0 and the term vanishes.
         re_sqr_safe = jnp.where(re_sqr == 0.0, 1.0, re_sqr)
-        result += 0.5 * (re_sqr / L_km) * (1.0 - re_dot_L ** 2 / re_sqr_safe) / C_KM_PER_S
+        result += 0.5 * (re_sqr_safe / L_km) * (1.0 - re_dot_L ** 2 / re_sqr_safe) / C_KM_PER_S
 
     return result
 

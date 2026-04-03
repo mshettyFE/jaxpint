@@ -1,3 +1,14 @@
+"""Pytest configuration for JaxPINT tests.
+
+Registers Hypothesis profiles for different execution contexts:
+
+- **interactive** (default): No deadline, for local development.
+- **ci**: Deterministic (``derandomize=True``) with ``print_blob`` for
+  reproducing failures in CI.
+- **fuzzing**: 1000 examples per test, for thorough property-based testing.
+  Activated by setting ``HYPOTHESIS_PROFILE=fuzzing``.
+"""
+
 import os
 import hypothesis
 

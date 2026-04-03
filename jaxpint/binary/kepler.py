@@ -17,11 +17,23 @@ from jaxpint.constants import KEPLER_N_ITER
 
 
 def _kepler_residual(E, e, M):
-    """Kepler equation residual: f(E) = E - e sin(E) - M."""
+    """Kepler equation residual: f(E) = E - e sin(E) - M.
+
+    Parameters
+    ----------
+    E : float
+        Eccentric anomaly in radians (scalar, for ``jax.grad``).
+    e : float
+        Orbital eccentricity.
+    M : float
+        Mean anomaly in radians.
+    """
     return E - e * jnp.sin(E) - M
 
 
+#: First derivative df/dE = 1 - e cos(E), via ``jax.grad``.
 _kepler_dE = jax.grad(_kepler_residual, argnums=0)
+#: Second derivative d²f/dE² = e sin(E), via ``jax.grad``.
 _kepler_d2E = jax.grad(_kepler_dE, argnums=0)
 
 

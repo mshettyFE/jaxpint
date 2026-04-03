@@ -24,6 +24,22 @@ class PhaseComponent(eqx.Module):
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> PhaseResult:
+        """Compute this component's phase contribution.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data (TDB times, frequencies, positions, etc.).
+        params : ParameterVector
+            Timing model parameters.
+        delay : (n_toas,)
+            Accumulated signal delay in seconds from all delay components.
+
+        Returns
+        -------
+        PhaseResult
+            Phase contribution in cycles (int + frac split).
+        """
         raise NotImplementedError
 
 
@@ -42,4 +58,20 @@ class DelayComponent(eqx.Module):
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
+        """Compute this component's delay contribution.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data (TDB times, frequencies, positions, etc.).
+        params : ParameterVector
+            Timing model parameters.
+        delay : (n_toas,)
+            Accumulated signal delay in seconds from prior delay components.
+
+        Returns
+        -------
+        (n_toas,)
+            Delay contribution in seconds.
+        """
         raise NotImplementedError
