@@ -130,24 +130,26 @@ def wls_step(
         Column norms used for normalisation (diagnostic).
     """
     # Weight by inverse uncertainty
-    r1 = residuals / sigma
-    M1 = M / sigma[:, None]
+    weighted_residuals = residuals / sigma
+    weighted_design_matrix = M / sigma[:, None]
 
     # Normalize columns for numerical stability
-    M2, norms, _degenerate = normalize_designmatrix(M1)
+    normalized_design_matrix, norms, _degenerate = normalize_designmatrix(
+        weighted_design_matrix
+    )
 
     # SVD via JAX
-    U, S, Vt = jnp.linalg.svd(M2, full_matrices=False)
+    U, S, Vt = jnp.linalg.svd(normalized_design_matrix, full_matrices=False)
 
     # Threshold degenerate singular values
     S_safe = jnp.where(S <= threshold * S[0], jnp.inf, S)
 
     # Parameter updates
-    dpars = (Vt.T @ ((U.T @ r1) / S_safe)) / norms
+    dpars = (Vt.T @ ((U.T @ weighted_residuals) / S_safe)) / norms
 
     # Covariance matrix
-    Sigma_norm = (Vt.T / S_safe**2) @ Vt
-    covariance = (Sigma_norm / norms).T / norms
+    cov_normalized = (Vt.T / S_safe**2) @ Vt
+    covariance = (cov_normalized / norms).T / norms
 
     return dpars, covariance, norms
 
@@ -210,6 +212,56 @@ class WLSFitter:
         self.noise_model = noise_model
         self.result: Optional[WLSFitResult] = None
 
+    def _get_sigma(self) -> Float[Array, " n_toas"]:
+        """Return noise-scaled TOA uncertainties."""
+        if self.noise_model is not None:
+            return self.noise_model.scaled_sigma(self.toa_data, self.params)
+        return self.toa_data.error
+
+    def _iteration(self, threshold: float) -> Float[Array, "n_free n_free"]:
+        """Run one Gauss-Newton iteration; returns covariance."""
+        sigma = self._get_sigma()
+
+        time_resid = compute_time_residuals(
+            self.model, self.toa_data, self.params
+        )
+        time_resid = _subtract_weighted_mean(time_resid, sigma)
+
+        M = compute_design_matrix(self.model, self.toa_data, self.params)
+        dpars, covariance, _norms = wls_step(time_resid, sigma, M, threshold)
+
+        new_free = self.params.free_values() + dpars
+        self.params = self.params.with_free_values(new_free)
+        return covariance
+
+    def _build_result(
+        self, covariance: Float[Array, "n_free n_free"],
+    ) -> float:
+        """Compute final residuals/chi2 and populate ``self.result``."""
+        sigma = self._get_sigma()
+
+        final_resid = compute_time_residuals(
+            self.model, self.toa_data, self.params
+        )
+        final_resid = _subtract_weighted_mean(final_resid, sigma)
+        chi2_val = float(compute_chi2(final_resid, sigma))
+        dof = self.toa_data.n_toas - self.params.n_free
+
+        errors = jnp.sqrt(jnp.diag(covariance))
+        correlation = (covariance / errors).T / errors
+
+        self.result = WLSFitResult(
+            params=self.params,
+            covariance_matrix=covariance,
+            correlation_matrix=correlation,
+            parameter_uncertainties=errors,
+            chi2=chi2_val,
+            dof=dof,
+            reduced_chi2=chi2_val / dof,
+            residuals=final_resid,
+        )
+        return chi2_val
+
     def fit_toas(
         self,
         maxiter: int = 1,
@@ -233,65 +285,10 @@ class WLSFitter:
             threshold = 1e-14 * max(self.toa_data.n_toas, self.params.n_free)
 
         covariance = None
-        norms = None
-
         for _ in range(maxiter):
-            # 0. Compute scaled uncertainties (recomputed each iteration
-            #    in case noise params are being fit)
-            if self.noise_model is not None:
-                sigma = self.noise_model.scaled_sigma(
-                    self.toa_data, self.params
-                )
-            else:
-                sigma = self.toa_data.error
+            covariance = self._iteration(threshold)
 
-            # 1. Time residuals
-            time_resid = compute_time_residuals(
-                self.model, self.toa_data, self.params
-            )
-
-            # 2. Subtract weighted mean
-            time_resid = _subtract_weighted_mean(time_resid, sigma)
-
-            # 3. Design matrix (autodiff, no mean subtraction)
-            M = compute_design_matrix(self.model, self.toa_data, self.params)
-
-            # 4. WLS SVD solve
-            dpars, covariance, norms = wls_step(time_resid, sigma, M, threshold)
-
-            # 5. Update parameters
-            new_free = self.params.free_values() + dpars
-            self.params = self.params.with_free_values(new_free)
-
-        # Final residuals and chi2 with final noise-scaled sigma
-        if self.noise_model is not None:
-            sigma = self.noise_model.scaled_sigma(self.toa_data, self.params)
-        else:
-            sigma = self.toa_data.error
-
-        final_resid = compute_time_residuals(
-            self.model, self.toa_data, self.params
-        )
-        final_resid = _subtract_weighted_mean(final_resid, sigma)
-        chi2_val = float(compute_chi2(final_resid, sigma))
-        dof = self.toa_data.n_toas - self.params.n_free
-
-        # Uncertainties and correlation from last iteration's covariance
-        errors = jnp.sqrt(jnp.diag(covariance))
-        correlation = (covariance / errors).T / errors
-
-        self.result = WLSFitResult(
-            params=self.params,
-            covariance_matrix=covariance,
-            correlation_matrix=correlation,
-            parameter_uncertainties=errors,
-            chi2=chi2_val,
-            dof=dof,
-            reduced_chi2=chi2_val / dof,
-            residuals=final_resid,
-        )
-
-        return chi2_val
+        return self._build_result(covariance)
 
 
 # ---------------------------------------------------------------------------
@@ -351,25 +348,24 @@ def gls_step_fullcov(
     mtcy = M.T @ Cinv_r                                     # (n_free,)
 
     # Normalize for numerical stability
-    M2, norms, _degen = normalize_designmatrix(mtcm)
     # normalize_designmatrix works on (n, p) — we want column norms of mtcm
     # but mtcm is square (n_free, n_free).  Use column norms directly.
-    norms_col = jnp.sqrt(jnp.diag(mtcm))
-    norms_col = jnp.where(norms_col == 0.0, 1.0, norms_col)
-    mtcm_n = mtcm / norms_col / norms_col[:, None]
-    mtcy_n = mtcy / norms_col
+    col_norms = jnp.sqrt(jnp.diag(mtcm))
+    col_norms = jnp.where(col_norms == 0.0, 1.0, col_norms)
+    mtcm_normalized = mtcm / col_norms / col_norms[:, None]
+    mtcy_normalized = mtcy / col_norms
 
     # SVD solve of the (n_free, n_free) system
-    Usv, S, Vt = jnp.linalg.svd(mtcm_n, full_matrices=False)
+    U_svd, S, Vt = jnp.linalg.svd(mtcm_normalized, full_matrices=False)
     S_safe = jnp.where(S <= threshold * S[0], jnp.inf, S)
 
-    dpars_n = Vt.T @ ((Usv.T @ mtcy_n) / S_safe)
-    dpars = dpars_n / norms_col
+    dpars_normalized = Vt.T @ ((U_svd.T @ mtcy_normalized) / S_safe)
+    dpars = dpars_normalized / col_norms
 
-    Sigma_n = (Vt.T / S_safe**2) @ Vt
-    covariance = (Sigma_n / norms_col).T / norms_col
+    cov_normalized = (Vt.T / S_safe**2) @ Vt
+    covariance = (cov_normalized / col_norms).T / col_norms
 
-    return dpars, covariance, norms_col
+    return dpars, covariance, col_norms
 
 
 def gls_step_augmented(
@@ -427,18 +423,18 @@ def gls_step_augmented(
     # Normalize columns
     norms = jnp.sqrt(jnp.diag(mtcm))
     norms = jnp.where(norms == 0.0, 1.0, norms)
-    mtcm_n = mtcm / norms / norms[:, None]
-    mtcy_n = mtcy / norms
+    mtcm_normalized = mtcm / norms / norms[:, None]
+    mtcy_normalized = mtcy / norms
 
     # SVD solve
-    Usv, S, Vt = jnp.linalg.svd(mtcm_n, full_matrices=False)
+    U_svd, S, Vt = jnp.linalg.svd(mtcm_normalized, full_matrices=False)
     S_safe = jnp.where(S <= threshold * S[0], jnp.inf, S)
 
-    xhat_n = Vt.T @ ((Usv.T @ mtcy_n) / S_safe)
-    xhat = xhat_n / norms
+    xhat_normalized = Vt.T @ ((U_svd.T @ mtcy_normalized) / S_safe)
+    xhat = xhat_normalized / norms
 
-    xvar_n = (Vt.T / S_safe**2) @ Vt
-    xvar = (xvar_n / norms).T / norms
+    xvar_normalized = (Vt.T / S_safe**2) @ Vt
+    xvar = (xvar_normalized / norms).T / norms
 
     # Extract timing parameters and noise realizations
     dpars = xhat[:n_free]
@@ -519,6 +515,112 @@ class GLSFitter:
         self.ecorr_noise = ecorr_noise
         self.result: Optional[GLSFitResult] = None
 
+    def _get_noise(
+        self,
+    ) -> tuple[Float[Array, " n_toas"], Float[Array, " n_toas"], Float[Array, " n_epochs"]]:
+        """Return (sigma, Ndiag, Phidiag) for the current parameters."""
+        if self.noise_model is not None:
+            sigma = self.noise_model.scaled_sigma(self.toa_data, self.params)
+        else:
+            sigma = self.toa_data.error
+        Ndiag = sigma ** 2
+
+        if self.ecorr_noise is not None:
+            Phidiag = self.ecorr_noise.ecorr_weights(self.params)
+        else:
+            Phidiag = jnp.zeros(0)
+
+        return sigma, Ndiag, Phidiag
+
+    def _iteration(
+        self,
+        U: Float[Array, "n_toas n_epochs"],
+        n_epochs: int,
+        threshold: float,
+        full_cov: bool,
+    ) -> tuple[
+        Float[Array, "n_free n_free"],
+        Optional[Float[Array, " n_epochs"]],
+    ]:
+        """Run one Gauss-Newton iteration; returns (covariance, noise_realizations)."""
+        sigma, Ndiag, Phidiag = self._get_noise()
+
+        time_resid = compute_time_residuals(
+            self.model, self.toa_data, self.params
+        )
+        if n_epochs > 0:
+            time_resid = _subtract_gls_weighted_mean(
+                time_resid, Ndiag, U, Phidiag
+            )
+        else:
+            time_resid = _subtract_weighted_mean(time_resid, sigma)
+
+        M = compute_design_matrix(self.model, self.toa_data, self.params)
+
+        # GLS solve
+        noise_realizations = None
+        if full_cov:
+            dpars, covariance, _norms = gls_step_fullcov(
+                time_resid, Ndiag, U, Phidiag, M, threshold
+            )
+        elif n_epochs > 0:
+            dpars, covariance, _norms, noise_realizations = (
+                gls_step_augmented(
+                    time_resid, Ndiag, U, Phidiag, M, threshold
+                )
+            )
+        else:
+            dpars, covariance, _norms = wls_step(
+                time_resid, sigma, M, threshold
+            )
+
+        new_free = self.params.free_values() + dpars
+        self.params = self.params.with_free_values(new_free)
+        return covariance, noise_realizations
+
+    def _build_result(
+        self,
+        covariance: Float[Array, "n_free n_free"],
+        noise_realizations: Optional[Float[Array, " n_epochs"]],
+        U: Float[Array, "n_toas n_epochs"],
+        n_epochs: int,
+    ) -> float:
+        """Compute final residuals/chi2 and populate ``self.result``."""
+        sigma, Ndiag, Phidiag = self._get_noise()
+
+        final_resid = compute_time_residuals(
+            self.model, self.toa_data, self.params
+        )
+        if n_epochs > 0:
+            final_resid = _subtract_gls_weighted_mean(
+                final_resid, Ndiag, U, Phidiag
+            )
+        else:
+            final_resid = _subtract_weighted_mean(final_resid, sigma)
+
+        if n_epochs > 0:
+            chi2_val = float(compute_gls_chi2(final_resid, Ndiag, U, Phidiag))
+        else:
+            chi2_val = float(compute_chi2(final_resid, sigma))
+
+        dof = self.toa_data.n_toas - self.params.n_free
+
+        errors = jnp.sqrt(jnp.diag(covariance))
+        correlation = (covariance / errors).T / errors
+
+        self.result = GLSFitResult(
+            params=self.params,
+            covariance_matrix=covariance,
+            correlation_matrix=correlation,
+            parameter_uncertainties=errors,
+            chi2=chi2_val,
+            dof=dof,
+            reduced_chi2=chi2_val / dof,
+            residuals=final_resid,
+            noise_realizations=noise_realizations,
+        )
+        return chi2_val
+
     def fit_toas(
         self,
         maxiter: int = 1,
@@ -561,107 +663,9 @@ class GLSFitter:
 
         covariance = None
         noise_realizations = None
-
         for _ in range(maxiter):
-            # 0. White noise
-            if self.noise_model is not None:
-                sigma = self.noise_model.scaled_sigma(
-                    self.toa_data, self.params
-                )
-            else:
-                sigma = self.toa_data.error
-            Ndiag = sigma ** 2
-
-            # 1. ECORR weights
-            if self.ecorr_noise is not None:
-                Phidiag = self.ecorr_noise.ecorr_weights(self.params)
-            else:
-                Phidiag = jnp.zeros(0)
-
-            # 2. Time residuals
-            time_resid = compute_time_residuals(
-                self.model, self.toa_data, self.params
+            covariance, noise_realizations = self._iteration(
+                U, n_epochs, threshold, full_cov
             )
 
-            # 3. Subtract GLS weighted mean
-            if n_epochs > 0:
-                time_resid = _subtract_gls_weighted_mean(
-                    time_resid, Ndiag, U, Phidiag
-                )
-            else:
-                time_resid = _subtract_weighted_mean(time_resid, sigma)
-
-            # 4. Design matrix
-            M = compute_design_matrix(
-                self.model, self.toa_data, self.params
-            )
-
-            # 5. GLS solve
-            if full_cov:
-                dpars, covariance, _norms = gls_step_fullcov(
-                    time_resid, Ndiag, U, Phidiag, M, threshold
-                )
-                noise_realizations = None
-            else:
-                if n_epochs > 0:
-                    dpars, covariance, _norms, noise_realizations = (
-                        gls_step_augmented(
-                            time_resid, Ndiag, U, Phidiag, M, threshold
-                        )
-                    )
-                else:
-                    # Pure WLS path — no augmentation needed
-                    dpars, covariance, _norms = wls_step(
-                        time_resid, sigma, M, threshold
-                    )
-                    noise_realizations = None
-
-            # 6. Update parameters
-            new_free = self.params.free_values() + dpars
-            self.params = self.params.with_free_values(new_free)
-
-        # Final residuals and chi2
-        if self.noise_model is not None:
-            sigma = self.noise_model.scaled_sigma(self.toa_data, self.params)
-        else:
-            sigma = self.toa_data.error
-        Ndiag = sigma ** 2
-
-        if self.ecorr_noise is not None:
-            Phidiag = self.ecorr_noise.ecorr_weights(self.params)
-        else:
-            Phidiag = jnp.zeros(0)
-
-        final_resid = compute_time_residuals(
-            self.model, self.toa_data, self.params
-        )
-        if n_epochs > 0:
-            final_resid = _subtract_gls_weighted_mean(
-                final_resid, Ndiag, U, Phidiag
-            )
-        else:
-            final_resid = _subtract_weighted_mean(final_resid, sigma)
-
-        if n_epochs > 0:
-            chi2_val = float(compute_gls_chi2(final_resid, Ndiag, U, Phidiag))
-        else:
-            chi2_val = float(compute_chi2(final_resid, sigma))
-
-        dof = n_toas - self.params.n_free
-
-        errors = jnp.sqrt(jnp.diag(covariance))
-        correlation = (covariance / errors).T / errors
-
-        self.result = GLSFitResult(
-            params=self.params,
-            covariance_matrix=covariance,
-            correlation_matrix=correlation,
-            parameter_uncertainties=errors,
-            chi2=chi2_val,
-            dof=dof,
-            reduced_chi2=chi2_val / dof,
-            residuals=final_resid,
-            noise_realizations=noise_realizations,
-        )
-
-        return chi2_val
+        return self._build_result(covariance, noise_realizations, U, n_epochs)
