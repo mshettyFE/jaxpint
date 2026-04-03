@@ -1,0 +1,120 @@
+"""TOA simulation for JaxPINT.
+
+Provides functions to adjust TOA timestamps so they encode a deterministic
+timing model (zero residuals) and to apply arbitrary time delays to TOAs.
+
+The ``zero_residuals`` function iteratively shifts each TOA by its time
+residual until the model prediction matches the observation time, analogous
+to :func:`pint.simulation.zero_residuals`.
+"""
+
+from __future__ import annotations
+
+import jax.numpy as jnp
+import equinox as eqx
+from jaxtyping import Array, Float
+
+from jaxpint.fitter import compute_time_residuals
+from jaxpint.model import TimingModel
+from jaxpint.types import TOAData, ParameterVector
+
+# Seconds per day (exact).
+_SECS_PER_DAY = 86400.0
+
+
+def apply_delay_to_toas(
+    toa_data: TOAData,
+    delays_seconds: Float[Array, " n_toas"],
+) -> TOAData:
+    """Return a new TOAData with time delays added to MJD and TDB fields.
+
+    Converts *delays_seconds* to days, adds to the fractional part of
+    each timestamp, and renormalises so ``frac`` stays in [0, 1).
+
+    Parameters
+    ----------
+    toa_data : TOAData
+        Input TOA data (not modified).
+    delays_seconds : (n_toas,)
+        Time delays in seconds.  Positive values shift TOAs later.
+
+    Returns
+    -------
+    TOAData
+        Copy of *toa_data* with ``mjd_int/mjd_frac`` and
+        ``tdb_int/tdb_frac`` updated.
+    """
+    delay_days = delays_seconds / _SECS_PER_DAY
+
+    new_mjd_frac = toa_data.mjd_frac + delay_days
+    mjd_overflow = jnp.floor(new_mjd_frac)
+    new_mjd_int = toa_data.mjd_int + mjd_overflow
+    new_mjd_frac = new_mjd_frac - mjd_overflow
+
+    new_tdb_frac = toa_data.tdb_frac + delay_days
+    tdb_overflow = jnp.floor(new_tdb_frac)
+    new_tdb_int = toa_data.tdb_int + tdb_overflow
+    new_tdb_frac = new_tdb_frac - tdb_overflow
+
+    return eqx.tree_at(
+        lambda td: (td.mjd_int, td.mjd_frac, td.tdb_int, td.tdb_frac),
+        toa_data,
+        (new_mjd_int, new_mjd_frac, new_tdb_int, new_tdb_frac),
+    )
+
+
+def zero_residuals(
+    model: TimingModel,
+    toa_data: TOAData,
+    params: ParameterVector,
+    *,
+    maxiter: int = 10,
+    tolerance: float = 1e-7,
+) -> TOAData:
+    """Iteratively adjust TOA times until residuals are approximately zero.
+
+    Each iteration computes time residuals and subtracts them from the
+    TOA timestamps, converging in ~2-3 iterations.  After convergence
+    the TOA timestamps encode the full deterministic timing model.
+
+    The default tolerance (100 ns) accounts for the float64 precision
+    floor: for a 100 Hz pulsar over 2000 days, the absolute phase
+    reaches ~8.6e9 cycles, limiting time-residual precision to ~10 ns.
+    This is well below typical measurement uncertainties (microseconds).
+
+    Parameters
+    ----------
+    model : TimingModel
+        JaxPINT timing model.
+    toa_data : TOAData
+        Input TOAs (not modified).
+    params : ParameterVector
+        Timing model parameters.
+    maxiter : int
+        Maximum number of iterations.
+    tolerance : float
+        Convergence threshold on ``max(|residual|)`` in seconds.
+        Default is 1e-7 s (100 ns).
+
+    Returns
+    -------
+    TOAData
+        Adjusted TOAs with residuals < *tolerance*.
+
+    Raises
+    ------
+    RuntimeError
+        If convergence is not reached within *maxiter* iterations.
+    """
+    max_resid = float("inf")
+    for i in range(maxiter):
+        resids = compute_time_residuals(model, toa_data, params)
+        max_resid = float(jnp.max(jnp.abs(resids)))
+        if max_resid < tolerance:
+            return toa_data
+        toa_data = apply_delay_to_toas(toa_data, -resids)
+
+    raise RuntimeError(
+        f"zero_residuals did not converge after {maxiter} iterations "
+        f"(max |residual| = {max_resid:.3e} s, tolerance = {tolerance:.3e} s)"
+    )

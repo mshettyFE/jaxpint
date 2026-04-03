@@ -16,6 +16,7 @@ from .shapiro import SolarSystemShapiroDelay
 from .solar_wind import SolarWindDispersion
 from .troposphere import TroposphereDelay
 from .fitter import WLSFitter, WLSFitResult, GLSFitter, GLSFitResult
+from .simulation import apply_delay_to_toas, zero_residuals
 from .utils import (
     taylor_horner,
     taylor_horner_deriv,
@@ -56,4 +57,6 @@ __all__ = [
     "EcorrNoise",
     "GLSFitter",
     "GLSFitResult",
+    "apply_delay_to_toas",
+    "zero_residuals",
 ]
