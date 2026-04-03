@@ -22,20 +22,9 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
+from jaxpint.constants import DAYS_PER_JULIAN_YEAR, DMCONST
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-# Julian year in days (IAU definition).
-_DAYS_PER_JULIAN_YEAR: float = 365.25
-
-# DM constant from Lorimer & Kramer, Handbook of Pulsar Astronomy, 2nd ed.,
-# p. 86 note 1.  Units: MHz^2 * s * cm^3 / pc.
-# Dispersion delay = DM * DMCONST / freq_MHz^2  (seconds).
-_DMCONST: float = 1.0 / 2.41e-4  # ≈ 4149.377593
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +74,7 @@ class DispersionDM(DelayComponent):
         dt_int = toa_data.tdb_int - dmepoch_int
         dt_frac = toa_data.tdb_frac - dmepoch_frac
         dt_days = dt_int + dt_frac
-        return dt_days / _DAYS_PER_JULIAN_YEAR
+        return dt_days / DAYS_PER_JULIAN_YEAR
 
     def _get_dm_coeffs(
         self, params: ParameterVector
@@ -126,4 +115,4 @@ class DispersionDM(DelayComponent):
         dt_yr = self._compute_dt_yr(toa_data, params)
         dm_coeffs = self._get_dm_coeffs(params)
         dm = taylor_horner(dt_yr, dm_coeffs)
-        return dm * _DMCONST / toa_data.freq ** 2
+        return dm * DMCONST / toa_data.freq ** 2

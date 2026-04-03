@@ -13,9 +13,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-# Halley's method converges cubically.  With the Danby initial guess,
-# 5 iterations reaches machine epsilon even at e=0.95.
-_N_ITER = 5
+from jaxpint.constants import KEPLER_N_ITER
 
 
 def _kepler_residual(E, e, M):
@@ -59,7 +57,7 @@ def solve_kepler(
     fp_fn = jax.vmap(_kepler_dE)
     fpp_fn = jax.vmap(_kepler_d2E)
 
-    for _ in range(_N_ITER):
+    for _ in range(KEPLER_N_ITER):
         f = f_fn(E, e, M)
         fp = fp_fn(E, e, M)
         fpp = fpp_fn(E, e, M)

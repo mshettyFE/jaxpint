@@ -6,9 +6,9 @@ import pytest
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxpint.types import TOAData, ParameterVector
 from jaxpint.phase_result import PhaseResult
 from jaxpint.spin import Spindown
+from tests.helpers import make_toa_data, make_params
 
 
 # ---------------------------------------------------------------------------
@@ -16,67 +16,29 @@ from jaxpint.spin import Spindown
 # ---------------------------------------------------------------------------
 
 def _make_toa_data(n_toas=5, tdb_int=59000.0, tdb_frac=None):
-    """Minimal TOAData with controllable TDB times."""
-    if tdb_frac is None:
-        tdb_frac = jnp.linspace(0.1, 0.9, n_toas)
-    else:
-        tdb_frac = jnp.broadcast_to(jnp.asarray(tdb_frac), (n_toas,))
-
-    tdb_int_arr = jnp.full(n_toas, tdb_int)
-    return TOAData(
-        mjd_int=tdb_int_arr,
-        mjd_frac=tdb_frac,
-        tdb_int=tdb_int_arr,
-        tdb_frac=tdb_frac,
-        error=jnp.ones(n_toas) * 1e-6,
-        freq=jnp.full(n_toas, 1400.0),
-        delta_pulse_number=jnp.zeros(n_toas),
-        ssb_obs_pos=jnp.zeros((n_toas, 3)),
-        ssb_obs_vel=jnp.zeros((n_toas, 3)),
-        obs_sun_pos=jnp.zeros((n_toas, 3)),
-        obs_indices=jnp.zeros(n_toas, dtype=jnp.int32),
-        flag_masks={},
-        planet_positions=None,
-        dm_values=None,
-        dm_errors=None,
-        tropo_alt=None, tropo_alt_valid=None,
-        obs_geodetic_lat=None, obs_height_km=None,
-        n_toas=n_toas,
-        obs_names=("GBT",),
-    )
+    return make_toa_data(n_toas, tdb_int=tdb_int, tdb_frac=tdb_frac,
+                         obs_names=("GBT",), planet_positions=None)
 
 
 def _make_params(f0=200.0, f1=None, f2=None, pepoch_int=59000.0, pepoch_frac=0.0):
-    """Minimal ParameterVector with spin params and PEPOCH."""
     names = ["F0"]
     values = [f0]
     components = ["Spindown"]
+    units = ["Hz"]
 
     if f1 is not None:
-        names.append("F1")
-        values.append(f1)
-        components.append("Spindown")
+        names += ["F1"]; values += [f1]
+        components += ["Spindown"]; units += ["Hz/s"]
     if f2 is not None:
-        names.append("F2")
-        values.append(f2)
-        components.append("Spindown")
+        names += ["F2"]; values += [f2]
+        components += ["Spindown"]; units += ["Hz/s"]
 
-    names.append("PEPOCH")
-    values.append(pepoch_frac)
-    components.append("Spindown")
+    names += ["PEPOCH"]; values += [pepoch_frac]
+    components += ["Spindown"]; units += ["day"]
 
-    n = len(names)
-    names = tuple(names)
-    return ParameterVector(
-        values=jnp.array(values),
-        frozen_mask=(False,) * n,
-        names=names,
-        units=("Hz",) + ("Hz/s",) * (n - 2) + ("day",),
-        components=tuple(components),
-        _name_to_index={name: i for i, name in enumerate(names)},
-        bounds=((None, None),) * n,
-        epoch_int_values={"PEPOCH": pepoch_int},
-    )
+    return make_params(names, values, units=tuple(units),
+                       components=tuple(components),
+                       epoch_int_values={"PEPOCH": pepoch_int})
 
 
 # ===========================================================================

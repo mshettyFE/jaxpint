@@ -26,18 +26,9 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
+from jaxpint.constants import C_KM_PER_S, KPC_TO_KM
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, compute_pulsar_direction_ecl
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-# Speed of light in km/s (ssb_obs_pos is in km, result in seconds).
-_C_KM_PER_S: float = 299792.458
-
-# 1 kpc in km (for parallax distance conversion).
-_KPC_TO_KM: float = 3.0856775814913673e16
 
 
 # ---------------------------------------------------------------------------
@@ -70,20 +61,20 @@ def _geometric_delay(
     """
     # Roemer delay: projection of observer offset onto pulsar direction.
     re_dot_L = jnp.sum(toa_data.ssb_obs_pos * L_hat, axis=1)  # km
-    result = -re_dot_L / _C_KM_PER_S  # seconds
+    result = -re_dot_L / C_KM_PER_S  # seconds
 
     #  Lorimer & Kramer (2004), "Handbook of Pulsar Astronomy", Section 8.2.4
     # Also follows from Smart, 1977, chapter 9.
     if px_name is not None:
         px_mas = params.param_value(px_name)
         # Distance in km: L = (1/PX_arcsec) kpc = (1000/PX_mas) kpc
-        L_km = (1000.0 / px_mas) * _KPC_TO_KM
+        L_km = (1000.0 / px_mas) * KPC_TO_KM
         re_sqr = jnp.sum(toa_data.ssb_obs_pos ** 2, axis=1)  # km^2
         # Guard against 0/0 for barycentric TOAs (ssb_obs_pos == 0) like TZR.
         # Using 1.0 as safe denominator is fine: re_sqr==0 implies re_dot_L==0,
         # so the numerator (re_sqr / L_km) is also 0 and the term vanishes.
         re_sqr_safe = jnp.where(re_sqr == 0.0, 1.0, re_sqr)
-        result += 0.5 * (re_sqr / L_km) * (1.0 - re_dot_L ** 2 / re_sqr_safe) / _C_KM_PER_S
+        result += 0.5 * (re_sqr / L_km) * (1.0 - re_dot_L ** 2 / re_sqr_safe) / C_KM_PER_S
 
     return result
 

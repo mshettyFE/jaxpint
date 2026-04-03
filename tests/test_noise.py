@@ -12,7 +12,10 @@ import numpy as np
 import pytest
 
 from jaxpint.noise import ScaleToaError
-from jaxpint.types import TOAData, ParameterVector
+
+import astropy.units as u
+
+from tests.helpers import make_toa_data as _make_toa_data_base, make_params as _make_params_base
 
 
 # ---------------------------------------------------------------------------
@@ -21,47 +24,16 @@ from jaxpint.types import TOAData, ParameterVector
 
 
 def _make_toa_data(n_toas, errors, flag_masks):
-    """Build a minimal TOAData for noise tests."""
-    zeros = jnp.zeros(n_toas)
-    zeros3 = jnp.zeros((n_toas, 3))
-    return TOAData(
-        mjd_int=zeros,
-        mjd_frac=zeros,
-        tdb_int=zeros,
-        tdb_frac=zeros,
-        error=jnp.asarray(errors, dtype=jnp.float64),
-        freq=jnp.ones(n_toas) * 1400.0,
-        delta_pulse_number=zeros,
-        ssb_obs_pos=zeros3,
-        ssb_obs_vel=zeros3,
-        obs_sun_pos=zeros3,
-        obs_indices=jnp.zeros(n_toas, dtype=jnp.int32),
-        flag_masks={k: jnp.asarray(v, dtype=jnp.bool_) for k, v in flag_masks.items()},
-        planet_positions=None,
-        dm_values=None,
-        dm_errors=None,
-        tropo_alt=None, tropo_alt_valid=None,
-        obs_geodetic_lat=None, obs_height_km=None,
-        n_toas=n_toas,
-        obs_names=("fake",),
-    )
+    return _make_toa_data_base(n_toas, tdb_int=0.0, tdb_frac=0.0,
+                               error=errors, flag_masks=flag_masks,
+                               planet_positions=None)
 
 
 def _make_params(names, values, frozen=None):
-    """Build a minimal ParameterVector."""
-    n = len(names)
     if frozen is None:
-        frozen = [True] * n
-    return ParameterVector(
-        values=jnp.asarray(values, dtype=jnp.float64),
-        frozen_mask=tuple(frozen),
-        names=tuple(names),
-        units=tuple([""] * n),
-        components=tuple(["noise"] * n),
-        _name_to_index={name: i for i, name in enumerate(names)},
-        bounds=tuple([(None, None)] * n),
-        epoch_int_values={},
-    )
+        frozen = [True] * len(names)
+    return _make_params_base(names, values, frozen_mask=tuple(frozen),
+                             components="noise")
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +302,3 @@ UNITS         TDB
             err_msg=f"JaxPINT chi2 ({jax_chi2}) != PINT chi2 ({pint_chi2})",
         )
 
-
-# Import here so fixtures can use it
-import astropy.units as u

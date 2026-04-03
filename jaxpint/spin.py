@@ -18,11 +18,10 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import PhaseComponent
+from jaxpint.constants import SECS_PER_DAY
 from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner, taylor_horner_deriv
-
-_SECS_PER_DAY: float = 86400.0
 
 
 class Spindown(PhaseComponent):
@@ -67,7 +66,7 @@ class Spindown(PhaseComponent):
 
         dt_int = toa_data.tdb_int - pepoch_int    # exact integer-day difference
         dt_frac = toa_data.tdb_frac - pepoch_frac  # fractional-day difference
-        dt_seconds = (dt_int + dt_frac) * _SECS_PER_DAY - delay
+        dt_seconds = (dt_int + dt_frac) * SECS_PER_DAY - delay
 
         return dt_seconds
 
@@ -151,7 +150,7 @@ class Spindown(PhaseComponent):
         """
         old_int, old_frac = params.epoch_value(self.pepoch_name)
         dt_days = (new_epoch_int - old_int) + (new_epoch_frac - old_frac)
-        dt_seconds = jnp.asarray(dt_days * _SECS_PER_DAY)
+        dt_seconds = jnp.asarray(dt_days * SECS_PER_DAY)
 
         coeffs = self._get_spin_coeffs(params)
 

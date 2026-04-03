@@ -11,23 +11,14 @@ import numpy.testing as npt
 import pytest
 
 from jaxpint.noise import EcorrNoise
-from jaxpint.types import ParameterVector
 from jaxpint.utils import woodbury_dot, woodbury_solve
+from tests.helpers import make_params as _make_params_base
 
 
 def _make_params(names, values, frozen_names=()):
-    """Helper to build a minimal ParameterVector for testing."""
     frozen_mask = tuple(n in frozen_names for n in names)
-    return ParameterVector(
-        values=jnp.array(values),
-        frozen_mask=frozen_mask,
-        names=names,
-        units=tuple("s" for _ in names),
-        components=tuple("test" for _ in names),
-        _name_to_index={n: i for i, n in enumerate(names)},
-        bounds=tuple((None, None) for _ in names),
-        epoch_int_values={},
-    )
+    return _make_params_base(names, values, frozen_mask=frozen_mask,
+                             units=tuple("s" for _ in names))
 
 
 # ---------------------------------------------------------------------------

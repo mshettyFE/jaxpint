@@ -7,11 +7,12 @@ import pytest
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxpint.types import TOAData, ParameterVector
+from jaxpint.types import TOAData
 from jaxpint.phase_result import PhaseResult
 from jaxpint.spin import Spindown
 from jaxpint.dispersion_dm import DispersionDM
 from jaxpint.model import TimingModel, _build_tzr_toa_data
+from tests.helpers import make_toa_data, make_params
 
 
 # ---------------------------------------------------------------------------
@@ -19,76 +20,29 @@ from jaxpint.model import TimingModel, _build_tzr_toa_data
 # ---------------------------------------------------------------------------
 
 def _make_toa_data(
-    n_toas=5,
-    tdb_int=59000.0,
-    tdb_frac=None,
-    freq=1400.0,
-    tzr_tdb_int=None,
-    tzr_tdb_frac=None,
-    tzr_freq=None,
+    n_toas=5, tdb_int=59000.0, tdb_frac=None, freq=1400.0,
+    tzr_tdb_int=None, tzr_tdb_frac=None, tzr_freq=None,
 ):
-    """Minimal TOAData with controllable TDB times."""
-    if tdb_frac is None:
-        tdb_frac = jnp.linspace(0.1, 0.9, n_toas)
-    else:
-        tdb_frac = jnp.broadcast_to(jnp.asarray(tdb_frac), (n_toas,))
-
-    tdb_int_arr = jnp.full(n_toas, tdb_int)
-    freq_arr = jnp.broadcast_to(jnp.asarray(freq), (n_toas,))
-
-    return TOAData(
-        mjd_int=tdb_int_arr,
-        mjd_frac=tdb_frac,
-        tdb_int=tdb_int_arr,
-        tdb_frac=tdb_frac,
-        error=jnp.ones(n_toas) * 1e-6,
-        freq=freq_arr,
-        delta_pulse_number=jnp.zeros(n_toas),
-        ssb_obs_pos=jnp.zeros((n_toas, 3)),
-        ssb_obs_vel=jnp.zeros((n_toas, 3)),
-        obs_sun_pos=jnp.zeros((n_toas, 3)),
-        obs_indices=jnp.zeros(n_toas, dtype=jnp.int32),
-        flag_masks={},
-        planet_positions=None,
-        dm_values=None,
-        dm_errors=None,
-        tropo_alt=None, tropo_alt_valid=None,
-        obs_geodetic_lat=None, obs_height_km=None,
-        n_toas=n_toas,
-        obs_names=("GBT",),
-        tzr_tdb_int=tzr_tdb_int,
-        tzr_tdb_frac=tzr_tdb_frac,
-        tzr_freq=tzr_freq,
-        tzr_ssb_obs_pos=None,
-    )
+    return make_toa_data(n_toas, tdb_int=tdb_int, tdb_frac=tdb_frac,
+                         freq=freq, obs_names=("GBT",), planet_positions=None,
+                         tzr_tdb_int=tzr_tdb_int, tzr_tdb_frac=tzr_tdb_frac,
+                         tzr_freq=tzr_freq)
 
 
 def _make_spin_params(f0=200.0, f1=None, pepoch_int=59000.0, pepoch_frac=0.0):
-    """ParameterVector with spin params."""
-    names = ["F0"]
-    values = [f0]
-    components = ["Spindown"]
+    names = ["F0"]; values = [f0]
+    components = ["Spindown"]; units = ["Hz"]
 
     if f1 is not None:
-        names.append("F1")
-        values.append(f1)
-        components.append("Spindown")
+        names += ["F1"]; values += [f1]
+        components += ["Spindown"]; units += ["Hz/s"]
 
-    names.append("PEPOCH")
-    values.append(pepoch_frac)
-    components.append("Spindown")
+    names += ["PEPOCH"]; values += [pepoch_frac]
+    components += ["Spindown"]; units += ["day"]
 
-    n = len(names)
-    return ParameterVector(
-        values=jnp.array(values),
-        frozen_mask=(False,) * n,
-        names=tuple(names),
-        units=("Hz",) + ("Hz/s",) * (n - 2) + ("day",),
-        components=tuple(components),
-        _name_to_index={name: i for i, name in enumerate(names)},
-        bounds=((None, None),) * n,
-        epoch_int_values={"PEPOCH": pepoch_int},
-    )
+    return make_params(names, values, units=tuple(units),
+                       components=tuple(components),
+                       epoch_int_values={"PEPOCH": pepoch_int})
 
 
 def _make_full_params(
@@ -96,44 +50,23 @@ def _make_full_params(
     pepoch_int=59000.0, pepoch_frac=0.0,
     dmepoch_int=59000.0, dmepoch_frac=0.0,
 ):
-    """ParameterVector with spin + DM params."""
-    names = ["F0"]
-    values = [f0]
-    components = ["Spindown"]
-    units = ["Hz"]
+    names = ["F0"]; values = [f0]
+    components = ["Spindown"]; units = ["Hz"]
 
     if f1 is not None:
-        names.append("F1")
-        values.append(f1)
-        components.append("Spindown")
-        units.append("Hz/s")
+        names += ["F1"]; values += [f1]
+        components += ["Spindown"]; units += ["Hz/s"]
 
-    names.append("PEPOCH")
-    values.append(pepoch_frac)
-    components.append("Spindown")
-    units.append("day")
+    names += ["PEPOCH"]; values += [pepoch_frac]
+    components += ["Spindown"]; units += ["day"]
+    names += ["DM"]; values += [dm]
+    components += ["DispersionDM"]; units += ["pc cm^-3"]
+    names += ["DMEPOCH"]; values += [dmepoch_frac]
+    components += ["DispersionDM"]; units += ["day"]
 
-    names.append("DM")
-    values.append(dm)
-    components.append("DispersionDM")
-    units.append("pc cm^-3")
-
-    names.append("DMEPOCH")
-    values.append(dmepoch_frac)
-    components.append("DispersionDM")
-    units.append("day")
-
-    n = len(names)
-    return ParameterVector(
-        values=jnp.array(values),
-        frozen_mask=(False,) * n,
-        names=tuple(names),
-        units=tuple(units),
-        components=tuple(components),
-        _name_to_index={name: i for i, name in enumerate(names)},
-        bounds=((None, None),) * n,
-        epoch_int_values={"PEPOCH": pepoch_int, "DMEPOCH": dmepoch_int},
-    )
+    return make_params(names, values, units=tuple(units),
+                       components=tuple(components),
+                       epoch_int_values={"PEPOCH": pepoch_int, "DMEPOCH": dmepoch_int})
 
 
 # ===========================================================================
@@ -166,8 +99,8 @@ class TestComputeDelay:
         delay = model.compute_delay(toa_data, params)
 
         # Expected: DM * K_DM / freq^2
-        from jaxpint.dispersion_dm import _DMCONST
-        expected = 15.0 * _DMCONST / 1400.0**2
+        from jaxpint.constants import DMCONST
+        expected = 15.0 * DMCONST / 1400.0**2
         np.testing.assert_allclose(delay, expected, rtol=1e-12)
 
     def test_delay_accumulates_sequentially(self):
@@ -183,8 +116,8 @@ class TestComputeDelay:
 
         # DispersionDM ignores the accumulated delay input,
         # so two identical components should give 2x the delay
-        from jaxpint.dispersion_dm import _DMCONST
-        single = 15.0 * _DMCONST / 1400.0**2
+        from jaxpint.constants import DMCONST
+        single = 15.0 * DMCONST / 1400.0**2
         np.testing.assert_allclose(delay, 2 * single, rtol=1e-12)
 
     def test_delay_jit_compatible(self):
@@ -242,8 +175,8 @@ class TestComputePhaseRelative:
         phase = model.compute_phase(toa_data, params)
 
         # dt = (tdb - pepoch) * 86400 - delay
-        from jaxpint.dispersion_dm import _DMCONST
-        dm_delay = 15.0 * _DMCONST / 1400.0**2
+        from jaxpint.constants import DMCONST
+        dm_delay = 15.0 * DMCONST / 1400.0**2
         dt = (1.0 + jnp.array([0.0, 0.25, 0.5])) * 86400.0 - dm_delay
         expected_phase = 200.0 * dt
 

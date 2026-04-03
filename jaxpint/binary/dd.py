@@ -22,9 +22,8 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
 from jaxpint.types import TOAData, ParameterVector
+from jaxpint.constants import SECS_PER_DAY, TSUN
 from jaxpint.binary.common import (
-    TSUN,
-    SECS_PER_DAY,
     compute_tt0,
     compute_orbital_phase,
     compute_orbits_pb,

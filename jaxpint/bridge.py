@@ -29,17 +29,10 @@ from pint.observatory import get_observatory
 from pint.observatory.topo_obs import TopoObs
 from pint.toa import TOAs
 
+from jaxpint.constants import JD_MJD_OFFSET, PLANETS
 from jaxpint.types import ParameterVector, TOAData
 
 log = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-_NUMERIC_PARAM_TYPES = frozenset({"floatParameter", "MJDParameter", "AngleParameter"})
-
-_PLANETS = ("jupiter", "saturn", "venus", "uranus", "neptune", "earth")
 
 
 def _convert_deg_to_rad(quantity):
@@ -66,9 +59,6 @@ def _convert_deg_to_rad(quantity):
 
     converted = quantity.to(rad_unit, equivalencies=u.dimensionless_angles())
     return float(converted.value), str(converted.unit)
-
-# JD to MJD offset
-_JD_MJD_OFFSET = 2_400_000.5
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +113,7 @@ def _split_mjd_time(
     jd2 = np.asarray(time_col.jd2, dtype=np.float64)
     # Convert JD pair to MJD pair: MJD = (jd1 - 2400000.5) + jd2
     # Compute combined MJD, then split into integer day + fraction in [0, 1)
-    mjd1 = jd1 - _JD_MJD_OFFSET
+    mjd1 = jd1 - JD_MJD_OFFSET
     full_mjd = mjd1 + jd2
     mjd_int = np.floor(full_mjd)
     mjd_frac = full_mjd - mjd_int
@@ -134,7 +124,7 @@ def _split_epoch_jd(quantity) -> tuple[float, float]:
     """Split a single astropy Time (from an MJDParameter) into MJD int + frac."""
     jd1 = float(quantity.jd1)
     jd2 = float(quantity.jd2)
-    full_mjd = (jd1 - _JD_MJD_OFFSET) + jd2
+    full_mjd = (jd1 - JD_MJD_OFFSET) + jd2
     mjd_int = floor(full_mjd)
     mjd_frac = full_mjd - mjd_int
     return mjd_int, mjd_frac
@@ -273,7 +263,7 @@ def pint_toas_to_jax(
 
     # -- Optional planet positions ---------------------------------------
     planet_positions: Optional[dict[str, np.ndarray]] = None
-    for planet in _PLANETS:
+    for planet in PLANETS:
         col_name = f"obs_{planet}_pos"
         if col_name in tbl.colnames:
             if planet_positions is None:
@@ -840,7 +830,7 @@ def build_timing_model(
             )
 
         elif isinstance(comp, PINTAstrometryEcliptic):
-            from jaxpint.utils import OBLIQUITY_ARCSEC
+            from jaxpint.constants import OBLIQUITY_ARCSEC
 
             _astro_raj = "ELONG"
             _astro_decj = "ELAT"

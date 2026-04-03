@@ -16,16 +16,7 @@ from jaxtyping import Array, Float, Bool
 if TYPE_CHECKING:
     from jaxpint.types import TOAData, ParameterVector
 
-
-# ---------------------------------------------------------------------------
-# Constants used by multiple modules
-# ---------------------------------------------------------------------------
-
-# Julian year in days (IAU definition).
-DAYS_PER_JULIAN_YEAR: float = 365.25
-
-# Radians per milliarcsecond.
-RAD_PER_MAS: float = jnp.pi / (180.0 * 3600.0 * 1000.0)
+from jaxpint.constants import ARCSEC_TO_RAD, DAYS_PER_JULIAN_YEAR, OBLIQUITY_ARCSEC, RAD_PER_MAS
 
 
 # ---------------------------------------------------------------------------
@@ -329,22 +320,8 @@ def woodbury_solve(
 
 
 # ---------------------------------------------------------------------------
-# Ecliptic obliquity constants and rotation
+# Ecliptic obliquity rotation
 # ---------------------------------------------------------------------------
-
-# Obliquity values in arcseconds (from PINT's ecliptic.dat).
-OBLIQUITY_ARCSEC: dict[str, float] = {
-    "IAU1976": 84381.448,
-    "IERS1992": 84381.412,
-    "DE403": 84381.412,
-    "IERS2003": 84381.4059,
-    "IERS2010": 84381.406,
-    "IAU2005": 84381.406,
-    "DEFAULT": 84381.406,
-}
-
-# Arcseconds to radians.
-ARCSEC_TO_RAD: float = jnp.pi / (180.0 * 3600.0)
 
 
 def ecl_to_icrs_rotation(obliquity_arcsec: float) -> Float[Array, "3 3"]:

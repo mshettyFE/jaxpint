@@ -7,6 +7,7 @@ import numpy.testing as npt
 import pytest
 
 from jaxpint.binary.kepler import solve_kepler
+from jaxpint.constants import SECS_PER_DAY
 from jaxpint.binary.common import (
     compute_orbits_pb,
     compute_mean_anomaly,
@@ -15,7 +16,6 @@ from jaxpint.binary.common import (
     compute_true_anomaly,
     compute_eccentric_anomaly,
     compute_tt0,
-    SECS_PER_DAY,
 )
 
 # Enable float64 for JAX.

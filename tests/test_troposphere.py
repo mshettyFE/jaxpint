@@ -10,6 +10,8 @@ from pint.models import get_model
 from pint.simulation import make_fake_toas_uniform
 
 from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params
+from jaxpint.constants import NIELL_LAT_BREAKS
+from tests.helpers import make_toa_data, make_params
 from jaxpint.troposphere import (
     TroposphereDelay,
     _herring_map,
@@ -18,7 +20,6 @@ from jaxpint.troposphere import (
     _pressure_from_height_km,
     _year_fraction,
     _zenith_hydrostatic_delay,
-    _LAT_BREAKS,
 )
 
 
@@ -185,14 +186,14 @@ class TestHelpers:
         """Interpolation at exact breakpoints should return the coefficient value."""
         coeff = jnp.arange(7, dtype=jnp.float64)
         for i in range(1, 6):  # skip endpoints where searchsorted edge cases occur
-            lat = _LAT_BREAKS[i]
+            lat = NIELL_LAT_BREAKS[i]
             result = _interp_lat(jnp.array([lat]), coeff)
             np.testing.assert_allclose(float(result[0]), float(i), atol=1e-12)
 
     def test_interp_lat_midpoint(self):
         """Interpolation at midpoint should return average of neighbors."""
         coeff = jnp.arange(7, dtype=jnp.float64)
-        mid = (_LAT_BREAKS[2] + _LAT_BREAKS[3]) / 2.0
+        mid = (NIELL_LAT_BREAKS[2] + NIELL_LAT_BREAKS[3]) / 2.0
         result = _interp_lat(jnp.array([mid]), coeff)
         np.testing.assert_allclose(float(result[0]), 2.5, atol=1e-10)
 
@@ -266,42 +267,9 @@ class TestEdgeCases:
 
     def test_none_tropo_data_returns_zeros(self):
         """When tropo_alt is None, should return zeros."""
-        from jaxpint.types import TOAData, ParameterVector
-
-        toa_data = TOAData(
-            mjd_int=jnp.array([55000.0]),
-            mjd_frac=jnp.array([0.0]),
-            tdb_int=jnp.array([55000.0]),
-            tdb_frac=jnp.array([0.0]),
-            error=jnp.array([1e-6]),
-            freq=jnp.array([1400.0]),
-            delta_pulse_number=jnp.array([0.0]),
-            ssb_obs_pos=jnp.zeros((1, 3)),
-            ssb_obs_vel=jnp.zeros((1, 3)),
-            obs_sun_pos=jnp.zeros((1, 3)),
-            obs_indices=jnp.zeros(1, dtype=jnp.int32),
-            flag_masks={},
-            planet_positions=None,
-            dm_values=None,
-            dm_errors=None,
-            tropo_alt=None,
-            tropo_alt_valid=None,
-            obs_geodetic_lat=None,
-            obs_height_km=None,
-            n_toas=1,
-            obs_names=("gbt",),
-        )
-
-        params = ParameterVector(
-            values=jnp.array([0.0]),
-            frozen_mask=(True,),
-            names=("DUMMY",),
-            units=("s",),
-            components=("test",),
-            _name_to_index={"DUMMY": 0},
-            bounds=((None, None),),
-            epoch_int_values={},
-        )
+        toa_data = make_toa_data(1, tdb_int=55000.0, tdb_frac=0.0,
+                                 obs_names=("gbt",), planet_positions=None)
+        params = make_params(("DUMMY",), [0.0], frozen_mask=(True,), units=("s",))
 
         comp = TroposphereDelay()
         result = comp(toa_data, params, jnp.zeros(1))
@@ -309,42 +277,15 @@ class TestEdgeCases:
 
     def test_invalid_altitudes_zeroed(self):
         """TOAs with tropo_alt_valid=False should have zero delay."""
-        from jaxpint.types import TOAData, ParameterVector
-
-        toa_data = TOAData(
-            mjd_int=jnp.array([55000.0, 55000.0]),
-            mjd_frac=jnp.array([0.0, 0.0]),
-            tdb_int=jnp.array([55000.0, 55000.0]),
-            tdb_frac=jnp.array([0.0, 0.0]),
-            error=jnp.array([1e-6, 1e-6]),
-            freq=jnp.array([1400.0, 1400.0]),
-            delta_pulse_number=jnp.array([0.0, 0.0]),
-            ssb_obs_pos=jnp.zeros((2, 3)),
-            ssb_obs_vel=jnp.zeros((2, 3)),
-            obs_sun_pos=jnp.zeros((2, 3)),
-            obs_indices=jnp.zeros(2, dtype=jnp.int32),
-            flag_masks={},
-            planet_positions=None,
-            dm_values=None,
-            dm_errors=None,
+        toa_data = make_toa_data(
+            2, tdb_int=55000.0, tdb_frac=0.0,
+            obs_names=("gbt",), planet_positions=None,
             tropo_alt=jnp.array([jnp.radians(45.0), jnp.pi / 2]),
             tropo_alt_valid=jnp.array([True, False]),
             obs_geodetic_lat=jnp.array([jnp.radians(40.0), jnp.radians(40.0)]),
             obs_height_km=jnp.array([1.0, 1.0]),
-            n_toas=2,
-            obs_names=("gbt",),
         )
-
-        params = ParameterVector(
-            values=jnp.array([0.0]),
-            frozen_mask=(True,),
-            names=("DUMMY",),
-            units=("s",),
-            components=("test",),
-            _name_to_index={"DUMMY": 0},
-            bounds=((None, None),),
-            epoch_int_values={},
-        )
+        params = make_params(("DUMMY",), [0.0], frozen_mask=(True,), units=("s",))
 
         comp = TroposphereDelay()
         result = comp(toa_data, params, jnp.zeros(2))

@@ -8,44 +8,19 @@ import pytest
 
 jax.config.update("jax_enable_x64", True)
 
+from tests.helpers import make_toa_data as _make_toa_data_base, make_params
+
 
 def _make_params(param_names, param_values, epoch_int_values=None):
-    from jaxpint.types import ParameterVector
-    if epoch_int_values is None:
-        epoch_int_values = {}
-    return ParameterVector(
-        values=jnp.array(param_values),
-        names=param_names,
-        frozen_mask=tuple(False for _ in param_names),
-        units=tuple("" for _ in param_names),
-        components=tuple("BinaryELL1" for _ in param_names),
-        bounds=tuple((None, None) for _ in param_names),
-        epoch_int_values=epoch_int_values,
-        _name_to_index={n: i for i, n in enumerate(param_names)},
-    )
+    return make_params(param_names, param_values, components="BinaryELL1",
+                       epoch_int_values=epoch_int_values or {})
 
 
 def _make_toa_data(t_mjd):
-    from jaxpint.types import TOAData
-    t_np = np.asarray(t_mjd)
-    tdb_int = jnp.array(np.floor(t_np))
-    tdb_frac = jnp.array(t_np - np.floor(t_np))
-    n = len(t_np)
-    return TOAData(
-        mjd_int=tdb_int, mjd_frac=tdb_frac,
-        tdb_int=tdb_int, tdb_frac=tdb_frac,
-        error=jnp.ones(n) * 1e-6, freq=jnp.ones(n) * 1400.0,
-        delta_pulse_number=jnp.zeros(n),
-        ssb_obs_pos=jnp.zeros((n, 3)), ssb_obs_vel=jnp.zeros((n, 3)),
-        obs_sun_pos=jnp.zeros((n, 3)),
-        obs_indices=jnp.zeros(n, dtype=jnp.int32),
-        flag_masks={}, planet_positions={},
-        dm_values=None, dm_errors=None,
-        tropo_alt=None, tropo_alt_valid=None,
-        obs_geodetic_lat=None, obs_height_km=None,
+    return _make_toa_data_base(
+        t_mjd=t_mjd,
         tzr_tdb_int=jnp.array(54000.0), tzr_tdb_frac=jnp.array(0.5),
         tzr_freq=jnp.array(jnp.inf), tzr_ssb_obs_pos=jnp.zeros(3),
-        n_toas=n, obs_names=("fake",),
     )
 
 

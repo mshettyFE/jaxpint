@@ -15,19 +15,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.binary.kepler import solve_kepler
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-#: GM_sun / c^3  (seconds).  Converts solar masses to time units for Shapiro delay.
-TSUN: float = 4.92549094830932e-6
-
-#: Seconds per day.
-SECS_PER_DAY: float = 86400.0
-
-#: Seconds per Julian year (365.25 days).
-SECS_PER_JULIAN_YEAR: float = 365.25 * 86400.0
+from jaxpint.constants import SECS_PER_DAY, SECS_PER_JULIAN_YEAR, TSUN
 
 
 

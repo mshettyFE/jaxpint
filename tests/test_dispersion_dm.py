@@ -6,8 +6,9 @@ import pytest
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxpint.types import TOAData, ParameterVector
-from jaxpint.dispersion_dm import DispersionDM, _DMCONST
+from jaxpint.constants import DMCONST
+from jaxpint.dispersion_dm import DispersionDM
+from tests.helpers import make_toa_data as _make_toa_data_base, make_params
 
 
 # ---------------------------------------------------------------------------
@@ -15,70 +16,31 @@ from jaxpint.dispersion_dm import DispersionDM, _DMCONST
 # ---------------------------------------------------------------------------
 
 def _make_toa_data(n_toas=5, tdb_int=59000.0, tdb_frac=None, freq=1400.0):
-    """Minimal TOAData with controllable TDB times and frequencies."""
-    if tdb_frac is None:
-        tdb_frac = jnp.linspace(0.1, 0.9, n_toas)
-    else:
-        tdb_frac = jnp.broadcast_to(jnp.asarray(tdb_frac), (n_toas,))
-
-    tdb_int_arr = jnp.full(n_toas, tdb_int)
-    freq_arr = jnp.broadcast_to(jnp.asarray(freq), (n_toas,))
-
-    return TOAData(
-        mjd_int=tdb_int_arr,
-        mjd_frac=tdb_frac,
-        tdb_int=tdb_int_arr,
-        tdb_frac=tdb_frac,
-        error=jnp.ones(n_toas) * 1e-6,
-        freq=freq_arr,
-        delta_pulse_number=jnp.zeros(n_toas),
-        ssb_obs_pos=jnp.zeros((n_toas, 3)),
-        ssb_obs_vel=jnp.zeros((n_toas, 3)),
-        obs_sun_pos=jnp.zeros((n_toas, 3)),
-        obs_indices=jnp.zeros(n_toas, dtype=jnp.int32),
-        flag_masks={},
-        planet_positions=None,
-        dm_values=None,
-        dm_errors=None,
-        tropo_alt=None, tropo_alt_valid=None,
-        obs_geodetic_lat=None, obs_height_km=None,
-        n_toas=n_toas,
-        obs_names=("GBT",),
-    )
+    return _make_toa_data_base(n_toas, tdb_int=tdb_int, tdb_frac=tdb_frac,
+                               freq=freq, obs_names=("GBT",),
+                               planet_positions=None)
 
 
 def _make_params(dm=15.0, dm1=None, dm2=None,
                  dmepoch_int=59000.0, dmepoch_frac=0.0):
-    """Minimal ParameterVector with DM params and DMEPOCH."""
     names = ["DM"]
     values = [dm]
     components = ["DispersionDM"]
+    units = ["pc cm^-3"]
 
     if dm1 is not None:
-        names.append("DM1")
-        values.append(dm1)
-        components.append("DispersionDM")
+        names += ["DM1"]; values += [dm1]
+        components += ["DispersionDM"]; units += ["pc cm^-3/yr"]
     if dm2 is not None:
-        names.append("DM2")
-        values.append(dm2)
-        components.append("DispersionDM")
+        names += ["DM2"]; values += [dm2]
+        components += ["DispersionDM"]; units += ["pc cm^-3/yr"]
 
-    names.append("DMEPOCH")
-    values.append(dmepoch_frac)
-    components.append("DispersionDM")
+    names += ["DMEPOCH"]; values += [dmepoch_frac]
+    components += ["DispersionDM"]; units += ["day"]
 
-    n = len(names)
-    names = tuple(names)
-    return ParameterVector(
-        values=jnp.array(values),
-        frozen_mask=(False,) * n,
-        names=names,
-        units=("pc cm^-3",) + ("pc cm^-3/yr",) * (n - 2) + ("day",),
-        components=tuple(components),
-        _name_to_index={name: i for i, name in enumerate(names)},
-        bounds=((None, None),) * n,
-        epoch_int_values={"DMEPOCH": dmepoch_int},
-    )
+    return make_params(names, values, units=tuple(units),
+                       components=tuple(components),
+                       epoch_int_values={"DMEPOCH": dmepoch_int})
 
 
 # ===========================================================================
@@ -141,7 +103,7 @@ class TestDispersionDelay:
         delay = jnp.zeros(1)
 
         result = disp(toa_data, params, delay)
-        expected = dm * _DMCONST / freq ** 2
+        expected = dm * DMCONST / freq ** 2
         assert jnp.isclose(result[0], expected, rtol=1e-12)
 
     def test_dm_dm1_linear(self):
@@ -160,7 +122,7 @@ class TestDispersionDelay:
         result = disp(toa_data, params, delay)
         # dt_yr = 1.0, so DM(t) = 15.0 + 0.1 * 1.0 = 15.1
         dm_expected = dm + dm1 * 1.0
-        expected = dm_expected * _DMCONST / freq ** 2
+        expected = dm_expected * DMCONST / freq ** 2
         assert jnp.isclose(result[0], expected, rtol=1e-12)
 
     def test_dm_dm1_dm2_quadratic(self):
@@ -181,7 +143,7 @@ class TestDispersionDelay:
 
         result = disp(toa_data, params, delay)
         dm_expected = dm + dm1 * dt_yr + dm2 * dt_yr ** 2 / 2.0
-        expected = dm_expected * _DMCONST / freq ** 2
+        expected = dm_expected * DMCONST / freq ** 2
         assert jnp.isclose(result[0], expected, rtol=1e-12)
 
     def test_frequency_dependence(self):
@@ -211,7 +173,7 @@ class TestDispersionDelay:
         delay = jnp.zeros(4)
 
         result = disp(toa_data, params, delay)
-        expected = dm * _DMCONST / freqs ** 2
+        expected = dm * DMCONST / freqs ** 2
         assert jnp.allclose(result, expected, rtol=1e-12)
 
     def test_zero_dt_gives_base_dm(self):
@@ -224,7 +186,7 @@ class TestDispersionDelay:
         delay = jnp.zeros(1)
 
         result = disp(toa_data, params, delay)
-        expected = dm * _DMCONST / freq ** 2
+        expected = dm * DMCONST / freq ** 2
         assert jnp.isclose(result[0], expected, rtol=1e-12)
 
     def test_acc_delay_ignored(self):
@@ -265,7 +227,7 @@ class TestPrecision:
         result = disp(toa_data, params, delay)
         dt_yr = (toa_int - dmepoch_int + tiny_frac) / 365.25
         dm_expected = dm + dm1 * dt_yr
-        expected = dm_expected * _DMCONST / freq ** 2
+        expected = dm_expected * DMCONST / freq ** 2
         assert jnp.isclose(result[0], expected, rtol=1e-12)
 
 
@@ -319,7 +281,7 @@ class TestGrad:
 
         grads = jax.grad(loss)(params)
         dm_idx = params.param_index("DM")
-        expected_grad = jnp.sum(_DMCONST / freqs ** 2)
+        expected_grad = jnp.sum(DMCONST / freqs ** 2)
         assert jnp.isclose(grads.values[dm_idx], expected_grad, rtol=1e-10)
 
     def test_grad_wrt_dm1(self):
@@ -339,7 +301,7 @@ class TestGrad:
         grads = jax.grad(loss)(params)
         dm1_idx = params.param_index("DM1")
         dt_yr = dt_days / 365.25
-        expected_grad = jnp.sum(dt_yr * _DMCONST / freq ** 2)
+        expected_grad = jnp.sum(dt_yr * DMCONST / freq ** 2)
         assert jnp.isclose(grads.values[dm1_idx], expected_grad, rtol=1e-8)
 
     def test_grad_finite(self):

@@ -21,29 +21,9 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
+from jaxpint.constants import TSUN, AU_KM, PLANET_MASSES, PLANET_NAMES
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
-
-# ---------------------------------------------------------------------------
-# Constants (JPL Solar System Constants)
-# ---------------------------------------------------------------------------
-
-# Solar mass parameter in seconds: GM_sun / c^3.
-_TSUN: float = 4.92549094830932e-6
-
-# Astronomical unit in km (IAU 2012 exact definition).
-_AU_KM: float = 149597870.7
-
-# Planet mass parameters in seconds: T_planet = T_sun / mass_ratio.
-_PLANET_MASSES: dict[str, float] = {
-    "jupiter": _TSUN / 1047.3486,
-    "saturn": _TSUN / 3497.898,
-    "venus": _TSUN / 408523.71,
-    "uranus": _TSUN / 22902.98,
-    "neptune": _TSUN / 19412.24,
-}
-
-_PLANET_NAMES: tuple[str, ...] = ("jupiter", "saturn", "venus", "uranus", "neptune")
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +54,7 @@ def _ss_obj_shapiro_delay(
     r = jnp.sqrt(jnp.sum(obj_pos ** 2, axis=1))
     rcostheta = jnp.sum(obj_pos * psr_dir, axis=1)
     # Guard against log(0) for TZR TOA where obs_sun_pos is zeros.
-    arg = jnp.maximum((r - rcostheta) / _AU_KM, 1e-100)
+    arg = jnp.maximum((r - rcostheta) / AU_KM, 1e-100)
     return -2.0 * T_obj * jnp.log(arg)
 
 
@@ -146,14 +126,14 @@ class SolarSystemShapiroDelay(DelayComponent):
             psr_dir = psr_dir @ ecl_to_icrs_rotation(self.obliquity_arcsec)
 
         # Sun contribution (always).
-        result = _ss_obj_shapiro_delay(toa_data.obs_sun_pos, psr_dir, _TSUN)
+        result = _ss_obj_shapiro_delay(toa_data.obs_sun_pos, psr_dir, TSUN)
 
         # Planet contributions (static field -> plain if is JIT-safe).
         if self.planet_shapiro:
-            for pl in _PLANET_NAMES:
+            for pl in PLANET_NAMES:
                 col = f"obs_{pl}_pos"
                 result = result + _ss_obj_shapiro_delay(
-                    toa_data.planet_positions[col], psr_dir, _PLANET_MASSES[pl]
+                    toa_data.planet_positions[col], psr_dir, PLANET_MASSES[pl]
                 )
 
         return result

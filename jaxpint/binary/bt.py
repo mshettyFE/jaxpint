@@ -19,8 +19,8 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
 from jaxpint.types import TOAData, ParameterVector
+from jaxpint.constants import SECS_PER_DAY
 from jaxpint.binary.common import (
-    SECS_PER_DAY,
     compute_tt0,
     compute_orbital_phase,
     compute_eccentric_anomaly,
