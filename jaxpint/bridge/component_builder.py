@@ -368,6 +368,9 @@ def build_timing_model(
     from pint.models.noise_model import ScaleToaError as PINTScaleToaError
     from pint.models.noise_model import EcorrNoise as PINTEcorrNoise
     from pint.models.noise_model import PLRedNoise as PINTPLRedNoise
+    from pint.models.noise_model import PLDMNoise as PINTPLDMNoise
+    from pint.models.noise_model import PLChromNoise as PINTPLChromNoise
+    from pint.models.noise_model import PLSWNoise as PINTPLSWNoise
     from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
     from pint.models.solar_system_shapiro import SolarSystemShapiro as PINTSolarSystemShapiro
     from pint.models.solar_wind_dispersion import SolarWindDispersion as PINTSolarWindDispersion
@@ -385,6 +388,9 @@ def build_timing_model(
     from jaxpint.noise.white import ScaleToaError
     from jaxpint.noise.noise_model import NoiseModel
     from jaxpint.noise.red_noise import PLRedNoise
+    from jaxpint.noise.dm_noise import PLDMNoise
+    from jaxpint.noise.chrom_noise import PLChromNoise
+    from jaxpint.noise.sw_noise import PLSWNoise
     from jaxpint.delay.shapiro import SolarSystemShapiroDelay
     from jaxpint.delay.solar_wind import SolarWindDispersion
     from jaxpint.delay.solar_wind_x import SolarWindDispersionX
@@ -397,6 +403,9 @@ def build_timing_model(
     noise_model = None
     ecorr_noise = None
     plred_noise = None
+    pldm_noise = None
+    plchrom_noise = None
+    plsw_noise = None
 
     # Cached astrometry param names (reused by Shapiro component).
     _astro_raj = "RAJ"
@@ -723,6 +732,131 @@ def build_timing_model(
                     "build_timing_model — red noise will not be available"
                 )
 
+        elif isinstance(comp, PINTPLDMNoise):
+            if toas is not None:
+                if "tdbld" not in toas.table.colnames:
+                    toas.compute_TDBs()
+                tdb_ld = np.asarray(toas.table["tdbld"])
+                tdb_s = np.float64(tdb_ld) * 86400.0
+
+                n_freqs = (
+                    int(comp.TNDMC.value)
+                    if comp.TNDMC.value is not None
+                    else 30
+                )
+
+                if comp.TNDMTSPAN.quantity is not None:
+                    import astropy.units as u
+                    T = float(comp.TNDMTSPAN.quantity.to(u.s).value)
+                else:
+                    T = float(np.max(tdb_s) - np.min(tdb_s))
+
+                from jaxpint.utils import build_fourier_basis
+                F, freqs, freq_bin_widths = build_fourier_basis(tdb_s, n_freqs, T)
+
+                # Pre-compute DM scaling: (1400 / f_obs)^2
+                import astropy.units as u
+                bary_freqs_mhz = pint_model.barycentric_radio_freq(toas).to(u.MHz).value
+                D = (1400.0 / bary_freqs_mhz) ** 2
+                F_dm = F * D[:, None]
+
+                pldm_noise = PLDMNoise(
+                    fourier_basis=jnp.asarray(F_dm),
+                    freqs=jnp.asarray(freqs),
+                    freq_bin_widths=jnp.asarray(freq_bin_widths),
+                    tndmamp_name="TNDMAMP",
+                    tndmgam_name="TNDMGAM",
+                )
+            else:
+                log.warning(
+                    "PLDMNoise component found but no TOAs provided to "
+                    "build_timing_model — DM noise will not be available"
+                )
+
+        elif isinstance(comp, PINTPLChromNoise):
+            if toas is not None:
+                if "tdbld" not in toas.table.colnames:
+                    toas.compute_TDBs()
+                tdb_ld = np.asarray(toas.table["tdbld"])
+                tdb_s = np.float64(tdb_ld) * 86400.0
+
+                n_freqs = (
+                    int(comp.TNCHROMC.value)
+                    if comp.TNCHROMC.value is not None
+                    else 30
+                )
+
+                if comp.TNCHROMTSPAN.quantity is not None:
+                    import astropy.units as u
+                    T = float(comp.TNCHROMTSPAN.quantity.to(u.s).value)
+                else:
+                    T = float(np.max(tdb_s) - np.min(tdb_s))
+
+                from jaxpint.utils import build_fourier_basis
+                F, freqs, freq_bin_widths = build_fourier_basis(tdb_s, n_freqs, T)
+
+                plchrom_noise = PLChromNoise(
+                    fourier_basis=jnp.asarray(F),
+                    freqs=jnp.asarray(freqs),
+                    freq_bin_widths=jnp.asarray(freq_bin_widths),
+                    tnchromamp_name="TNCHROMAMP",
+                    tnchromgam_name="TNCHROMGAM",
+                    tnchromidx_name="TNCHROMIDX",
+                    fref=1400.0,
+                )
+            else:
+                log.warning(
+                    "PLChromNoise component found but no TOAs provided to "
+                    "build_timing_model — chromatic noise will not be available"
+                )
+
+        elif isinstance(comp, PINTPLSWNoise):
+            if toas is not None:
+                if "tdbld" not in toas.table.colnames:
+                    toas.compute_TDBs()
+                tdb_ld = np.asarray(toas.table["tdbld"])
+                tdb_s = np.float64(tdb_ld) * 86400.0
+
+                n_freqs = (
+                    int(comp.TNSWC.value)
+                    if comp.TNSWC.value is not None
+                    else 100
+                )
+
+                T = float(np.max(tdb_s) - np.min(tdb_s))
+
+                from jaxpint.utils import build_fourier_basis
+                F, freqs, freq_bin_widths = build_fourier_basis(tdb_s, n_freqs, T)
+
+                # Determine SWM from companion SolarWindDispersion component
+                swm = 0
+                swp_name = None
+                if hasattr(pint_model, "SWM"):
+                    swm = int(pint_model.SWM.value) if pint_model.SWM.value is not None else 0
+                if swm == 1:
+                    swp_name = "SWP"
+
+                plsw_noise = PLSWNoise(
+                    fourier_basis=jnp.asarray(F),
+                    freqs=jnp.asarray(freqs),
+                    freq_bin_widths=jnp.asarray(freq_bin_widths),
+                    tnswamp_name="TNSWAMP",
+                    tnswgam_name="TNSWGAM",
+                    swm=swm,
+                    swp_name=swp_name,
+                    raj_name=_astro_raj,
+                    decj_name=_astro_decj,
+                    pmra_name=_astro_pmra,
+                    pmdec_name=_astro_pmdec,
+                    posepoch_name=_astro_posepoch,
+                    obliquity_arcsec=_astro_obliquity_arcsec,
+                )
+            else:
+                log.warning(
+                    "PLSWNoise component found but no TOAs provided to "
+                    "build_timing_model — solar wind noise will not be available"
+                )
+
         else:
             log.warning(
                 "Skipping PINT component %r (%s) — not yet ported to JaxPINT",
@@ -740,6 +874,12 @@ def build_timing_model(
         correlated.append(ecorr_noise)
     if plred_noise is not None:
         correlated.append(plred_noise)
+    if pldm_noise is not None:
+        correlated.append(pldm_noise)
+    if plchrom_noise is not None:
+        correlated.append(plchrom_noise)
+    if plsw_noise is not None:
+        correlated.append(plsw_noise)
 
     combined_noise = NoiseModel(
         white_noise=noise_model,
