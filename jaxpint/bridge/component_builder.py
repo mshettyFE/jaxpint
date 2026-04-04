@@ -276,6 +276,7 @@ def build_timing_model(
     from pint.models.solar_system_shapiro import SolarSystemShapiro as PINTSolarSystemShapiro
     from pint.models.solar_wind_dispersion import SolarWindDispersion as PINTSolarWindDispersion
     from pint.models.troposphere_delay import TroposphereDelay as PINTTroposphereDelay
+    from pint.models.jump import PhaseJump as PINTPhaseJump
 
     from jaxpint.model import TimingModel
     from jaxpint.spin import Spindown
@@ -285,6 +286,7 @@ def build_timing_model(
     from jaxpint.shapiro import SolarSystemShapiroDelay
     from jaxpint.solar_wind import SolarWindDispersion
     from jaxpint.troposphere import TroposphereDelay
+    from jaxpint.jump import PhaseJump
 
     delay_components = []
     phase_components = []
@@ -450,6 +452,16 @@ def build_timing_model(
         elif isinstance(comp, PINTTroposphereDelay):
             if comp.CORRECT_TROPOSPHERE.value:
                 delay_components.append(TroposphereDelay())
+
+        elif isinstance(comp, PINTPhaseJump):
+            comp.setup()
+            jump_names = tuple(
+                mask_par
+                for mask_par in comp.get_params_of_type("maskParameter")
+                if mask_par.startswith("JUMP")
+            )
+            if jump_names:
+                phase_components.append(PhaseJump(jump_param_names=jump_names))
 
         elif isinstance(comp, PINTScaleToaError):
             # Extract EFAC and EQUAD parameter names from the PINT component
