@@ -11,7 +11,7 @@ from .glitch import Glitch
 from .dispersion_dm import DispersionDM
 from .bridge import pint_toas_to_jax, pint_model_to_params, params_to_pint_model, build_timing_model
 from .model import TimingModel
-from .noise import ScaleToaError, EcorrNoise
+from .noise import ScaleToaError, EcorrNoise, NoiseModel
 from .astrometry import AstrometryEcliptic
 from .shapiro import SolarSystemShapiroDelay
 from .solar_wind import SolarWindDispersion
@@ -59,6 +59,7 @@ __all__ = [
     "woodbury_dot",
     "woodbury_solve",
     "EcorrNoise",
+    "NoiseModel",
     "GLSFitter",
     "GLSFitResult",
     "apply_delay_to_toas",

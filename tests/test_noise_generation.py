@@ -334,16 +334,15 @@ class TestGLSWhitening:
         # Convert to JaxPINT
         toa_data = pint_toas_to_jax(pint_toas, model=pint_model)
         params = pint_model_to_params(pint_model)
-        jax_model, noise_model, ecorr_noise = build_timing_model(
+        jax_model, noise_model = build_timing_model(
             pint_model, pint_toas
         )
 
-        # Build noise components list
+        # Build noise components list for simulation
         noise_components = []
-        if noise_model is not None:
-            noise_components.append(noise_model)
-        if ecorr_noise is not None:
-            noise_components.append(ecorr_noise)
+        if noise_model.white_noise is not None:
+            noise_components.append(noise_model.white_noise)
+        noise_components.extend(noise_model.correlated)
 
         # Generate fake TOAs with JaxPINT noise
         key = jax.random.PRNGKey(2024)
@@ -357,7 +356,6 @@ class TestGLSWhitening:
         fitter = GLSFitter(
             jax_model, fake_toa_data, fit_params,
             noise_model=noise_model,
-            ecorr_noise=ecorr_noise,
         )
         fitter.fit_toas(maxiter=3)
 
@@ -365,8 +363,8 @@ class TestGLSWhitening:
         sigma = noise_model.scaled_sigma(fake_toa_data, result.params)
 
         # Whiten: subtract correlated noise, divide by scaled sigma
-        if ecorr_noise is not None and result.noise_realizations is not None:
-            U = ecorr_noise.quantization_matrix
+        if noise_model.has_correlated and result.noise_realizations is not None:
+            _, U, _ = noise_model.covariance(fake_toa_data, result.params)
             rc = U @ result.noise_realizations
             whitened = (result.residuals - rc) / sigma
         else:

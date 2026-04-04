@@ -366,7 +366,7 @@ class TestVsPINT:
         params = pint_model_to_params(pint_model)
 
         # Build JaxPINT model automatically from PINT
-        jax_model, _, _ = build_timing_model(pint_model)
+        jax_model, _ = build_timing_model(pint_model)
 
         # Find the Glitch component
         glitch_comp = None
@@ -400,7 +400,7 @@ class TestVsPINT:
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model)
 
-        jax_model, _, _ = build_timing_model(pint_model)
+        jax_model, _ = build_timing_model(pint_model)
         glitch_comp = [c for c in jax_model.phase_components if isinstance(c, Glitch)][0]
 
         # Use PINT's full delay as the delay input
@@ -435,7 +435,7 @@ class TestVsPINT:
 
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model)
-        jax_model, _, _ = build_timing_model(pint_model)
+        jax_model, _ = build_timing_model(pint_model)
 
         # JaxPINT residuals
         jax_resid = np.asarray(compute_phase_residuals(jax_model, toa_data, params))

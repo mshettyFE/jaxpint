@@ -501,7 +501,7 @@ class TestVsPINT:
         pint_model, toas = ngc6440e
         from jaxpint.bridge import build_timing_model
 
-        jax_model, _noise, _ecorr = build_timing_model(pint_model)
+        jax_model, _noise = build_timing_model(pint_model)
 
         # Should have one Spindown phase component
         assert len(jax_model.phase_components) == 1
@@ -526,7 +526,7 @@ class TestVsPINT:
         pint_model, toas = ngc6440e
         from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params
 
-        jax_model, _noise, _ecorr = build_timing_model(pint_model)
+        jax_model, _noise = build_timing_model(pint_model)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model)
 

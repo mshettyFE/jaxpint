@@ -262,9 +262,9 @@ def build_timing_model(
 
     Returns
     -------
-    (TimingModel, Optional[ScaleToaError], Optional[EcorrNoise])
-        The timing model, optional white noise model, and optional ECORR
-        noise model.
+    (TimingModel, NoiseModel)
+        The timing model and a :class:`NoiseModel` that aggregates all
+        noise sources (white noise and correlated components).
     """
     from pint.models.spindown import Spindown as PINTSpindown
     from pint.models.dispersion_model import DispersionDM as PINTDispersionDM
@@ -286,7 +286,7 @@ def build_timing_model(
     from jaxpint.dispersion_dm import DispersionDM
     from jaxpint.dispersion_dmx import DispersionDMX
     from jaxpint.astrometry import AstrometryEquatorial, AstrometryEcliptic
-    from jaxpint.noise import EcorrNoise, ScaleToaError
+    from jaxpint.noise import EcorrNoise, NoiseModel, ScaleToaError
     from jaxpint.shapiro import SolarSystemShapiroDelay
     from jaxpint.solar_wind import SolarWindDispersion
     from jaxpint.solar_wind_x import SolarWindDispersionX
@@ -589,4 +589,13 @@ def build_timing_model(
         delay_components=tuple(delay_components),
         phase_components=tuple(phase_components),
     )
-    return timing_model, noise_model, ecorr_noise
+
+    correlated: list[EcorrNoise] = []
+    if ecorr_noise is not None:
+        correlated.append(ecorr_noise)
+
+    combined_noise = NoiseModel(
+        white_noise=noise_model,
+        correlated=tuple(correlated),
+    )
+    return timing_model, combined_noise

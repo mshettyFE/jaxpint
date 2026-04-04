@@ -330,7 +330,7 @@ class TestGLSReducesToWLS:
         pint_model, toas = synthetic_data
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model)
-        jax_model, noise_model, ecorr_noise = build_timing_model(pint_model)
+        jax_model, noise_model = build_timing_model(pint_model)
 
         # WLS
         params_wls = copy.deepcopy(params)
@@ -341,7 +341,7 @@ class TestGLSReducesToWLS:
         params_gls = copy.deepcopy(params)
         gls = GLSFitter(
             jax_model, toa_data, params_gls,
-            noise_model=noise_model, ecorr_noise=None,
+            noise_model=noise_model,
         )
         chi2_gls = gls.fit_toas(maxiter=1)
 

@@ -19,7 +19,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.model import TimingModel
-from jaxpint.noise import EcorrNoise, ScaleToaError
+from jaxpint.noise import NoiseModel
 from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import normalize_designmatrix, woodbury_dot, woodbury_solve
@@ -197,6 +197,8 @@ class WLSFitter:
         Pre-extracted TOA data.
     params : ParameterVector
         Initial parameter values (free/frozen flags determine what is fit).
+    noise_model : NoiseModel, optional
+        Noise model (only diagonal / white-noise part is used by WLS).
     """
 
     def __init__(
@@ -204,7 +206,7 @@ class WLSFitter:
         model: TimingModel,
         toa_data: TOAData,
         params: ParameterVector,
-        noise_model: Optional[ScaleToaError] = None,
+        noise_model: Optional[NoiseModel] = None,
     ):
         self.model = model
         self.toa_data = toa_data
@@ -481,10 +483,11 @@ class GLSFitResult:
 
 
 class GLSFitter:
-    """Generalised Least Squares fitter (supports ECORR).
+    """Generalised Least Squares fitter.
 
-    When no ``ecorr_noise`` is provided the GLS fitter reduces to
-    standard WLS (diagonal covariance).
+    Supports arbitrary correlated noise sources (ECORR, red noise, etc.)
+    through the :class:`~jaxpint.noise.NoiseModel` interface.  When no
+    correlated components are present the GLS fitter reduces to WLS.
 
     Parameters
     ----------
@@ -494,10 +497,8 @@ class GLSFitter:
         Pre-extracted TOA data.
     params : ParameterVector
         Initial parameter values.
-    noise_model : ScaleToaError, optional
-        White noise model (EFAC/EQUAD).
-    ecorr_noise : EcorrNoise, optional
-        Correlated noise model (ECORR).
+    noise_model : NoiseModel, optional
+        Noise model containing white and/or correlated components.
     """
 
     def __init__(
@@ -505,50 +506,52 @@ class GLSFitter:
         model: TimingModel,
         toa_data: TOAData,
         params: ParameterVector,
-        noise_model: Optional[ScaleToaError] = None,
-        ecorr_noise: Optional[EcorrNoise] = None,
+        noise_model: Optional[NoiseModel] = None,
     ):
         self.model = model
         self.toa_data = toa_data
         self.params = params
         self.noise_model = noise_model
-        self.ecorr_noise = ecorr_noise
         self.result: Optional[GLSFitResult] = None
 
     def _get_noise(
         self,
-    ) -> tuple[Float[Array, " n_toas"], Float[Array, " n_toas"], Float[Array, " n_epochs"]]:
-        """Return (sigma, Ndiag, Phidiag) for the current parameters."""
+    ) -> tuple[
+        Float[Array, " n_toas"],
+        Float[Array, " n_toas"],
+        Float[Array, "n_toas n_basis"],
+        Float[Array, " n_basis"],
+    ]:
+        """Return (sigma, Ndiag, U, Phidiag) for the current parameters."""
         if self.noise_model is not None:
             sigma = self.noise_model.scaled_sigma(self.toa_data, self.params)
+            Ndiag, U, Phidiag = self.noise_model.covariance(
+                self.toa_data, self.params
+            )
         else:
             sigma = self.toa_data.error
-        Ndiag = sigma ** 2
-
-        if self.ecorr_noise is not None:
-            Phidiag = self.ecorr_noise.ecorr_weights(self.params)
-        else:
+            Ndiag = sigma ** 2
+            U = jnp.zeros((self.toa_data.n_toas, 0))
             Phidiag = jnp.zeros(0)
 
-        return sigma, Ndiag, Phidiag
+        return sigma, Ndiag, U, Phidiag
 
     def _iteration(
         self,
-        U: Float[Array, "n_toas n_epochs"],
-        n_epochs: int,
         threshold: float,
         full_cov: bool,
     ) -> tuple[
         Float[Array, "n_free n_free"],
-        Optional[Float[Array, " n_epochs"]],
+        Optional[Float[Array, " n_basis"]],
     ]:
         """Run one Gauss-Newton iteration; returns (covariance, noise_realizations)."""
-        sigma, Ndiag, Phidiag = self._get_noise()
+        sigma, Ndiag, U, Phidiag = self._get_noise()
+        n_basis = U.shape[1]
 
         time_resid = compute_time_residuals(
             self.model, self.toa_data, self.params
         )
-        if n_epochs > 0:
+        if n_basis > 0:
             time_resid = _subtract_gls_weighted_mean(
                 time_resid, Ndiag, U, Phidiag
             )
@@ -563,7 +566,7 @@ class GLSFitter:
             dpars, covariance, _norms = gls_step_fullcov(
                 time_resid, Ndiag, U, Phidiag, M, threshold
             )
-        elif n_epochs > 0:
+        elif n_basis > 0:
             dpars, covariance, _norms, noise_realizations = (
                 gls_step_augmented(
                     time_resid, Ndiag, U, Phidiag, M, threshold
@@ -581,24 +584,23 @@ class GLSFitter:
     def _build_result(
         self,
         covariance: Float[Array, "n_free n_free"],
-        noise_realizations: Optional[Float[Array, " n_epochs"]],
-        U: Float[Array, "n_toas n_epochs"],
-        n_epochs: int,
+        noise_realizations: Optional[Float[Array, " n_basis"]],
     ) -> float:
         """Compute final residuals/chi2 and populate ``self.result``."""
-        sigma, Ndiag, Phidiag = self._get_noise()
+        sigma, Ndiag, U, Phidiag = self._get_noise()
+        n_basis = U.shape[1]
 
         final_resid = compute_time_residuals(
             self.model, self.toa_data, self.params
         )
-        if n_epochs > 0:
+        if n_basis > 0:
             final_resid = _subtract_gls_weighted_mean(
                 final_resid, Ndiag, U, Phidiag
             )
         else:
             final_resid = _subtract_weighted_mean(final_resid, sigma)
 
-        if n_epochs > 0:
+        if n_basis > 0:
             chi2_val = float(compute_gls_chi2(final_resid, Ndiag, U, Phidiag))
         else:
             chi2_val = float(compute_chi2(final_resid, sigma))
@@ -646,26 +648,25 @@ class GLSFitter:
         """
         n_toas = self.toa_data.n_toas
 
-        # Set up ECORR components (or empty arrays for pure WLS)
-        if self.ecorr_noise is not None:
-            U = self.ecorr_noise.quantization_matrix
+        # Determine basis dimension for threshold calculation
+        if self.noise_model is not None and self.noise_model.has_correlated:
+            _, _, U_init, _ = self._get_noise()
+            n_basis = U_init.shape[1]
         else:
-            U = jnp.zeros((n_toas, 0))
-
-        n_epochs = U.shape[1]
+            n_basis = 0
 
         if threshold is None:
             if full_cov:
                 dim = self.params.n_free
             else:
-                dim = self.params.n_free + n_epochs
+                dim = self.params.n_free + n_basis
             threshold = 1e-14 * max(n_toas, dim)
 
         covariance = None
         noise_realizations = None
         for _ in range(maxiter):
             covariance, noise_realizations = self._iteration(
-                U, n_epochs, threshold, full_cov
+                threshold, full_cov
             )
 
-        return self._build_result(covariance, noise_realizations, U, n_epochs)
+        return self._build_result(covariance, noise_realizations)

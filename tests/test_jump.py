@@ -312,7 +312,7 @@ class TestJumpIntegration:
         from jaxpint.bridge import pint_toas_to_jax, build_timing_model
 
         toa_data = pint_toas_to_jax(toas, model=model)
-        jax_model, _, _ = build_timing_model(model)
+        jax_model, _ = build_timing_model(model)
 
         # Find the PhaseJump component
         jump_comp = [c for c in jax_model.phase_components
@@ -342,7 +342,7 @@ class TestJumpIntegration:
 
         toa_data = pint_toas_to_jax(toas, model=model)
         params = pint_model_to_params(model)
-        jax_model, _, _ = build_timing_model(model)
+        jax_model, _ = build_timing_model(model)
 
         jump_comp = [c for c in jax_model.phase_components
                      if isinstance(c, PhaseJump)][0]
@@ -366,7 +366,7 @@ class TestJumpIntegration:
 
         toa_data = pint_toas_to_jax(toas, model=model)
         params = pint_model_to_params(model)
-        jax_model, _, _ = build_timing_model(model)
+        jax_model, _ = build_timing_model(model)
 
         jump_comp = [c for c in jax_model.phase_components
                      if isinstance(c, PhaseJump)][0]
@@ -396,7 +396,7 @@ class TestJumpIntegration:
 
         toa_data = pint_toas_to_jax(toas, model=model)
         params = pint_model_to_params(model)
-        jax_model, _, _ = build_timing_model(model)
+        jax_model, _ = build_timing_model(model)
 
         jump_comp = [c for c in jax_model.phase_components
                      if isinstance(c, PhaseJump)][0]
@@ -427,7 +427,7 @@ class TestJumpIntegration:
 
         toa_data = pint_toas_to_jax(toas, model=model)
         params = pint_model_to_params(model)
-        jax_model, _, _ = build_timing_model(model)
+        jax_model, _ = build_timing_model(model)
 
         jump_comp = [c for c in jax_model.phase_components
                      if isinstance(c, PhaseJump)][0]
