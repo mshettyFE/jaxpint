@@ -268,6 +268,7 @@ def build_timing_model(
     """
     from pint.models.spindown import Spindown as PINTSpindown
     from pint.models.dispersion_model import DispersionDM as PINTDispersionDM
+    from pint.models.dispersion_model import DispersionDMX as PINTDispersionDMX
     from pint.models.astrometry import AstrometryEquatorial as PINTAstrometryEquatorial
     from pint.models.astrometry import AstrometryEcliptic as PINTAstrometryEcliptic
     from pint.models.noise_model import ScaleToaError as PINTScaleToaError
@@ -282,6 +283,7 @@ def build_timing_model(
     from jaxpint.model import TimingModel
     from jaxpint.spin import Spindown
     from jaxpint.dispersion_dm import DispersionDM
+    from jaxpint.dispersion_dmx import DispersionDMX
     from jaxpint.astrometry import AstrometryEquatorial, AstrometryEcliptic
     from jaxpint.noise import EcorrNoise, ScaleToaError
     from jaxpint.shapiro import SolarSystemShapiroDelay
@@ -417,6 +419,18 @@ def build_timing_model(
                     dmepoch_name=dmepoch_name,
                 )
             )
+
+        elif isinstance(comp, PINTDispersionDMX):
+            comp.setup()
+            DMX_mapping = comp.get_prefix_mapping_component("DMX_")
+            dmx_indices = sorted(DMX_mapping.keys())
+            if dmx_indices:
+                delay_components.append(DispersionDMX(
+                    n_bins=len(dmx_indices),
+                    dmx_names=tuple(f"DMX_{i:04d}" for i in dmx_indices),
+                    dmxr1_names=tuple(f"DMXR1_{i:04d}" for i in dmx_indices),
+                    dmxr2_names=tuple(f"DMXR2_{i:04d}" for i in dmx_indices),
+                ))
 
         elif isinstance(comp, PINTPulsarBinary):
             delay_components.append(_build_binary_component(comp, pint_model))
