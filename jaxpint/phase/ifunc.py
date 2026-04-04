@@ -1,0 +1,91 @@
+"""Interpolation function phase component (IFunc).
+
+Ports PINT's ``IFunc`` class as a pure Equinox module.  The phase is
+modelled by interpolating tabulated (MJD, delay) pairs and converting
+to phase via F0:
+
+    phase(t) = interp(t) * F0
+
+Supports piecewise-constant (SIFUNC=0) and linear (SIFUNC=2) interpolation.
+
+The control points are pre-extracted at bridge time and stored as fixed
+arrays (not fittable parameters).
+
+All derivatives w.r.t. F0 are handled by ``jax.jacobian`` through ``__call__``.
+"""
+
+from __future__ import annotations
+
+import equinox as eqx
+import jax.numpy as jnp
+from jaxtyping import Array, Float
+
+from jaxpint.components import PhaseComponent
+from jaxpint.constants import SECS_PER_DAY
+from jaxpint.phase_result import PhaseResult
+from jaxpint.types import TOAData, ParameterVector
+
+
+class IFunc(PhaseComponent):
+    """Interpolation function model.
+
+    Parameters
+    ----------
+    interp_type : int
+        Interpolation type: 0 = piecewise constant, 2 = linear.
+    control_mjds : array, shape (n_points,)
+        MJD control-point times (sorted, ascending).
+    control_delays : array, shape (n_points,)
+        Delay values at control points (seconds).
+    f0_name : str
+        Name of the spin frequency parameter (default ``"F0"``).
+    """
+
+    interp_type: int = eqx.field(static=True)
+    control_mjds: Float[Array, " n_points"]
+    control_delays: Float[Array, " n_points"]
+    f0_name: str = eqx.field(static=True, default="F0")
+
+    def __check_init__(self):
+        if self.interp_type not in (0, 2):
+            raise ValueError(f"IFunc interp_type must be 0 or 2, got {self.interp_type}")
+        if self.control_mjds.shape[0] < 1:
+            raise ValueError("IFunc requires at least one control point")
+
+    def __call__(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+        delay: Float[Array, " n_toas"],
+    ) -> PhaseResult:
+        """Compute IFunc phase contribution.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data.
+        params : ParameterVector
+            Timing-model parameters containing F0.
+        delay : array, shape (n_toas,)
+            Accumulated signal delay from prior components in seconds.
+
+        Returns
+        -------
+        PhaseResult
+            Phase contribution in cycles (int + frac split).
+        """
+        f0 = params.param_value(self.f0_name)
+        t = toa_data.tdb_int + toa_data.tdb_frac - delay / SECS_PER_DAY
+
+        if self.interp_type == 0:
+            # Piecewise constant: use nearest preceding control point
+            idx = jnp.searchsorted(self.control_mjds, t, side="right") - 1
+            idx = jnp.clip(idx, 0, self.control_mjds.shape[0] - 1)
+            interp_delay = self.control_delays[idx]
+        else:
+            # Linear interpolation
+            interp_delay = jnp.interp(t, self.control_mjds, self.control_delays)
+
+        phase = interp_delay * f0
+
+        return PhaseResult.create(jnp.zeros(toa_data.n_toas), phase)

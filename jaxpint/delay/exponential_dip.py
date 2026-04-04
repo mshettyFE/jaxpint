@@ -1,0 +1,116 @@
+"""Exponential dip delay component.
+
+Ports PINT's ``SimpleExponentialDip`` class as a pure Equinox module.
+Models chromatic exponential dip events (e.g. profile changes) with a
+smooth logistic transition:
+
+    delay_i = -A * (f/fref)^gamma * norm * expfac
+
+where norm ensures the extremum equals A at the peak, and expfac
+combines an exponential decay with a smooth logistic onset.
+
+All derivatives are handled by ``jax.jacobian`` through ``__call__``.
+"""
+
+from __future__ import annotations
+
+import equinox as eqx
+import jax.numpy as jnp
+from jaxtyping import Array, Float
+
+from jaxpint.components import DelayComponent
+from jaxpint.types import TOAData, ParameterVector
+
+
+class ExponentialDip(DelayComponent):
+    """Exponential dip delay model.
+
+    Parameters
+    ----------
+    n_dips : int
+        Number of dip events.
+    expdipeps_name : str
+        Name of the transition timescale parameter (days).
+    expdipfref_name : str
+        Name of the reference frequency parameter (MHz).
+    expdipep_names : tuple[str, ...]
+        Names of event epoch parameters (MJD).
+    expdipamp_names : tuple[str, ...]
+        Names of event amplitude parameters (seconds).
+    expdipidx_names : tuple[str, ...]
+        Names of chromatic index parameters (dimensionless).
+    expdiptau_names : tuple[str, ...]
+        Names of decay timescale parameters (days).
+    """
+
+    n_dips: int = eqx.field(static=True)
+    expdipep_names: tuple[str, ...] = eqx.field(static=True)
+    expdipamp_names: tuple[str, ...] = eqx.field(static=True)
+    expdipidx_names: tuple[str, ...] = eqx.field(static=True)
+    expdiptau_names: tuple[str, ...] = eqx.field(static=True)
+    expdipeps_name: str = eqx.field(static=True, default="EXPDIPEPS")
+    expdipfref_name: str = eqx.field(static=True, default="EXPDIPFREF")
+
+    def __check_init__(self):
+        if self.n_dips < 1:
+            raise ValueError("ExponentialDip requires at least one dip event")
+        for attr in ("expdipep_names", "expdipamp_names", "expdipidx_names", "expdiptau_names"):
+            if len(getattr(self, attr)) != self.n_dips:
+                raise ValueError(
+                    f"Length of {attr} ({len(getattr(self, attr))}) "
+                    f"does not match n_dips ({self.n_dips})"
+                )
+
+    def __call__(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+        delay: Float[Array, " n_toas"],
+    ) -> Float[Array, " n_toas"]:
+        """Compute exponential dip delay contribution.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data.
+        params : ParameterVector
+            Timing-model parameters.
+        delay : array, shape (n_toas,)
+            Accumulated signal delay from prior components in seconds.
+
+        Returns
+        -------
+        array, shape (n_toas,)
+            Exponential dip delay in seconds.
+        """
+        eps = params.param_value(self.expdipeps_name)   # days
+        fref = params.param_value(self.expdipfref_name)  # MHz
+        ffac = toa_data.freq / fref
+
+        toa_tdb = toa_data.tdb_int + toa_data.tdb_frac  # MJD (days)
+
+        total = jnp.zeros(toa_data.n_toas)
+
+        for i in range(self.n_dips):
+            T_int, T_frac = params.epoch_value(self.expdipep_names[i])
+            T = T_int + T_frac
+            dt = toa_tdb - T  # days
+
+            A = params.param_value(self.expdipamp_names[i])      # seconds
+            gamma = params.param_value(self.expdipidx_names[i])  # dimensionless
+            tau = params.param_value(self.expdiptau_names[i])    # days
+
+            # Normalization so extremum = A
+            norm = (tau / eps) ** (eps / tau) * (tau / (tau - eps)) ** ((tau - eps) / tau)
+
+            # Exponential factor with smooth logistic transition.
+            # For dt >= 0: exp(-dt/tau) / (1 + exp(-dt/eps))
+            # For dt < 0:  exp(dt*(tau-eps)/(tau*eps)) / (1 + exp(dt/eps))
+            # Use jnp.where for JIT compatibility.
+            expfac_pos = jnp.exp(-dt / tau) / (1.0 + jnp.exp(-dt / eps))
+            expfac_neg = jnp.exp(dt * (tau - eps) / (tau * eps)) / (1.0 + jnp.exp(dt / eps))
+            expfac = jnp.where(dt >= 0.0, expfac_pos, expfac_neg)
+
+            total = total + (-A * ffac ** gamma * norm * expfac)
+
+        return total

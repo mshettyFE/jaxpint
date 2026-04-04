@@ -18,6 +18,7 @@ from pint.models.parameter import (
     boolParameter,
     intParameter,
     maskParameter,
+    pairParameter,
     prefixParameter,
     strParameter,
 )
@@ -106,6 +107,31 @@ def pint_model_to_params(model: PINTTimingModel) -> ParameterVector:
         if param.quantity is None:
             continue
 
+        # Pair parameters (e.g. WAVE, IFUNC) store [value_a, value_b] lists.
+        # Detected via pairParameter type OR prefixParameter with parameter_type="pair".
+        # Split into two ParameterVector entries with _A / _B suffixes.
+        is_pair = isinstance(param, pairParameter) or (
+            hasattr(param, "parameter_type") and param.parameter_type == "pair"
+        )
+        if is_pair:
+            pair = param.quantity
+            if pair is None:
+                continue
+            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                continue
+            val_a = float(pair[0].value) if hasattr(pair[0], "value") else float(pair[0])
+            val_b = float(pair[1].value) if hasattr(pair[1], "value") else float(pair[1])
+            comp = param_map.get(pname, "Unknown")
+            unit_str = str(param.units) if param.units is not None else ""
+            for suffix, val in [("_A", val_a), ("_B", val_b)]:
+                names.append(pname + suffix)
+                values.append(val)
+                units.append(unit_str)
+                frozen_mask.append(param.frozen)
+                components.append(comp)
+                bounds.append((None, None))
+            continue
+
         if isinstance(param, MJDParameter):
             mjd_int, mjd_frac = _split_epoch_jd(param.quantity)
             epoch_int_values[pname] = mjd_int
@@ -190,7 +216,23 @@ def params_to_pint_model(
     model : pint.models.TimingModel
         The PINT model to update.
     """
+    # Collect pair parameter halves (_A / _B) for recombination
+    pair_halves: dict[str, dict[str, float]] = {}  # base_name → {"_A": val, "_B": val}
+
     for i, pname in enumerate(params.names):
+        # Handle pair parameter suffixes
+        if pname.endswith("_A") or pname.endswith("_B"):
+            base = pname[:-2]
+            suffix = pname[-2:]
+            if hasattr(model, base):
+                p = getattr(model, base)
+                is_pair = isinstance(p, pairParameter) or (
+                    hasattr(p, "parameter_type") and p.parameter_type == "pair"
+                )
+                if is_pair:
+                    pair_halves.setdefault(base, {})[suffix] = float(params.values[i])
+                    continue
+
         param = getattr(model, pname)
         val = float(params.values[i])
 
@@ -233,5 +275,12 @@ def params_to_pint_model(
                 param.value = native_value
             else:
                 param.value = val
+
+    # Recombine pair parameter halves
+    for base, halves in pair_halves.items():
+        param = getattr(model, base)
+        val_a = halves.get("_A", 0.0)
+        val_b = halves.get("_B", 0.0)
+        param.value = (val_a, val_b)
 
     return model

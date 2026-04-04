@@ -552,6 +552,39 @@ def compute_pulsar_direction_ecl(
 # ---------------------------------------------------------------------------
 
 
+def fourier_sum(
+    dt_days: Float[Array, " n_toas"],
+    wx_freqs: Float[Array, " n_components"],
+    wx_sins: Float[Array, " n_components"],
+    wx_coses: Float[Array, " n_components"],
+) -> Float[Array, " n_toas"]:
+    """Evaluate a Fourier sum at each TOA.
+
+    Computes::
+
+        result[t] = Σ_i (wx_sins[i] * sin(2π * wx_freqs[i] * dt_days[t])
+                       + wx_coses[i] * cos(2π * wx_freqs[i] * dt_days[t]))
+
+    Parameters
+    ----------
+    dt_days : (n_toas,)
+        Time differences from the reference epoch in **days**.
+    wx_freqs : (n_components,)
+        Fourier frequencies in **1/day**.
+    wx_sins : (n_components,)
+        Sine amplitudes.
+    wx_coses : (n_components,)
+        Cosine amplitudes.
+
+    Returns
+    -------
+    (n_toas,)
+        Fourier sum evaluated at each TOA.
+    """
+    arg = 2.0 * jnp.pi * dt_days[:, None] * wx_freqs[None, :]  # (n_toas, n_comp)
+    return jnp.sum(wx_sins * jnp.sin(arg) + wx_coses * jnp.cos(arg), axis=1)
+
+
 def build_fourier_basis(
     tdb_times_s: np.ndarray,
     n_freqs: int,

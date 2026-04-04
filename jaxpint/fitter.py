@@ -306,6 +306,8 @@ class WLSFitter:
 
         params = self.params
         covariance = None
+        safe_maxiter =  1 if maxiter < 1 else maxiter
+
         for _ in range(safe_maxiter):
             params, covariance = self._iteration(params, threshold)
 

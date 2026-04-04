@@ -1,0 +1,99 @@
+"""Fourier-basis chromatic noise delay component (CMWaveX).
+
+Ports PINT's ``CMWaveX`` class as a pure Equinox module.  The chromatic
+measure (CM) is modelled as a Fourier sum and converted to delay via
+chromatic dispersion:
+
+    CM(t) = Σ_i (CMWXSIN_i * sin(2π * CMWXFREQ_i * (t - CMWXEPOCH))
+               + CMWXCOS_i * cos(2π * CMWXFREQ_i * (t - CMWXEPOCH)))
+
+    delay = CM(t) * K_DM * freq^(-alpha)
+
+where alpha = TNCHROMIDX.
+
+All derivatives are handled by ``jax.jacobian`` through ``__call__``.
+"""
+
+from __future__ import annotations
+
+import equinox as eqx
+import jax.numpy as jnp
+from jaxtyping import Array, Float
+
+from jaxpint.components import DelayComponent
+from jaxpint.constants import DMCONST
+from jaxpint.types import TOAData, ParameterVector
+from jaxpint.utils import fourier_sum
+
+
+class CMWaveX(DelayComponent):
+    """Fourier-basis chromatic noise (CMWaveX).
+
+    Parameters
+    ----------
+    n_components : int
+        Number of Fourier components.
+    cmwxepoch_name : str
+        Name of the reference epoch parameter.
+    cmwxfreq_names : tuple[str, ...]
+        Names of the frequency parameters (1/day).
+    cmwxsin_names : tuple[str, ...]
+        Names of the sine amplitude parameters (cmu).
+    cmwxcos_names : tuple[str, ...]
+        Names of the cosine amplitude parameters (cmu).
+    tnchromidx_name : str
+        Name of the chromatic index parameter.
+    """
+
+    n_components: int = eqx.field(static=True)
+    cmwxfreq_names: tuple[str, ...] = eqx.field(static=True)
+    cmwxsin_names: tuple[str, ...] = eqx.field(static=True)
+    cmwxcos_names: tuple[str, ...] = eqx.field(static=True)
+    cmwxepoch_name: str = eqx.field(static=True, default="CMWXEPOCH")
+    tnchromidx_name: str = eqx.field(static=True, default="TNCHROMIDX")
+
+    def __check_init__(self):
+        if self.n_components < 1:
+            raise ValueError("CMWaveX requires at least one component")
+        for attr in ("cmwxfreq_names", "cmwxsin_names", "cmwxcos_names"):
+            if len(getattr(self, attr)) != self.n_components:
+                raise ValueError(
+                    f"Length of {attr} ({len(getattr(self, attr))}) "
+                    f"does not match n_components ({self.n_components})"
+                )
+
+    def __call__(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+        delay: Float[Array, " n_toas"],
+    ) -> Float[Array, " n_toas"]:
+        """Compute CMWaveX delay contribution.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data.
+        params : ParameterVector
+            Timing-model parameters.
+        delay : array, shape (n_toas,)
+            Accumulated signal delay from prior components in seconds.
+
+        Returns
+        -------
+        array, shape (n_toas,)
+            CMWaveX delay in seconds.
+        """
+        epoch_int, epoch_frac = params.epoch_value(self.cmwxepoch_name)
+
+        dt_int = toa_data.tdb_int - epoch_int
+        dt_frac = toa_data.tdb_frac - epoch_frac
+        dt_days = dt_int + dt_frac
+
+        freqs = jnp.array([params.param_value(n) for n in self.cmwxfreq_names])
+        sins = jnp.array([params.param_value(n) for n in self.cmwxsin_names])
+        coses = jnp.array([params.param_value(n) for n in self.cmwxcos_names])
+
+        cm = fourier_sum(dt_days, freqs, sins, coses)
+        alpha = params.param_value(self.tnchromidx_name)
+        return cm * DMCONST * toa_data.freq ** (-alpha)

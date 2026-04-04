@@ -8,6 +8,8 @@ dynamic leaves -- all differentiation flows through ``ParameterVector.values``.
 
 from __future__ import annotations
 
+from typing import Optional
+
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -28,10 +30,15 @@ class TimingModel(eqx.Module):
         the accumulated delay from prior components).
     phase_components : tuple[PhaseComponent, ...]
         Phase components whose contributions are summed (order irrelevant).
+    phoff_name : str or None
+        If set, a constant phase offset (``-PHOFF``) is applied *after*
+        TZR subtraction.  This matches PINT's ``PhaseOffset`` semantics
+        where the offset is applied only to observation TOAs, not the TZR.
     """
 
     delay_components: tuple[DelayComponent, ...] = eqx.field(static=True)
     phase_components: tuple[PhaseComponent, ...] = eqx.field(static=True)
+    phoff_name: Optional[str] = eqx.field(static=True, default=None)
 
     def compute_delay(
         self,
@@ -87,6 +94,14 @@ class TimingModel(eqx.Module):
         if toa_data.tzr_tdb_int is not None:
             tzr_phase = self._tzr_phase(toa_data, params)
             phase = phase - tzr_phase
+
+        # Phase offset: applied after TZR subtraction so it does not
+        # cancel out (PINT applies PHOFF only to observation TOAs).
+        if self.phoff_name is not None:
+            phoff = params.param_value(self.phoff_name)
+            phase = phase + PhaseResult.create(
+                jnp.zeros(toa_data.n_toas), -phoff * jnp.ones(toa_data.n_toas)
+            )
 
         return phase
 

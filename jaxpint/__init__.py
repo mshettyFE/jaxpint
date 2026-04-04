@@ -6,16 +6,24 @@ jax.config.update("jax_enable_x64", True)
 
 from .types import PhaseResult, TOAData, ParameterVector
 from .components import PhaseComponent, DelayComponent, NoiseComponent
-from .phase import Spindown, Glitch, PhaseJump
+from .phase import Spindown, Glitch, IFunc, PhaseJump, PiecewiseSpindown, Wave
 from .delay import (
     AstrometryEcliptic,
     AstrometryEquatorial,
+    CMWaveX,
+    ChromaticCM,
+    ChromaticCMX,
+    DMWaveX,
     DispersionDM,
     DispersionDMX,
+    ExponentialDip,
+    FDJump,
+    FrequencyDependent,
     SolarSystemShapiroDelay,
     SolarWindDispersion,
     SolarWindDispersionX,
     TroposphereDelay,
+    WaveX,
 )
 from .binary import (
     BinaryBT,
@@ -54,6 +62,7 @@ from .bridge import (
 )
 from .simulation import apply_delay_to_toas, make_fake_toas, simulate_noise, zero_residuals
 from .utils import (
+    fourier_sum,
     normalize_designmatrix,
     sherman_morrison_dot,
     taylor_horner,
@@ -74,13 +83,21 @@ __all__ = [
     "BinaryDDGR",
     "BinaryDDK",
     "BinaryELL1",
+    "CMWaveX",
+    "ChromaticCM",
+    "ChromaticCMX",
+    "DMWaveX",
     "DelayComponent",
     "DispersionDM",
     "DispersionDMX",
     "EcorrNoise",
+    "ExponentialDip",
+    "FDJump",
+    "FrequencyDependent",
     "GLSFitResult",
     "GLSFitter",
     "Glitch",
+    "IFunc",
     "NoiseComponent",
     "NoiseModel",
     "PLChromNoise",
@@ -91,6 +108,7 @@ __all__ = [
     "PhaseComponent",
     "PhaseJump",
     "PhaseResult",
+    "PiecewiseSpindown",
     "ScaleToaError",
     "SolarSystemShapiroDelay",
     "SolarWindDispersion",
@@ -99,6 +117,8 @@ __all__ = [
     "TOAData",
     "TimingModel",
     "TroposphereDelay",
+    "Wave",
+    "WaveX",
     "WLSFitResult",
     "WLSFitter",
     "apply_delay_to_toas",
@@ -107,6 +127,7 @@ __all__ = [
     "compute_phase_residuals",
     "compute_time_residuals",
     "extract_tzr_toa",
+    "fourier_sum",
     "make_fake_toas",
     "normalize_designmatrix",
     "params_to_pint_model",

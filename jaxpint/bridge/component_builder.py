@@ -348,6 +348,18 @@ def build_timing_model(
     from pint.models.troposphere_delay import TroposphereDelay as PINTTroposphereDelay
     from pint.models.jump import PhaseJump as PINTPhaseJump
     from pint.models.glitch import Glitch as PINTGlitch
+    from pint.models.wavex import WaveX as PINTWaveX
+    from pint.models.dmwavex import DMWaveX as PINTDMWaveX
+    from pint.models.cmwavex import CMWaveX as PINTCMWaveX
+    from pint.models.chromatic_model import ChromaticCM as PINTChromaticCM
+    from pint.models.chromatic_model import ChromaticCMX as PINTChromaticCMX
+    from pint.models.frequency_dependent import FD as PINTFD
+    from pint.models.fdjump import FDJump as PINTFDJump
+    from pint.models.expdip import SimpleExponentialDip as PINTExponentialDip
+    from pint.models.phase_offset import PhaseOffset as PINTPhaseOffset
+    from pint.models.piecewise import PiecewiseSpindown as PINTPiecewiseSpindown
+    from pint.models.wave import Wave as PINTWave
+    from pint.models.ifunc import IFunc as PINTIFunc
 
     from jaxpint.model import TimingModel
     from jaxpint.phase.spin import Spindown
@@ -367,6 +379,17 @@ def build_timing_model(
     from jaxpint.delay.troposphere import TroposphereDelay
     from jaxpint.phase.jump import PhaseJump
     from jaxpint.phase.glitch import Glitch
+    from jaxpint.delay.wavex import WaveX
+    from jaxpint.delay.dmwavex import DMWaveX
+    from jaxpint.delay.cmwavex import CMWaveX
+    from jaxpint.delay.chromatic_cm import ChromaticCM
+    from jaxpint.delay.chromatic_cmx import ChromaticCMX
+    from jaxpint.delay.frequency_dependent import FrequencyDependent
+    from jaxpint.delay.fdjump import FDJump
+    from jaxpint.delay.exponential_dip import ExponentialDip
+    from jaxpint.phase.piecewise_spindown import PiecewiseSpindown
+    from jaxpint.phase.wave import Wave
+    from jaxpint.phase.ifunc import IFunc
 
     delay_components = []
     phase_components = []
@@ -386,7 +409,12 @@ def build_timing_model(
     _astro_obliquity_arcsec = None
 
     # Components that are handled implicitly (not mapped to JaxPINT components)
-    _IMPLICIT = {"AbsPhase"}
+    _IMPLICIT = {"AbsPhase", "PhaseOffset"}
+
+    # Phase offset: detect before the loop since it's in _IMPLICIT
+    phoff_name = None
+    if "PhaseOffset" in pint_model.components and _param_is_set(pint_model, "PHOFF"):
+        phoff_name = "PHOFF"
 
     for name, comp in pint_model.components.items():
         if name in _IMPLICIT:
@@ -827,6 +855,206 @@ def build_timing_model(
                     "build_timing_model — solar wind noise will not be available"
                 )
 
+        elif isinstance(comp, PINTWaveX):
+            comp.setup()
+            wx_mapping = comp.get_prefix_mapping_component("WXFREQ_")
+            wx_indices = sorted(wx_mapping.keys())
+            if wx_indices:
+                wxepoch_name = "WXEPOCH"
+                if not _param_is_set(pint_model, "WXEPOCH"):
+                    wxepoch_name = "PEPOCH"
+                delay_components.append(WaveX(
+                    n_components=len(wx_indices),
+                    wxepoch_name=wxepoch_name,
+                    wxfreq_names=tuple(f"WXFREQ_{i:04d}" for i in wx_indices),
+                    wxsin_names=tuple(f"WXSIN_{i:04d}" for i in wx_indices),
+                    wxcos_names=tuple(f"WXCOS_{i:04d}" for i in wx_indices),
+                ))
+
+        elif isinstance(comp, PINTDMWaveX):
+            comp.setup()
+            dmwx_mapping = comp.get_prefix_mapping_component("DMWXFREQ_")
+            dmwx_indices = sorted(dmwx_mapping.keys())
+            if dmwx_indices:
+                dmwxepoch_name = "DMWXEPOCH"
+                if not _param_is_set(pint_model, "DMWXEPOCH"):
+                    dmwxepoch_name = "PEPOCH"
+                delay_components.append(DMWaveX(
+                    n_components=len(dmwx_indices),
+                    dmwxepoch_name=dmwxepoch_name,
+                    dmwxfreq_names=tuple(f"DMWXFREQ_{i:04d}" for i in dmwx_indices),
+                    dmwxsin_names=tuple(f"DMWXSIN_{i:04d}" for i in dmwx_indices),
+                    dmwxcos_names=tuple(f"DMWXCOS_{i:04d}" for i in dmwx_indices),
+                ))
+
+        elif isinstance(comp, PINTCMWaveX):
+            comp.setup()
+            cmwx_mapping = comp.get_prefix_mapping_component("CMWXFREQ_")
+            cmwx_indices = sorted(cmwx_mapping.keys())
+            if cmwx_indices:
+                cmwxepoch_name = "CMWXEPOCH"
+                if not _param_is_set(pint_model, "CMWXEPOCH"):
+                    cmwxepoch_name = "PEPOCH"
+                delay_components.append(CMWaveX(
+                    n_components=len(cmwx_indices),
+                    cmwxepoch_name=cmwxepoch_name,
+                    cmwxfreq_names=tuple(f"CMWXFREQ_{i:04d}" for i in cmwx_indices),
+                    cmwxsin_names=tuple(f"CMWXSIN_{i:04d}" for i in cmwx_indices),
+                    cmwxcos_names=tuple(f"CMWXCOS_{i:04d}" for i in cmwx_indices),
+                    tnchromidx_name="TNCHROMIDX",
+                ))
+
+        elif isinstance(comp, PINTChromaticCM):
+            cm_names = ["CM"]
+            for idx in sorted(pint_model.get_prefix_mapping("CM")):
+                pname = pint_model.get_prefix_mapping("CM")[idx]
+                param = getattr(pint_model, pname)
+                if param.value is not None and param.value != 0.0:
+                    cm_names.append(pname)
+
+            cmepoch_name = "CMEPOCH"
+            if not _param_is_set(pint_model, "CMEPOCH"):
+                cmepoch_name = "PEPOCH"
+
+            delay_components.append(ChromaticCM(
+                cm_param_names=tuple(cm_names),
+                cmepoch_name=cmepoch_name,
+                tnchromidx_name="TNCHROMIDX",
+            ))
+
+        elif isinstance(comp, PINTChromaticCMX):
+            comp.setup()
+            cmx_mapping = comp.get_prefix_mapping_component("CMX_")
+            cmx_indices = sorted(cmx_mapping.keys())
+            if cmx_indices:
+                delay_components.append(ChromaticCMX(
+                    n_bins=len(cmx_indices),
+                    cmx_names=tuple(f"CMX_{i:04d}" for i in cmx_indices),
+                    cmxr1_names=tuple(f"CMXR1_{i:04d}" for i in cmx_indices),
+                    cmxr2_names=tuple(f"CMXR2_{i:04d}" for i in cmx_indices),
+                    tnchromidx_name="TNCHROMIDX",
+                ))
+
+        elif isinstance(comp, PINTFD):
+            comp.setup()
+            fd_mapping = comp.get_prefix_mapping_component("FD")
+            fd_indices = sorted(fd_mapping.keys())
+            fd_names = []
+            for idx in fd_indices:
+                pname = f"FD{idx}"
+                if hasattr(pint_model, pname):
+                    fd_names.append(pname)
+            if fd_names:
+                delay_components.append(FrequencyDependent(
+                    fd_param_names=tuple(fd_names),
+                ))
+
+        elif isinstance(comp, PINTFDJump):
+            comp.setup()
+            import re
+            fdjump_names = []
+            fdjump_indices = []
+            use_log = True
+            if hasattr(comp, "FDJUMPLOG") and comp.FDJUMPLOG.value is not None:
+                use_log = bool(comp.FDJUMPLOG.value)
+
+            for pname in comp.params:
+                m = re.match(r"FD(\d+)JUMP\d+", pname)
+                if m:
+                    param = getattr(pint_model, pname)
+                    if param.value is not None:
+                        fdjump_names.append(pname)
+                        fdjump_indices.append(int(m.group(1)))
+
+            if fdjump_names:
+                delay_components.append(FDJump(
+                    fdjump_param_names=tuple(fdjump_names),
+                    fdjump_fd_indices=tuple(fdjump_indices),
+                    use_log=use_log,
+                ))
+
+        elif isinstance(comp, PINTExponentialDip):
+            comp.setup()
+            dip_indices = sorted(set(
+                getattr(pint_model, p).index
+                for p in comp.params
+                if p.startswith("EXPDIPEP_")
+            ))
+            if dip_indices:
+                delay_components.append(ExponentialDip(
+                    n_dips=len(dip_indices),
+                    expdipeps_name="EXPDIPEPS",
+                    expdipfref_name="EXPDIPFREF",
+                    expdipep_names=tuple(f"EXPDIPEP_{i}" for i in dip_indices),
+                    expdipamp_names=tuple(f"EXPDIPAMP_{i}" for i in dip_indices),
+                    expdipidx_names=tuple(f"EXPDIPIDX_{i}" for i in dip_indices),
+                    expdiptau_names=tuple(f"EXPDIPTAU_{i}" for i in dip_indices),
+                ))
+
+        elif isinstance(comp, PINTPiecewiseSpindown):
+            comp.setup()
+            pw_indices = sorted(set(
+                getattr(pint_model, p).index
+                for p in comp.params
+                if p.startswith("PWEP_")
+            ))
+            if pw_indices:
+                phase_components.append(PiecewiseSpindown(
+                    n_pieces=len(pw_indices),
+                    pwstart_names=tuple(f"PWSTART_{i}" for i in pw_indices),
+                    pwstop_names=tuple(f"PWSTOP_{i}" for i in pw_indices),
+                    pwep_names=tuple(f"PWEP_{i}" for i in pw_indices),
+                    pwph_names=tuple(f"PWPH_{i}" for i in pw_indices),
+                    pwf0_names=tuple(f"PWF0_{i}" for i in pw_indices),
+                    pwf1_names=tuple(f"PWF1_{i}" for i in pw_indices),
+                    pwf2_names=tuple(f"PWF2_{i}" for i in pw_indices),
+                ))
+
+        elif isinstance(comp, PINTWave):
+            comp.setup()
+            wave_mapping = comp.get_prefix_mapping_component("WAVE")
+            wave_indices = sorted(wave_mapping.keys())
+            if wave_indices:
+                waveepoch_name = "WAVEEPOCH"
+                if not _param_is_set(pint_model, "WAVEEPOCH"):
+                    waveepoch_name = "PEPOCH"
+                phase_components.append(Wave(
+                    n_terms=len(wave_indices),
+                    waveepoch_name=waveepoch_name,
+                    wave_om_name="WAVE_OM",
+                    wave_sin_names=tuple(f"WAVE{i}_A" for i in wave_indices),
+                    wave_cos_names=tuple(f"WAVE{i}_B" for i in wave_indices),
+                ))
+
+        elif isinstance(comp, PINTIFunc):
+            comp.setup()
+            ifunc_mapping = comp.get_prefix_mapping_component("IFUNC")
+            ifunc_indices = sorted(ifunc_mapping.keys())
+            if ifunc_indices:
+                interp_type = int(comp.SIFUNC.value) if comp.SIFUNC.value is not None else 0
+                # Extract control points from pair parameters
+                mjds = []
+                delays = []
+                for idx in ifunc_indices:
+                    pname = f"IFUNC{idx}"
+                    param = getattr(pint_model, pname)
+                    pair = param.quantity
+                    if pair is not None:
+                        mjd_val = float(pair[0].value) if hasattr(pair[0], "value") else float(pair[0])
+                        delay_val = float(pair[1].value) if hasattr(pair[1], "value") else float(pair[1])
+                        mjds.append(mjd_val)
+                        delays.append(delay_val)
+
+                if mjds:
+                    # Sort by MJD
+                    sorted_pairs = sorted(zip(mjds, delays))
+                    sorted_mjds, sorted_delays = zip(*sorted_pairs)
+                    phase_components.append(IFunc(
+                        interp_type=interp_type,
+                        control_mjds=jnp.array(sorted_mjds),
+                        control_delays=jnp.array(sorted_delays),
+                    ))
+
         else:
             log.warning(
                 "Skipping PINT component %r (%s) — not yet ported to JaxPINT",
@@ -837,6 +1065,7 @@ def build_timing_model(
     timing_model = TimingModel(
         delay_components=tuple(delay_components),
         phase_components=tuple(phase_components),
+        phoff_name=phoff_name,
     )
 
     correlated: list[NoiseComponent] = []
