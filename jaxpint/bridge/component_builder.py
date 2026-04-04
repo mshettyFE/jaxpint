@@ -276,6 +276,7 @@ def build_timing_model(
     from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
     from pint.models.solar_system_shapiro import SolarSystemShapiro as PINTSolarSystemShapiro
     from pint.models.solar_wind_dispersion import SolarWindDispersion as PINTSolarWindDispersion
+    from pint.models.solar_wind_dispersion import SolarWindDispersionX as PINTSolarWindDispersionX
     from pint.models.troposphere_delay import TroposphereDelay as PINTTroposphereDelay
     from pint.models.jump import PhaseJump as PINTPhaseJump
     from pint.models.glitch import Glitch as PINTGlitch
@@ -288,6 +289,7 @@ def build_timing_model(
     from jaxpint.noise import EcorrNoise, ScaleToaError
     from jaxpint.shapiro import SolarSystemShapiroDelay
     from jaxpint.solar_wind import SolarWindDispersion
+    from jaxpint.solar_wind_x import SolarWindDispersionX
     from jaxpint.troposphere import TroposphereDelay
     from jaxpint.jump import PhaseJump
     from jaxpint.glitch import Glitch
@@ -483,6 +485,39 @@ def build_timing_model(
                     obliquity_arcsec=_astro_obliquity_arcsec,
                 )
             )
+
+        elif isinstance(comp, PINTSolarWindDispersionX):
+            import astropy.units as u
+
+            swxdm_mapping = comp.get_prefix_mapping_component("SWXDM_")
+            swx_indices = sorted(swxdm_mapping.keys())
+
+            if swx_indices:
+                # Precompute theta0 (elongation at conjunction) via PINT.
+                theta0_rad = float(comp.theta0.to(u.rad).value)
+
+                n_bins = len(swx_indices)
+                swxdm_names = tuple(f"SWXDM_{i:04d}" for i in swx_indices)
+                swxp_names = tuple(f"SWXP_{i:04d}" for i in swx_indices)
+                swxr1_names = tuple(f"SWXR1_{i:04d}" for i in swx_indices)
+                swxr2_names = tuple(f"SWXR2_{i:04d}" for i in swx_indices)
+
+                delay_components.append(
+                    SolarWindDispersionX(
+                        n_bins=n_bins,
+                        swxdm_names=swxdm_names,
+                        swxp_names=swxp_names,
+                        swxr1_names=swxr1_names,
+                        swxr2_names=swxr2_names,
+                        theta0=theta0_rad,
+                        raj_name=_astro_raj,
+                        decj_name=_astro_decj,
+                        pmra_name=_astro_pmra,
+                        pmdec_name=_astro_pmdec,
+                        posepoch_name=_astro_posepoch,
+                        obliquity_arcsec=_astro_obliquity_arcsec,
+                    )
+                )
 
         elif isinstance(comp, PINTTroposphereDelay):
             if comp.CORRECT_TROPOSPHERE.value:
