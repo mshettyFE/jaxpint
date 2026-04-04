@@ -213,7 +213,7 @@ class NoiseModel(eqx.Module):
     """
 
     white_noise: Optional[ScaleToaError]
-    correlated: tuple[NoiseComponent, ...] = eqx.field(static=True)
+    correlated: tuple[NoiseComponent, ...]
 
     def scaled_sigma(
         self,

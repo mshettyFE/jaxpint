@@ -273,6 +273,7 @@ def build_timing_model(
     from pint.models.astrometry import AstrometryEcliptic as PINTAstrometryEcliptic
     from pint.models.noise_model import ScaleToaError as PINTScaleToaError
     from pint.models.noise_model import EcorrNoise as PINTEcorrNoise
+    from pint.models.noise_model import PLRedNoise as PINTPLRedNoise
     from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
     from pint.models.solar_system_shapiro import SolarSystemShapiro as PINTSolarSystemShapiro
     from pint.models.solar_wind_dispersion import SolarWindDispersion as PINTSolarWindDispersion
@@ -287,6 +288,7 @@ def build_timing_model(
     from jaxpint.dispersion_dmx import DispersionDMX
     from jaxpint.astrometry import AstrometryEquatorial, AstrometryEcliptic
     from jaxpint.noise import EcorrNoise, NoiseModel, ScaleToaError
+    from jaxpint.red_noise import PLRedNoise
     from jaxpint.shapiro import SolarSystemShapiroDelay
     from jaxpint.solar_wind import SolarWindDispersion
     from jaxpint.solar_wind_x import SolarWindDispersionX
@@ -298,6 +300,7 @@ def build_timing_model(
     phase_components = []
     noise_model = None
     ecorr_noise = None
+    plred_noise = None
 
     # Cached astrometry param names (reused by Shapiro component).
     _astro_raj = "RAJ"
@@ -578,6 +581,52 @@ def build_timing_model(
                     "build_timing_model — ECORR will not be available"
                 )
 
+        elif isinstance(comp, PINTPLRedNoise):
+            if toas is not None:
+                # Need TDB times in seconds for Fourier basis
+                if "tdbld" not in toas.table.colnames:
+                    toas.compute_TDBs()
+                tdb_ld = np.asarray(toas.table["tdbld"])
+                tdb_s = np.float64(tdb_ld) * 86400.0
+
+                # Number of frequency modes
+                n_freqs = (
+                    int(comp.TNREDC.value)
+                    if comp.TNREDC.value is not None
+                    else 30
+                )
+
+                # Time span for fundamental frequency
+                if comp.TNREDTSPAN.quantity is not None:
+                    import astropy.units as u
+                    T = float(comp.TNREDTSPAN.quantity.to(u.s).value)
+                else:
+                    T = float(np.max(tdb_s) - np.min(tdb_s))
+
+                # Linear frequency grid: f = [1/T, 2/T, ..., n_freqs/T]
+                freqs = np.arange(1, n_freqs + 1) / T
+                freq_bin_widths = np.diff(np.concatenate([[0.0], freqs]))
+
+                # Fourier design matrix: alternating sin/cos columns
+                n_toas = len(tdb_s)
+                F = np.zeros((n_toas, 2 * n_freqs))
+                phase = 2.0 * np.pi * tdb_s[:, None] * freqs[None, :]
+                F[:, 0::2] = np.sin(phase)
+                F[:, 1::2] = np.cos(phase)
+
+                plred_noise = PLRedNoise(
+                    fourier_basis=jnp.asarray(F),
+                    freqs=jnp.asarray(freqs),
+                    freq_bin_widths=jnp.asarray(freq_bin_widths),
+                    tnredamp_name="TNREDAMP",
+                    tnredgam_name="TNREDGAM",
+                )
+            else:
+                log.warning(
+                    "PLRedNoise component found but no TOAs provided to "
+                    "build_timing_model — red noise will not be available"
+                )
+
         else:
             log.warning(
                 "Skipping PINT component %r (%s) — not yet ported to JaxPINT",
@@ -590,9 +639,11 @@ def build_timing_model(
         phase_components=tuple(phase_components),
     )
 
-    correlated: list[EcorrNoise] = []
+    correlated: list[NoiseComponent] = []
     if ecorr_noise is not None:
         correlated.append(ecorr_noise)
+    if plred_noise is not None:
+        correlated.append(plred_noise)
 
     combined_noise = NoiseModel(
         white_noise=noise_model,

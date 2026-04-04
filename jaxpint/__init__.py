@@ -12,6 +12,7 @@ from .dispersion_dm import DispersionDM
 from .bridge import pint_toas_to_jax, pint_model_to_params, params_to_pint_model, build_timing_model
 from .model import TimingModel
 from .noise import ScaleToaError, EcorrNoise, NoiseModel
+from .red_noise import PLRedNoise
 from .astrometry import AstrometryEcliptic
 from .shapiro import SolarSystemShapiroDelay
 from .solar_wind import SolarWindDispersion
@@ -60,6 +61,7 @@ __all__ = [
     "woodbury_solve",
     "EcorrNoise",
     "NoiseModel",
+    "PLRedNoise",
     "GLSFitter",
     "GLSFitResult",
     "apply_delay_to_toas",
