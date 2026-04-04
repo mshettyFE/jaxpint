@@ -9,6 +9,7 @@ from jaxpint.utils import (
     taylor_horner,
     taylor_horner_deriv,
     weighted_mean,
+    weighted_mean_sdev,
     normalize_designmatrix,
     sherman_morrison_dot,
     woodbury_dot,
@@ -159,7 +160,7 @@ class TestWeightedMean:
     def test_sdev(self):
         arr = jnp.array([1.0, 3.0])
         w = jnp.array([1.0, 3.0])
-        wmean, werr, wsdev = weighted_mean(arr, w, sdev=True)
+        wmean, werr, wsdev = weighted_mean_sdev(arr, w)
         # wvar = (1*(1-2.5)^2 + 3*(3-2.5)^2) / 4 = (2.25 + 0.75)/4 = 0.75
         assert jnp.isclose(wsdev, jnp.sqrt(0.75))
 

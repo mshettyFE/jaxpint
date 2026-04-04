@@ -486,12 +486,12 @@ def get_sini_m2(
     (sini, m2)
     """
     if shapiro_mode == "standard":
-        sini = params.param_value(sini_name) if sini_name else 0.0
-        m2 = params.param_value(m2_name) if m2_name else 0.0
+        sini = params.param_value_or(sini_name)
+        m2 = params.param_value_or(m2_name)
     elif shapiro_mode == "shapmax":
         shapmax = params.param_value(shapmax_name)
         sini = 1.0 - jnp.exp(-shapmax)
-        m2 = params.param_value(m2_name) if m2_name else 0.0
+        m2 = params.param_value_or(m2_name)
     elif shapiro_mode == "h3stigma":
         h3 = params.param_value(h3_name)
         stigma = params.param_value(stigma_name)

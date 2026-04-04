@@ -85,12 +85,12 @@ class BinaryBT(DelayComponent):
         ecc0 = params.param_value(self.ecc_name)
         om_rad = params.param_value(self.om_name)     # radians
 
-        pbdot = params.param_value(self.pbdot_name) if self.pbdot_name else 0.0
-        omdot = params.param_value(self.omdot_name) if self.omdot_name else 0.0  # deg/yr
-        edot = params.param_value(self.edot_name) if self.edot_name else 0.0
-        a1dot = params.param_value(self.a1dot_name) if self.a1dot_name else 0.0
-        gamma = params.param_value(self.gamma_name) if self.gamma_name else 0.0
-        xpbdot = params.param_value(self.xpbdot_name) if self.xpbdot_name else 0.0
+        pbdot = params.param_value_or(self.pbdot_name)
+        omdot = params.param_value_or(self.omdot_name)  # deg/yr
+        edot = params.param_value_or(self.edot_name)
+        a1dot = params.param_value_or(self.a1dot_name)
+        gamma = params.param_value_or(self.gamma_name)
+        xpbdot = params.param_value_or(self.xpbdot_name)
 
         # --- Compute time since periastron ---
         tt0_s = compute_tt0(toa_data.tdb_int, toa_data.tdb_frac, t0_int, t0_frac)

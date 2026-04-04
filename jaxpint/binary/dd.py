@@ -96,17 +96,17 @@ class BinaryDD(DelayComponent):
         ecc0 = params.param_value(self.ecc_name)
         om_rad = params.param_value(self.om_name)
 
-        pbdot = params.param_value(self.pbdot_name) if self.pbdot_name else 0.0
-        omdot = params.param_value(self.omdot_name) if self.omdot_name else 0.0
-        edot = params.param_value(self.edot_name) if self.edot_name else 0.0
-        a1dot = params.param_value(self.a1dot_name) if self.a1dot_name else 0.0
-        xpbdot = params.param_value(self.xpbdot_name) if self.xpbdot_name else 0.0
+        pbdot = params.param_value_or(self.pbdot_name)
+        omdot = params.param_value_or(self.omdot_name)
+        edot = params.param_value_or(self.edot_name)
+        a1dot = params.param_value_or(self.a1dot_name)
+        xpbdot = params.param_value_or(self.xpbdot_name)
 
-        gamma = params.param_value(self.gamma_name) if self.gamma_name else 0.0
-        dr = params.param_value(self.dr_name) if self.dr_name else 0.0
-        dth = params.param_value(self.dth_name) if self.dth_name else 0.0
-        A0 = params.param_value(self.a0_name) if self.a0_name else 0.0
-        B0 = params.param_value(self.b0_name) if self.b0_name else 0.0
+        gamma = params.param_value_or(self.gamma_name)
+        dr = params.param_value_or(self.dr_name)
+        dth = params.param_value_or(self.dth_name)
+        A0 = params.param_value_or(self.a0_name)
+        B0 = params.param_value_or(self.b0_name)
 
         sini, m2 = get_sini_m2(
             params, self.shapiro_mode, self.sini_name, self.m2_name,

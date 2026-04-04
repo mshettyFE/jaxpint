@@ -168,6 +168,18 @@ class ParameterVector(eqx.Module):
         """Value of a single parameter. JIT-compatible if ``name`` is a static string."""
         return self.values[self._name_to_index[name]]
 
+    def param_value_or(self, name: str | None, default: float = 0.0):
+        """Value of a parameter if *name* is not None, otherwise *default*.
+
+        Convenient for optional parameters stored as ``Optional[str]``
+        field names on components::
+
+            pbdot = params.param_value_or(self.pbdot_name, 0.0)
+        """
+        if name is None:
+            return default
+        return self.values[self._name_to_index[name]]
+
     def epoch_value(self, name: str) -> tuple[float, Float[Array, ""]]:
         """For epoch parameters: returns (integer_mjd_day, fractional_day).
 

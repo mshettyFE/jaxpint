@@ -178,8 +178,7 @@ def weighted_mean(
     weights_in: Float[Array, " n"],
     inputmean: Optional[float] = None,
     calcerr: bool = False,
-    sdev: bool = False,
-):
+) -> tuple[Float[Array, ""], Float[Array, ""]]:
     """Compute weighted mean and error of *arrin*.
 
     Parameters
@@ -193,12 +192,10 @@ def weighted_mean(
     calcerr : bool
         If True, compute error from weighted scatter rather than
         ``1 / sqrt(sum(weights))``.
-    sdev : bool
-        If True, also return the weighted standard deviation.
 
     Returns
     -------
-    (wmean, werr) or (wmean, werr, wsdev)
+    (wmean, werr)
     """
     wtot = jnp.sum(weights_in)
 
@@ -212,12 +209,40 @@ def weighted_mean(
     else:
         werr = 1.0 / jnp.sqrt(wtot)
 
-    if sdev:
-        wvar = jnp.sum(weights_in * (arrin - wmean) ** 2) / wtot
-        wsdev = jnp.sqrt(wvar)
-        return wmean, werr, wsdev
-
     return wmean, werr
+
+
+def weighted_mean_sdev(
+    arrin: Float[Array, " n"],
+    weights_in: Float[Array, " n"],
+    inputmean: Optional[float] = None,
+    calcerr: bool = False,
+) -> tuple[Float[Array, ""], Float[Array, ""], Float[Array, ""]]:
+    """Compute weighted mean, error, and standard deviation of *arrin*.
+
+    Parameters
+    ----------
+    arrin : 1-D array
+        Data values.
+    weights_in : 1-D array
+        Weights (typically ``1 / sigma**2``).
+    inputmean : float, optional
+        If given, use this as the mean instead of computing it.
+    calcerr : bool
+        If True, compute error from weighted scatter rather than
+        ``1 / sqrt(sum(weights))``.
+
+    Returns
+    -------
+    (wmean, werr, wsdev)
+    """
+    wmean, werr = weighted_mean(arrin, weights_in, inputmean, calcerr)
+
+    wtot = jnp.sum(weights_in)
+    wvar = jnp.sum(weights_in * (arrin - wmean) ** 2) / wtot
+    wsdev = jnp.sqrt(wvar)
+
+    return wmean, werr, wsdev
 
 
 # ---------------------------------------------------------------------------

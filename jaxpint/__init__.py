@@ -60,6 +60,7 @@ from .utils import (
     taylor_horner_deriv,
     taylor_horner_phase,
     weighted_mean,
+    weighted_mean_sdev,
     woodbury_dot,
     woodbury_solve,
 )
@@ -118,6 +119,7 @@ __all__ = [
     "taylor_horner_deriv",
     "taylor_horner_phase",
     "weighted_mean",
+    "weighted_mean_sdev",
     "woodbury_dot",
     "woodbury_solve",
     "zero_residuals",

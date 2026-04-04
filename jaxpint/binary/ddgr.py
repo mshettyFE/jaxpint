@@ -113,12 +113,12 @@ class BinaryDDGR(DelayComponent):
         m2 = params.param_value(self.m2_name)
         m1 = mtot - m2
 
-        edot = params.param_value(self.edot_name) if self.edot_name else 0.0
-        a1dot = params.param_value(self.a1dot_name) if self.a1dot_name else 0.0
-        xomdot = params.param_value(self.xomdot_name) if self.xomdot_name else 0.0
-        xpbdot = params.param_value(self.xpbdot_name) if self.xpbdot_name else 0.0
-        A0 = params.param_value(self.a0_name) if self.a0_name else 0.0
-        B0 = params.param_value(self.b0_name) if self.b0_name else 0.0
+        edot = params.param_value_or(self.edot_name)
+        a1dot = params.param_value_or(self.a1dot_name)
+        xomdot = params.param_value_or(self.xomdot_name)
+        xpbdot = params.param_value_or(self.xpbdot_name)
+        A0 = params.param_value_or(self.a0_name)
+        B0 = params.param_value_or(self.b0_name)
 
         # --- Derive PK parameters from GR (Taylor & Weisberg 1989) ---
         pb_s = pb_d * SECS_PER_DAY

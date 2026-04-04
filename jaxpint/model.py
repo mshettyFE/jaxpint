@@ -143,6 +143,14 @@ def _build_tzr_toa_data(toa_data: TOAData) -> TOAData:
 
     Uses the TZR fields stored on *toa_data*.  Fields not relevant to
     the TZR evaluation (e.g. observatory indices) are set to zeros.
+
+    Note: ``flag_masks`` is empty and ``planet_positions`` is None.
+    This is correct for PhaseJump (TZR should have no jumps applied),
+    but means SolarSystemShapiroDelay with per-planet positions will
+    not contribute to the TZR phase.  In practice this is fine because
+    the planet Shapiro delay at the TZR epoch is negligible for phase
+    referencing, but it may need revisiting if sub-nanosecond absolute
+    phase accuracy at the TZR epoch becomes important.
     """
     one = jnp.ones(1)
     zero = jnp.zeros(1)

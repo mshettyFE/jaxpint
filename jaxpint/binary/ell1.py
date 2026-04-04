@@ -142,8 +142,8 @@ class BinaryELL1(DelayComponent):
             eps1 = growth * (eps1_0 * cos_omdot_dt + eps2_0 * sin_omdot_dt)
             eps2 = growth * (eps2_0 * cos_omdot_dt - eps1_0 * sin_omdot_dt)
         else:
-            eps1dot = params.param_value(self.eps1dot_name) if self.eps1dot_name else 0.0
-            eps2dot = params.param_value(self.eps2dot_name) if self.eps2dot_name else 0.0
+            eps1dot = params.param_value_or(self.eps1dot_name)
+            eps2dot = params.param_value_or(self.eps2dot_name)
             eps1 = eps1_0 + eps1dot * ttasc_s
             eps2 = eps2_0 + eps2dot * ttasc_s
 
@@ -161,8 +161,8 @@ class BinaryELL1(DelayComponent):
         tasc_int, tasc_frac = params.epoch_value(self.tasc_name)
         a1_ls = params.param_value(self.a1_name)
 
-        pbdot = params.param_value(self.pbdot_name) if self.pbdot_name else 0.0
-        a1dot = params.param_value(self.a1dot_name) if self.a1dot_name else 0.0
+        pbdot = params.param_value_or(self.pbdot_name)
+        a1dot = params.param_value_or(self.a1dot_name)
 
         sini, m2 = get_sini_m2(
             params, self.shapiro_mode, self.sini_name, self.m2_name,
