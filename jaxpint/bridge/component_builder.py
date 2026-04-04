@@ -35,6 +35,35 @@ def _opt_name(pint_model, name):
     return name if _param_is_set(pint_model, name) else None
 
 
+def _dd_common_kwargs(pint_model):
+    """Shared keyword arguments for DD-family binary models."""
+    return dict(
+        pb_name="PB", t0_name="T0", a1_name="A1",
+        ecc_name="ECC", om_name="OM",
+        pbdot_name=_opt_name(pint_model, "PBDOT"),
+        omdot_name=_opt_name(pint_model, "OMDOT"),
+        edot_name=_opt_name(pint_model, "EDOT"),
+        a1dot_name=_opt_name(pint_model, "A1DOT"),
+        xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+        gamma_name=_opt_name(pint_model, "GAMMA"),
+        dr_name=_opt_name(pint_model, "DR"),
+        dth_name=_opt_name(pint_model, "DTH"),
+        a0_name=_opt_name(pint_model, "A0"),
+        b0_name=_opt_name(pint_model, "B0"),
+    )
+
+
+def _ell1_common_kwargs(pint_model):
+    """Shared keyword arguments for ELL1-family binary models."""
+    return dict(
+        pb_name="PB", tasc_name="TASC", a1_name="A1",
+        eps1_name="EPS1", eps2_name="EPS2",
+        pbdot_name=_opt_name(pint_model, "PBDOT"),
+        a1dot_name=_opt_name(pint_model, "A1DOT"),
+        xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+    )
+
+
 def _build_binary_component(comp, pint_model, astro_info=None):
     """Construct the appropriate JaxPINT binary DelayComponent from a PINT binary component."""
     from jaxpint.binary.bt import BinaryBT
@@ -62,18 +91,7 @@ def _build_binary_component(comp, pint_model, astro_info=None):
 
     elif bname == "DD":
         return BinaryDD(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
-            pbdot_name=_opt_name(pint_model, "PBDOT"),
-            omdot_name=_opt_name(pint_model, "OMDOT"),
-            edot_name=_opt_name(pint_model, "EDOT"),
-            a1dot_name=_opt_name(pint_model, "A1DOT"),
-            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
-            gamma_name=_opt_name(pint_model, "GAMMA"),
-            dr_name=_opt_name(pint_model, "DR"),
-            dth_name=_opt_name(pint_model, "DTH"),
-            a0_name=_opt_name(pint_model, "A0"),
-            b0_name=_opt_name(pint_model, "B0"),
+            **_dd_common_kwargs(pint_model),
             m2_name=_opt_name(pint_model, "M2"),
             sini_name=_opt_name(pint_model, "SINI"),
             shapiro_mode="standard",
@@ -81,18 +99,7 @@ def _build_binary_component(comp, pint_model, astro_info=None):
 
     elif bname == "DDS":
         return BinaryDD(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
-            pbdot_name=_opt_name(pint_model, "PBDOT"),
-            omdot_name=_opt_name(pint_model, "OMDOT"),
-            edot_name=_opt_name(pint_model, "EDOT"),
-            a1dot_name=_opt_name(pint_model, "A1DOT"),
-            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
-            gamma_name=_opt_name(pint_model, "GAMMA"),
-            dr_name=_opt_name(pint_model, "DR"),
-            dth_name=_opt_name(pint_model, "DTH"),
-            a0_name=_opt_name(pint_model, "A0"),
-            b0_name=_opt_name(pint_model, "B0"),
+            **_dd_common_kwargs(pint_model),
             m2_name=_opt_name(pint_model, "M2"),
             shapmax_name="SHAPMAX",
             shapiro_mode="shapmax",
@@ -100,18 +107,7 @@ def _build_binary_component(comp, pint_model, astro_info=None):
 
     elif bname == "DDH":
         return BinaryDD(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
-            pbdot_name=_opt_name(pint_model, "PBDOT"),
-            omdot_name=_opt_name(pint_model, "OMDOT"),
-            edot_name=_opt_name(pint_model, "EDOT"),
-            a1dot_name=_opt_name(pint_model, "A1DOT"),
-            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
-            gamma_name=_opt_name(pint_model, "GAMMA"),
-            dr_name=_opt_name(pint_model, "DR"),
-            dth_name=_opt_name(pint_model, "DTH"),
-            a0_name=_opt_name(pint_model, "A0"),
-            b0_name=_opt_name(pint_model, "B0"),
+            **_dd_common_kwargs(pint_model),
             h3_name="H3",
             stigma_name="STIGMA",
             shapiro_mode="h3stigma",
@@ -119,20 +115,15 @@ def _build_binary_component(comp, pint_model, astro_info=None):
 
     elif bname == "ELL1":
         return BinaryELL1(
-            pb_name="PB", tasc_name="TASC", a1_name="A1",
-            eps1_name="EPS1", eps2_name="EPS2",
-            pbdot_name=_opt_name(pint_model, "PBDOT"),
-            a1dot_name=_opt_name(pint_model, "A1DOT"),
+            **_ell1_common_kwargs(pint_model),
             eps1dot_name=_opt_name(pint_model, "EPS1DOT"),
             eps2dot_name=_opt_name(pint_model, "EPS2DOT"),
-            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
             m2_name=_opt_name(pint_model, "M2"),
             sini_name=_opt_name(pint_model, "SINI"),
             shapiro_mode="standard" if _param_is_set(pint_model, "M2") else "none",
         )
 
     elif bname == "ELL1H":
-        # Determine Shapiro mode: H3+STIGMA or H3+H4
         if _param_is_set(pint_model, "STIGMA"):
             shapiro_mode = "h3stigma"
         elif _param_is_set(pint_model, "H4"):
@@ -140,13 +131,9 @@ def _build_binary_component(comp, pint_model, astro_info=None):
         else:
             shapiro_mode = "h3stigma"
         return BinaryELL1(
-            pb_name="PB", tasc_name="TASC", a1_name="A1",
-            eps1_name="EPS1", eps2_name="EPS2",
-            pbdot_name=_opt_name(pint_model, "PBDOT"),
-            a1dot_name=_opt_name(pint_model, "A1DOT"),
+            **_ell1_common_kwargs(pint_model),
             eps1dot_name=_opt_name(pint_model, "EPS1DOT"),
             eps2dot_name=_opt_name(pint_model, "EPS2DOT"),
-            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
             h3_name="H3",
             stigma_name=_opt_name(pint_model, "STIGMA"),
             h4_name=_opt_name(pint_model, "H4"),
@@ -155,11 +142,7 @@ def _build_binary_component(comp, pint_model, astro_info=None):
 
     elif bname == "ELL1k":
         return BinaryELL1(
-            pb_name="PB", tasc_name="TASC", a1_name="A1",
-            eps1_name="EPS1", eps2_name="EPS2",
-            pbdot_name=_opt_name(pint_model, "PBDOT"),
-            a1dot_name=_opt_name(pint_model, "A1DOT"),
-            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+            **_ell1_common_kwargs(pint_model),
             omdot_name=_opt_name(pint_model, "OMDOT"),
             lnedot_name=_opt_name(pint_model, "LNEDOT"),
             m2_name=_opt_name(pint_model, "M2"),
@@ -170,18 +153,7 @@ def _build_binary_component(comp, pint_model, astro_info=None):
     elif bname == "DDK":
         k96 = bool(getattr(pint_model, "K96", None) and pint_model.K96.value)
         return BinaryDDK(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
-            pbdot_name=_opt_name(pint_model, "PBDOT"),
-            omdot_name=_opt_name(pint_model, "OMDOT"),
-            edot_name=_opt_name(pint_model, "EDOT"),
-            a1dot_name=_opt_name(pint_model, "A1DOT"),
-            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
-            gamma_name=_opt_name(pint_model, "GAMMA"),
-            dr_name=_opt_name(pint_model, "DR"),
-            dth_name=_opt_name(pint_model, "DTH"),
-            a0_name=_opt_name(pint_model, "A0"),
-            b0_name=_opt_name(pint_model, "B0"),
+            **_dd_common_kwargs(pint_model),
             m2_name=_opt_name(pint_model, "M2"),
             kin_name="KIN", kom_name="KOM",
             px_name="PX",
