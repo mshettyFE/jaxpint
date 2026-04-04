@@ -264,7 +264,10 @@ class WLSFitter:
         dof = self.toa_data.n_toas - params.n_free
 
         errors = jnp.sqrt(jnp.diag(covariance))
-        correlation = (covariance / errors).T / errors
+        errors_safe = jnp.where(errors==0, 1.0, errors)
+        correlation = (covariance / errors_safe).T / errors_safe
+
+        reduced_chi2 = chi2_val / dof if dof >0 else float('nan')
 
         return WLSFitResult(
             params=params,
@@ -273,7 +276,7 @@ class WLSFitter:
             parameter_uncertainties=errors,
             chi2=chi2_val,
             dof=dof,
-            reduced_chi2=chi2_val / dof,
+            reduced_chi2=reduced_chi2,
             residuals=final_resid,
         )
 
@@ -300,9 +303,10 @@ class WLSFitter:
         if threshold is None:
             threshold = 1e-14 * max(self.toa_data.n_toas, self.params.n_free)
 
+
         params = self.params
         covariance = None
-        for _ in range(maxiter):
+        for _ in range(safe_maxiter):
             params, covariance = self._iteration(params, threshold)
 
         return self._build_result(params, covariance)
@@ -635,7 +639,10 @@ class GLSFitter:
         dof = self.toa_data.n_toas - params.n_free
 
         errors = jnp.sqrt(jnp.diag(covariance))
-        correlation = (covariance / errors).T / errors
+        errors_safe = jnp.where(errors==0, 1.0, errors)
+        correlation = (covariance / errors_safe).T / errors_safe
+        
+        reduced_chi2 = chi2_val / dof if dof >0 else float('nan')
 
         return GLSFitResult(
             params=params,
@@ -644,7 +651,7 @@ class GLSFitter:
             parameter_uncertainties=errors,
             chi2=chi2_val,
             dof=dof,
-            reduced_chi2=chi2_val / dof,
+            reduced_chi2=reduced_chi2,
             residuals=final_resid,
             noise_realizations=noise_realizations,
         )
@@ -689,10 +696,11 @@ class GLSFitter:
                 dim = self.params.n_free + n_basis
             threshold = 1e-14 * max(n_toas, dim)
 
+        safe_maxiter =  1 if maxiter < 1 else maxiter
         params = self.params
         covariance = None
         noise_realizations = None
-        for _ in range(maxiter):
+        for _ in range(safe_maxiter):
             params, covariance, noise_realizations = self._iteration(
                 params, threshold, full_cov
             )

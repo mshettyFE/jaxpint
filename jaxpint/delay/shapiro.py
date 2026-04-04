@@ -130,8 +130,14 @@ class SolarSystemShapiroDelay(DelayComponent):
 
         # Planet contributions (static field -> plain if is JIT-safe).
         if self.planet_shapiro:
+            if(toa_data.planet_positions is None):
+                raise ValueError(
+                        "planet_shapiro=True but toa_data.planet_positions is None"
+                        )
             for pl in PLANET_NAMES:
                 col = f"obs_{pl}_pos"
+                if col not in toa_data.planet_positions:
+                  raise KeyError(f"Missing planet position '{col}' in toa_data")
                 result = result + _ss_obj_shapiro_delay(
                     toa_data.planet_positions[col], psr_dir, PLANET_MASSES[pl]
                 )
