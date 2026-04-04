@@ -18,10 +18,10 @@ from jaxpint.bridge.component_builder import (
 )
 
 __all__ = [
-    "extract_tzr_toa",
-    "pint_toas_to_jax",
-    "pint_model_to_params",
-    "params_to_pint_model",
-    "build_timing_model",
     "_build_quantization_matrix",
+    "build_timing_model",
+    "extract_tzr_toa",
+    "params_to_pint_model",
+    "pint_model_to_params",
+    "pint_toas_to_jax",
 ]

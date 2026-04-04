@@ -16,15 +16,15 @@ from jaxpint.binary.ddgr import BinaryDDGR
 from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
 
 __all__ = [
-    "solve_kepler",
     "BinaryBT",
     "BinaryBTPiecewise",
     "BinaryDD",
-    "BinaryDDS",
+    "BinaryDDGR",
     "BinaryDDH",
     "BinaryDDK",
-    "BinaryDDGR",
+    "BinaryDDS",
     "BinaryELL1",
     "BinaryELL1H",
     "BinaryELL1k",
+    "solve_kepler",
 ]

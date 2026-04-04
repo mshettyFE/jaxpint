@@ -9,11 +9,11 @@ from jaxpint.noise.sw_noise import PLSWNoise
 from jaxpint.noise.noise_model import NoiseModel
 
 __all__ = [
-    "ScaleToaError",
     "EcorrNoise",
-    "PLRedNoise",
-    "PLDMNoise",
-    "PLChromNoise",
-    "PLSWNoise",
     "NoiseModel",
+    "PLChromNoise",
+    "PLDMNoise",
+    "PLRedNoise",
+    "PLSWNoise",
+    "ScaleToaError",
 ]

@@ -357,9 +357,7 @@ class TestGLSWhitening:
             jax_model, fake_toa_data, fit_params,
             noise_model=noise_model,
         )
-        fitter.fit_toas(maxiter=3)
-
-        result = fitter.result
+        result = fitter.fit_toas(maxiter=3)
         sigma = noise_model.scaled_sigma(fake_toa_data, result.params)
 
         # Whiten: subtract correlated noise, divide by scaled sigma

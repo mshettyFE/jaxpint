@@ -335,7 +335,7 @@ class TestGLSReducesToWLS:
         # WLS
         params_wls = copy.deepcopy(params)
         wls = WLSFitter(jax_model, toa_data, params_wls, noise_model=noise_model)
-        chi2_wls = wls.fit_toas(maxiter=1)
+        result_wls = wls.fit_toas(maxiter=1)
 
         # GLS with no ECORR
         params_gls = copy.deepcopy(params)
@@ -343,10 +343,10 @@ class TestGLSReducesToWLS:
             jax_model, toa_data, params_gls,
             noise_model=noise_model,
         )
-        chi2_gls = gls.fit_toas(maxiter=1)
+        result_gls = gls.fit_toas(maxiter=1)
 
         npt.assert_allclose(
-            chi2_gls, chi2_wls, rtol=1e-10,
+            result_gls.chi2, result_wls.chi2, rtol=1e-10,
             err_msg="GLS without ECORR should match WLS chi2",
         )
 

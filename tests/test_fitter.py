@@ -99,8 +99,7 @@ def jax_fit(jax_objects):
     """Run JaxPINT's WLS fitter on the synthetic data."""
     jax_model, toa_data, params = jax_objects
     fitter = WLSFitter(jax_model, toa_data, params)
-    fitter.fit_toas(maxiter=1)
-    return fitter
+    return fitter.fit_toas(maxiter=1)
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +146,7 @@ class TestSyntheticFit:
 
     def test_chi2_matches(self, pint_fit, jax_fit):
         pint_chi2 = pint_fit.resids.chi2
-        jax_chi2 = jax_fit.result.chi2
+        jax_chi2 = jax_fit.chi2
         # rtol=0.03: JaxPINT's int/frac Horner uses a different (more precise)
         # numerical path than PINT's longdouble taylor_horner, producing
         # small residual differences that accumulate into chi2.
@@ -155,33 +154,33 @@ class TestSyntheticFit:
 
     def test_f0_matches(self, pint_fit, jax_fit):
         pint_val = float(pint_fit.model.F0.value)
-        jax_val = float(jax_fit.result.params.param_value("F0"))
+        jax_val = float(jax_fit.params.param_value("F0"))
         pint_err = float(pint_fit.model.F0.uncertainty_value)
         assert abs(jax_val - pint_val) < 3 * pint_err
 
     def test_f1_matches(self, pint_fit, jax_fit):
         pint_val = float(pint_fit.model.F1.value)
-        jax_val = float(jax_fit.result.params.param_value("F1"))
+        jax_val = float(jax_fit.params.param_value("F1"))
         pint_err = float(pint_fit.model.F1.uncertainty_value)
         assert abs(jax_val - pint_val) < 3 * pint_err
 
     def test_dm_matches(self, pint_fit, jax_fit):
         pint_val = float(pint_fit.model.DM.value)
-        jax_val = float(jax_fit.result.params.param_value("DM"))
+        jax_val = float(jax_fit.params.param_value("DM"))
         pint_err = float(pint_fit.model.DM.uncertainty_value)
         assert abs(jax_val - pint_val) < 3 * pint_err
 
     def test_uncertainties_positive(self, jax_fit):
-        assert jnp.all(jax_fit.result.parameter_uncertainties > 0)
+        assert jnp.all(jax_fit.parameter_uncertainties > 0)
 
     def test_covariance_symmetric(self, jax_fit):
-        cov = jax_fit.result.covariance_matrix
+        cov = jax_fit.covariance_matrix
         np.testing.assert_allclose(
             np.array(cov), np.array(cov.T), atol=1e-20
         )
 
     def test_correlation_diagonal_ones(self, jax_fit):
-        corr = jax_fit.result.correlation_matrix
+        corr = jax_fit.correlation_matrix
         np.testing.assert_allclose(
             np.diag(np.array(corr)), 1.0, atol=1e-12
         )
@@ -189,12 +188,12 @@ class TestSyntheticFit:
     def test_dof(self, synthetic_data, jax_fit):
         _, toas = synthetic_data
         n_toas = len(toas)
-        n_free = jax_fit.result.params.n_free
-        assert jax_fit.result.dof == n_toas - n_free
+        n_free = jax_fit.params.n_free
+        assert jax_fit.dof == n_toas - n_free
 
     def test_reduced_chi2_reasonable(self, jax_fit):
         """Reduced chi2 should be close to 1 for synthetic data."""
-        assert 0.5 < jax_fit.result.reduced_chi2 < 2.0
+        assert 0.5 < jax_fit.reduced_chi2 < 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -218,9 +217,9 @@ class TestNGC6440E:
 
         # Single iteration
         fitter = WLSFitter(jax_model, toa_data, params)
-        chi2_post = fitter.fit_toas(maxiter=1)
+        result = fitter.fit_toas(maxiter=1)
 
-        assert chi2_post < chi2_pre
+        assert result.chi2 < chi2_pre
 
     def test_multiple_iterations_converge(self, ngc6440e):
         pint_model, toas = ngc6440e
@@ -229,10 +228,10 @@ class TestNGC6440E:
         jax_model, _noise = build_timing_model(pint_model)
 
         fitter = WLSFitter(jax_model, toa_data, params)
-        chi2 = fitter.fit_toas(maxiter=5)
+        result = fitter.fit_toas(maxiter=5)
 
-        assert chi2 > 0
-        assert fitter.result.reduced_chi2 < 1e6
+        assert result.chi2 > 0
+        assert result.reduced_chi2 < 1e6
 
     def test_design_matrix_shape(self, ngc6440e):
         pint_model, toas = ngc6440e
@@ -286,12 +285,12 @@ class TestNGC6440EAstrometry:
         params = pint_model_to_params(pint_model)
         jax_model, _noise = build_timing_model(pint_model)
         fitter = WLSFitter(jax_model, toa_data, params)
-        fitter.fit_toas(maxiter=5)
+        result = fitter.fit_toas(maxiter=5)
 
         # With missing components (SolarWindDispersion)
         # the reduced chi2 won't be ~1, but the fit should still converge.
-        assert fitter.result.reduced_chi2 < 1000
-        assert "RAJ" in fitter.result.params.free_names()
-        assert "DECJ" in fitter.result.params.free_names()
-        assert fitter.result.parameter_uncertainties is not None
-        assert jnp.all(fitter.result.parameter_uncertainties > 0)
+        assert result.reduced_chi2 < 1000
+        assert "RAJ" in result.params.free_names()
+        assert "DECJ" in result.params.free_names()
+        assert result.parameter_uncertainties is not None
+        assert jnp.all(result.parameter_uncertainties > 0)

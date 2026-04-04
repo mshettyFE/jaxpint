@@ -296,7 +296,8 @@ UNITS         TDB
 
         assert noise_model is not None
         fitter = WLSFitter(jax_model, toa_data, params, noise_model=noise_model)
-        jax_chi2 = fitter.fit_toas(maxiter=1)
+        jax_result = fitter.fit_toas(maxiter=1)
+        jax_chi2 = jax_result.chi2
 
         # rtol=0.01: JaxPINT's int/frac Horner uses a different (more precise)
         # numerical path than PINT's longdouble taylor_horner, producing

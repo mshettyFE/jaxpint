@@ -9,8 +9,8 @@ from jaxpint.delay.solar_wind_x import SolarWindDispersionX
 from jaxpint.delay.troposphere import TroposphereDelay
 
 __all__ = [
-    "AstrometryEquatorial",
     "AstrometryEcliptic",
+    "AstrometryEquatorial",
     "DispersionDM",
     "DispersionDMX",
     "SolarSystemShapiroDelay",

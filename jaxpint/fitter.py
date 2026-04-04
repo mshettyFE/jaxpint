@@ -189,6 +189,10 @@ class WLSFitResult:
 class WLSFitter:
     """Weighted Least Squares fitter (Gauss-Newton with SVD).
 
+    The fitter is an immutable configuration container.  Calling
+    :meth:`fit_toas` returns a :class:`WLSFitResult` without mutating
+    the fitter itself.
+
     Parameters
     ----------
     model : TimingModel
@@ -212,48 +216,58 @@ class WLSFitter:
         self.toa_data = toa_data
         self.params = params
         self.noise_model = noise_model
-        self.result: Optional[WLSFitResult] = None
 
-    def _get_sigma(self) -> Float[Array, " n_toas"]:
+    def _get_sigma(self, params: ParameterVector) -> Float[Array, " n_toas"]:
         """Return noise-scaled TOA uncertainties."""
         if self.noise_model is not None:
-            return self.noise_model.scaled_sigma(self.toa_data, self.params)
+            return self.noise_model.scaled_sigma(self.toa_data, params)
         return self.toa_data.error
 
-    def _iteration(self, threshold: float) -> Float[Array, "n_free n_free"]:
-        """Run one Gauss-Newton iteration; returns covariance."""
-        sigma = self._get_sigma()
+    def _iteration(
+        self,
+        params: ParameterVector,
+        threshold: float,
+    ) -> tuple[ParameterVector, Float[Array, "n_free n_free"]]:
+        """Run one Gauss-Newton iteration.
+
+        Returns
+        -------
+        (new_params, covariance)
+        """
+        sigma = self._get_sigma(params)
 
         time_resid = compute_time_residuals(
-            self.model, self.toa_data, self.params
+            self.model, self.toa_data, params
         )
         time_resid = _subtract_weighted_mean(time_resid, sigma)
 
-        M = compute_design_matrix(self.model, self.toa_data, self.params)
+        M = compute_design_matrix(self.model, self.toa_data, params)
         dpars, covariance, _norms = wls_step(time_resid, sigma, M, threshold)
 
-        new_free = self.params.free_values() + dpars
-        self.params = self.params.with_free_values(new_free)
-        return covariance
+        new_free = params.free_values() + dpars
+        new_params = params.with_free_values(new_free)
+        return new_params, covariance
 
     def _build_result(
-        self, covariance: Float[Array, "n_free n_free"],
-    ) -> float:
-        """Compute final residuals/chi2 and populate ``self.result``."""
-        sigma = self._get_sigma()
+        self,
+        params: ParameterVector,
+        covariance: Float[Array, "n_free n_free"],
+    ) -> WLSFitResult:
+        """Compute final residuals/chi2 and return a result object."""
+        sigma = self._get_sigma(params)
 
         final_resid = compute_time_residuals(
-            self.model, self.toa_data, self.params
+            self.model, self.toa_data, params
         )
         final_resid = _subtract_weighted_mean(final_resid, sigma)
         chi2_val = float(compute_chi2(final_resid, sigma))
-        dof = self.toa_data.n_toas - self.params.n_free
+        dof = self.toa_data.n_toas - params.n_free
 
         errors = jnp.sqrt(jnp.diag(covariance))
         correlation = (covariance / errors).T / errors
 
-        self.result = WLSFitResult(
-            params=self.params,
+        return WLSFitResult(
+            params=params,
             covariance_matrix=covariance,
             correlation_matrix=correlation,
             parameter_uncertainties=errors,
@@ -262,13 +276,12 @@ class WLSFitter:
             reduced_chi2=chi2_val / dof,
             residuals=final_resid,
         )
-        return chi2_val
 
     def fit_toas(
         self,
         maxiter: int = 1,
         threshold: Optional[float] = None,
-    ) -> float:
+    ) -> WLSFitResult:
         """Run the WLS fit.
 
         Parameters
@@ -280,17 +293,19 @@ class WLSFitter:
 
         Returns
         -------
-        float
-            Final chi-squared value.
+        WLSFitResult
+            Fit result containing updated parameters, covariance,
+            uncertainties, chi-squared, and residuals.
         """
         if threshold is None:
             threshold = 1e-14 * max(self.toa_data.n_toas, self.params.n_free)
 
+        params = self.params
         covariance = None
         for _ in range(maxiter):
-            covariance = self._iteration(threshold)
+            params, covariance = self._iteration(params, threshold)
 
-        return self._build_result(covariance)
+        return self._build_result(params, covariance)
 
 
 # ---------------------------------------------------------------------------
@@ -485,6 +500,10 @@ class GLSFitResult:
 class GLSFitter:
     """Generalised Least Squares fitter.
 
+    The fitter is an immutable configuration container.  Calling
+    :meth:`fit_toas` returns a :class:`GLSFitResult` without mutating
+    the fitter itself.
+
     Supports arbitrary correlated noise sources (ECORR, red noise, etc.)
     through the :class:`~jaxpint.noise.NoiseModel` interface.  When no
     correlated components are present the GLS fitter reduces to WLS.
@@ -512,21 +531,21 @@ class GLSFitter:
         self.toa_data = toa_data
         self.params = params
         self.noise_model = noise_model
-        self.result: Optional[GLSFitResult] = None
 
     def _get_noise(
         self,
+        params: ParameterVector,
     ) -> tuple[
         Float[Array, " n_toas"],
         Float[Array, " n_toas"],
         Float[Array, "n_toas n_basis"],
         Float[Array, " n_basis"],
     ]:
-        """Return (sigma, Ndiag, U, Phidiag) for the current parameters."""
+        """Return (sigma, Ndiag, U, Phidiag) for the given parameters."""
         if self.noise_model is not None:
-            sigma = self.noise_model.scaled_sigma(self.toa_data, self.params)
+            sigma = self.noise_model.scaled_sigma(self.toa_data, params)
             Ndiag, U, Phidiag = self.noise_model.covariance(
-                self.toa_data, self.params
+                self.toa_data, params
             )
         else:
             sigma = self.toa_data.error
@@ -538,18 +557,25 @@ class GLSFitter:
 
     def _iteration(
         self,
+        params: ParameterVector,
         threshold: float,
         full_cov: bool,
     ) -> tuple[
+        ParameterVector,
         Float[Array, "n_free n_free"],
         Optional[Float[Array, " n_basis"]],
     ]:
-        """Run one Gauss-Newton iteration; returns (covariance, noise_realizations)."""
-        sigma, Ndiag, U, Phidiag = self._get_noise()
+        """Run one Gauss-Newton iteration.
+
+        Returns
+        -------
+        (new_params, covariance, noise_realizations)
+        """
+        sigma, Ndiag, U, Phidiag = self._get_noise(params)
         n_basis = U.shape[1]
 
         time_resid = compute_time_residuals(
-            self.model, self.toa_data, self.params
+            self.model, self.toa_data, params
         )
         if n_basis > 0:
             time_resid = _subtract_gls_weighted_mean(
@@ -558,7 +584,7 @@ class GLSFitter:
         else:
             time_resid = _subtract_weighted_mean(time_resid, sigma)
 
-        M = compute_design_matrix(self.model, self.toa_data, self.params)
+        M = compute_design_matrix(self.model, self.toa_data, params)
 
         # GLS solve
         noise_realizations = None
@@ -577,21 +603,22 @@ class GLSFitter:
                 time_resid, sigma, M, threshold
             )
 
-        new_free = self.params.free_values() + dpars
-        self.params = self.params.with_free_values(new_free)
-        return covariance, noise_realizations
+        new_free = params.free_values() + dpars
+        new_params = params.with_free_values(new_free)
+        return new_params, covariance, noise_realizations
 
     def _build_result(
         self,
+        params: ParameterVector,
         covariance: Float[Array, "n_free n_free"],
         noise_realizations: Optional[Float[Array, " n_basis"]],
-    ) -> float:
-        """Compute final residuals/chi2 and populate ``self.result``."""
-        sigma, Ndiag, U, Phidiag = self._get_noise()
+    ) -> GLSFitResult:
+        """Compute final residuals/chi2 and return a result object."""
+        sigma, Ndiag, U, Phidiag = self._get_noise(params)
         n_basis = U.shape[1]
 
         final_resid = compute_time_residuals(
-            self.model, self.toa_data, self.params
+            self.model, self.toa_data, params
         )
         if n_basis > 0:
             final_resid = _subtract_gls_weighted_mean(
@@ -605,13 +632,13 @@ class GLSFitter:
         else:
             chi2_val = float(compute_chi2(final_resid, sigma))
 
-        dof = self.toa_data.n_toas - self.params.n_free
+        dof = self.toa_data.n_toas - params.n_free
 
         errors = jnp.sqrt(jnp.diag(covariance))
         correlation = (covariance / errors).T / errors
 
-        self.result = GLSFitResult(
-            params=self.params,
+        return GLSFitResult(
+            params=params,
             covariance_matrix=covariance,
             correlation_matrix=correlation,
             parameter_uncertainties=errors,
@@ -621,14 +648,13 @@ class GLSFitter:
             residuals=final_resid,
             noise_realizations=noise_realizations,
         )
-        return chi2_val
 
     def fit_toas(
         self,
         maxiter: int = 1,
         threshold: Optional[float] = None,
         full_cov: bool = False,
-    ) -> float:
+    ) -> GLSFitResult:
         """Run the GLS fit.
 
         Parameters
@@ -643,14 +669,15 @@ class GLSFitter:
 
         Returns
         -------
-        float
-            Final chi-squared value.
+        GLSFitResult
+            Fit result containing updated parameters, covariance,
+            uncertainties, chi-squared, residuals, and noise realizations.
         """
         n_toas = self.toa_data.n_toas
 
         # Determine basis dimension for threshold calculation
         if self.noise_model is not None and self.noise_model.has_correlated:
-            _, _, U_init, _ = self._get_noise()
+            _, _, U_init, _ = self._get_noise(self.params)
             n_basis = U_init.shape[1]
         else:
             n_basis = 0
@@ -662,11 +689,12 @@ class GLSFitter:
                 dim = self.params.n_free + n_basis
             threshold = 1e-14 * max(n_toas, dim)
 
+        params = self.params
         covariance = None
         noise_realizations = None
         for _ in range(maxiter):
-            covariance, noise_realizations = self._iteration(
-                threshold, full_cov
+            params, covariance, noise_realizations = self._iteration(
+                params, threshold, full_cov
             )
 
-        return self._build_result(covariance, noise_realizations)
+        return self._build_result(params, covariance, noise_realizations)

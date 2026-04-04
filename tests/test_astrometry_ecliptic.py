@@ -378,8 +378,7 @@ def jax_fit_result(fit_data):
     params = pint_model_to_params(m_true)
     jax_model, _noise = build_timing_model(m_true)
     fitter = WLSFitter(jax_model, toa_data, params)
-    fitter.fit_toas(maxiter=3)
-    return fitter
+    return fitter.fit_toas(maxiter=3)
 
 
 class TestFitMatchesPINT:
@@ -388,37 +387,37 @@ class TestFitMatchesPINT:
     def test_chi2_matches(self, pint_fit_result, jax_fit_result):
         """Post-fit chi2 should agree between PINT and JaxPINT."""
         pint_chi2 = pint_fit_result.resids.chi2
-        jax_chi2 = jax_fit_result.result.chi2
+        jax_chi2 = jax_fit_result.chi2
         np.testing.assert_allclose(jax_chi2, pint_chi2, rtol=0.01)
 
     def test_reduced_chi2_reasonable(self, jax_fit_result):
         """Reduced chi2 should be close to 1 for synthetic data."""
-        assert 0.1 < jax_fit_result.result.reduced_chi2 < 5.0
+        assert 0.1 < jax_fit_result.reduced_chi2 < 5.0
 
     def test_f0_matches(self, pint_fit_result, jax_fit_result):
         pint_val = float(pint_fit_result.model.F0.value)
-        jax_val = float(jax_fit_result.result.params.param_value("F0"))
+        jax_val = float(jax_fit_result.params.param_value("F0"))
         pint_err = float(pint_fit_result.model.F0.uncertainty_value)
         assert abs(jax_val - pint_val) < 3 * pint_err
 
     def test_elong_matches(self, pint_fit_result, jax_fit_result):
         pint_val = float(pint_fit_result.model.ELONG.quantity.to(u.rad).value)
-        jax_val = float(jax_fit_result.result.params.param_value("ELONG"))
+        jax_val = float(jax_fit_result.params.param_value("ELONG"))
         np.testing.assert_allclose(jax_val, pint_val, atol=5e-9)
 
     def test_elat_matches(self, pint_fit_result, jax_fit_result):
         pint_val = float(pint_fit_result.model.ELAT.quantity.to(u.rad).value)
-        jax_val = float(jax_fit_result.result.params.param_value("ELAT"))
+        jax_val = float(jax_fit_result.params.param_value("ELAT"))
         np.testing.assert_allclose(jax_val, pint_val, atol=5e-9)
 
     def test_dm_matches(self, pint_fit_result, jax_fit_result):
         pint_val = float(pint_fit_result.model.DM.value)
-        jax_val = float(jax_fit_result.result.params.param_value("DM"))
+        jax_val = float(jax_fit_result.params.param_value("DM"))
         pint_err = float(pint_fit_result.model.DM.uncertainty_value)
         assert abs(jax_val - pint_val) < 3 * pint_err
 
     def test_uncertainties_positive(self, jax_fit_result):
-        assert jnp.all(jax_fit_result.result.parameter_uncertainties > 0)
+        assert jnp.all(jax_fit_result.parameter_uncertainties > 0)
 
 
 # ---------------------------------------------------------------------------
