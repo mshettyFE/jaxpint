@@ -155,7 +155,7 @@ class TestBinaryDDvsPINT:
         import astropy.units as u
         from pint.models.stand_alone_psr_binaries.DDS_model import DDSmodel
 
-        from jaxpint.binary.dd import BinaryDDS
+        from jaxpint.binary.dds import BinaryDDS
 
         sini = dd_params["SINI"]
         shapmax = -np.log(1 - sini)

@@ -190,21 +190,3 @@ class BinaryDD(DelayComponent):
         delay_aberration = dd_aberration_delay(A0, B0, sin_omega, cos_omega, nu, omega, ecc)
 
         return delay_inverse + delay_shapiro + delay_aberration
-
-
-class BinaryDDS(BinaryDD):
-    """DD model with SHAPMAX parameterization (DDS).
-
-    Uses ``SHAPMAX = -ln(1 - sin(i))`` instead of ``SINI``.
-    """
-
-    shapiro_mode: str = eqx.field(static=True, default="shapmax")
-
-
-class BinaryDDH(BinaryDD):
-    """DD model with H3/STIGMA Shapiro parameterization (DDH).
-
-    Uses ``H3`` and ``STIGMA`` instead of ``M2`` and ``SINI``.
-    """
-
-    shapiro_mode: str = eqx.field(static=True, default="h3stigma")

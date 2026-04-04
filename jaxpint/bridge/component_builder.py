@@ -38,8 +38,12 @@ def _opt_name(pint_model, name):
 def _build_binary_component(comp, pint_model):
     """Construct the appropriate JaxPINT binary DelayComponent from a PINT binary component."""
     from jaxpint.binary.bt import BinaryBT
-    from jaxpint.binary.dd import BinaryDD, BinaryDDS, BinaryDDH
-    from jaxpint.binary.ell1 import BinaryELL1, BinaryELL1H, BinaryELL1k
+    from jaxpint.binary.dd import BinaryDD
+    from jaxpint.binary.dds import BinaryDDS
+    from jaxpint.binary.ddh import BinaryDDH
+    from jaxpint.binary.ell1 import BinaryELL1
+    from jaxpint.binary.ell1h import BinaryELL1H
+    from jaxpint.binary.ell1k import BinaryELL1k
 
     bname = comp.binary_model_name
 

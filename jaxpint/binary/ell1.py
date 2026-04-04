@@ -223,20 +223,3 @@ class BinaryELL1(DelayComponent):
             delay_shapiro = -2.0 * TM2 * jnp.log(1.0 - sini * jnp.sin(Phi))
 
         return delay_inverse + delay_shapiro
-
-
-class BinaryELL1H(BinaryELL1):
-    """ELL1 model with H3/STIGMA or H3/H4 Shapiro delay (ELL1H).
-
-    Uses harmonic decomposition from Freire & Wex (2010).
-    """
-
-    shapiro_mode: str = eqx.field(static=True, default="h3stigma")
-
-
-class BinaryELL1k(BinaryELL1):
-    """ELL1 model with OMDOT/LNEDOT for short-period binaries (ELL1k).
-
-    Susobhanan et al. (2018) — uses OMDOT and LNEDOT instead of EPS1DOT/EPS2DOT.
-    """
-    pass
