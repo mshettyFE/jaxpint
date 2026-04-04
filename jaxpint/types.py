@@ -95,6 +95,7 @@ class TOAData(eqx.Module):
     tzr_tdb_frac: Optional[float] = eqx.field(static=True, default=None)
     tzr_freq: Optional[float] = eqx.field(static=True, default=None)
     tzr_ssb_obs_pos: Optional[Float[Array, " 3"]] = eqx.field(default=None)
+    tzr_obs_sun_pos: Optional[Float[Array, " 3"]] = eqx.field(default=None)
 
 
 # ---------------------------------------------------------------------------

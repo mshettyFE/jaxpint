@@ -162,10 +162,7 @@ def _build_tzr_toa_data(toa_data: TOAData) -> TOAData:
     Note: ``flag_masks`` is empty and ``planet_positions`` is None.
     This is correct for PhaseJump (TZR should have no jumps applied),
     but means SolarSystemShapiroDelay with per-planet positions will
-    not contribute to the TZR phase.  In practice this is fine because
-    the planet Shapiro delay at the TZR epoch is negligible for phase
-    referencing, but it may need revisiting if sub-nanosecond absolute
-    phase accuracy at the TZR epoch becomes important.
+    not contribute to the TZR phase.
     """
     one = jnp.ones(1)
     zero = jnp.zeros(1)
@@ -182,6 +179,12 @@ def _build_tzr_toa_data(toa_data: TOAData) -> TOAData:
         else zero3
     )
 
+    obs_sun_pos = (
+        toa_data.tzr_obs_sun_pos[None, :]
+        if toa_data.tzr_obs_sun_pos is not None
+        else zero3
+    )
+
     return TOAData(
         mjd_int=tdb_int,
         mjd_frac=tdb_frac,
@@ -192,7 +195,7 @@ def _build_tzr_toa_data(toa_data: TOAData) -> TOAData:
         delta_pulse_number=zero,
         ssb_obs_pos=ssb_obs_pos,
         ssb_obs_vel=zero3,
-        obs_sun_pos=zero3,
+        obs_sun_pos=obs_sun_pos,
         obs_indices=jnp.zeros(1, dtype=jnp.int32),
         flag_masks={},
         planet_positions=None,
@@ -208,4 +211,5 @@ def _build_tzr_toa_data(toa_data: TOAData) -> TOAData:
         tzr_tdb_frac=None,
         tzr_freq=None,
         tzr_ssb_obs_pos=None,
+        tzr_obs_sun_pos=None,
     )

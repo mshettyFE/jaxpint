@@ -53,9 +53,11 @@ def _ss_obj_shapiro_delay(
     """
     r = jnp.sqrt(jnp.sum(obj_pos ** 2, axis=1))
     rcostheta = jnp.sum(obj_pos * psr_dir, axis=1)
-    # Guard against log(0) for TZR TOA where obs_sun_pos is zeros.
+    # Guard against log(0) when pulsar is directly behind the body.
     arg = jnp.maximum((r - rcostheta) / AU_KM, 1e-100)
-    return -2.0 * T_obj * jnp.log(arg)
+    # For barycentered TOAs (r ≈ 0), the Shapiro delay is zero —
+    # matches PINT's explicit skip for observatory == "barycenter".
+    return jnp.where(r > 0.0, -2.0 * T_obj * jnp.log(arg), 0.0)
 
 
 # ---------------------------------------------------------------------------

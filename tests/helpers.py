@@ -171,6 +171,7 @@ def make_toa_data(
     tzr_tdb_frac=None,
     tzr_freq=None,
     tzr_ssb_obs_pos=None,
+    tzr_obs_sun_pos=None,
 ):
     """Build a minimal TOAData for tests.
 
@@ -229,6 +230,7 @@ def make_toa_data(
         tzr_tdb_frac=float(tzr_tdb_frac) if tzr_tdb_frac is not None else None,
         tzr_freq=float(tzr_freq) if tzr_freq is not None else None,
         tzr_ssb_obs_pos=tzr_ssb_obs_pos,
+        tzr_obs_sun_pos=tzr_obs_sun_pos,
     )
 
 

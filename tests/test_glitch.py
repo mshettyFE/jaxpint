@@ -412,13 +412,7 @@ class TestVsPINT:
         np.testing.assert_allclose(jax_phase, pint_phase, rtol=1e-8)
 
     def test_full_model_residuals(self, glitch_model):
-        """Full-model residuals with glitches: glitch contribution matches PINT.
-
-        TODO: There is a small constant offset between JaxPINT and PINT full-model
-        residuals (pre-existing, not glitch-related). We verify that the
-        *variation* (mean-subtracted residuals) matches, confirming the glitch
-        phase is applied correctly in the full pipeline.
-        """
+        """Full-model residuals with glitches match PINT."""
         import pint.residuals
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
         from jaxpint.fitter import compute_phase_residuals
@@ -435,7 +429,4 @@ class TestVsPINT:
         # PINT residuals
         pint_resid = pint.residuals.Residuals(toas, pint_model).phase_resids.value.astype(np.float64)
 
-        # Compare mean-subtracted residuals to remove constant offset
-        jax_centered = jax_resid - np.mean(jax_resid)
-        pint_centered = pint_resid - np.mean(pint_resid)
-        np.testing.assert_allclose(jax_centered, pint_centered, atol=1e-6)
+        np.testing.assert_allclose(jax_resid, pint_resid, atol=1e-6)

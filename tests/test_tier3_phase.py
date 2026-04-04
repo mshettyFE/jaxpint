@@ -133,14 +133,12 @@ PWF2_1        0.0
         return jax_model, toa_data, params, pint_resids, model
 
     def test_residuals_match_pint(self, pint_setup):
-        """Residual *shape* matches PINT (constant TZR offset removed)."""
-        """TODO: Figure out TZR offset bug"""
+        """Residuals match PINT."""
         jax_model, toa_data, params, pint_resids, _ = pint_setup
         jax_resids = np.array(compute_phase_residuals(jax_model, toa_data, params))
-        # Remove constant TZR offset (pre-existing difference in TZR handling)
         np.testing.assert_allclose(
-            jax_resids - np.mean(jax_resids),
-            pint_resids - np.mean(pint_resids),
+            jax_resids,
+            pint_resids,
             rtol=0.1, atol=1e-6,
         )
 
@@ -195,14 +193,12 @@ WAVE2         0.3e-6 0.8e-6
         return jax_model, toa_data, params, pint_resids, model
 
     def test_residuals_match_pint(self, pint_setup):
-        """Residual shape matches PINT (constant TZR offset removed)."""
-        """TODO: Figure out TZR offset bug"""
-
+        """Residuals match PINT."""
         jax_model, toa_data, params, pint_resids, _ = pint_setup
         jax_resids = np.array(compute_phase_residuals(jax_model, toa_data, params))
         np.testing.assert_allclose(
-            jax_resids - np.mean(jax_resids),
-            pint_resids - np.mean(pint_resids),
+            jax_resids,
+            pint_resids,
             rtol=0.1, atol=1e-6,
         )
 
@@ -259,14 +255,12 @@ IFUNC5        55400 -1e-6
         return jax_model, toa_data, params, pint_resids, model
 
     def test_residuals_match_pint(self, pint_setup):
-        """Residual shape matches PINT (constant TZR offset removed)."""
-        """TODO: Figure out TZR offset bug"""
-
+        """Residuals match PINT."""
         jax_model, toa_data, params, pint_resids, _ = pint_setup
         jax_resids = np.array(compute_phase_residuals(jax_model, toa_data, params))
         np.testing.assert_allclose(
-            jax_resids - np.mean(jax_resids),
-            pint_resids - np.mean(pint_resids),
+            jax_resids,
+            pint_resids,
             rtol=0.1, atol=1e-6,
         )
 

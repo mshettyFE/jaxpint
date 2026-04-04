@@ -125,11 +125,21 @@ def extract_tzr_toa(
 
     ssb_obs_pos = np.asarray(tz_tbl["ssb_obs_pos"], dtype=np.float64)[0]
 
+    # PINT skips Shapiro delay for barycentered TOAs (obs == "barycenter").
+    # Mirror this by setting obs_sun_pos to zeros for barycentric TZR,
+    # which causes the Shapiro delay guard to return 0.
+    is_bary = np.all(tz_toas.get_obss() == "barycenter")
+    if is_bary:
+        obs_sun_pos = np.zeros(3, dtype=np.float64)
+    else:
+        obs_sun_pos = np.asarray(tz_tbl["obs_sun_pos"], dtype=np.float64)[0]
+
     return {
         "tdb_int": float(tdb_int[0]),
         "tdb_frac": float(tdb_frac[0]),
         "freq": freq,
         "ssb_obs_pos": ssb_obs_pos,
+        "obs_sun_pos": obs_sun_pos,
     }
 
 
@@ -280,12 +290,14 @@ def pint_toas_to_jax(
     tzr_tdb_frac = None
     tzr_freq = None
     tzr_ssb_obs_pos = None
+    tzr_obs_sun_pos = None
     if model is not None:
         tzr_info = extract_tzr_toa(model, toas)
         tzr_tdb_int = tzr_info["tdb_int"]
         tzr_tdb_frac = tzr_info["tdb_frac"]
         tzr_freq = tzr_info["freq"]
         tzr_ssb_obs_pos = jnp.asarray(tzr_info["ssb_obs_pos"], dtype=jnp.float64)
+        tzr_obs_sun_pos = jnp.asarray(tzr_info["obs_sun_pos"], dtype=jnp.float64)
 
     # -- Assemble TOAData ------------------------------------------------
     to_jnp = lambda arr: jnp.asarray(arr, dtype=jnp.float64)
@@ -320,6 +332,7 @@ def pint_toas_to_jax(
         tzr_tdb_frac=tzr_tdb_frac,
         tzr_freq=tzr_freq,
         tzr_ssb_obs_pos=tzr_ssb_obs_pos,
+        tzr_obs_sun_pos=tzr_obs_sun_pos,
         n_toas=n_toas,
         obs_names=obs_names,
     )
