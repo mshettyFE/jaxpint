@@ -6,7 +6,6 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-jax.config.update("jax_enable_x64", True)
 
 from tests.helpers import make_toa_data as _make_toa_data_base, make_params
 

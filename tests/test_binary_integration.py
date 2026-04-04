@@ -7,7 +7,6 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-jax.config.update("jax_enable_x64", True)
 
 
 @pytest.fixture

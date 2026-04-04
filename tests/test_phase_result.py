@@ -7,7 +7,6 @@ import pytest
 from hypothesis import given, assume, settings
 from hypothesis.strategies import composite, floats, integers
 
-jax.config.update("jax_enable_x64", True)
 
 from jaxpint.phase_result import PhaseResult
 

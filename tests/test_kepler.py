@@ -19,7 +19,6 @@ from jaxpint.binary.common import (
 )
 
 # Enable float64 for JAX.
-jax.config.update("jax_enable_x64", True)
 
 
 class TestSolveKepler:

@@ -10,6 +10,10 @@ Registers Hypothesis profiles for different execution contexts:
 """
 
 import os
+
+import jax
+jax.config.update("jax_enable_x64", True)
+
 import hypothesis
 
 hypothesis.settings.register_profile("interactive", deadline=None)

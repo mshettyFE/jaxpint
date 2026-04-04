@@ -5,7 +5,6 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-jax.config.update("jax_enable_x64", True)
 
 from jaxpint.phase.jump import PhaseJump
 from jaxpint.phase_result import PhaseResult
