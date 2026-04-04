@@ -11,13 +11,19 @@ from jaxpint.binary.ddh import BinaryDDH
 from jaxpint.binary.ell1 import BinaryELL1
 from jaxpint.binary.ell1h import BinaryELL1H
 from jaxpint.binary.ell1k import BinaryELL1k
+from jaxpint.binary.ddk import BinaryDDK
+from jaxpint.binary.ddgr import BinaryDDGR
+from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
 
 __all__ = [
     "solve_kepler",
     "BinaryBT",
+    "BinaryBTPiecewise",
     "BinaryDD",
     "BinaryDDS",
     "BinaryDDH",
+    "BinaryDDK",
+    "BinaryDDGR",
     "BinaryELL1",
     "BinaryELL1H",
     "BinaryELL1k",

@@ -35,17 +35,22 @@ def _opt_name(pint_model, name):
     return name if _param_is_set(pint_model, name) else None
 
 
-def _build_binary_component(comp, pint_model):
+def _build_binary_component(comp, pint_model, astro_info=None):
     """Construct the appropriate JaxPINT binary DelayComponent from a PINT binary component."""
     from jaxpint.binary.bt import BinaryBT
+    from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
     from jaxpint.binary.dd import BinaryDD
     from jaxpint.binary.dds import BinaryDDS
     from jaxpint.binary.ddh import BinaryDDH
+    from jaxpint.binary.ddk import BinaryDDK
+    from jaxpint.binary.ddgr import BinaryDDGR
     from jaxpint.binary.ell1 import BinaryELL1
     from jaxpint.binary.ell1h import BinaryELL1H
     from jaxpint.binary.ell1k import BinaryELL1k
 
     bname = comp.binary_model_name
+    if astro_info is None:
+        astro_info = {}
 
     if bname == "BT":
         return BinaryBT(
@@ -162,6 +167,91 @@ def _build_binary_component(comp, pint_model):
             m2_name=_opt_name(pint_model, "M2"),
             sini_name=_opt_name(pint_model, "SINI"),
             shapiro_mode="standard" if _param_is_set(pint_model, "M2") else "none",
+        )
+
+    elif bname == "DDK":
+        k96 = bool(getattr(pint_model, "K96", None) and pint_model.K96.value)
+        return BinaryDDK(
+            pb_name="PB", t0_name="T0", a1_name="A1",
+            ecc_name="ECC", om_name="OM",
+            pbdot_name=_opt_name(pint_model, "PBDOT"),
+            omdot_name=_opt_name(pint_model, "OMDOT"),
+            edot_name=_opt_name(pint_model, "EDOT"),
+            a1dot_name=_opt_name(pint_model, "A1DOT"),
+            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+            gamma_name=_opt_name(pint_model, "GAMMA"),
+            dr_name=_opt_name(pint_model, "DR"),
+            dth_name=_opt_name(pint_model, "DTH"),
+            a0_name=_opt_name(pint_model, "A0"),
+            b0_name=_opt_name(pint_model, "B0"),
+            m2_name=_opt_name(pint_model, "M2"),
+            kin_name="KIN", kom_name="KOM",
+            px_name="PX",
+            raj_name=astro_info.get("raj_name", "RAJ"),
+            decj_name=astro_info.get("decj_name", "DECJ"),
+            pmra_name=astro_info.get("pmra_name"),
+            pmdec_name=astro_info.get("pmdec_name"),
+            posepoch_name=astro_info.get("posepoch_name"),
+            k96=k96,
+        )
+
+    elif bname == "DDGR":
+        return BinaryDDGR(
+            pb_name="PB", t0_name="T0", a1_name="A1",
+            ecc_name="ECC", om_name="OM",
+            mtot_name="MTOT", m2_name="M2",
+            edot_name=_opt_name(pint_model, "EDOT"),
+            a1dot_name=_opt_name(pint_model, "A1DOT"),
+            xomdot_name=_opt_name(pint_model, "XOMDOT"),
+            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+            a0_name=_opt_name(pint_model, "A0"),
+            b0_name=_opt_name(pint_model, "B0"),
+        )
+
+    elif bname == "BT_piecewise":
+        # Scan for piecewise parameters (T0X_*, A1X_*, XR1_*, XR2_*)
+        t0x_names = []
+        a1x_names = []
+        xr1_names = []
+        xr2_names = []
+
+        # Collect piece indices from the PINT component
+        piece_indices = set()
+        for pname in comp.params:
+            if pname.startswith("T0X_") or pname.startswith("A1X_"):
+                piece_indices.add(pname[4:])
+            elif pname.startswith("XR1_") or pname.startswith("XR2_"):
+                piece_indices.add(pname[4:])
+
+        for idx in sorted(piece_indices):
+            t0x_name = f"T0X_{idx}"
+            a1x_name = f"A1X_{idx}"
+            xr1_name = f"XR1_{idx}"
+            xr2_name = f"XR2_{idx}"
+            if hasattr(pint_model, t0x_name):
+                t0x_names.append(t0x_name)
+            if hasattr(pint_model, a1x_name):
+                a1x_names.append(a1x_name)
+            if hasattr(pint_model, xr1_name):
+                xr1_names.append(xr1_name)
+            if hasattr(pint_model, xr2_name):
+                xr2_names.append(xr2_name)
+
+        n_pieces = len(xr1_names)
+        return BinaryBTPiecewise(
+            pb_name="PB", t0_name="T0", a1_name="A1",
+            ecc_name="ECC", om_name="OM",
+            pbdot_name=_opt_name(pint_model, "PBDOT"),
+            omdot_name=_opt_name(pint_model, "OMDOT"),
+            edot_name=_opt_name(pint_model, "EDOT"),
+            a1dot_name=_opt_name(pint_model, "A1DOT"),
+            gamma_name=_opt_name(pint_model, "GAMMA"),
+            xpbdot_name=_opt_name(pint_model, "XPBDOT"),
+            n_pieces=n_pieces,
+            t0x_names=tuple(t0x_names),
+            a1x_names=tuple(a1x_names),
+            xr1_names=tuple(xr1_names),
+            xr2_names=tuple(xr2_names),
         )
 
     else:
@@ -444,7 +534,14 @@ def build_timing_model(
                 ))
 
         elif isinstance(comp, PINTPulsarBinary):
-            delay_components.append(_build_binary_component(comp, pint_model))
+            _astro = {
+                "raj_name": _astro_raj,
+                "decj_name": _astro_decj,
+                "pmra_name": _astro_pmra,
+                "pmdec_name": _astro_pmdec,
+                "posepoch_name": _astro_posepoch,
+            }
+            delay_components.append(_build_binary_component(comp, pint_model, astro_info=_astro))
 
         elif isinstance(comp, PINTSolarSystemShapiro):
             delay_components.append(
