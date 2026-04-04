@@ -35,6 +35,7 @@ from jaxpint.binary.common import (
     dd_inverse_timing,
     dd_shapiro_delay,
     dd_aberration_delay,
+    get_sini_m2,
 )
 
 
@@ -79,25 +80,6 @@ class BinaryDD(DelayComponent):
     h3_name: Optional[str] = eqx.field(static=True, default=None)
     stigma_name: Optional[str] = eqx.field(static=True, default=None)
 
-    def _get_sini_m2(self, params: ParameterVector):
-        """Compute sin(i) and M2 based on Shapiro parameterization mode."""
-        if self.shapiro_mode == "standard":
-            sini = params.param_value(self.sini_name) if self.sini_name else 0.0
-            m2 = params.param_value(self.m2_name) if self.m2_name else 0.0
-        elif self.shapiro_mode == "shapmax":
-            shapmax = params.param_value(self.shapmax_name)
-            sini = 1.0 - jnp.exp(-shapmax)
-            m2 = params.param_value(self.m2_name) if self.m2_name else 0.0
-        elif self.shapiro_mode == "h3stigma":
-            h3 = params.param_value(self.h3_name)
-            stigma = params.param_value(self.stigma_name)
-            sini = 2.0 * stigma / (1.0 + stigma ** 2)
-            m2 = h3 / (stigma ** 3 * TSUN)
-        else:
-            sini = 0.0
-            m2 = 0.0
-        return sini, m2
-
     def __call__(
         self,
         toa_data: TOAData,
@@ -130,7 +112,10 @@ class BinaryDD(DelayComponent):
         A0 = params.param_value(self.a0_name) if self.a0_name else 0.0
         B0 = params.param_value(self.b0_name) if self.b0_name else 0.0
 
-        sini, m2 = self._get_sini_m2(params)
+        sini, m2 = get_sini_m2(
+            params, self.shapiro_mode, self.sini_name, self.m2_name,
+            self.shapmax_name, self.h3_name, self.stigma_name,
+        )
 
         # --- Compute time since periastron ---
         tt0_s = compute_tt0(toa_data.tdb_int, toa_data.tdb_frac, t0_int, t0_frac)

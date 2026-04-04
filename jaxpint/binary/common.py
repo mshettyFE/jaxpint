@@ -16,6 +16,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.binary.kepler import solve_kepler
 from jaxpint.constants import SECS_PER_DAY, SECS_PER_JULIAN_YEAR, TSUN
+from jaxpint.types import ParameterVector
 
 
 
@@ -446,3 +447,63 @@ def dd_aberration_delay(
         A0 * (jnp.sin(omg_plus_nu) + ecc * sin_omega)
         + B0 * (jnp.cos(omg_plus_nu) + ecc * cos_omega)
     )
+
+
+# ---------------------------------------------------------------------------
+# Shapiro delay parameterization dispatch
+# ---------------------------------------------------------------------------
+
+def get_sini_m2(
+    params: ParameterVector,
+    shapiro_mode: str,
+    sini_name: str | None = None,
+    m2_name: str | None = None,
+    shapmax_name: str | None = None,
+    h3_name: str | None = None,
+    stigma_name: str | None = None,
+    h4_name: str | None = None,
+) -> tuple:
+    """Compute sin(i) and companion mass M2 from the Shapiro parameterization.
+
+    Supports four modes:
+
+    - ``"standard"``: Uses ``SINI`` and ``M2`` directly.
+    - ``"shapmax"``: Uses ``SHAPMAX = -ln(1 - sin(i))`` and ``M2``.
+    - ``"h3stigma"``: Uses orthometric parameters ``H3`` and ``STIGMA``.
+    - ``"h3h4"``: Uses ``H3`` and ``H4`` (derives ``STIGMA = H4/H3``).
+
+    Any other mode (including ``"none"``) returns ``(0.0, 0.0)``.
+
+    Parameters
+    ----------
+    params : ParameterVector
+    shapiro_mode : str
+    sini_name, m2_name, shapmax_name, h3_name, stigma_name, h4_name : str or None
+        Parameter names for the relevant mode.
+
+    Returns
+    -------
+    (sini, m2)
+    """
+    if shapiro_mode == "standard":
+        sini = params.param_value(sini_name) if sini_name else 0.0
+        m2 = params.param_value(m2_name) if m2_name else 0.0
+    elif shapiro_mode == "shapmax":
+        shapmax = params.param_value(shapmax_name)
+        sini = 1.0 - jnp.exp(-shapmax)
+        m2 = params.param_value(m2_name) if m2_name else 0.0
+    elif shapiro_mode == "h3stigma":
+        h3 = params.param_value(h3_name)
+        stigma = params.param_value(stigma_name)
+        sini = 2.0 * stigma / (1.0 + stigma ** 2)
+        m2 = h3 / (stigma ** 3 * TSUN)
+    elif shapiro_mode == "h3h4":
+        h3 = params.param_value(h3_name)
+        h4 = params.param_value(h4_name)
+        stigma = h4 / h3
+        sini = 2.0 * stigma / (1.0 + stigma ** 2)
+        m2 = h3 / (stigma ** 3 * TSUN)
+    else:
+        sini = 0.0
+        m2 = 0.0
+    return sini, m2

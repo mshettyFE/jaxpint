@@ -26,6 +26,7 @@ from jaxpint.constants import SECS_PER_DAY, TSUN
 from jaxpint.binary.common import (
     compute_tt0,
     compute_orbital_phase,
+    get_sini_m2,
 )
 
 
@@ -124,27 +125,6 @@ class BinaryELL1(DelayComponent):
     omdot_name: Optional[str] = eqx.field(static=True, default=None)
     lnedot_name: Optional[str] = eqx.field(static=True, default=None)
 
-    def _get_sini_m2(self, params: ParameterVector):
-        """Compute sin(i) and M2 based on Shapiro parameterization."""
-        if self.shapiro_mode == "standard":
-            sini = params.param_value(self.sini_name) if self.sini_name else 0.0
-            m2 = params.param_value(self.m2_name) if self.m2_name else 0.0
-        elif self.shapiro_mode == "h3stigma":
-            h3 = params.param_value(self.h3_name)
-            stigma = params.param_value(self.stigma_name)
-            sini = 2.0 * stigma / (1.0 + stigma ** 2)
-            m2 = h3 / (stigma ** 3 * TSUN)
-        elif self.shapiro_mode == "h3h4":
-            h3 = params.param_value(self.h3_name)
-            h4 = params.param_value(self.h4_name)
-            stigma = h4 / h3
-            sini = 2.0 * stigma / (1.0 + stigma ** 2)
-            m2 = h3 / (stigma ** 3 * TSUN)
-        else:
-            sini = 0.0
-            m2 = 0.0
-        return sini, m2
-
     def _compute_eps(self, params, ttasc_s):
         """Compute time-dependent eps1, eps2."""
         eps1_0 = params.param_value(self.eps1_name)
@@ -184,7 +164,11 @@ class BinaryELL1(DelayComponent):
         pbdot = params.param_value(self.pbdot_name) if self.pbdot_name else 0.0
         a1dot = params.param_value(self.a1dot_name) if self.a1dot_name else 0.0
 
-        sini, m2 = self._get_sini_m2(params)
+        sini, m2 = get_sini_m2(
+            params, self.shapiro_mode, self.sini_name, self.m2_name,
+            h3_name=self.h3_name, stigma_name=self.stigma_name,
+            h4_name=self.h4_name,
+        )
 
         # --- Time since TASC ---
         ttasc_s = compute_tt0(toa_data.tdb_int, toa_data.tdb_frac, tasc_int, tasc_frac)
