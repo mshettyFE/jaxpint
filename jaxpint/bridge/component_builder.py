@@ -40,13 +40,9 @@ def _build_binary_component(comp, pint_model, astro_info=None):
     from jaxpint.binary.bt import BinaryBT
     from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
     from jaxpint.binary.dd import BinaryDD
-    from jaxpint.binary.dds import BinaryDDS
-    from jaxpint.binary.ddh import BinaryDDH
     from jaxpint.binary.ddk import BinaryDDK
     from jaxpint.binary.ddgr import BinaryDDGR
     from jaxpint.binary.ell1 import BinaryELL1
-    from jaxpint.binary.ell1h import BinaryELL1H
-    from jaxpint.binary.ell1k import BinaryELL1k
 
     bname = comp.binary_model_name
     if astro_info is None:
@@ -84,7 +80,7 @@ def _build_binary_component(comp, pint_model, astro_info=None):
         )
 
     elif bname == "DDS":
-        return BinaryDDS(
+        return BinaryDD(
             pb_name="PB", t0_name="T0", a1_name="A1",
             ecc_name="ECC", om_name="OM",
             pbdot_name=_opt_name(pint_model, "PBDOT"),
@@ -99,10 +95,11 @@ def _build_binary_component(comp, pint_model, astro_info=None):
             b0_name=_opt_name(pint_model, "B0"),
             m2_name=_opt_name(pint_model, "M2"),
             shapmax_name="SHAPMAX",
+            shapiro_mode="shapmax",
         )
 
     elif bname == "DDH":
-        return BinaryDDH(
+        return BinaryDD(
             pb_name="PB", t0_name="T0", a1_name="A1",
             ecc_name="ECC", om_name="OM",
             pbdot_name=_opt_name(pint_model, "PBDOT"),
@@ -117,6 +114,7 @@ def _build_binary_component(comp, pint_model, astro_info=None):
             b0_name=_opt_name(pint_model, "B0"),
             h3_name="H3",
             stigma_name="STIGMA",
+            shapiro_mode="h3stigma",
         )
 
     elif bname == "ELL1":
@@ -141,7 +139,7 @@ def _build_binary_component(comp, pint_model, astro_info=None):
             shapiro_mode = "h3h4"
         else:
             shapiro_mode = "h3stigma"
-        return BinaryELL1H(
+        return BinaryELL1(
             pb_name="PB", tasc_name="TASC", a1_name="A1",
             eps1_name="EPS1", eps2_name="EPS2",
             pbdot_name=_opt_name(pint_model, "PBDOT"),
@@ -156,7 +154,7 @@ def _build_binary_component(comp, pint_model, astro_info=None):
         )
 
     elif bname == "ELL1k":
-        return BinaryELL1k(
+        return BinaryELL1(
             pb_name="PB", tasc_name="TASC", a1_name="A1",
             eps1_name="EPS1", eps2_name="EPS2",
             pbdot_name=_opt_name(pint_model, "PBDOT"),

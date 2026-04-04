@@ -154,7 +154,7 @@ class TestBinaryDDvsPINT:
         import astropy.units as u
         from pint.models.stand_alone_psr_binaries.DDS_model import DDSmodel
 
-        from jaxpint.binary.dds import BinaryDDS
+        from jaxpint.binary.dd import BinaryDD
 
         sini = dd_params["SINI"]
         shapmax = -np.log(1 - sini)
@@ -176,10 +176,11 @@ class TestBinaryDDvsPINT:
         bm.update_input(barycentric_toa=t, **pint_params)
         pint_delay = bm.DDdelay().to(u.second).value
 
-        dds = BinaryDDS(
+        dds = BinaryDD(
             pb_name="PB", t0_name="T0", a1_name="A1", ecc_name="ECC", om_name="OM",
             omdot_name="OMDOT", gamma_name="GAMMA", pbdot_name="PBDOT",
             m2_name="M2", shapmax_name="SHAPMAX",
+            shapiro_mode="shapmax",
         )
 
         om_rad = dd_params["OM"]
