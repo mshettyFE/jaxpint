@@ -21,7 +21,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DispersionDelayComponent
 from jaxpint.constants import DAYS_PER_JULIAN_YEAR, DMCONST
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
@@ -31,7 +31,7 @@ from jaxpint.utils import taylor_horner
 # DispersionDM
 # ---------------------------------------------------------------------------
 
-class DispersionDM(DelayComponent):
+class DispersionDM(DispersionDelayComponent):
     """DM dispersion delay using a Taylor expansion about DMEPOCH.
 
     Parameters
@@ -88,6 +88,16 @@ class DispersionDM(DelayComponent):
     # Public API
     # ------------------------------------------------------------------
 
+    def compute_dm(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+        delay: Float[Array, " n_toas"],
+    ) -> Float[Array, " n_toas"]:
+        dt_yr = self._compute_dt_yr(toa_data, params)
+        dm_coeffs = self._get_dm_coeffs(params)
+        return taylor_horner(dt_yr, dm_coeffs)
+
     def __call__(
         self,
         toa_data: TOAData,
@@ -112,7 +122,5 @@ class DispersionDM(DelayComponent):
         array, shape (n_toas,)
             Dispersion delay in **seconds**.
         """
-        dt_yr = self._compute_dt_yr(toa_data, params)
-        dm_coeffs = self._get_dm_coeffs(params)
-        dm = taylor_horner(dt_yr, dm_coeffs)
+        dm = self.compute_dm(toa_data, params, delay)
         return dm * DMCONST / toa_data.freq ** 2

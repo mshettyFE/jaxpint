@@ -21,12 +21,12 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DispersionDelayComponent
 from jaxpint.constants import DMCONST
 from jaxpint.types import TOAData, ParameterVector
 
 
-class DispersionDMX(DelayComponent):
+class DispersionDMX(DispersionDelayComponent):
     """Piecewise-constant DM dispersion delay (DMX model).
 
     Parameters
@@ -56,6 +56,28 @@ class DispersionDMX(DelayComponent):
                     f"does not match n_bins ({self.n_bins})"
                 )
 
+    def compute_dm(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+        delay: Float[Array, " n_toas"],
+    ) -> Float[Array, " n_toas"]:
+        toa_mjd = toa_data.mjd_int + toa_data.mjd_frac
+
+        dm = jnp.zeros(toa_data.n_toas)
+
+        for i in range(self.n_bins):
+            r1_int, r1_frac = params.epoch_value(self.dmxr1_names[i])
+            r2_int, r2_frac = params.epoch_value(self.dmxr2_names[i])
+            r1 = r1_int + r1_frac
+            r2 = r2_int + r2_frac
+
+            in_bin = (toa_mjd >= r1) & (toa_mjd <= r2)
+            dmx_val = params.param_value(self.dmx_names[i])
+            dm = dm + jnp.where(in_bin, dmx_val, 0.0)
+
+        return dm
+
     def __call__(
         self,
         toa_data: TOAData,
@@ -79,25 +101,5 @@ class DispersionDMX(DelayComponent):
         array, shape (n_toas,)
             Dispersion delay in **seconds**.
         """
-        # TOA MJD in UTC — matches PINT's bin assignment on tbl["mjd_float"]
-        toa_mjd = toa_data.mjd_int + toa_data.mjd_frac
-
-        dm = jnp.zeros(toa_data.n_toas)
-
-        for i in range(self.n_bins):
-            # Bin boundaries (MJD epoch parameters with int/frac split)
-            r1_int, r1_frac = params.epoch_value(self.dmxr1_names[i])
-            r2_int, r2_frac = params.epoch_value(self.dmxr2_names[i])
-            r1 = r1_int + r1_frac
-            r2 = r2_int + r2_frac
-
-            # Boolean mask: TOA falls within this bin (inclusive)
-            in_bin = (toa_mjd >= r1) & (toa_mjd <= r2)
-
-            # DM value for this bin
-            dmx_val = params.param_value(self.dmx_names[i])
-
-            # Accumulate DM contribution
-            dm = dm + jnp.where(in_bin, dmx_val, 0.0)
-
+        dm = self.compute_dm(toa_data, params, delay)
         return dm * DMCONST / toa_data.freq**2

@@ -333,9 +333,11 @@ def build_timing_model(
     from pint.models.spindown import Spindown as PINTSpindown
     from pint.models.dispersion_model import DispersionDM as PINTDispersionDM
     from pint.models.dispersion_model import DispersionDMX as PINTDispersionDMX
+    from pint.models.dispersion_model import DispersionJump as PINTDispersionJump
     from pint.models.astrometry import AstrometryEquatorial as PINTAstrometryEquatorial
     from pint.models.astrometry import AstrometryEcliptic as PINTAstrometryEcliptic
     from pint.models.noise_model import ScaleToaError as PINTScaleToaError
+    from pint.models.noise_model import ScaleDmError as PINTScaleDmError
     from pint.models.noise_model import EcorrNoise as PINTEcorrNoise
     from pint.models.noise_model import PLRedNoise as PINTPLRedNoise
     from pint.models.noise_model import PLDMNoise as PINTPLDMNoise
@@ -362,13 +364,16 @@ def build_timing_model(
     from pint.models.ifunc import IFunc as PINTIFunc
 
     from jaxpint.model import TimingModel
+    from jaxpint.components import DispersionDelayComponent
     from jaxpint.phase.spin import Spindown
     from jaxpint.delay.dispersion_dm import DispersionDM
     from jaxpint.delay.dispersion_dmx import DispersionDMX
+    from jaxpint.delay.dispersion_jump import DispersionJump
     from jaxpint.delay.astrometry import AstrometryEquatorial, AstrometryEcliptic
     from jaxpint.noise.ecorr import EcorrNoise
     from jaxpint.noise.white import ScaleToaError
     from jaxpint.noise.noise_model import NoiseModel
+    from jaxpint.noise.dm_white import ScaleDmError as JaxScaleDmError
     from jaxpint.noise.red_noise import PLRedNoise
     from jaxpint.noise.dm_noise import PLDMNoise
     from jaxpint.noise.chrom_noise import PLChromNoise
@@ -394,6 +399,7 @@ def build_timing_model(
     delay_components = []
     phase_components = []
     noise_model = None
+    dm_white_noise = None
     ecorr_noise = None
     plred_noise = None
     pldm_noise = None
@@ -540,6 +546,18 @@ def build_timing_model(
                     dmxr2_names=tuple(f"DMXR2_{i:04d}" for i in dmx_indices),
                 ))
 
+        elif isinstance(comp, PINTDispersionJump):
+            comp.setup()
+            dmjump_names = tuple(
+                mask_par
+                for mask_par in comp.get_params_of_type("maskParameter")
+                if mask_par.startswith("DMJUMP")
+            )
+            if dmjump_names:
+                delay_components.append(
+                    DispersionJump(dmjump_names=dmjump_names)
+                )
+
         elif isinstance(comp, PINTPulsarBinary):
             _astro = {
                 "raj_name": _astro_raj,
@@ -654,6 +672,15 @@ def build_timing_model(
             noise_model = ScaleToaError(
                 efac_names=efac_names,
                 equad_names=equad_names,
+            )
+
+        elif isinstance(comp, PINTScaleDmError):
+            comp.setup()
+            dmefac_names = tuple(sorted(comp.DMEFACs.keys()))
+            dmequad_names = tuple(sorted(comp.DMEQUADs.keys()))
+            dm_white_noise = JaxScaleDmError(
+                dmefac_names=dmefac_names,
+                dmequad_names=dmequad_names,
             )
 
         elif isinstance(comp, PINTEcorrNoise):
@@ -1062,9 +1089,14 @@ def build_timing_model(
                 type(comp).__name__,
             )
 
+    dispersion_components = tuple(
+        c for c in delay_components if isinstance(c, DispersionDelayComponent)
+    )
+
     timing_model = TimingModel(
         delay_components=tuple(delay_components),
         phase_components=tuple(phase_components),
+        dispersion_components=dispersion_components,
         phoff_name=phoff_name,
     )
 
@@ -1083,5 +1115,6 @@ def build_timing_model(
     combined_noise = NoiseModel(
         white_noise=noise_model,
         correlated=tuple(correlated),
+        dm_white_noise=dm_white_noise,
     )
     return timing_model, combined_noise

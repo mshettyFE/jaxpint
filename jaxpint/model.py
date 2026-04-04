@@ -15,7 +15,7 @@ import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent, PhaseComponent
+from jaxpint.components import DelayComponent, DispersionDelayComponent, PhaseComponent
 from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 
@@ -38,6 +38,9 @@ class TimingModel(eqx.Module):
 
     delay_components: tuple[DelayComponent, ...] = eqx.field(static=True)
     phase_components: tuple[PhaseComponent, ...] = eqx.field(static=True)
+    dispersion_components: tuple[DispersionDelayComponent, ...] = eqx.field(
+        static=True, default=()
+    )
     phoff_name: Optional[str] = eqx.field(static=True, default=None)
 
     def compute_delay(
@@ -69,6 +72,23 @@ class TimingModel(eqx.Module):
         return jax.lax.fori_loop(
             0, n, body, jnp.zeros(toa_data.n_toas)
         )
+
+    def compute_dm(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+    ) -> Float[Array, " n_toas"]:
+        """Compute total model DM at each TOA (pc/cm³).
+
+        Sums DM contributions from all :class:`DispersionDelayComponent`
+        instances in :attr:`dispersion_components`.  Used for wideband
+        DM residual computation.
+        """
+        delay = self.compute_delay(toa_data, params)
+        dm = jnp.zeros(toa_data.n_toas)
+        for comp in self.dispersion_components:
+            dm = dm + comp.compute_dm(toa_data, params, delay)
+        return dm
 
     def compute_phase(
         self,

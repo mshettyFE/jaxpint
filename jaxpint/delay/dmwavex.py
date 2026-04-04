@@ -17,13 +17,13 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DispersionDelayComponent
 from jaxpint.constants import DMCONST
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import fourier_sum
 
 
-class DMWaveX(DelayComponent):
+class DMWaveX(DispersionDelayComponent):
     """Fourier-basis DM noise (DMWaveX).
 
     Parameters
@@ -56,6 +56,24 @@ class DMWaveX(DelayComponent):
                     f"does not match n_components ({self.n_components})"
                 )
 
+    def compute_dm(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+        delay: Float[Array, " n_toas"],
+    ) -> Float[Array, " n_toas"]:
+        epoch_int, epoch_frac = params.epoch_value(self.dmwxepoch_name)
+
+        dt_int = toa_data.tdb_int - epoch_int
+        dt_frac = toa_data.tdb_frac - epoch_frac
+        dt_days = dt_int + dt_frac
+
+        freqs = jnp.array([params.param_value(n) for n in self.dmwxfreq_names])
+        sins = jnp.array([params.param_value(n) for n in self.dmwxsin_names])
+        coses = jnp.array([params.param_value(n) for n in self.dmwxcos_names])
+
+        return fourier_sum(dt_days, freqs, sins, coses)
+
     def __call__(
         self,
         toa_data: TOAData,
@@ -78,17 +96,5 @@ class DMWaveX(DelayComponent):
         array, shape (n_toas,)
             DMWaveX delay in seconds.
         """
-        epoch_int, epoch_frac = params.epoch_value(self.dmwxepoch_name)
-
-        # Note: DMWaveX does NOT subtract accumulated delay from dt
-        # (per PINT's implementation — DM is computed at the TOA time).
-        dt_int = toa_data.tdb_int - epoch_int
-        dt_frac = toa_data.tdb_frac - epoch_frac
-        dt_days = dt_int + dt_frac
-
-        freqs = jnp.array([params.param_value(n) for n in self.dmwxfreq_names])
-        sins = jnp.array([params.param_value(n) for n in self.dmwxsin_names])
-        coses = jnp.array([params.param_value(n) for n in self.dmwxcos_names])
-
-        dm = fourier_sum(dt_days, freqs, sins, coses)
+        dm = self.compute_dm(toa_data, params, delay)
         return dm * DMCONST / toa_data.freq ** 2

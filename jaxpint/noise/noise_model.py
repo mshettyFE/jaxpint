@@ -17,6 +17,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import NoiseComponent
+from jaxpint.noise.dm_white import ScaleDmError
 from jaxpint.noise.white import ScaleToaError
 from jaxpint.types import TOAData, ParameterVector
 
@@ -44,6 +45,7 @@ class NoiseModel(eqx.Module):
 
     white_noise: Optional[ScaleToaError]
     correlated: tuple[NoiseComponent, ...]
+    dm_white_noise: Optional[ScaleDmError] = None
 
     def scaled_sigma(
         self,
@@ -94,6 +96,44 @@ class NoiseModel(eqx.Module):
             Phidiag = jnp.zeros(0)
 
         return Ndiag, U, Phidiag
+
+    def scaled_dm_sigma(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+    ) -> Float[Array, " n_toas"]:
+        """Return noise-scaled DM uncertainties in pc/cm³."""
+        if self.dm_white_noise is not None:
+            return self.dm_white_noise.scaled_dm_sigma(toa_data, params)
+        return toa_data.dm_errors
+
+    def wideband_covariance(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+    ) -> tuple[
+        Float[Array, " n_toas"],
+        Float[Array, "n_toas n_basis"],
+        Float[Array, " n_basis"],
+        Float[Array, " n_toas"],
+    ]:
+        """Return wideband noise decomposition.
+
+        Returns
+        -------
+        Ndiag_toa : (n_toas,)
+            TOA diagonal variance (white noise).
+        U_toa : (n_toas, n_basis)
+            TOA correlated noise basis.
+        Phi_toa : (n_basis,)
+            TOA correlated noise weights.
+        Ndiag_dm : (n_toas,)
+            DM diagonal variance (white noise only).
+        """
+        Ndiag_toa, U_toa, Phi_toa = self.covariance(toa_data, params)
+        dm_sigma = self.scaled_dm_sigma(toa_data, params)
+        Ndiag_dm = dm_sigma ** 2
+        return Ndiag_toa, U_toa, Phi_toa, Ndiag_dm
 
     @property
     def has_correlated(self) -> bool:

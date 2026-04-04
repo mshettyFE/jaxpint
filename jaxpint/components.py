@@ -210,3 +210,37 @@ class DelayComponent(eqx.Module):
         fields that hold parameter names **must** follow this convention.
         """
         return _collect_param_names(self)
+
+
+class DispersionDelayComponent(DelayComponent):
+    """Base class for delay components that contribute to dispersion measure.
+
+    Subclasses must implement :meth:`compute_dm` returning the DM
+    contribution in pc/cm³, in addition to :meth:`__call__` which
+    returns delay in seconds.  The timing model uses ``compute_dm``
+    to evaluate the total model DM for wideband fitting.
+    """
+
+    def compute_dm(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+        delay: Float[Array, " n_toas"],
+    ) -> Float[Array, " n_toas"]:
+        """Return this component's DM contribution in pc/cm³.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data.
+        params : ParameterVector
+            Timing model parameters.
+        delay : (n_toas,)
+            Accumulated signal delay in seconds from prior delay components.
+
+        Returns
+        -------
+        (n_toas,)
+            DM contribution in pc/cm³.
+        """
+        raise NotImplementedError
