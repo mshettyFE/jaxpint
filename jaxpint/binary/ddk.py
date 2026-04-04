@@ -23,7 +23,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.constants import SECS_PER_DAY, TSUN, RAD_PER_MAS, KPC_TO_KM
+from jaxpint.constants import SECS_PER_DAY, RAD_PER_MAS, KPC_TO_KM
 from jaxpint.binary.common import (
     compute_tt0,
     compute_orbital_phase,
@@ -33,9 +33,7 @@ from jaxpint.binary.common import (
     compute_a1,
     compute_true_anomaly,
     compute_omega_dd,
-    dd_inverse_timing,
-    dd_shapiro_delay,
-    dd_aberration_delay,
+    dd_core_delay,
 )
 
 
@@ -239,30 +237,7 @@ class BinaryDDK(DelayComponent):
         omega_dd = compute_omega_dd(om_rad, omdot, nu, pb_d, pbdot, tt0_s)
         omega = omega_dd + delta_omega_pm + delta_omega_par
 
-        sinE = jnp.sin(E)
-        cosE = jnp.cos(E)
-        sin_omega = jnp.sin(omega)
-        cos_omega = jnp.cos(omega)
-
-        # --- DD-specific eccentricities ---
-        er = ecc * (1.0 + dr)
-        eTheta = ecc * (1.0 + dth)
-
-        # --- DD intermediate quantities ---
-        alpha = a1 * sin_omega
-        beta = a1 * jnp.sqrt(1.0 - eTheta ** 2) * cos_omega
-
-        # --- Roemer + Einstein delay ---
-        Dre = alpha * (cosE - er) + (beta + gamma) * sinE
-        Drep = -alpha * sinE + (beta + gamma) * cosE
-        Drepp = -alpha * cosE - (beta + gamma) * sinE
-
-        pb_prime_s = pb_d * SECS_PER_DAY + pbdot * tt0_s
-        nhat = 2.0 * jnp.pi / pb_prime_s / (1.0 - ecc * cosE)
-
-        # --- Three delay components ---
-        delay_inverse = dd_inverse_timing(Dre, Drep, Drepp, nhat, ecc, sinE, cosE)
-        delay_shapiro = dd_shapiro_delay(ecc, cosE, sinE, sin_omega, cos_omega, sini, m2)
-        delay_aberration = dd_aberration_delay(A0, B0, sin_omega, cos_omega, nu, omega, ecc)
-
-        return delay_inverse + delay_shapiro + delay_aberration
+        return dd_core_delay(
+            E, ecc, omega, nu, a1, tt0_s, pb_d, pbdot,
+            gamma, dr, dth, A0, B0, sini, m2,
+        )

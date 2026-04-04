@@ -507,3 +507,98 @@ def get_sini_m2(
         sini = 0.0
         m2 = 0.0
     return sini, m2
+
+
+# ---------------------------------------------------------------------------
+# DD core delay computation (shared by DD, DDK, DDGR)
+# ---------------------------------------------------------------------------
+
+def dd_core_delay(
+    E: Float[Array, " n_toas"],
+    ecc: Float[Array, " n_toas"],
+    omega: Float[Array, " n_toas"],
+    nu: Float[Array, " n_toas"],
+    a1: Float[Array, " n_toas"],
+    tt0_s: Float[Array, " n_toas"],
+    pb_d: float,
+    pbdot: float,
+    gamma: float,
+    dr: float,
+    dth: float,
+    A0: float,
+    B0: float,
+    sini,
+    m2,
+) -> Float[Array, " n_toas"]:
+    """Compute the DD delay from pre-computed orbital intermediates.
+
+    Computes the three DD delay terms (inverse timing, Shapiro, aberration)
+    from the eccentric anomaly, longitude of periastron, and orbital
+    elements.  Shared by BinaryDD, BinaryDDK, and BinaryDDGR.
+
+    Parameters
+    ----------
+    E : array
+        Eccentric anomaly in radians.
+    ecc : array
+        (Time-dependent) eccentricity.
+    omega : array
+        Longitude of periastron in radians.
+    nu : array
+        True anomaly in radians (cumulative).
+    a1 : array
+        (Time-dependent) projected semi-major axis in light-seconds.
+    tt0_s : array
+        Time since epoch in seconds.
+    pb_d : float
+        Binary period in days.
+    pbdot : float
+        Time derivative of PB (s/s).
+    gamma, dr, dth : float
+        DD-specific parameters.
+    A0, B0 : float
+        Aberration coefficients in seconds.
+    sini : float or array
+        Sine of orbital inclination.
+    m2 : float
+        Companion mass in solar masses.
+
+    Returns
+    -------
+    array, shape (n_toas,)
+        Total DD binary delay in seconds.
+    """
+    sinE = jnp.sin(E)
+    cosE = jnp.cos(E)
+    sin_omega = jnp.sin(omega)
+    cos_omega = jnp.cos(omega)
+
+    # DD-specific eccentricities
+    er = ecc * (1.0 + dr)
+    eTheta = ecc * (1.0 + dth)
+
+    # DD intermediate quantities (D&D eqs. [46]-[47])
+    alpha = a1 * sin_omega
+    beta = a1 * jnp.sqrt(1.0 - eTheta ** 2) * cos_omega
+
+    # Roemer + Einstein delay (Dre, eq. [48])
+    Dre = alpha * (cosE - er) + (beta + gamma) * sinE
+
+    # Dre derivatives w.r.t. u (eqs. [49]-[50])
+    Drep = -alpha * sinE + (beta + gamma) * cosE
+    Drepp = -alpha * cosE - (beta + gamma) * sinE
+
+    # nhat (eq. [51]) — uses instantaneous period
+    pb_prime_s = pb_d * SECS_PER_DAY + pbdot * tt0_s
+    nhat = 2.0 * jnp.pi / pb_prime_s / (1.0 - ecc * cosE)
+
+    # 1. Inverse timing delay (eq. [52])
+    delay_inverse = dd_inverse_timing(Dre, Drep, Drepp, nhat, ecc, sinE, cosE)
+
+    # 2. Shapiro delay (eq. [26])
+    delay_shapiro = dd_shapiro_delay(ecc, cosE, sinE, sin_omega, cos_omega, sini, m2)
+
+    # 3. Aberration delay (eq. [27])
+    delay_aberration = dd_aberration_delay(A0, B0, sin_omega, cos_omega, nu, omega, ecc)
+
+    return delay_inverse + delay_shapiro + delay_aberration
