@@ -249,3 +249,208 @@ class TestGrad:
 
         grads = jax.grad(loss)(params)
         assert jnp.all(jnp.isfinite(grads.values))
+
+
+# ===========================================================================
+# Integration tests: JaxPINT vs PINT
+# ===========================================================================
+
+
+@pytest.fixture
+def b1855_9yv1():
+    """B1855+09 NANOGrav 9yr v1 (1 JUMP on -fe L-wide)."""
+    pint = pytest.importorskip("pint")
+    import pint.models as models
+    import pint.toa as toa
+    from pint.config import examplefile
+
+    model = models.get_model(examplefile("B1855+09_NANOGrav_9yv1.gls.par"))
+    toas = toa.get_TOAs(examplefile("B1855+09_NANOGrav_9yv1.tim"), ephem="DE421")
+    return model, toas
+
+
+@pytest.fixture
+def b1855_dfg12():
+    """B1855+09 dfg+12 (21 JUMPs on -chanid flags)."""
+    pint = pytest.importorskip("pint")
+    import pint.models as models
+    import pint.toa as toa
+    from pint.config import examplefile
+
+    model = models.get_model(examplefile("B1855+09_NANOGrav_dfg+12_TAI.par"))
+    toas = toa.get_TOAs(examplefile("B1855+09_NANOGrav_dfg+12.tim"), ephem="DE421")
+    return model, toas
+
+
+class TestJumpIntegration:
+    """Compare JaxPINT PhaseJump against PINT on real pulsar data."""
+
+    # -- mask consistency ------------------------------------------------
+
+    def test_mask_consistency(self, b1855_9yv1):
+        """Bridge flag_masks match PINT's select_toa_mask for a single JUMP."""
+        model, toas = b1855_9yv1
+        from jaxpint.bridge import pint_toas_to_jax
+
+        toa_data = pint_toas_to_jax(toas, model=model)
+
+        # PINT mask: indices -> boolean
+        pint_idx = model.JUMP1.select_toa_mask(toas)
+        expected = np.zeros(toas.ntoas, dtype=bool)
+        expected[pint_idx] = True
+
+        jax_mask = np.asarray(toa_data.flag_masks["JUMP1"])
+        np.testing.assert_array_equal(jax_mask, expected)
+
+        # Mask is non-trivial
+        assert np.any(expected)
+        assert not np.all(expected)
+
+    def test_mask_consistency_multi_jump(self, b1855_dfg12):
+        """Bridge flag_masks match PINT for all 21 JUMPs."""
+        model, toas = b1855_dfg12
+        from jaxpint.bridge import pint_toas_to_jax, build_timing_model
+
+        toa_data = pint_toas_to_jax(toas, model=model)
+        jax_model, _, _ = build_timing_model(model)
+
+        # Find the PhaseJump component
+        jump_comp = [c for c in jax_model.phase_components
+                     if isinstance(c, PhaseJump)]
+        assert len(jump_comp) == 1
+        jump_names = jump_comp[0].jump_param_names
+
+        assert len(jump_names) == 21
+
+        for jname in jump_names:
+            pint_par = getattr(model, jname)
+            pint_idx = pint_par.select_toa_mask(toas)
+            expected = np.zeros(toas.ntoas, dtype=bool)
+            expected[pint_idx] = True
+
+            jax_mask = np.asarray(toa_data.flag_masks[jname])
+            np.testing.assert_array_equal(jax_mask, expected, err_msg=jname)
+            assert np.any(expected), f"{jname} mask is all-False"
+
+    # -- phase values ----------------------------------------------------
+
+    def test_phase_values_match(self, b1855_9yv1):
+        """JaxPINT jump phase matches PINT for 1-JUMP data."""
+        model, toas = b1855_9yv1
+        import astropy.units as u
+        from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
+
+        toa_data = pint_toas_to_jax(toas, model=model)
+        params = pint_model_to_params(model)
+        jax_model, _, _ = build_timing_model(model)
+
+        jump_comp = [c for c in jax_model.phase_components
+                     if isinstance(c, PhaseJump)][0]
+
+        # PINT phase
+        pint_jump_comp = model.components["PhaseJump"]
+        pint_jump_comp.setup()
+        delay = model.delay(toas)
+        pint_phase = pint_jump_comp.jump_phase(toas, delay).value
+
+        # JaxPINT phase
+        jax_result = jump_comp(toa_data, params, jnp.zeros(toa_data.n_toas))
+        jax_phase = np.asarray(jax_result.quantity)
+
+        np.testing.assert_allclose(jax_phase, pint_phase, rtol=1e-12, atol=1e-15)
+
+    def test_phase_values_match_multi_jump(self, b1855_dfg12):
+        """JaxPINT jump phase matches PINT for 21-JUMP data."""
+        model, toas = b1855_dfg12
+        from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
+
+        toa_data = pint_toas_to_jax(toas, model=model)
+        params = pint_model_to_params(model)
+        jax_model, _, _ = build_timing_model(model)
+
+        jump_comp = [c for c in jax_model.phase_components
+                     if isinstance(c, PhaseJump)][0]
+
+        # PINT phase
+        pint_jump_comp = model.components["PhaseJump"]
+        pint_jump_comp.setup()
+        delay = model.delay(toas)
+        pint_phase = pint_jump_comp.jump_phase(toas, delay).value
+
+        # JaxPINT phase
+        jax_result = jump_comp(toa_data, params, jnp.zeros(toa_data.n_toas))
+        jax_phase = np.asarray(jax_result.quantity)
+
+        np.testing.assert_allclose(jax_phase, pint_phase, rtol=1e-12, atol=1e-15)
+
+        # Verify non-trivial: at least some TOAs have non-zero jump phase
+        assert np.any(np.abs(pint_phase) > 0)
+
+    # -- derivatives -----------------------------------------------------
+
+    def test_derivative_match(self, b1855_9yv1):
+        """JAX autodiff d(phase)/d(JUMP) matches PINT's analytical derivative."""
+        model, toas = b1855_9yv1
+        import astropy.units as u
+        from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
+
+        toa_data = pint_toas_to_jax(toas, model=model)
+        params = pint_model_to_params(model)
+        jax_model, _, _ = build_timing_model(model)
+
+        jump_comp = [c for c in jax_model.phase_components
+                     if isinstance(c, PhaseJump)][0]
+
+        # PINT derivative
+        pint_jump_comp = model.components["PhaseJump"]
+        pint_jump_comp.setup()
+        delay = model.delay(toas)
+        pint_deriv = pint_jump_comp.d_phase_d_jump(
+            toas, "JUMP1", delay
+        ).to(1 / u.second).value
+
+        # JaxPINT derivative via Jacobian
+        def phase_fn(p):
+            return jump_comp(toa_data, p, jnp.zeros(toa_data.n_toas)).quantity
+
+        jac = jax.jacobian(phase_fn)(params)
+        jump_idx = params.param_index("JUMP1")
+        jax_deriv = np.asarray(jac.values[:, jump_idx])
+
+        np.testing.assert_allclose(jax_deriv, pint_deriv, rtol=1e-12)
+
+    def test_derivative_match_multi_jump(self, b1855_dfg12):
+        """JAX autodiff derivatives match PINT for all 21 JUMPs."""
+        model, toas = b1855_dfg12
+        import astropy.units as u
+        from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
+
+        toa_data = pint_toas_to_jax(toas, model=model)
+        params = pint_model_to_params(model)
+        jax_model, _, _ = build_timing_model(model)
+
+        jump_comp = [c for c in jax_model.phase_components
+                     if isinstance(c, PhaseJump)][0]
+
+        # PINT derivatives
+        pint_jump_comp = model.components["PhaseJump"]
+        pint_jump_comp.setup()
+        delay = model.delay(toas)
+
+        # JaxPINT Jacobian (computed once)
+        def phase_fn(p):
+            return jump_comp(toa_data, p, jnp.zeros(toa_data.n_toas)).quantity
+
+        jac = jax.jacobian(phase_fn)(params)
+
+        for jname in jump_comp.jump_param_names:
+            pint_deriv = pint_jump_comp.d_phase_d_jump(
+                toas, jname, delay
+            ).to(1 / u.second).value
+
+            jump_idx = params.param_index(jname)
+            jax_deriv = np.asarray(jac.values[:, jump_idx])
+
+            np.testing.assert_allclose(
+                jax_deriv, pint_deriv, rtol=1e-12, err_msg=jname
+            )
