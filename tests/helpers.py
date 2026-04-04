@@ -223,11 +223,11 @@ def make_toa_data(
         tropo_alt_valid=tropo_alt_valid,
         obs_geodetic_lat=obs_geodetic_lat,
         obs_height_km=obs_height_km,
-        n_toas=n_toas,
-        obs_names=obs_names,
-        tzr_tdb_int=tzr_tdb_int,
-        tzr_tdb_frac=tzr_tdb_frac,
-        tzr_freq=tzr_freq,
+        n_toas=int(n_toas),
+        obs_names=tuple(str(s) for s in obs_names),
+        tzr_tdb_int=float(tzr_tdb_int) if tzr_tdb_int is not None else None,
+        tzr_tdb_frac=float(tzr_tdb_frac) if tzr_tdb_frac is not None else None,
+        tzr_freq=float(tzr_freq) if tzr_freq is not None else None,
         tzr_ssb_obs_pos=tzr_ssb_obs_pos,
     )
 
@@ -273,6 +273,8 @@ def make_params(
         components = tuple(components)
     if epoch_int_values is None:
         epoch_int_values = {}
+    else:
+        epoch_int_values = {k: float(v) for k, v in epoch_int_values.items()}
     if bounds is None:
         bounds = ((None, None),) * n
 

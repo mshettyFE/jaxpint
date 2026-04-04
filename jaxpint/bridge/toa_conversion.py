@@ -200,7 +200,7 @@ def pint_toas_to_jax(
 
     # -- Observatory indices ---------------------------------------------
     obs_array = np.asarray(toas.get_obss(), dtype=str)
-    obs_names = tuple(sorted(set(obs_array)))
+    obs_names = tuple(str(s) for s in sorted(set(obs_array)))
     obs_name_to_idx = {name: i for i, name in enumerate(obs_names)}
     obs_indices = np.array([obs_name_to_idx[o] for o in obs_array], dtype=np.int32)
 

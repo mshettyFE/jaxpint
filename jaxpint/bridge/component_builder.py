@@ -1051,8 +1051,8 @@ def build_timing_model(
                     sorted_mjds, sorted_delays = zip(*sorted_pairs)
                     phase_components.append(IFunc(
                         interp_type=interp_type,
-                        control_mjds=jnp.array(sorted_mjds),
-                        control_delays=jnp.array(sorted_delays),
+                        control_mjds=tuple(float(x) for x in sorted_mjds),
+                        control_delays=tuple(float(x) for x in sorted_delays),
                     ))
 
         else:

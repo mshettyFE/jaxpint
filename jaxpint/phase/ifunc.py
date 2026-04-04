@@ -42,14 +42,14 @@ class IFunc(PhaseComponent):
     """
 
     interp_type: int = eqx.field(static=True)
-    control_mjds: Float[Array, " n_points"]
-    control_delays: Float[Array, " n_points"]
+    control_mjds: tuple[float, ...] = eqx.field(static=True)
+    control_delays: tuple[float, ...] = eqx.field(static=True)
     f0_name: str = eqx.field(static=True, default="F0")
 
     def __check_init__(self):
         if self.interp_type not in (0, 2):
             raise ValueError(f"IFunc interp_type must be 0 or 2, got {self.interp_type}")
-        if self.control_mjds.shape[0] < 1:
+        if len(self.control_mjds) < 1:
             raise ValueError("IFunc requires at least one control point")
 
     def __call__(
@@ -77,14 +77,17 @@ class IFunc(PhaseComponent):
         f0 = params.param_value(self.f0_name)
         t = toa_data.tdb_int + toa_data.tdb_frac - delay / SECS_PER_DAY
 
+        mjds = jnp.array(self.control_mjds)
+        delays = jnp.array(self.control_delays)
+
         if self.interp_type == 0:
             # Piecewise constant: use nearest preceding control point
-            idx = jnp.searchsorted(self.control_mjds, t, side="right") - 1
-            idx = jnp.clip(idx, 0, self.control_mjds.shape[0] - 1)
-            interp_delay = self.control_delays[idx]
+            idx = jnp.searchsorted(mjds, t, side="right") - 1
+            idx = jnp.clip(idx, 0, len(self.control_mjds) - 1)
+            interp_delay = delays[idx]
         else:
             # Linear interpolation
-            interp_delay = jnp.interp(t, self.control_mjds, self.control_delays)
+            interp_delay = jnp.interp(t, mjds, delays)
 
         phase = interp_delay * f0
 
