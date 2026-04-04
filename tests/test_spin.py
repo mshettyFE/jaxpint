@@ -100,7 +100,7 @@ class TestSpindownPhase:
 
         result = spindown(toa_data, params, delay)
         assert isinstance(result, PhaseResult)
-        assert jnp.isclose(result.quantity, 100.0, rtol=1e-12)
+        assert jnp.isclose(result.total, 100.0, rtol=1e-12)
 
     def test_f0_f1_quadratic(self):
         """Phase = F0*dt + F1*dt^2/2."""
@@ -115,7 +115,7 @@ class TestSpindownPhase:
 
         result = spindown(toa_data, params, delay)
         expected = f0 * dt_sec + f1 * dt_sec**2 / 2.0
-        assert jnp.isclose(result.quantity, expected, rtol=1e-12)
+        assert jnp.isclose(result.total, expected, rtol=1e-12)
 
     def test_f0_f1_f2_cubic(self):
         """Phase = F0*dt + F1*dt^2/2 + F2*dt^3/6."""
@@ -132,7 +132,7 @@ class TestSpindownPhase:
 
         result = spindown(toa_data, params, delay)
         expected = f0 * dt_sec + f1 * dt_sec**2 / 2.0 + f2 * dt_sec**3 / 6.0
-        assert jnp.isclose(result.quantity, expected, rtol=1e-12)
+        assert jnp.isclose(result.total, expected, rtol=1e-12)
 
     def test_delay_subtracted(self):
         """Delay reduces effective dt."""
@@ -147,7 +147,7 @@ class TestSpindownPhase:
 
         result = spindown(toa_data, params, delay)
         expected = f0 * (2.0 - 0.5)  # F0 * (dt - delay)
-        assert jnp.isclose(result.quantity, expected, rtol=1e-12)
+        assert jnp.isclose(result.total, expected, rtol=1e-12)
 
     def test_multiple_toas(self):
         """Vectorised over multiple TOAs."""
@@ -161,7 +161,7 @@ class TestSpindownPhase:
 
         result = spindown(toa_data, params, delay)
         expected = f0 * jnp.arange(1.0, n + 1)
-        assert jnp.allclose(result.quantity, expected, rtol=1e-12)
+        assert jnp.allclose(result.total, expected, rtol=1e-12)
 
     def test_phase_result_normalization(self):
         """Fractional part is in [-0.5, 0.5)."""
@@ -184,7 +184,7 @@ class TestSpindownPhase:
         delay = jnp.zeros(1)
 
         result = spindown(toa_data, params, delay)
-        assert jnp.isclose(result.quantity, 0.0, atol=1e-15)
+        assert jnp.isclose(result.total, 0.0, atol=1e-15)
 
 
 # ===========================================================================
@@ -211,7 +211,7 @@ class TestPrecision:
         # Expected: F0 * ((61000 - 50000) + 1e-14) * 86400
         dt_expected = (toa_int - pepoch_int + tiny_frac) * 86400.0
         expected_phase = 1.0 * dt_expected
-        assert jnp.isclose(result.quantity, expected_phase, rtol=1e-12)
+        assert jnp.isclose(result.total, expected_phase, rtol=1e-12)
 
 
 # ===========================================================================
@@ -245,7 +245,7 @@ class TestJIT:
         params2 = params.with_value("F0", 200.0)
         r2 = jitted(toa_data, params2, delay)
 
-        assert not jnp.array_equal(r1.quantity, r2.quantity)
+        assert not jnp.array_equal(r1.total, r2.total)
 
 
 # ===========================================================================
@@ -264,7 +264,7 @@ class TestGrad:
         delay = jnp.zeros(3)
 
         def loss(p):
-            return spindown(toa_data, p, delay).quantity.sum()
+            return spindown(toa_data, p, delay).total.sum()
 
         grads = jax.grad(loss)(params)
         # d(phase)/dF0 = dt for each TOA, so d(sum)/dF0 = sum(dt)
@@ -283,7 +283,7 @@ class TestGrad:
         delay = jnp.zeros(3)
 
         def loss(p):
-            return spindown(toa_data, p, delay).quantity.sum()
+            return spindown(toa_data, p, delay).total.sum()
 
         grads = jax.grad(loss)(params)
         f1_idx = params.param_index("F1")
@@ -298,7 +298,7 @@ class TestGrad:
         delay = jnp.zeros(toa_data.n_toas)
 
         def loss(p):
-            return spindown(toa_data, p, delay).quantity.sum()
+            return spindown(toa_data, p, delay).total.sum()
 
         grads = jax.grad(loss)(params)
         assert jnp.all(jnp.isfinite(grads.values))

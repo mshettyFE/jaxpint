@@ -83,7 +83,7 @@ class TestPhaseJump:
         assert isinstance(result, PhaseResult)
 
         expected = jnp.where(jnp.array(mask), jump_val * f0, 0.0)
-        assert jnp.allclose(result.quantity, expected, atol=1e-15)
+        assert jnp.allclose(result.total, expected, atol=1e-15)
 
     def test_two_jumps_non_overlapping(self):
         """Two non-overlapping jumps each apply to their own TOA subset."""
@@ -104,7 +104,7 @@ class TestPhaseJump:
         expected = jnp.zeros(6)
         expected = jnp.where(jnp.array(mask1), expected + j1_val * f0, expected)
         expected = jnp.where(jnp.array(mask2), expected + j2_val * f0, expected)
-        assert jnp.allclose(result.quantity, expected, atol=1e-15)
+        assert jnp.allclose(result.total, expected, atol=1e-15)
 
     def test_overlapping_jumps(self):
         """A TOA affected by two jumps gets the sum of both."""
@@ -133,7 +133,7 @@ class TestPhaseJump:
             j2_val * f0,
             0.0,
         ])
-        assert jnp.allclose(result.quantity, expected, atol=1e-15)
+        assert jnp.allclose(result.total, expected, atol=1e-15)
 
     def test_no_mask_gives_zero(self):
         """If flag_masks is empty (e.g. TZR TOA), phase is zero."""
@@ -143,7 +143,7 @@ class TestPhaseJump:
         delay = jnp.zeros(3)
 
         result = jump(toa_data, params, delay)
-        assert jnp.allclose(result.quantity, 0.0, atol=1e-15)
+        assert jnp.allclose(result.total, 0.0, atol=1e-15)
 
     def test_all_false_mask(self):
         """A mask of all False gives zero phase."""
@@ -154,7 +154,7 @@ class TestPhaseJump:
         delay = jnp.zeros(4)
 
         result = jump(toa_data, params, delay)
-        assert jnp.allclose(result.quantity, 0.0, atol=1e-15)
+        assert jnp.allclose(result.total, 0.0, atol=1e-15)
 
     def test_all_true_mask(self):
         """A mask of all True applies the jump to every TOA."""
@@ -168,7 +168,7 @@ class TestPhaseJump:
 
         result = jump(toa_data, params, delay)
         expected = jnp.full(4, jump_val * f0)
-        assert jnp.allclose(result.quantity, expected, atol=1e-15)
+        assert jnp.allclose(result.total, expected, atol=1e-15)
 
 
 # ===========================================================================
@@ -205,7 +205,7 @@ class TestGrad:
         delay = jnp.zeros(4)
 
         def loss(p):
-            return jump(toa_data, p, delay).quantity.sum()
+            return jump(toa_data, p, delay).total.sum()
 
         grads = jax.grad(loss)(params)
         jump_idx = params.param_index("JUMP1")
@@ -223,7 +223,7 @@ class TestGrad:
         delay = jnp.zeros(4)
 
         def phase_fn(p):
-            return jump(toa_data, p, delay).quantity
+            return jump(toa_data, p, delay).total
 
         jac = jax.jacobian(phase_fn)(params)
         jump_idx = params.param_index("JUMP1")
@@ -244,7 +244,7 @@ class TestGrad:
         delay = jnp.zeros(3)
 
         def loss(p):
-            return jump(toa_data, p, delay).quantity.sum()
+            return jump(toa_data, p, delay).total.sum()
 
         grads = jax.grad(loss)(params)
         assert jnp.all(jnp.isfinite(grads.values))
@@ -354,7 +354,7 @@ class TestJumpIntegration:
 
         # JaxPINT phase
         jax_result = jump_comp(toa_data, params, jnp.zeros(toa_data.n_toas))
-        jax_phase = np.asarray(jax_result.quantity)
+        jax_phase = np.asarray(jax_result.total)
 
         np.testing.assert_allclose(jax_phase, pint_phase, rtol=1e-12, atol=1e-15)
 
@@ -378,7 +378,7 @@ class TestJumpIntegration:
 
         # JaxPINT phase
         jax_result = jump_comp(toa_data, params, jnp.zeros(toa_data.n_toas))
-        jax_phase = np.asarray(jax_result.quantity)
+        jax_phase = np.asarray(jax_result.total)
 
         np.testing.assert_allclose(jax_phase, pint_phase, rtol=1e-12, atol=1e-15)
 
@@ -410,7 +410,7 @@ class TestJumpIntegration:
 
         # JaxPINT derivative via Jacobian
         def phase_fn(p):
-            return jump_comp(toa_data, p, jnp.zeros(toa_data.n_toas)).quantity
+            return jump_comp(toa_data, p, jnp.zeros(toa_data.n_toas)).total
 
         jac = jax.jacobian(phase_fn)(params)
         jump_idx = params.param_index("JUMP1")
@@ -438,7 +438,7 @@ class TestJumpIntegration:
 
         # JaxPINT Jacobian (computed once)
         def phase_fn(p):
-            return jump_comp(toa_data, p, jnp.zeros(toa_data.n_toas)).quantity
+            return jump_comp(toa_data, p, jnp.zeros(toa_data.n_toas)).total
 
         jac = jax.jacobian(phase_fn)(params)
 

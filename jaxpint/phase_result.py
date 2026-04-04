@@ -46,8 +46,8 @@ class PhaseResult(eqx.Module):
         return PhaseResult(int=ii, frac=ff)
 
     @property
-    def quantity(self) -> Float[Array, "..."]:
-        """Collapse int + frac into a single float64 array.
+    def total(self) -> Float[Array, "..."]:
+        """Collapse int + frac into a single float64 array (cycles).
 
         Safe to call when ``int`` is small (e.g. phase residuals where the
         integer pulse count has been subtracted). In that regime the sum

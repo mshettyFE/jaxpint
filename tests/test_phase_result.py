@@ -65,24 +65,24 @@ class TestPhaseResult:
         frac_in = jnp.array([0.7, -1.3, 0.49999])
         p = PhaseResult.create(int_in, frac_in)
         expected = int_in + frac_in
-        assert jnp.allclose(p.quantity, expected, atol=ulp_tol(expected))
+        assert jnp.allclose(p.total, expected, atol=ulp_tol(expected))
 
     def test_add_sub_roundtrip(self):
         """(a + b) - b should approximately equal a."""
         a = PhaseResult.create(jnp.array([10.0]), jnp.array([0.3]))
         b = PhaseResult.create(jnp.array([5.0]), jnp.array([-0.2]))
         result = (a + b) - b
-        assert jnp.allclose(result.quantity, a.quantity, atol=ulp_tol(a.quantity))
+        assert jnp.allclose(result.total, a.total, atol=ulp_tol(a.total))
 
     def test_mul_scalar(self):
         p = PhaseResult.create(jnp.array([1.0]), jnp.array([0.25]))
         doubled = p * 2.0
-        assert jnp.allclose(doubled.quantity, jnp.array([2.5]), atol=ulp_tol(2.5))
+        assert jnp.allclose(doubled.total, jnp.array([2.5]), atol=ulp_tol(2.5))
 
     def test_rmul(self):
         p = PhaseResult.create(jnp.array([1.0]), jnp.array([0.25]))
         doubled = 2.0 * p
-        assert jnp.allclose(doubled.quantity, jnp.array([2.5]), atol=ulp_tol(2.5))
+        assert jnp.allclose(doubled.total, jnp.array([2.5]), atol=ulp_tol(2.5))
 
     def test_negative_double(self):
         """Double negation should be identity."""
@@ -93,7 +93,7 @@ class TestPhaseResult:
 
     def test_quantity(self):
         p = PhaseResult.create(jnp.array([5.0]), jnp.array([0.3]))
-        assert jnp.allclose(p.quantity, jnp.array([5.3]), atol=ulp_tol(5.3))
+        assert jnp.allclose(p.total, jnp.array([5.3]), atol=ulp_tol(5.3))
 
     def test_jit_compatible(self):
         a = PhaseResult.create(jnp.array([1.0]), jnp.array([0.2]))
@@ -104,7 +104,7 @@ class TestPhaseResult:
             return x + y
 
         result = add_phases(a, b)
-        assert jnp.allclose(result.quantity, jnp.array([3.5]), atol=ulp_tol(3.5))
+        assert jnp.allclose(result.total, jnp.array([3.5]), atol=ulp_tol(3.5))
 
     def test_grad_through_phase(self):
         """Gradient should flow through PhaseResult arithmetic."""
@@ -112,7 +112,7 @@ class TestPhaseResult:
         @jax.grad
         def loss(x):
             p = PhaseResult.create(jnp.array([0.0]), x)
-            return jnp.sum(p.quantity ** 2)
+            return jnp.sum(p.total ** 2)
 
         g = loss(jnp.array([0.3]))
         assert jnp.allclose(g, 2.0 * 0.3, atol=ulp_tol(2.0 * 0.3))
@@ -143,7 +143,7 @@ class TestPhaseResultHypothesis:
         int_in, frac_in = raw
         p = PhaseResult.create(jnp.array(int_in), jnp.array(frac_in))
         expected = int_in + frac_in
-        assert abs(float(p.quantity) - expected) <= ulp_tol(expected)
+        assert abs(float(p.total) - expected) <= ulp_tol(expected)
 
     # -- Addition properties --
 
@@ -162,7 +162,7 @@ class TestPhaseResultHypothesis:
         """(a + b) + c ≈ a + (b + c) in total phase."""
         lhs = (a + b) + c
         rhs = a + (b + c)
-        assert jnp.allclose(lhs.quantity, rhs.quantity, atol=ulp_tol(lhs.quantity))
+        assert jnp.allclose(lhs.total, rhs.total, atol=ulp_tol(lhs.total))
 
     @given(phase_results())
     @settings(deadline=None)
@@ -178,7 +178,7 @@ class TestPhaseResultHypothesis:
     def test_additive_inverse(self, a):
         """a + (-a) has quantity ≈ 0."""
         result = a + (-a)
-        assert abs(float(result.quantity)) <= ulp_tol(0)
+        assert abs(float(result.total)) <= ulp_tol(0)
 
     # -- Subtraction / negation properties --
 
@@ -208,7 +208,7 @@ class TestPhaseResultHypothesis:
         b = PhaseResult.create(jnp.array(42.0), jnp.array(0.123))
         lhs = s * (a + b)
         rhs = (s * a) + (s * b)
-        assert jnp.allclose(lhs.quantity, rhs.quantity, atol=ulp_tol(lhs.quantity))
+        assert jnp.allclose(lhs.total, rhs.total, atol=ulp_tol(lhs.total))
 
     @given(phase_results())
     @settings(deadline=None)
@@ -231,7 +231,7 @@ class TestPhaseResultHypothesis:
         phase, however, must be preserved.
         """
         result = (a + b) - b
-        assert abs(float(result.quantity) - float(a.quantity)) <= ulp_tol(a.quantity)
+        assert abs(float(result.total) - float(a.total)) <= ulp_tol(a.total)
 
     @given(
         integers(min_value=500_000_000, max_value=2_000_000_000),
@@ -395,7 +395,7 @@ class TestNormalizationEdgeCases:
         assert float(p.frac) >= -0.5
         assert float(p.frac) < 0.5
         # Total phase must match the (already-rounded) float64 input
-        assert abs(float(p.quantity) - raw_frac) <= ulp_tol(raw_frac)
+        assert abs(float(p.total) - raw_frac) <= ulp_tol(raw_frac)
 
 
 # ===========================================================================
@@ -440,14 +440,14 @@ class TestCatastrophicCancellation:
         # b - a: int diff = 1, frac diff = -0.9999998, total = 0.0000002
         diff = b - a
         expected = 0.0000002
-        assert abs(float(diff.quantity) - expected) <= ulp_tol(expected)
+        assert abs(float(diff.total) - expected) <= ulp_tol(expected)
 
     def test_cancellation_with_different_ints(self):
         a = PhaseResult.create(jnp.array(1_000_000_001.0), jnp.array(-0.3))
         b = PhaseResult.create(jnp.array(1_000_000_000.0), jnp.array(0.3))
         diff = a - b
         # total diff = (1e9+1 - 0.3) - (1e9 + 0.3) = 0.4
-        assert abs(float(diff.quantity) - 0.4) <= ulp_tol(0.4)
+        assert abs(float(diff.total) - 0.4) <= ulp_tol(0.4)
 
     @given(big_int_phase_results(), small_perturbations())
     @settings(deadline=None)
@@ -455,7 +455,7 @@ class TestCatastrophicCancellation:
         """Add tiny eps to frac, subtract original, recover eps."""
         b = PhaseResult.create(a.int, a.frac + jnp.array(eps))
         diff = b - a
-        assert abs(float(diff.quantity) - eps) <= ulp_tol(eps)
+        assert abs(float(diff.total) - eps) <= ulp_tol(eps)
 
 
 # ===========================================================================
@@ -550,7 +550,7 @@ class TestLongdoubleOracle:
         for _ in range(N):
             acc = acc + plus
             acc = acc + minus
-        assert abs(float(acc.quantity)) <= ulp_tol(0)
+        assert abs(float(acc.total)) <= ulp_tol(0)
 
 
 # ===========================================================================
@@ -633,7 +633,7 @@ class TestPINTPhaseComparison:
             + PhaseResult.create(jnp.array(float(ii2)), jnp.array(ff2))
         )
         pint_total = float(pint_result.int[0]) + float(pint_result.frac[0])
-        jax_total = float(jax_result.quantity)
+        jax_total = float(jax_result.total)
         assert jax_total == pytest.approx(pint_total, abs=ulp_tol(pint_total))
 
 
@@ -691,7 +691,7 @@ class TestRealisticScales:
         )
 
         diff = phase2 - phase1
-        assert abs(float(diff.quantity) - expected_delta_phase) <= ulp_tol(expected_delta_phase)
+        assert abs(float(diff.total) - expected_delta_phase) <= ulp_tol(expected_delta_phase)
 
     def test_barycentric_correction_roundtrip(self):
         """Add ~500s Roemer delay (311061 cycles at 622 Hz), subtract back."""
