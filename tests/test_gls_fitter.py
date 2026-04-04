@@ -9,6 +9,8 @@ import jax.numpy as jnp
 import numpy as np
 import numpy.testing as npt
 import pytest
+# Need io for StringIO in the fixture
+import io
 
 from jaxpint.noise import EcorrNoise
 from jaxpint.utils import woodbury_dot, woodbury_solve
@@ -407,6 +409,3 @@ class TestQuantizationVsPINT:
             err_msg="Quantization matrix does not match PINT",
         )
 
-
-# Need io for StringIO in the fixture
-import io

@@ -19,13 +19,15 @@ mask (pre-computed by the bridge layer and stored in ``TOAData.flag_masks``).
 from __future__ import annotations
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
+from jaxpint.components import NoiseComponent
 from jaxpint.types import TOAData, ParameterVector
 
 
-class ScaleToaError(eqx.Module):
+class ScaleToaError(NoiseComponent):
     """White noise model: EFAC/EQUAD scaling of TOA uncertainties.
 
     Stores the names of EFAC and EQUAD parameters (static metadata).
@@ -86,8 +88,25 @@ class ScaleToaError(eqx.Module):
 
         return sigma
 
+    def covariance(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+    ) -> tuple[Float[Array, " n_toas"], None, None]:
+        sigma = self.scaled_sigma(toa_data, params)
+        return sigma ** 2, None, None
 
-class EcorrNoise(eqx.Module):
+    def generate(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+        key: jax.Array,
+    ) -> Float[Array, " n_toas"]:
+        sigma = self.scaled_sigma(toa_data, params)
+        return sigma * jax.random.normal(key, shape=(toa_data.n_toas,))
+
+
+class EcorrNoise(NoiseComponent):
     """Epoch-correlated noise model (ECORR).
 
     ECORR adds a low-rank contribution to the TOA covariance matrix::
@@ -140,3 +159,29 @@ class EcorrNoise(eqx.Module):
             ecorr_val = params.param_value(name)
             weights = weights.at[start:end].set(ecorr_val ** 2)
         return weights
+
+    def covariance(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+    ) -> tuple[
+        Float[Array, " n_toas"],
+        Float[Array, "n_toas n_epochs"],
+        Float[Array, " n_epochs"],
+    ]:
+        U = self.quantization_matrix
+        Phidiag = self.ecorr_weights(params)
+        Ndiag = jnp.zeros(toa_data.n_toas)
+        return Ndiag, U, Phidiag
+
+    def generate(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+        key: jax.Array,
+    ) -> Float[Array, " n_toas"]:
+        U = self.quantization_matrix
+        weights = self.ecorr_weights(params)
+        n_epochs = U.shape[1]
+        a = jax.random.normal(key, shape=(n_epochs,))
+        return U @ (jnp.sqrt(weights) * a)

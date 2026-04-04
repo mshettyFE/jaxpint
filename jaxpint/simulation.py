@@ -10,10 +10,14 @@ to :func:`pint.simulation.zero_residuals`.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Array, Float
 
+from jaxpint.components import NoiseComponent
 from jaxpint.fitter import compute_time_residuals
 from jaxpint.model import TimingModel
 from jaxpint.types import TOAData, ParameterVector
@@ -113,3 +117,70 @@ def zero_residuals(
         f"zero_residuals did not converge after {maxiter} iterations "
         f"(max |residual| = {max_resid:.3e} s, tolerance = {tolerance:.3e} s)"
     )
+
+
+def simulate_noise(
+    toa_data: TOAData,
+    params: ParameterVector,
+    key: jax.Array,
+    noise_components: Sequence[NoiseComponent],
+) -> Float[Array, " n_toas"]:
+    """Generate a combined noise realization from multiple noise sources.
+
+    Each component receives an independent PRNG key derived from *key*.
+
+    Parameters
+    ----------
+    toa_data : TOAData
+        TOA data (used for uncertainties, flags, and array sizes).
+    params : ParameterVector
+        Timing model parameters (including noise parameter values).
+    key : JAX PRNG key
+        Random key; split internally for each component.
+    noise_components : sequence of NoiseComponent
+        Noise sources to sample from.
+
+    Returns
+    -------
+    (n_toas,)
+        Total noise delay in seconds.
+    """
+    delays = jnp.zeros(toa_data.n_toas)
+    keys = jax.random.split(key, len(noise_components))
+    for k, comp in zip(keys, noise_components):
+        delays = delays + comp.generate(toa_data, params, k)
+    return delays
+
+
+def make_fake_toas(
+    model: TimingModel,
+    toa_data: TOAData,
+    params: ParameterVector,
+    key: jax.Array,
+    noise_components: Sequence[NoiseComponent] = (),
+) -> TOAData:
+    """Create simulated TOAs: zero residuals, then optionally add noise.
+
+    Parameters
+    ----------
+    model : TimingModel
+        JaxPINT timing model.
+    toa_data : TOAData
+        Input TOAs (not modified).
+    params : ParameterVector
+        Timing model parameters.
+    key : JAX PRNG key
+        Random key for noise generation.
+    noise_components : sequence of NoiseComponent
+        Noise sources to add. If empty, returns noiseless TOAs.
+
+    Returns
+    -------
+    TOAData
+        Simulated TOAs with residuals encoding only noise.
+    """
+    toa_data = zero_residuals(model, toa_data, params)
+    if noise_components:
+        delays = simulate_noise(toa_data, params, key, noise_components)
+        toa_data = apply_delay_to_toas(toa_data, delays)
+    return toa_data
