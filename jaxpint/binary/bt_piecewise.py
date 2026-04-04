@@ -114,10 +114,10 @@ class BinaryBTPiecewise(DelayComponent):
                 a1x = params.param_value(self.a1x_names[i])
                 a1_per_toa = jnp.where(in_piece, a1x, a1_per_toa)
 
-        # --- Compute time since (piecewise) T0 ---
+        # --- Compute time since (piecewise) T0 (corrected for accumulated delay) ---
         dt_int = toa_data.tdb_int - t0_int_per_toa
         dt_frac = toa_data.tdb_frac - t0_frac_per_toa
-        tt0_s = (dt_int + dt_frac) * SECS_PER_DAY
+        tt0_s = (dt_int + dt_frac) * SECS_PER_DAY - delay
 
         # --- Time-dependent orbital elements ---
         ecc = compute_ecc(ecc0, edot, tt0_s)
@@ -129,7 +129,7 @@ class BinaryBTPiecewise(DelayComponent):
         M = _compute_orbital_phase_piecewise(
             toa_data.tdb_int, toa_data.tdb_frac,
             t0_int_per_toa, t0_frac_per_toa,
-            pb_d, pbdot, xpbdot,
+            pb_d, pbdot, xpbdot, delay=delay,
         )
         E = compute_eccentric_anomaly(ecc, M)
 
@@ -153,10 +153,13 @@ class BinaryBTPiecewise(DelayComponent):
 
 def _compute_orbital_phase_piecewise(
     tdb_int, tdb_frac, epoch_int, epoch_frac, pb_d, pbdot, xpbdot,
+    delay=None,
 ):
     """Orbital phase with per-TOA epoch (vectorized version of compute_orbital_phase)."""
     dt_int_days = tdb_int - epoch_int
     dt_frac_days = tdb_frac - epoch_frac
+    if delay is not None:
+        dt_frac_days = dt_frac_days - delay / SECS_PER_DAY
 
     n_orbits = jnp.floor(dt_int_days / pb_d)
     rem_int_days = dt_int_days - n_orbits * pb_d

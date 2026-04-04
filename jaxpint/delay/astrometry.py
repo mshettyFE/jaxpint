@@ -67,8 +67,8 @@ def _geometric_delay(
     # Also follows from Smart, 1977, chapter 9.
     if px_name is not None:
         px_mas = params.param_value(px_name)
-        # Distance in km: L = (1/PX_arcsec) kpc = (1000/PX_mas) kpc
-        L_km = (1000.0 / px_mas) * KPC_TO_KM
+        # Distance in km: 1/PX_mas gives kpc (1 mas parallax = 1 kpc distance)
+        L_km = (1.0 / px_mas) * KPC_TO_KM
         re_sqr = jnp.sum(toa_data.ssb_obs_pos ** 2, axis=1)  # km^2
         # Guard against 0/0 for barycentric TOAs (ssb_obs_pos == 0) like TZR.
         # Using 1.0 as safe denominator is fine: re_sqr==0 implies re_dot_L==0,

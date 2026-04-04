@@ -170,8 +170,8 @@ class BinaryELL1(DelayComponent):
             h4_name=self.h4_name,
         )
 
-        # --- Time since TASC ---
-        ttasc_s = compute_tt0(toa_data.tdb_int, toa_data.tdb_frac, tasc_int, tasc_frac)
+        # --- Time since TASC (corrected for accumulated delay) ---
+        ttasc_s = compute_tt0(toa_data.tdb_int, toa_data.tdb_frac, tasc_int, tasc_frac, delay=delay)
 
         # --- Time-dependent orbital elements ---
         a1 = a1_ls + a1dot * ttasc_s  # light-seconds = seconds
@@ -181,7 +181,7 @@ class BinaryELL1(DelayComponent):
         pb_prime_s = pb_d * SECS_PER_DAY + pbdot * ttasc_s
         Phi = compute_orbital_phase(
             toa_data.tdb_int, toa_data.tdb_frac, tasc_int, tasc_frac,
-            pb_d, pbdot,
+            pb_d, pbdot, delay=delay,
         )
 
         # --- ELL1 Roemer delay (O(e^3) expansion) ---

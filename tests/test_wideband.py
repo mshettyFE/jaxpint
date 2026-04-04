@@ -195,21 +195,25 @@ class TestDMResiduals:
 
 
 class TestTimeResiduals:
-    """Verify that narrowband time residuals still match PINT."""
+    """Verify that narrowband time residuals match PINT."""
 
     def test_time_residuals_finite(self, jax_wb):
         """Time residuals should be finite and have the right shape."""
-        # TODO: Time residuals for this wideband binary+DMX model show a
-        # ~3 order-of-magnitude offset vs PINT (~1 ms vs ~1 us).  This may
-        # be a TZR reference phase issue or a missing component interaction
-        # specific to the J1614-2230 ecliptic+binary model.  The DM residuals
-        # match PINT to 1e-10, so the wideband-specific code is correct.
-        # Investigate the narrowband residual discrepancy separately.
         jax_model, toa_data, params, _ = jax_wb
         time_resid = compute_time_residuals(jax_model, toa_data, params)
         assert time_resid.shape == (toa_data.n_toas,)
         assert not jnp.any(jnp.isnan(time_resid))
         assert not jnp.any(jnp.isinf(time_resid))
+
+    def test_time_residuals_match_pint(self, jax_wb, pint_wb):
+        """Time residuals should match PINT to ~100 ns."""
+        jax_model, toa_data, params, _ = jax_wb
+        pint_model, toas = pint_wb
+
+        jax_resid = np.array(compute_time_residuals(jax_model, toa_data, params))
+        pint_resid = Residuals(toas, pint_model).time_resids.to(u.s).value
+
+        npt.assert_allclose(jax_resid, pint_resid, atol=1e-7)
 
 
 # ---------------------------------------------------------------------------
@@ -412,16 +416,7 @@ class TestDispersionJump:
 
 
 class TestWidebandGLSFitter:
-    """Test the wideband GLS fitter.
-
-    Note: The J1614-2230 binary+ecliptic model has a pre-existing ~1ms
-    time residual offset (see TODO in TestTimeResiduals) that causes the
-    first Gauss-Newton iteration to take enormous parameter steps,
-    producing NaN in post-fit time residuals.  The fitter structural
-    tests below use pre-iteration checks where possible.  End-to-end
-    fit convergence tests are deferred until the time residual
-    discrepancy is resolved.
-    """
+    """Test the wideband GLS fitter."""
 
     def test_fitter_creates(self, jax_wb):
         jax_model, toa_data, params, noise_model = jax_wb
@@ -508,12 +503,88 @@ class TestWidebandGLSFitter:
 
         npt.assert_allclose(np.array(cov), np.array(cov.T), atol=1e-20)
 
+    def test_postfit_residuals_finite(self, jax_wb):
+        """Post-fit time and DM residuals should be finite."""
+        jax_model, toa_data, params, noise_model = jax_wb
+        fitter = WidebandGLSFitter(
+            jax_model, toa_data, params, noise_model=noise_model
+        )
+        result = fitter.fit_toas(maxiter=1)
+        assert not jnp.any(jnp.isnan(result.time_residuals))
+        assert not jnp.any(jnp.isnan(result.dm_residuals))
 
-# TODO: End-to-end wideband fit convergence tests (chi2 decreases,
-# parameter values match PINT) are blocked by a ~1ms time residual
-# offset for the J1614-2230 ecliptic+binary model.  The DM residuals
-# match PINT to 1e-10, confirming the wideband-specific code is correct.
-# Once the narrowband time residual discrepancy is fixed, add:
-#   - test_chi2_decreases
-#   - test_chi2_matches_pint
-#   - test_f0_matches_pint / test_f1_matches_pint
+
+# ---------------------------------------------------------------------------
+# End-to-end wideband fit: JaxPINT vs PINT
+# ---------------------------------------------------------------------------
+
+
+class TestWidebandFitVsPINT:
+    """Compare JaxPINT WidebandGLSFitter against PINT WidebandTOAFitter."""
+
+    @pytest.fixture(scope="class")
+    def pint_wb_fit(self, pint_wb):
+        """Run PINT's WidebandTOAFitter for 1 iteration."""
+        import copy
+        from pint.fitter import WidebandTOAFitter
+
+        pint_model, toas = pint_wb
+        m = copy.deepcopy(pint_model)
+        f = WidebandTOAFitter(toas, m)
+        f.fit_toas(maxiter=1)
+        return f
+
+    @pytest.fixture(scope="class")
+    def jax_wb_fit(self, jax_wb):
+        """Run JaxPINT's WidebandGLSFitter for 1 iteration."""
+        jax_model, toa_data, params, noise_model = jax_wb
+        fitter = WidebandGLSFitter(
+            jax_model, toa_data, params, noise_model=noise_model
+        )
+        return fitter.fit_toas(maxiter=1)
+
+    def test_chi2_matches(self, pint_wb_fit, jax_wb_fit):
+        """Post-fit chi2 should agree between JaxPINT and PINT."""
+        pint_chi2 = pint_wb_fit.resids.chi2
+        jax_chi2 = jax_wb_fit.chi2
+        npt.assert_allclose(jax_chi2, pint_chi2, rtol=0.05)
+
+    def test_chi2_decreases(self, pint_wb, jax_wb, jax_wb_fit):
+        """Post-fit chi2 should be lower than pre-fit chi2."""
+        from jaxpint.fitter import _subtract_weighted_mean
+
+        jax_model, toa_data, params, noise_model = jax_wb
+        sigma_toa = noise_model.scaled_sigma(toa_data, params)
+        sigma_dm = noise_model.scaled_dm_sigma(toa_data, params)
+        time_resid = _subtract_weighted_mean(
+            compute_time_residuals(jax_model, toa_data, params), sigma_toa
+        )
+        dm_resid = compute_dm_residuals(jax_model, toa_data, params)
+        chi2_pre = float(
+            jnp.sum((time_resid / sigma_toa) ** 2)
+            + jnp.sum((dm_resid / sigma_dm) ** 2)
+        )
+        assert jax_wb_fit.chi2 < chi2_pre
+
+    def test_f0_matches(self, pint_wb_fit, jax_wb_fit):
+        pint_val = float(pint_wb_fit.model.F0.value)
+        jax_val = float(jax_wb_fit.params.param_value("F0"))
+        pint_err = float(pint_wb_fit.model.F0.uncertainty_value)
+        assert abs(jax_val - pint_val) < 3 * pint_err
+
+    def test_f1_matches(self, pint_wb_fit, jax_wb_fit):
+        pint_val = float(pint_wb_fit.model.F1.value)
+        jax_val = float(jax_wb_fit.params.param_value("F1"))
+        pint_err = float(pint_wb_fit.model.F1.uncertainty_value)
+        assert abs(jax_val - pint_val) < 3 * pint_err
+
+    def test_uncertainties_positive(self, jax_wb_fit):
+        assert jnp.all(jax_wb_fit.parameter_uncertainties > 0)
+
+    def test_covariance_symmetric(self, jax_wb_fit):
+        cov = jax_wb_fit.covariance_matrix
+        npt.assert_allclose(np.array(cov), np.array(cov.T), atol=1e-20)
+
+    def test_postfit_residuals_finite(self, jax_wb_fit):
+        assert not jnp.any(jnp.isnan(jax_wb_fit.time_residuals))
+        assert not jnp.any(jnp.isnan(jax_wb_fit.dm_residuals))

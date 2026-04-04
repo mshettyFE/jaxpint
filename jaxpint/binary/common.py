@@ -29,6 +29,7 @@ def compute_tt0(
     tdb_frac: Float[Array, " n_toas"],
     epoch_int: float,
     epoch_frac: float,
+    delay: Float[Array, " n_toas"] = None,
 ) -> Float[Array, " n_toas"]:
     """Time from epoch to each TOA in seconds, using int/frac split.
 
@@ -38,15 +39,22 @@ def compute_tt0(
         TDB MJD of each TOA split as integer day + fractional day.
     epoch_int, epoch_frac : float
         Reference epoch (T0 or TASC) split as integer day + fractional day.
+    delay : array, optional
+        Accumulated delay from prior components (seconds).  Subtracted
+        from TDB to form the barycentric time used by the binary model,
+        matching PINT's ``barycentric_time = tdbld - acc_delay``.
 
     Returns
     -------
     array
-        ``(tdb - epoch)`` in seconds, shape ``(n_toas,)``.
+        ``(tdb - delay - epoch)`` in seconds, shape ``(n_toas,)``.
     """
     dt_int = tdb_int - epoch_int
     dt_frac = tdb_frac - epoch_frac
-    return (dt_int + dt_frac) * SECS_PER_DAY
+    tt0 = (dt_int + dt_frac) * SECS_PER_DAY
+    if delay is not None:
+        tt0 = tt0 - delay
+    return tt0
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +115,7 @@ def compute_orbital_phase(
     pb_d: float,
     pbdot: float = 0.0,
     xpbdot: float = 0.0,
+    delay: Float[Array, " n_toas"] = None,
 ) -> Float[Array, " n_toas"]:
     """Orbital phase in [0, 2*pi) using int/frac day split for precision.
 
@@ -128,6 +137,9 @@ def compute_orbital_phase(
         Time derivative of PB (dimensionless, s/s).
     xpbdot : float
         Excess PBDOT (dimensionless, s/s).
+    delay : array, optional
+        Accumulated delay from prior components (seconds).  Subtracted
+        from TDB to form the barycentric time, matching PINT.
 
     Returns
     -------
@@ -136,6 +148,10 @@ def compute_orbital_phase(
     """
     dt_int_days = tdb_int - epoch_int      # exact integer days
     dt_frac_days = tdb_frac - epoch_frac   # fractional day, full precision
+
+    # Subtract accumulated delay (convert seconds → days) from fractional part.
+    if delay is not None:
+        dt_frac_days = dt_frac_days - delay / SECS_PER_DAY
 
     # Integer orbits from integer days, remainder in days.
     # Because dt_int_days is an exact integer, the subtraction

@@ -92,8 +92,8 @@ class BinaryBT(DelayComponent):
         gamma = params.param_value_or(self.gamma_name)
         xpbdot = params.param_value_or(self.xpbdot_name)
 
-        # --- Compute time since periastron ---
-        tt0_s = compute_tt0(toa_data.tdb_int, toa_data.tdb_frac, t0_int, t0_frac)
+        # --- Compute time since periastron (corrected for accumulated delay) ---
+        tt0_s = compute_tt0(toa_data.tdb_int, toa_data.tdb_frac, t0_int, t0_frac, delay=delay)
 
         # --- Time-dependent orbital elements ---
         ecc = compute_ecc(ecc0, edot, tt0_s)
@@ -103,7 +103,7 @@ class BinaryBT(DelayComponent):
         # --- Solve Kepler's equation ---
         M = compute_orbital_phase(
             toa_data.tdb_int, toa_data.tdb_frac, t0_int, t0_frac,
-            pb_d, pbdot, xpbdot,
+            pb_d, pbdot, xpbdot, delay=delay,
         )
         E = compute_eccentric_anomaly(ecc, M)
 

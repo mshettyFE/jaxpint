@@ -158,8 +158,8 @@ class BinaryDDK(DelayComponent):
         sin_KOM = jnp.sin(kom)
         cos_KOM = jnp.cos(kom)
 
-        # --- Compute time since T0 ---
-        tt0_s = compute_tt0(toa_data.tdb_int, toa_data.tdb_frac, t0_int, t0_frac)
+        # --- Compute time since T0 (corrected for accumulated delay) ---
+        tt0_s = compute_tt0(toa_data.tdb_int, toa_data.tdb_frac, t0_int, t0_frac, delay=delay)
 
         # --- Base a1 and omega (before Kopeikin corrections) ---
         a1_base = compute_a1(a1_ls, a1dot, tt0_s)
@@ -227,7 +227,7 @@ class BinaryDDK(DelayComponent):
         # --- Solve Kepler's equation ---
         M = compute_orbital_phase(
             toa_data.tdb_int, toa_data.tdb_frac, t0_int, t0_frac,
-            pb_d, pbdot, xpbdot,
+            pb_d, pbdot, xpbdot, delay=delay,
         )
         E = compute_eccentric_anomaly(ecc, M)
         orbits = compute_orbits_pb(tt0_s, pb_d, pbdot, xpbdot)
