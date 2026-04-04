@@ -7,20 +7,7 @@ import numpy.testing as npt
 import pytest
 
 
-from tests.helpers import make_toa_data as _make_toa_data_base, make_params
-
-
-def _make_params(param_names, param_values, epoch_int_values=None):
-    return make_params(param_names, param_values, components="BinaryELL1",
-                       epoch_int_values=epoch_int_values or {})
-
-
-def _make_toa_data(t_mjd):
-    return _make_toa_data_base(
-        t_mjd=t_mjd,
-        tzr_tdb_int=jnp.array(54000.0), tzr_tdb_frac=jnp.array(0.5),
-        tzr_freq=jnp.array(jnp.inf), tzr_ssb_obs_pos=jnp.zeros(3),
-    )
+from tests.helpers import make_binary_toa_data, make_binary_params
 
 
 @pytest.fixture
@@ -80,10 +67,10 @@ class TestBinaryELL1vsPINT:
         param_values = [ell1_params["PB"], tasc_frac, ell1_params["A1"],
                         ell1_params["EPS1"], ell1_params["EPS2"],
                         ell1_params["M2"], ell1_params["SINI"], ell1_params["PBDOT"]]
-        params = _make_params(param_names, param_values,
+        params = make_binary_params(param_names, param_values, "BinaryELL1",
                               epoch_int_values={"TASC": tasc_int})
 
-        toa_data = _make_toa_data(np.linspace(54000.5, 54300.0, 500))
+        toa_data = make_binary_toa_data(np.linspace(54000.5, 54300.0, 500))
         jax_delay = np.array(ell1(toa_data, params, jnp.zeros(500)))
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
@@ -119,10 +106,10 @@ class TestBinaryELL1vsPINT:
         param_names = ("PB", "TASC", "A1", "EPS1", "EPS2")
         param_values = [ell1_params["PB"], tasc_frac, ell1_params["A1"],
                         ell1_params["EPS1"], ell1_params["EPS2"]]
-        params = _make_params(param_names, param_values,
+        params = make_binary_params(param_names, param_values, "BinaryELL1",
                               epoch_int_values={"TASC": tasc_int})
 
-        toa_data = _make_toa_data(np.linspace(54001.0, 54100.0, 200))
+        toa_data = make_binary_toa_data(np.linspace(54001.0, 54100.0, 200))
         jax_delay = np.array(ell1(toa_data, params, jnp.zeros(200)))
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
@@ -139,15 +126,15 @@ class TestBinaryELL1vsPINT:
         tasc_int = np.floor(ell1_params["TASC"])
         tasc_frac = ell1_params["TASC"] - tasc_int
 
-        params = _make_params(
+        params = make_binary_params(
             ("PB", "TASC", "A1", "EPS1", "EPS2"),
             [ell1_params["PB"], tasc_frac, ell1_params["A1"],
              ell1_params["EPS1"], ell1_params["EPS2"]],
-            epoch_int_values={"TASC": tasc_int},
+            "BinaryELL1", epoch_int_values={"TASC": tasc_int},
         )
 
         n = 10
-        toa_data = _make_toa_data(np.linspace(54100.1, 54100.9, n))
+        toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
         jitted = jax.jit(ell1)
         result = jitted(toa_data, params, jnp.zeros(n))
         assert result.shape == (n,)
@@ -170,11 +157,11 @@ class TestBinaryELL1vsPINT:
         param_values = [ell1_params["PB"], tasc_frac, ell1_params["A1"],
                         ell1_params["EPS1"], ell1_params["EPS2"],
                         ell1_params["M2"], ell1_params["SINI"]]
-        params = _make_params(param_names, param_values,
+        params = make_binary_params(param_names, param_values, "BinaryELL1",
                               epoch_int_values={"TASC": tasc_int})
 
         n = 10
-        toa_data = _make_toa_data(np.linspace(54100.1, 54100.9, n))
+        toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
 
         def delay_fn(param_values):
             p = params.with_free_values(param_values)

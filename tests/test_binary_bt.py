@@ -7,20 +7,7 @@ import numpy.testing as npt
 import pytest
 
 
-from tests.helpers import make_toa_data as _make_toa_data_base, make_params
-
-
-def _make_params(param_names, param_values, epoch_int_values=None):
-    return make_params(param_names, param_values, components="BinaryBT",
-                       epoch_int_values=epoch_int_values or {})
-
-
-def _make_toa_data(t_mjd):
-    return _make_toa_data_base(
-        t_mjd=t_mjd,
-        tzr_tdb_int=jnp.array(54000.0), tzr_tdb_frac=jnp.array(0.5),
-        tzr_freq=jnp.array(jnp.inf), tzr_ssb_obs_pos=jnp.zeros(3),
-    )
+from tests.helpers import make_binary_toa_data, make_binary_params
 
 
 _DEG_YR_TO_RAD_S = np.pi / 180.0 / (365.25 * 86400.0)
@@ -82,9 +69,9 @@ class TestBinaryBTvsPINT:
         param_names = ("PB", "T0", "A1", "ECC", "OM", "OMDOT", "GAMMA", "PBDOT")
         param_values = [bt_params["PB"], t0_frac, bt_params["A1"], bt_params["ECC"],
                         bt_params["OM"], bt_params["OMDOT"], bt_params["GAMMA"], bt_params["PBDOT"]]
-        params = _make_params(param_names, param_values, epoch_int_values={"T0": t0_int})
+        params = make_binary_params(param_names, param_values, "BinaryBT", epoch_int_values={"T0": t0_int})
 
-        toa_data = _make_toa_data(np.linspace(54000.5, 54500.0, 500))
+        toa_data = make_binary_toa_data(np.linspace(54000.5, 54500.0, 500))
         jax_delay = np.array(bt(toa_data, params, jnp.zeros(500)))
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
@@ -99,12 +86,12 @@ class TestBinaryBTvsPINT:
         t0_int = np.floor(bt_params["T0"])
         t0_frac = bt_params["T0"] - t0_int
 
-        params = _make_params(
+        params = make_binary_params(
             ("PB", "T0", "A1", "ECC", "OM"),
             [bt_params["PB"], t0_frac, bt_params["A1"], bt_params["ECC"], bt_params["OM"]],
-            epoch_int_values={"T0": t0_int},
+            "BinaryBT", epoch_int_values={"T0": t0_int},
         )
-        toa_data = _make_toa_data(np.linspace(54100.0, 54100.9, 10))
+        toa_data = make_binary_toa_data(np.linspace(54100.0, 54100.9, 10))
 
         jitted = jax.jit(bt)
         result = jitted(toa_data, params, jnp.zeros(10))
@@ -122,14 +109,14 @@ class TestBinaryBTvsPINT:
         t0_frac = bt_params["T0"] - t0_int
 
         param_names = ("PB", "T0", "A1", "ECC", "OM", "GAMMA")
-        params = _make_params(
+        params = make_binary_params(
             param_names,
             [bt_params["PB"], t0_frac, bt_params["A1"], bt_params["ECC"],
              bt_params["OM"], bt_params["GAMMA"]],
-            epoch_int_values={"T0": t0_int},
+            "BinaryBT", epoch_int_values={"T0": t0_int},
         )
         n = 10
-        toa_data = _make_toa_data(np.linspace(54100.1, 54100.9, n))
+        toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
 
         def delay_fn(param_values):
             p = params.with_free_values(param_values)

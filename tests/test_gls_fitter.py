@@ -14,13 +14,7 @@ import io
 
 from jaxpint.noise import EcorrNoise
 from jaxpint.utils import woodbury_dot, woodbury_solve
-from tests.helpers import make_params as _make_params_base
-
-
-def _make_params(names, values, frozen_names=()):
-    frozen_mask = tuple(n in frozen_names for n in names)
-    return _make_params_base(names, values, frozen_mask=frozen_mask,
-                             units=tuple("s" for _ in names))
+from tests.helpers import make_params_with_frozen_names
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +104,7 @@ class TestEcorrWeights:
             ecorr_epoch_slices=((0, 3),),
         )
 
-        params = _make_params(("ECORR1",), [2e-6])
+        params = make_params_with_frozen_names(("ECORR1",), [2e-6])
 
         weights = ecorr.ecorr_weights(params)
         expected = jnp.full(3, (2e-6) ** 2)
@@ -127,7 +121,7 @@ class TestEcorrWeights:
             ecorr_epoch_slices=((0, 3), (3, 5)),
         )
 
-        params = _make_params(("ECORR1", "ECORR2"), [1e-6, 3e-6])
+        params = make_params_with_frozen_names(("ECORR1", "ECORR2"), [1e-6, 3e-6])
 
         weights = ecorr.ecorr_weights(params)
         npt.assert_allclose(float(weights[0]), (1e-6) ** 2, rtol=1e-14)
@@ -141,7 +135,7 @@ class TestEcorrWeights:
             quantization_matrix=U,
             ecorr_epoch_slices=((0, 2),),
         )
-        params = _make_params(("ECORR1",), [1e-6])
+        params = make_params_with_frozen_names(("ECORR1",), [1e-6])
 
         @jax.jit
         def _weights(ecorr, params):

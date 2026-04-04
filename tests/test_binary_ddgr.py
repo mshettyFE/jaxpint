@@ -7,20 +7,7 @@ import numpy.testing as npt
 import pytest
 
 
-from tests.helpers import make_toa_data as _make_toa_data_base, make_params
-
-
-def _make_params_ddgr(param_names, param_values, epoch_int_values=None):
-    return make_params(param_names, param_values, components="BinaryDDGR",
-                       epoch_int_values=epoch_int_values or {})
-
-
-def _make_toa_data(t_mjd):
-    return _make_toa_data_base(
-        t_mjd=t_mjd,
-        tzr_tdb_int=jnp.array(54000.0), tzr_tdb_frac=jnp.array(0.5),
-        tzr_freq=jnp.array(jnp.inf), tzr_ssb_obs_pos=jnp.zeros(3),
-    )
+from tests.helpers import make_binary_toa_data, make_binary_params, make_params
 
 
 @pytest.fixture
@@ -148,11 +135,11 @@ class TestBinaryDDGRvsPINT:
             ddgr_params["ECC"], ddgr_params["OM"],
             ddgr_params["MTOT"], ddgr_params["M2"],
         ]
-        params = _make_params_ddgr(
-            param_names, param_values,
+        params = make_binary_params(
+            param_names, param_values, "BinaryDDGR",
             epoch_int_values={"T0": t0_int},
         )
-        toa_data = _make_toa_data(np.linspace(54000.5, 54200.0, 500))
+        toa_data = make_binary_toa_data(np.linspace(54000.5, 54200.0, 500))
         jax_delay = np.array(ddgr(toa_data, params, jnp.zeros(500)))
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-11, rtol=1e-11)
@@ -195,7 +182,7 @@ class TestBinaryDDGRvsPINT:
 
         t0_int = np.floor(ddgr_params["T0"])
         t0_frac = ddgr_params["T0"] - t0_int
-        toa_data = _make_toa_data(np.linspace(54000.5, 54100.0, 200))
+        toa_data = make_binary_toa_data(np.linspace(54000.5, 54100.0, 200))
         n_toas = 200
 
         # --- DDGR delay ---
@@ -210,8 +197,8 @@ class TestBinaryDDGRvsPINT:
             ddgr_params["ECC"], ddgr_params["OM"],
             ddgr_params["MTOT"], ddgr_params["M2"],
         ]
-        ddgr_p = _make_params_ddgr(
-            ddgr_param_names, ddgr_param_values,
+        ddgr_p = make_binary_params(
+            ddgr_param_names, ddgr_param_values, "BinaryDDGR",
             epoch_int_values={"T0": t0_int},
         )
         delay_ddgr = np.array(ddgr(toa_data, ddgr_p, jnp.zeros(n_toas)))
@@ -251,7 +238,7 @@ class TestBinaryDDGRvsPINT:
 
         t0_int = np.floor(ddgr_params["T0"])
         t0_frac = ddgr_params["T0"] - t0_int
-        toa_data = _make_toa_data(np.linspace(54000.5, 54200.0, 100))
+        toa_data = make_binary_toa_data(np.linspace(54000.5, 54200.0, 100))
 
         base_names = ("PB", "T0", "A1", "ECC", "OM", "MTOT", "M2")
         base_values = [
@@ -266,7 +253,7 @@ class TestBinaryDDGRvsPINT:
             ecc_name="ECC", om_name="OM",
             mtot_name="MTOT", m2_name="M2",
         )
-        params_no = _make_params_ddgr(base_names, base_values, {"T0": t0_int})
+        params_no = make_binary_params(base_names, base_values, "BinaryDDGR", {"T0": t0_int})
         d_no = np.array(ddgr_no(toa_data, params_no, jnp.zeros(100)))
 
         # With XOMDOT
@@ -277,9 +264,9 @@ class TestBinaryDDGRvsPINT:
             xomdot_name="XOMDOT",
         )
         xomdot_rad_s = 0.5 * _DEG_YR_TO_RAD_S
-        params_x = _make_params_ddgr(
+        params_x = make_binary_params(
             base_names + ("XOMDOT",), base_values + [xomdot_rad_s],
-            {"T0": t0_int},
+            "BinaryDDGR", {"T0": t0_int},
         )
         d_x = np.array(ddgr_x(toa_data, params_x, jnp.zeros(100)))
 
@@ -304,9 +291,9 @@ class TestBinaryDDGRvsPINT:
             ddgr_params["ECC"], ddgr_params["OM"],
             ddgr_params["MTOT"], ddgr_params["M2"],
         ]
-        params = _make_params_ddgr(param_names, param_values, {"T0": t0_int})
+        params = make_binary_params(param_names, param_values, "BinaryDDGR", {"T0": t0_int})
         n = 10
-        toa_data = _make_toa_data(np.linspace(54100.1, 54100.9, n))
+        toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
 
         jitted = jax.jit(ddgr)
         result = jitted(toa_data, params, jnp.zeros(n))
@@ -332,9 +319,9 @@ class TestBinaryDDGRvsPINT:
             ddgr_params["ECC"], ddgr_params["OM"],
             ddgr_params["MTOT"], ddgr_params["M2"],
         ]
-        params = _make_params_ddgr(param_names, param_values, {"T0": t0_int})
+        params = make_binary_params(param_names, param_values, "BinaryDDGR", {"T0": t0_int})
         n = 10
-        toa_data = _make_toa_data(np.linspace(54100.1, 54100.9, n))
+        toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
 
         def delay_fn(param_values):
             p = params.with_free_values(param_values)

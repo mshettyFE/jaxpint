@@ -8,37 +8,7 @@ import pytest
 
 from jaxpint.phase_result import PhaseResult
 from jaxpint.phase.spin import Spindown
-from tests.helpers import make_toa_data, make_params
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _make_toa_data(n_toas=5, tdb_int=59000.0, tdb_frac=None):
-    return make_toa_data(n_toas, tdb_int=tdb_int, tdb_frac=tdb_frac,
-                         obs_names=("GBT",), planet_positions=None)
-
-
-def _make_params(f0=200.0, f1=None, f2=None, pepoch_int=59000.0, pepoch_frac=0.0):
-    names = ["F0"]
-    values = [f0]
-    components = ["Spindown"]
-    units = ["Hz"]
-
-    if f1 is not None:
-        names += ["F1"]; values += [f1]
-        components += ["Spindown"]; units += ["Hz/s"]
-    if f2 is not None:
-        names += ["F2"]; values += [f2]
-        components += ["Spindown"]; units += ["Hz/s"]
-
-    names += ["PEPOCH"]; values += [pepoch_frac]
-    components += ["Spindown"]; units += ["day"]
-
-    return make_params(names, values, units=tuple(units),
-                       components=tuple(components),
-                       epoch_int_values={"PEPOCH": pepoch_int})
+from tests.helpers import make_gbt_toa_data, make_spindown_params
 
 
 # ===========================================================================
@@ -94,8 +64,8 @@ class TestSpindownPhase:
         """F0=100 Hz, dt=1 second -> phase=100 cycles."""
         spindown = Spindown(spin_param_names=("F0",))
         # PEPOCH at 59000.0, TOA at 59000.0 + 1/86400 (= 1 second later)
-        params = _make_params(f0=100.0, pepoch_int=59000.0, pepoch_frac=0.0)
-        toa_data = _make_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=1.0 / 86400.0)
+        params = make_spindown_params(f0=100.0, pepoch_int=59000.0, pepoch_frac=0.0)
+        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=1.0 / 86400.0)
         delay = jnp.zeros(1)
 
         result = spindown(toa_data, params, delay)
@@ -107,8 +77,8 @@ class TestSpindownPhase:
         spindown = Spindown(spin_param_names=("F0", "F1"))
         f0, f1 = 200.0, -1e-10
         dt_sec = 1000.0  # 1000 seconds
-        params = _make_params(f0=f0, f1=f1, pepoch_int=59000.0, pepoch_frac=0.0)
-        toa_data = _make_toa_data(
+        params = make_spindown_params(f0=f0, f1=f1, pepoch_int=59000.0, pepoch_frac=0.0)
+        toa_data = make_gbt_toa_data(
             n_toas=1, tdb_int=59000.0, tdb_frac=dt_sec / 86400.0
         )
         delay = jnp.zeros(1)
@@ -122,10 +92,10 @@ class TestSpindownPhase:
         spindown = Spindown(spin_param_names=("F0", "F1", "F2"))
         f0, f1, f2 = 200.0, -1e-10, 1e-20
         dt_sec = 1000.0
-        params = _make_params(
+        params = make_spindown_params(
             f0=f0, f1=f1, f2=f2, pepoch_int=59000.0, pepoch_frac=0.0
         )
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             n_toas=1, tdb_int=59000.0, tdb_frac=dt_sec / 86400.0
         )
         delay = jnp.zeros(1)
@@ -138,9 +108,9 @@ class TestSpindownPhase:
         """Delay reduces effective dt."""
         spindown = Spindown(spin_param_names=("F0",))
         f0 = 100.0
-        params = _make_params(f0=f0, pepoch_int=59000.0, pepoch_frac=0.0)
+        params = make_spindown_params(f0=f0, pepoch_int=59000.0, pepoch_frac=0.0)
         # TOA at 2 seconds after PEPOCH
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             n_toas=1, tdb_int=59000.0, tdb_frac=2.0 / 86400.0
         )
         delay = jnp.array([0.5])  # 0.5 seconds delay
@@ -153,10 +123,10 @@ class TestSpindownPhase:
         """Vectorised over multiple TOAs."""
         spindown = Spindown(spin_param_names=("F0",))
         f0 = 100.0
-        params = _make_params(f0=f0, pepoch_int=59000.0, pepoch_frac=0.0)
+        params = make_spindown_params(f0=f0, pepoch_int=59000.0, pepoch_frac=0.0)
         n = 5
         fracs = jnp.arange(1, n + 1) / 86400.0  # 1, 2, 3, 4, 5 seconds
-        toa_data = _make_toa_data(n_toas=n, tdb_int=59000.0, tdb_frac=fracs)
+        toa_data = make_gbt_toa_data(n_toas=n, tdb_int=59000.0, tdb_frac=fracs)
         delay = jnp.zeros(n)
 
         result = spindown(toa_data, params, delay)
@@ -166,8 +136,8 @@ class TestSpindownPhase:
     def test_phase_result_normalization(self):
         """Fractional part is in [-0.5, 0.5)."""
         spindown = Spindown(spin_param_names=("F0",))
-        params = _make_params(f0=100.0, pepoch_int=59000.0, pepoch_frac=0.0)
-        toa_data = _make_toa_data(
+        params = make_spindown_params(f0=100.0, pepoch_int=59000.0, pepoch_frac=0.0)
+        toa_data = make_gbt_toa_data(
             n_toas=1, tdb_int=59000.0, tdb_frac=1.0 / 86400.0
         )
         delay = jnp.zeros(1)
@@ -179,8 +149,8 @@ class TestSpindownPhase:
     def test_zero_dt_gives_zero_phase(self):
         """TOA at PEPOCH with no delay -> zero phase."""
         spindown = Spindown(spin_param_names=("F0", "F1"))
-        params = _make_params(f0=200.0, f1=-1e-15, pepoch_int=59000.0, pepoch_frac=0.5)
-        toa_data = _make_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.5)
+        params = make_spindown_params(f0=200.0, f1=-1e-15, pepoch_int=59000.0, pepoch_frac=0.5)
+        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.5)
         delay = jnp.zeros(1)
 
         result = spindown(toa_data, params, delay)
@@ -203,8 +173,8 @@ class TestPrecision:
         tiny_frac = 1e-14
         toa_frac = tiny_frac
 
-        params = _make_params(f0=1.0, pepoch_int=pepoch_int, pepoch_frac=pepoch_frac)
-        toa_data = _make_toa_data(n_toas=1, tdb_int=toa_int, tdb_frac=toa_frac)
+        params = make_spindown_params(f0=1.0, pepoch_int=pepoch_int, pepoch_frac=pepoch_frac)
+        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=toa_int, tdb_frac=toa_frac)
         delay = jnp.zeros(1)
 
         result = spindown(toa_data, params, delay)
@@ -222,8 +192,8 @@ class TestJIT:
     def test_jit_call(self):
         """Spindown.__call__ works under jax.jit."""
         spindown = Spindown(spin_param_names=("F0", "F1"))
-        params = _make_params(f0=200.0, f1=-1e-15)
-        toa_data = _make_toa_data()
+        params = make_spindown_params(f0=200.0, f1=-1e-15)
+        toa_data = make_gbt_toa_data()
         delay = jnp.zeros(toa_data.n_toas)
 
         jitted = jax.jit(spindown)
@@ -234,8 +204,8 @@ class TestJIT:
     def test_jit_same_trace(self):
         """Same spin_param_names does not retrace."""
         spindown = Spindown(spin_param_names=("F0",))
-        params = _make_params(f0=100.0)
-        toa_data = _make_toa_data(n_toas=3)
+        params = make_spindown_params(f0=100.0)
+        toa_data = make_gbt_toa_data(n_toas=3)
         delay = jnp.zeros(3)
 
         jitted = jax.jit(spindown)
@@ -256,9 +226,9 @@ class TestGrad:
     def test_grad_wrt_f0(self):
         """d(sum(phase))/dF0 ~ sum(dt)."""
         spindown = Spindown(spin_param_names=("F0",))
-        params = _make_params(f0=100.0, pepoch_int=59000.0, pepoch_frac=0.0)
+        params = make_spindown_params(f0=100.0, pepoch_int=59000.0, pepoch_frac=0.0)
         dt_secs = jnp.array([1.0, 2.0, 3.0])
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             n_toas=3, tdb_int=59000.0, tdb_frac=dt_secs / 86400.0
         )
         delay = jnp.zeros(3)
@@ -275,9 +245,9 @@ class TestGrad:
     def test_grad_wrt_f1(self):
         """d(sum(phase))/dF1 ~ sum(dt^2 / 2)."""
         spindown = Spindown(spin_param_names=("F0", "F1"))
-        params = _make_params(f0=100.0, f1=-1e-15, pepoch_int=59000.0, pepoch_frac=0.0)
+        params = make_spindown_params(f0=100.0, f1=-1e-15, pepoch_int=59000.0, pepoch_frac=0.0)
         dt_secs = jnp.array([100.0, 200.0, 300.0])
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             n_toas=3, tdb_int=59000.0, tdb_frac=dt_secs / 86400.0
         )
         delay = jnp.zeros(3)
@@ -293,8 +263,8 @@ class TestGrad:
     def test_grad_finite(self):
         """All gradients are finite."""
         spindown = Spindown(spin_param_names=("F0", "F1"))
-        params = _make_params(f0=200.0, f1=-1e-15)
-        toa_data = _make_toa_data()
+        params = make_spindown_params(f0=200.0, f1=-1e-15)
+        toa_data = make_gbt_toa_data()
         delay = jnp.zeros(toa_data.n_toas)
 
         def loss(p):
@@ -317,7 +287,7 @@ class TestChangePepoch:
         (d(phase)/dt) at any given time must be the same.
         """
         spindown = Spindown(spin_param_names=("F0", "F1"))
-        params = _make_params(f0=200.0, f1=-1e-14, pepoch_int=59000.0, pepoch_frac=0.0)
+        params = make_spindown_params(f0=200.0, f1=-1e-14, pepoch_int=59000.0, pepoch_frac=0.0)
 
         # Shift PEPOCH by 50 days
         new_params = spindown.change_pepoch(params, 59050.0, 0.0)
@@ -335,7 +305,7 @@ class TestChangePepoch:
     def test_roundtrip(self):
         """Shift forward then back recovers original F-values."""
         spindown = Spindown(spin_param_names=("F0", "F1"))
-        params = _make_params(f0=200.0, f1=-1e-14, pepoch_int=59000.0, pepoch_frac=0.0)
+        params = make_spindown_params(f0=200.0, f1=-1e-14, pepoch_int=59000.0, pepoch_frac=0.0)
 
         shifted = spindown.change_pepoch(params, 59100.0, 0.0)
         restored = spindown.change_pepoch(shifted, 59000.0, 0.0)

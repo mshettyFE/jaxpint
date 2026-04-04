@@ -11,38 +11,12 @@ from jaxpint.phase_result import PhaseResult
 from jaxpint.phase.spin import Spindown
 from jaxpint.delay.dispersion_dm import DispersionDM
 from jaxpint.model import TimingModel, _build_tzr_toa_data
-from tests.helpers import make_toa_data, make_params
+from tests.helpers import make_gbt_toa_data, make_spindown_params, make_params
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _make_toa_data(
-    n_toas=5, tdb_int=59000.0, tdb_frac=None, freq=1400.0,
-    tzr_tdb_int=None, tzr_tdb_frac=None, tzr_freq=None,
-):
-    return make_toa_data(n_toas, tdb_int=tdb_int, tdb_frac=tdb_frac,
-                         freq=freq, obs_names=("GBT",), planet_positions=None,
-                         tzr_tdb_int=tzr_tdb_int, tzr_tdb_frac=tzr_tdb_frac,
-                         tzr_freq=tzr_freq)
-
-
-def _make_spin_params(f0=200.0, f1=None, pepoch_int=59000.0, pepoch_frac=0.0):
-    names = ["F0"]; values = [f0]
-    components = ["Spindown"]; units = ["Hz"]
-
-    if f1 is not None:
-        names += ["F1"]; values += [f1]
-        components += ["Spindown"]; units += ["Hz/s"]
-
-    names += ["PEPOCH"]; values += [pepoch_frac]
-    components += ["Spindown"]; units += ["day"]
-
-    return make_params(names, values, units=tuple(units),
-                       components=tuple(components),
-                       epoch_int_values={"PEPOCH": pepoch_int})
-
 
 def _make_full_params(
     f0=200.0, f1=None, dm=15.0,
@@ -79,8 +53,8 @@ class TestComputeDelay:
     def test_no_delay_components(self):
         """No delay components returns zeros."""
         model = TimingModel(delay_components=(), phase_components=())
-        toa_data = _make_toa_data()
-        params = _make_spin_params()
+        toa_data = make_gbt_toa_data()
+        params = make_spindown_params()
 
         delay = model.compute_delay(toa_data, params)
 
@@ -92,7 +66,7 @@ class TestComputeDelay:
         dm_comp = DispersionDM(dm_param_names=("DM",))
         model = TimingModel(delay_components=(dm_comp,), phase_components=())
 
-        toa_data = _make_toa_data(freq=1400.0)
+        toa_data = make_gbt_toa_data(freq=1400.0)
         params = _make_full_params(dm=15.0)
 
         delay = model.compute_delay(toa_data, params)
@@ -108,7 +82,7 @@ class TestComputeDelay:
         # Same component twice to test accumulation via lax.switch
         model = TimingModel(delay_components=(dm1, dm1), phase_components=())
 
-        toa_data = _make_toa_data(freq=1400.0)
+        toa_data = make_gbt_toa_data(freq=1400.0)
         params = _make_full_params(dm=15.0)
 
         delay = model.compute_delay(toa_data, params)
@@ -124,7 +98,7 @@ class TestComputeDelay:
         dm_comp = DispersionDM(dm_param_names=("DM",))
         model = TimingModel(delay_components=(dm_comp,), phase_components=())
 
-        toa_data = _make_toa_data()
+        toa_data = make_gbt_toa_data()
         params = _make_full_params()
 
         delay_eager = model.compute_delay(toa_data, params)
@@ -146,8 +120,8 @@ class TestComputePhaseRelative:
         spin = Spindown(spin_param_names=("F0",))
         model = TimingModel(delay_components=(), phase_components=(spin,))
 
-        toa_data = _make_toa_data(n_toas=3, tdb_int=59001.0, tdb_frac=jnp.array([0.0, 0.25, 0.5]))
-        params = _make_spin_params(f0=200.0, pepoch_int=59000.0, pepoch_frac=0.0)
+        toa_data = make_gbt_toa_data(n_toas=3, tdb_int=59001.0, tdb_frac=jnp.array([0.0, 0.25, 0.5]))
+        params = make_spindown_params(f0=200.0, pepoch_int=59000.0, pepoch_frac=0.0)
 
         phase = model.compute_phase(toa_data, params)
 
@@ -168,7 +142,7 @@ class TestComputePhaseRelative:
             phase_components=(spin,),
         )
 
-        toa_data = _make_toa_data(n_toas=3, tdb_int=59001.0, tdb_frac=jnp.array([0.0, 0.25, 0.5]))
+        toa_data = make_gbt_toa_data(n_toas=3, tdb_int=59001.0, tdb_frac=jnp.array([0.0, 0.25, 0.5]))
         params = _make_full_params(f0=200.0, dm=15.0)
 
         phase = model.compute_phase(toa_data, params)
@@ -186,8 +160,8 @@ class TestComputePhaseRelative:
     def test_no_phase_components(self):
         """Model with no phase components returns zero phase."""
         model = TimingModel(delay_components=(), phase_components=())
-        toa_data = _make_toa_data()
-        params = _make_spin_params()
+        toa_data = make_gbt_toa_data()
+        params = make_spindown_params()
 
         phase = model.compute_phase(toa_data, params)
 
@@ -210,7 +184,7 @@ class TestComputePhaseAbsolute:
 
         # TZR at exactly the same time as one of the TOAs
         tzr_int, tzr_frac = 59001.0, 0.25
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             n_toas=3,
             tdb_int=59001.0,
             tdb_frac=jnp.array([0.0, 0.25, 0.5]),
@@ -218,7 +192,7 @@ class TestComputePhaseAbsolute:
             tzr_tdb_frac=tzr_frac,
             tzr_freq=1400.0,
         )
-        params = _make_spin_params(f0=200.0, pepoch_int=59000.0)
+        params = make_spindown_params(f0=200.0, pepoch_int=59000.0)
 
         phase = model.compute_phase(toa_data, params)
 
@@ -232,12 +206,12 @@ class TestComputePhaseAbsolute:
         spin = Spindown(spin_param_names=("F0",))
         model = TimingModel(delay_components=(), phase_components=(spin,))
 
-        toa_data_no_tzr = _make_toa_data(
+        toa_data_no_tzr = make_gbt_toa_data(
             n_toas=3,
             tdb_int=59001.0,
             tdb_frac=jnp.array([0.0, 0.25, 0.5]),
         )
-        toa_data_with_tzr = _make_toa_data(
+        toa_data_with_tzr = make_gbt_toa_data(
             n_toas=3,
             tdb_int=59001.0,
             tdb_frac=jnp.array([0.0, 0.25, 0.5]),
@@ -245,7 +219,7 @@ class TestComputePhaseAbsolute:
             tzr_tdb_frac=0.0,
             tzr_freq=1400.0,
         )
-        params = _make_spin_params(f0=200.0, pepoch_int=59000.0)
+        params = make_spindown_params(f0=200.0, pepoch_int=59000.0)
 
         phase_no_tzr = model.compute_phase(toa_data_no_tzr, params)
         phase_with_tzr = model.compute_phase(toa_data_with_tzr, params)
@@ -265,7 +239,7 @@ class TestComputePhaseAbsolute:
             phase_components=(spin,),
         )
 
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             n_toas=3,
             tdb_int=59001.0,
             tdb_frac=jnp.array([0.0, 0.25, 0.5]),
@@ -294,7 +268,7 @@ class TestBuildTzrToaData:
 
     def test_shape(self):
         """TZR TOAData has n_toas=1 and correct array shapes."""
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             tzr_tdb_int=59001.0,
             tzr_tdb_frac=0.5,
             tzr_freq=1400.0,
@@ -309,7 +283,7 @@ class TestBuildTzrToaData:
 
     def test_tdb_values(self):
         """TZR TOAData has correct TDB values."""
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             tzr_tdb_int=59001.0,
             tzr_tdb_frac=0.5,
             tzr_freq=1400.0,
@@ -321,7 +295,7 @@ class TestBuildTzrToaData:
 
     def test_freq_value(self):
         """TZR TOAData uses the TZR frequency."""
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             tzr_tdb_int=59001.0,
             tzr_tdb_frac=0.5,
             tzr_freq=2000.0,
@@ -332,7 +306,7 @@ class TestBuildTzrToaData:
 
     def test_no_tzr_fields(self):
         """TZR TOAData has no TZR fields itself (no recursion)."""
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             tzr_tdb_int=59001.0,
             tzr_tdb_frac=0.5,
             tzr_freq=1400.0,
@@ -355,13 +329,13 @@ class TestJitAndGrad:
         """compute_phase runs under jax.jit and matches eager."""
         spin = Spindown(spin_param_names=("F0",))
         model = TimingModel(delay_components=(), phase_components=(spin,))
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             n_toas=3,
             tzr_tdb_int=59000.0,
             tzr_tdb_frac=0.5,
             tzr_freq=1400.0,
         )
-        params = _make_spin_params(f0=200.0)
+        params = make_spindown_params(f0=200.0)
 
         eager = model.compute_phase(toa_data, params)
         jitted = jax.jit(model.compute_phase)(toa_data, params)
@@ -373,14 +347,14 @@ class TestJitAndGrad:
         """Gradient through compute_phase w.r.t. params produces finite values."""
         spin = Spindown(spin_param_names=("F0",))
         model = TimingModel(delay_components=(), phase_components=(spin,))
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             n_toas=3,
             tdb_int=59001.0,
             tzr_tdb_int=59000.0,
             tzr_tdb_frac=0.5,
             tzr_freq=1400.0,
         )
-        params = _make_spin_params(f0=200.0)
+        params = make_spindown_params(f0=200.0)
 
         def scalar_phase(p):
             ph = model.compute_phase(toa_data, p)
@@ -402,7 +376,7 @@ class TestJitAndGrad:
             delay_components=(dm_comp,),
             phase_components=(spin,),
         )
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             n_toas=3,
             tdb_int=59001.0,
             tzr_tdb_int=59000.0,
@@ -427,8 +401,8 @@ class TestJitAndGrad:
         spin = Spindown(spin_param_names=("F0",))
         model = TimingModel(delay_components=(), phase_components=(spin,))
 
-        toa_data = _make_toa_data(n_toas=3)
-        params = _make_spin_params(f0=200.0)
+        toa_data = make_gbt_toa_data(n_toas=3)
+        params = make_spindown_params(f0=200.0)
 
         fn = jax.jit(model.compute_phase)
         fn(toa_data, params)  # first call triggers trace
@@ -547,7 +521,7 @@ class TestVsPINT:
         jax_model = TimingModel(delay_components=(), phase_components=(spin,))
 
         # JaxPINT: Spindown only, no delay, no TZR
-        toa_data_no_tzr = _make_toa_data(
+        toa_data_no_tzr = make_gbt_toa_data(
             n_toas=toa_data.n_toas,
             tdb_int=float(toa_data.tdb_int[0]),
             tdb_frac=toa_data.tdb_frac,

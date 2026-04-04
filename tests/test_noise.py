@@ -15,7 +15,7 @@ from jaxpint.noise import ScaleToaError
 
 import astropy.units as u
 
-from tests.helpers import make_toa_data as _make_toa_data_base, make_params as _make_params_base
+from tests.helpers import make_toa_data, make_noise_params
 
 
 # ---------------------------------------------------------------------------
@@ -24,16 +24,9 @@ from tests.helpers import make_toa_data as _make_toa_data_base, make_params as _
 
 
 def _make_toa_data(n_toas, errors, flag_masks):
-    return _make_toa_data_base(n_toas, tdb_int=0.0, tdb_frac=0.0,
-                               error=errors, flag_masks=flag_masks,
-                               planet_positions=None)
-
-
-def _make_params(names, values, frozen=None):
-    if frozen is None:
-        frozen = [True] * len(names)
-    return _make_params_base(names, values, frozen_mask=tuple(frozen),
-                             components="noise")
+    return make_toa_data(n_toas, tdb_int=0.0, tdb_frac=0.0,
+                         error=errors, flag_masks=flag_masks,
+                         planet_positions=None)
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +43,7 @@ class TestScaleToaErrorUnit:
         errors = np.full(n, 1e-6)  # 1 µs
         mask = np.array([True, True, True, False, False, False])
         toa_data = _make_toa_data(n, errors, {"EFAC1": mask})
-        params = _make_params(["EFAC1"], [1.5])
+        params = make_noise_params(["EFAC1"], [1.5])
 
         noise = ScaleToaError(efac_names=("EFAC1",), equad_names=())
         sigma = noise.scaled_sigma(toa_data, params)
@@ -65,7 +58,7 @@ class TestScaleToaErrorUnit:
         equad = 4e-6  # 4 µs → sqrt(9+16) = 5 µs
         mask = np.array([True, True, False, False])
         toa_data = _make_toa_data(n, errors, {"EQUAD1": mask})
-        params = _make_params(["EQUAD1"], [equad])
+        params = make_noise_params(["EQUAD1"], [equad])
 
         noise = ScaleToaError(efac_names=(), equad_names=("EQUAD1",))
         sigma = noise.scaled_sigma(toa_data, params)
@@ -82,7 +75,7 @@ class TestScaleToaErrorUnit:
         equad = 4e-6
         mask = np.ones(n, dtype=bool)
         toa_data = _make_toa_data(n, errors, {"EFAC1": mask, "EQUAD1": mask})
-        params = _make_params(["EFAC1", "EQUAD1"], [efac, equad])
+        params = make_noise_params(["EFAC1", "EQUAD1"], [efac, equad])
 
         noise = ScaleToaError(efac_names=("EFAC1",), equad_names=("EQUAD1",))
         sigma = noise.scaled_sigma(toa_data, params)
@@ -101,7 +94,7 @@ class TestScaleToaErrorUnit:
             errors,
             {"EFAC1": mask_a, "EFAC2": mask_b, "EQUAD1": mask_a, "EQUAD2": mask_b},
         )
-        params = _make_params(
+        params = make_noise_params(
             ["EFAC1", "EFAC2", "EQUAD1", "EQUAD2"],
             [1.5, 2.0, 0.5e-6, 1.0e-6],
         )
@@ -123,7 +116,7 @@ class TestScaleToaErrorUnit:
         errors = np.full(n, 1e-6)
         mask = np.ones(n, dtype=bool)
         toa_data = _make_toa_data(n, errors, {"EFAC1": mask})
-        params = _make_params(["EFAC1"], [1.3])
+        params = make_noise_params(["EFAC1"], [1.3])
 
         noise = ScaleToaError(efac_names=("EFAC1",), equad_names=())
 
@@ -142,7 +135,7 @@ class TestScaleToaErrorUnit:
         noise = ScaleToaError(efac_names=("EFAC1",), equad_names=())
 
         def chi2_fn(efac_val):
-            p = _make_params(["EFAC1"], [efac_val])
+            p = make_noise_params(["EFAC1"], [efac_val])
             sigma = noise.scaled_sigma(toa_data, p)
             residuals = jnp.ones(n) * 1e-6  # dummy residuals
             return jnp.sum((residuals / sigma) ** 2)
@@ -162,7 +155,7 @@ class TestScaleToaErrorUnit:
         noise = ScaleToaError(efac_names=(), equad_names=("EQUAD1",))
 
         def chi2_fn(equad_val):
-            p = _make_params(["EQUAD1"], [equad_val])
+            p = make_noise_params(["EQUAD1"], [equad_val])
             sigma = noise.scaled_sigma(toa_data, p)
             residuals = jnp.ones(n) * 1e-6
             return jnp.sum((residuals / sigma) ** 2)
@@ -176,7 +169,7 @@ class TestScaleToaErrorUnit:
         n = 4
         errors = np.array([1e-6, 2e-6, 3e-6, 4e-6])
         toa_data = _make_toa_data(n, errors, {})
-        params = _make_params([], [])
+        params = make_noise_params([], [])
 
         noise = ScaleToaError(efac_names=(), equad_names=())
         sigma = noise.scaled_sigma(toa_data, params)

@@ -7,76 +7,7 @@ import pytest
 
 from jaxpint.constants import DMCONST
 from jaxpint.delay.dispersion_dmx import DispersionDMX
-from tests.helpers import make_toa_data as _make_toa_data_base, make_params
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _make_toa_data(n_toas=5, t_mjd=None, tdb_int=59000.0, tdb_frac=None,
-                   freq=1400.0):
-    return _make_toa_data_base(n_toas, t_mjd=t_mjd, tdb_int=tdb_int,
-                               tdb_frac=tdb_frac, freq=freq,
-                               obs_names=("GBT",), planet_positions=None)
-
-
-def _make_dmx_params(dmx_values, dmxr1_mjds, dmxr2_mjds, frozen_dmx=None):
-    """Build a ParameterVector with DMX bins.
-
-    Parameters
-    ----------
-    dmx_values : list of float
-        DM values for each bin.
-    dmxr1_mjds, dmxr2_mjds : list of float
-        Bin boundary MJDs.
-    frozen_dmx : list of bool, optional
-        Whether each DMX param is frozen (default: all False).
-    """
-    n = len(dmx_values)
-    names = []
-    values = []
-    units = []
-    components = []
-    epoch_int_values = {}
-    frozen_mask = []
-
-    for i in range(n):
-        idx = f"{i + 1:04d}"
-        # DMX value
-        names.append(f"DMX_{idx}")
-        values.append(dmx_values[i])
-        units.append("pc cm^-3")
-        components.append("DispersionDMX")
-        frozen_mask.append(False if frozen_dmx is None else frozen_dmx[i])
-
-        # DMXR1 (bin start, epoch param)
-        names.append(f"DMXR1_{idx}")
-        r1_int = float(int(dmxr1_mjds[i]))
-        r1_frac = dmxr1_mjds[i] - r1_int
-        values.append(r1_frac)
-        units.append("day")
-        components.append("DispersionDMX")
-        epoch_int_values[f"DMXR1_{idx}"] = r1_int
-        frozen_mask.append(True)
-
-        # DMXR2 (bin end, epoch param)
-        names.append(f"DMXR2_{idx}")
-        r2_int = float(int(dmxr2_mjds[i]))
-        r2_frac = dmxr2_mjds[i] - r2_int
-        values.append(r2_frac)
-        units.append("day")
-        components.append("DispersionDMX")
-        epoch_int_values[f"DMXR2_{idx}"] = r2_int
-        frozen_mask.append(True)
-
-    return make_params(
-        names, values,
-        units=tuple(units),
-        components=tuple(components),
-        epoch_int_values=epoch_int_values,
-        frozen_mask=tuple(frozen_mask),
-    )
+from tests.helpers import make_gbt_toa_data, make_dmx_params
 
 
 def _single_bin_component():
@@ -160,8 +91,8 @@ class TestDelay:
         comp = _single_bin_component()
         dmx_val = 0.5
         freq = 1400.0
-        params = _make_dmx_params([dmx_val], [58900.0], [59100.0])
-        toa_data = _make_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
+        params = make_dmx_params([dmx_val], [58900.0], [59100.0])
+        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
                                   freq=freq)
         result = comp(toa_data, params, jnp.zeros(1))
         expected = dmx_val * DMCONST / freq**2
@@ -170,8 +101,8 @@ class TestDelay:
     def test_single_bin_toa_outside(self):
         """TOA outside the bin gets zero delay."""
         comp = _single_bin_component()
-        params = _make_dmx_params([0.5], [58900.0], [58950.0])
-        toa_data = _make_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
+        params = make_dmx_params([0.5], [58900.0], [58950.0])
+        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
                                   freq=1400.0)
         result = comp(toa_data, params, jnp.zeros(1))
         assert jnp.isclose(result[0], 0.0, atol=1e-30)
@@ -182,17 +113,17 @@ class TestDelay:
         dmx_val = 0.3
         freq = 1400.0
         r1, r2 = 59000.0, 59100.0
-        params = _make_dmx_params([dmx_val], [r1], [r2])
+        params = make_dmx_params([dmx_val], [r1], [r2])
         expected = dmx_val * DMCONST / freq**2
 
         # TOA at start boundary
-        toa_start = _make_toa_data(n_toas=1, tdb_int=r1, tdb_frac=0.0,
+        toa_start = make_gbt_toa_data(n_toas=1, tdb_int=r1, tdb_frac=0.0,
                                    freq=freq)
         assert jnp.isclose(comp(toa_start, params, jnp.zeros(1))[0],
                            expected, rtol=1e-12)
 
         # TOA at end boundary
-        toa_end = _make_toa_data(n_toas=1, tdb_int=r2, tdb_frac=0.0,
+        toa_end = make_gbt_toa_data(n_toas=1, tdb_int=r2, tdb_frac=0.0,
                                  freq=freq)
         assert jnp.isclose(comp(toa_end, params, jnp.zeros(1))[0],
                            expected, rtol=1e-12)
@@ -202,19 +133,19 @@ class TestDelay:
         comp = _two_bin_component()
         dmx1, dmx2 = 0.5, -0.3
         freq = 1400.0
-        params = _make_dmx_params(
+        params = make_dmx_params(
             [dmx1, dmx2],
             [58900.0, 59100.0],
             [59000.0, 59200.0],
         )
         # TOA in bin 1
-        toa1 = _make_toa_data(n_toas=1, tdb_int=58950.0, tdb_frac=0.0,
+        toa1 = make_gbt_toa_data(n_toas=1, tdb_int=58950.0, tdb_frac=0.0,
                               freq=freq)
         r1 = comp(toa1, params, jnp.zeros(1))
         assert jnp.isclose(r1[0], dmx1 * DMCONST / freq**2, rtol=1e-12)
 
         # TOA in bin 2
-        toa2 = _make_toa_data(n_toas=1, tdb_int=59150.0, tdb_frac=0.0,
+        toa2 = make_gbt_toa_data(n_toas=1, tdb_int=59150.0, tdb_frac=0.0,
                               freq=freq)
         r2 = comp(toa2, params, jnp.zeros(1))
         assert jnp.isclose(r2[0], dmx2 * DMCONST / freq**2, rtol=1e-12)
@@ -223,12 +154,12 @@ class TestDelay:
         """Delay scales as 1/freq^2."""
         comp = _single_bin_component()
         dmx_val = 0.5
-        params = _make_dmx_params([dmx_val], [58900.0], [59100.0])
+        params = make_dmx_params([dmx_val], [58900.0], [59100.0])
 
         freq_lo, freq_hi = 800.0, 1400.0
-        toa_lo = _make_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
+        toa_lo = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
                                 freq=freq_lo)
-        toa_hi = _make_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
+        toa_hi = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
                                 freq=freq_hi)
         d_lo = comp(toa_lo, params, jnp.zeros(1))
         d_hi = comp(toa_hi, params, jnp.zeros(1))
@@ -242,13 +173,13 @@ class TestDelay:
         comp = _two_bin_component()
         dmx1, dmx2 = 0.5, -0.3
         freq = 1400.0
-        params = _make_dmx_params(
+        params = make_dmx_params(
             [dmx1, dmx2],
             [58900.0, 59100.0],
             [59000.0, 59200.0],
         )
         # 4 TOAs: bin1, gap, bin2, bin2
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             t_mjd=[58950.0, 59050.0, 59150.0, 59180.0],
             freq=freq,
         )
@@ -262,8 +193,8 @@ class TestDelay:
     def test_toa_in_no_bin(self):
         """TOA outside all bins gets zero delay."""
         comp = _single_bin_component()
-        params = _make_dmx_params([1.0], [59000.0], [59100.0])
-        toa_data = _make_toa_data(n_toas=1, tdb_int=58000.0, tdb_frac=0.0,
+        params = make_dmx_params([1.0], [59000.0], [59100.0])
+        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=58000.0, tdb_frac=0.0,
                                   freq=1400.0)
         result = comp(toa_data, params, jnp.zeros(1))
         assert jnp.isclose(result[0], 0.0, atol=1e-30)
@@ -271,8 +202,8 @@ class TestDelay:
     def test_acc_delay_ignored(self):
         """Accumulated delay does not affect DMX dispersion."""
         comp = _single_bin_component()
-        params = _make_dmx_params([0.5], [58900.0], [59100.0])
-        toa_data = _make_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
+        params = make_dmx_params([0.5], [58900.0], [59100.0])
+        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
                                   freq=1400.0)
 
         r_no_delay = comp(toa_data, params, jnp.zeros(1))
@@ -287,8 +218,8 @@ class TestDelay:
 class TestJIT:
     def test_jit_call(self):
         comp = _single_bin_component()
-        params = _make_dmx_params([0.5], [58900.0], [59100.0])
-        toa_data = _make_toa_data(n_toas=3, tdb_int=59000.0, tdb_frac=0.0,
+        params = make_dmx_params([0.5], [58900.0], [59100.0])
+        toa_data = make_gbt_toa_data(n_toas=3, tdb_int=59000.0, tdb_frac=0.0,
                                   freq=1400.0)
 
         jitted = jax.jit(comp)
@@ -297,9 +228,9 @@ class TestJIT:
 
     def test_jit_same_trace_different_params(self):
         comp = _single_bin_component()
-        params1 = _make_dmx_params([0.5], [58900.0], [59100.0])
-        params2 = _make_dmx_params([1.0], [58900.0], [59100.0])
-        toa_data = _make_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
+        params1 = make_dmx_params([0.5], [58900.0], [59100.0])
+        params2 = make_dmx_params([1.0], [58900.0], [59100.0])
+        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
                                   freq=1400.0)
 
         jitted = jax.jit(comp)
@@ -317,8 +248,8 @@ class TestGrad:
         """d(delay)/d(DMX_i) = DMCONST/freq^2 for TOA in bin i."""
         comp = _single_bin_component()
         freq = 1400.0
-        params = _make_dmx_params([0.5], [58900.0], [59100.0])
-        toa_data = _make_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
+        params = make_dmx_params([0.5], [58900.0], [59100.0])
+        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
                                   freq=freq)
 
         def loss(p):
@@ -332,8 +263,8 @@ class TestGrad:
     def test_grad_wrt_dmx_out_of_bin(self):
         """d(delay)/d(DMX_i) = 0 for TOA outside bin i."""
         comp = _single_bin_component()
-        params = _make_dmx_params([0.5], [59000.0], [59100.0])
-        toa_data = _make_toa_data(n_toas=1, tdb_int=58000.0, tdb_frac=0.0,
+        params = make_dmx_params([0.5], [59000.0], [59100.0])
+        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=58000.0, tdb_frac=0.0,
                                   freq=1400.0)
 
         def loss(p):
@@ -347,13 +278,13 @@ class TestGrad:
         """Gradients are independent for non-overlapping bins."""
         comp = _two_bin_component()
         freq = 1400.0
-        params = _make_dmx_params(
+        params = make_dmx_params(
             [0.5, -0.3],
             [58900.0, 59100.0],
             [59000.0, 59200.0],
         )
         # TOA only in bin 1
-        toa_data = _make_toa_data(n_toas=1, tdb_int=58950.0, tdb_frac=0.0,
+        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=58950.0, tdb_frac=0.0,
                                   freq=freq)
 
         def loss(p):
@@ -367,9 +298,9 @@ class TestGrad:
 
     def test_grad_finite(self):
         comp = _two_bin_component()
-        params = _make_dmx_params([0.5, -0.3], [58900.0, 59100.0],
+        params = make_dmx_params([0.5, -0.3], [58900.0, 59100.0],
                                   [59000.0, 59200.0])
-        toa_data = _make_toa_data(n_toas=3, tdb_int=58950.0, tdb_frac=0.0,
+        toa_data = make_gbt_toa_data(n_toas=3, tdb_int=58950.0, tdb_frac=0.0,
                                   freq=1400.0)
 
         def loss(p):

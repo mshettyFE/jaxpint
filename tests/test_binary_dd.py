@@ -7,22 +7,9 @@ import numpy.testing as npt
 import pytest
 
 
-from tests.helpers import make_toa_data as _make_toa_data_base, make_params
+from tests.helpers import make_binary_toa_data, make_binary_params
 
 _DEG_YR_TO_RAD_S = np.pi / 180.0 / (365.25 * 86400.0)
-
-
-def _make_params(param_names, param_values, epoch_int_values=None):
-    return make_params(param_names, param_values, components="BinaryDD",
-                       epoch_int_values=epoch_int_values or {})
-
-
-def _make_toa_data(t_mjd):
-    return _make_toa_data_base(
-        t_mjd=t_mjd,
-        tzr_tdb_int=jnp.array(54000.0), tzr_tdb_frac=jnp.array(0.5),
-        tzr_freq=jnp.array(jnp.inf), tzr_ssb_obs_pos=jnp.zeros(3),
-    )
 
 
 @pytest.fixture
@@ -99,9 +86,9 @@ class TestBinaryDDvsPINT:
                         om_rad, dd_params["OMDOT"], dd_params["GAMMA"], dd_params["PBDOT"],
                         dd_params["M2"], dd_params["SINI"], dd_params["A0"], dd_params["B0"],
                         dd_params["DR"], dd_params["DTH"]]
-        params = _make_params(param_names, param_values, epoch_int_values={"T0": t0_int})
+        params = make_binary_params(param_names, param_values, "BinaryDD", epoch_int_values={"T0": t0_int})
 
-        toa_data = _make_toa_data(np.linspace(54000.5, 54200.0, 500))
+        toa_data = make_binary_toa_data(np.linspace(54000.5, 54200.0, 500))
         jax_delay = np.array(dd(toa_data, params, jnp.zeros(500)))
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
@@ -141,9 +128,9 @@ class TestBinaryDDvsPINT:
         param_names = ("PB", "T0", "A1", "ECC", "OM", "OMDOT", "GAMMA", "PBDOT")
         param_values = [dd_params["PB"], t0_frac, dd_params["A1"], dd_params["ECC"],
                         om_rad, dd_params["OMDOT"], dd_params["GAMMA"], dd_params["PBDOT"]]
-        params = _make_params(param_names, param_values, epoch_int_values={"T0": t0_int})
+        params = make_binary_params(param_names, param_values, "BinaryDD", epoch_int_values={"T0": t0_int})
 
-        toa_data = _make_toa_data(np.linspace(54001.0, 54100.0, 200))
+        toa_data = make_binary_toa_data(np.linspace(54001.0, 54100.0, 200))
         jax_delay = np.array(dd(toa_data, params, jnp.zeros(200)))
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
@@ -192,9 +179,9 @@ class TestBinaryDDvsPINT:
         param_values = [dd_params["PB"], t0_frac, dd_params["A1"], dd_params["ECC"],
                         om_rad, dd_params["OMDOT"], dd_params["GAMMA"], dd_params["PBDOT"],
                         dd_params["M2"], shapmax]
-        params = _make_params(param_names, param_values, epoch_int_values={"T0": t0_int})
+        params = make_binary_params(param_names, param_values, "BinaryDD", epoch_int_values={"T0": t0_int})
 
-        toa_data = _make_toa_data(np.linspace(54000.5, 54200.0, 300))
+        toa_data = make_binary_toa_data(np.linspace(54000.5, 54200.0, 300))
         jax_delay = np.array(dds(toa_data, params, jnp.zeros(300)))
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
@@ -215,10 +202,10 @@ class TestBinaryDDvsPINT:
         param_names = ("PB", "T0", "A1", "ECC", "OM", "M2", "SINI")
         param_values = [dd_params["PB"], t0_frac, dd_params["A1"], dd_params["ECC"],
                         om_rad, dd_params["M2"], dd_params["SINI"]]
-        params = _make_params(param_names, param_values, epoch_int_values={"T0": t0_int})
+        params = make_binary_params(param_names, param_values, "BinaryDD", epoch_int_values={"T0": t0_int})
 
         n = 10
-        toa_data = _make_toa_data(np.linspace(54100.1, 54100.9, n))
+        toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
 
         jitted = jax.jit(dd)
         result = jitted(toa_data, params, jnp.zeros(n))
@@ -241,10 +228,10 @@ class TestBinaryDDvsPINT:
         param_names = ("PB", "T0", "A1", "ECC", "OM", "GAMMA", "M2", "SINI")
         param_values = [dd_params["PB"], t0_frac, dd_params["A1"], dd_params["ECC"],
                         om_rad, dd_params["GAMMA"], dd_params["M2"], dd_params["SINI"]]
-        params = _make_params(param_names, param_values, epoch_int_values={"T0": t0_int})
+        params = make_binary_params(param_names, param_values, "BinaryDD", epoch_int_values={"T0": t0_int})
 
         n = 10
-        toa_data = _make_toa_data(np.linspace(54100.1, 54100.9, n))
+        toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
 
         def delay_fn(param_values):
             p = params.with_free_values(param_values)

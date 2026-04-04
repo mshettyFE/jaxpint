@@ -7,39 +7,7 @@ import pytest
 
 from jaxpint.constants import DMCONST
 from jaxpint.delay.dispersion_dm import DispersionDM
-from tests.helpers import make_toa_data as _make_toa_data_base, make_params
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _make_toa_data(n_toas=5, tdb_int=59000.0, tdb_frac=None, freq=1400.0):
-    return _make_toa_data_base(n_toas, tdb_int=tdb_int, tdb_frac=tdb_frac,
-                               freq=freq, obs_names=("GBT",),
-                               planet_positions=None)
-
-
-def _make_params(dm=15.0, dm1=None, dm2=None,
-                 dmepoch_int=59000.0, dmepoch_frac=0.0):
-    names = ["DM"]
-    values = [dm]
-    components = ["DispersionDM"]
-    units = ["pc cm^-3"]
-
-    if dm1 is not None:
-        names += ["DM1"]; values += [dm1]
-        components += ["DispersionDM"]; units += ["pc cm^-3/yr"]
-    if dm2 is not None:
-        names += ["DM2"]; values += [dm2]
-        components += ["DispersionDM"]; units += ["pc cm^-3/yr"]
-
-    names += ["DMEPOCH"]; values += [dmepoch_frac]
-    components += ["DispersionDM"]; units += ["day"]
-
-    return make_params(names, values, units=tuple(units),
-                       components=tuple(components),
-                       epoch_int_values={"DMEPOCH": dmepoch_int})
+from tests.helpers import make_gbt_toa_data, make_dispersion_dm_params
 
 
 # ===========================================================================
@@ -97,8 +65,8 @@ class TestDispersionDelay:
         disp = DispersionDM(dm_param_names=("DM",))
         dm = 15.0
         freq = 1400.0
-        params = _make_params(dm=dm)
-        toa_data = _make_toa_data(n_toas=1, freq=freq)
+        params = make_dispersion_dm_params(dm=dm)
+        toa_data = make_gbt_toa_data(n_toas=1, freq=freq)
         delay = jnp.zeros(1)
 
         result = disp(toa_data, params, delay)
@@ -112,8 +80,8 @@ class TestDispersionDelay:
         freq = 1400.0
         # 1 Julian year after DMEPOCH
         dt_days = 365.25
-        params = _make_params(dm=dm, dm1=dm1, dmepoch_int=59000.0, dmepoch_frac=0.0)
-        toa_data = _make_toa_data(
+        params = make_dispersion_dm_params(dm=dm, dm1=dm1, dmepoch_int=59000.0, dmepoch_frac=0.0)
+        toa_data = make_gbt_toa_data(
             n_toas=1, tdb_int=59000.0 + dt_days, tdb_frac=0.0, freq=freq
         )
         delay = jnp.zeros(1)
@@ -131,11 +99,11 @@ class TestDispersionDelay:
         freq = 1400.0
         dt_yr = 2.0
         dt_days = dt_yr * 365.25
-        params = _make_params(
+        params = make_dispersion_dm_params(
             dm=dm, dm1=dm1, dm2=dm2,
             dmepoch_int=59000.0, dmepoch_frac=0.0,
         )
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             n_toas=1, tdb_int=59000.0 + dt_days, tdb_frac=0.0, freq=freq
         )
         delay = jnp.zeros(1)
@@ -148,11 +116,11 @@ class TestDispersionDelay:
     def test_frequency_dependence(self):
         """Delay scales as 1/freq^2."""
         disp = DispersionDM(dm_param_names=("DM",))
-        params = _make_params(dm=15.0)
+        params = make_dispersion_dm_params(dm=15.0)
 
         freq_lo, freq_hi = 800.0, 1400.0
-        toa_lo = _make_toa_data(n_toas=1, freq=freq_lo)
-        toa_hi = _make_toa_data(n_toas=1, freq=freq_hi)
+        toa_lo = make_gbt_toa_data(n_toas=1, freq=freq_lo)
+        toa_hi = make_gbt_toa_data(n_toas=1, freq=freq_hi)
         delay = jnp.zeros(1)
 
         d_lo = disp(toa_lo, params, delay)
@@ -167,8 +135,8 @@ class TestDispersionDelay:
         disp = DispersionDM(dm_param_names=("DM",))
         dm = 15.0
         freqs = jnp.array([800.0, 1000.0, 1400.0, 2000.0])
-        params = _make_params(dm=dm)
-        toa_data = _make_toa_data(n_toas=4, freq=freqs)
+        params = make_dispersion_dm_params(dm=dm)
+        toa_data = make_gbt_toa_data(n_toas=4, freq=freqs)
         delay = jnp.zeros(4)
 
         result = disp(toa_data, params, delay)
@@ -180,8 +148,8 @@ class TestDispersionDelay:
         disp = DispersionDM(dm_param_names=("DM", "DM1"))
         dm, dm1 = 20.0, 1.0
         freq = 1400.0
-        params = _make_params(dm=dm, dm1=dm1, dmepoch_int=59000.0, dmepoch_frac=0.5)
-        toa_data = _make_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.5, freq=freq)
+        params = make_dispersion_dm_params(dm=dm, dm1=dm1, dmepoch_int=59000.0, dmepoch_frac=0.5)
+        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.5, freq=freq)
         delay = jnp.zeros(1)
 
         result = disp(toa_data, params, delay)
@@ -191,8 +159,8 @@ class TestDispersionDelay:
     def test_acc_delay_ignored(self):
         """Accumulated delay does not affect dispersion."""
         disp = DispersionDM(dm_param_names=("DM",))
-        params = _make_params(dm=15.0)
-        toa_data = _make_toa_data(n_toas=1, freq=1400.0)
+        params = make_dispersion_dm_params(dm=15.0)
+        toa_data = make_gbt_toa_data(n_toas=1, freq=1400.0)
 
         result_no_delay = disp(toa_data, params, jnp.zeros(1))
         result_with_delay = disp(toa_data, params, jnp.array([0.5]))
@@ -214,11 +182,11 @@ class TestPrecision:
         toa_int = 57305.0  # ~20 years later
         tiny_frac = 1e-12  # ~0.086 ns in days
 
-        params = _make_params(
+        params = make_dispersion_dm_params(
             dm=dm, dm1=dm1,
             dmepoch_int=dmepoch_int, dmepoch_frac=0.0,
         )
-        toa_data = _make_toa_data(
+        toa_data = make_gbt_toa_data(
             n_toas=1, tdb_int=toa_int, tdb_frac=tiny_frac, freq=freq
         )
         delay = jnp.zeros(1)
@@ -238,8 +206,8 @@ class TestJIT:
     def test_jit_call(self):
         """DispersionDM.__call__ works under jax.jit."""
         disp = DispersionDM(dm_param_names=("DM", "DM1"))
-        params = _make_params(dm=15.0, dm1=0.1)
-        toa_data = _make_toa_data()
+        params = make_dispersion_dm_params(dm=15.0, dm1=0.1)
+        toa_data = make_gbt_toa_data()
         delay = jnp.zeros(toa_data.n_toas)
 
         jitted = jax.jit(disp)
@@ -249,8 +217,8 @@ class TestJIT:
     def test_jit_same_trace(self):
         """Same dm_param_names does not retrace."""
         disp = DispersionDM(dm_param_names=("DM",))
-        params = _make_params(dm=15.0)
-        toa_data = _make_toa_data(n_toas=3)
+        params = make_dispersion_dm_params(dm=15.0)
+        toa_data = make_gbt_toa_data(n_toas=3)
         delay = jnp.zeros(3)
 
         jitted = jax.jit(disp)
@@ -271,8 +239,8 @@ class TestGrad:
         """d(sum(delay))/dDM = sum(DMCONST / freq^2)."""
         disp = DispersionDM(dm_param_names=("DM",))
         freqs = jnp.array([800.0, 1400.0, 2000.0])
-        params = _make_params(dm=15.0)
-        toa_data = _make_toa_data(n_toas=3, freq=freqs)
+        params = make_dispersion_dm_params(dm=15.0)
+        toa_data = make_gbt_toa_data(n_toas=3, freq=freqs)
         delay = jnp.zeros(3)
 
         def loss(p):
@@ -288,8 +256,8 @@ class TestGrad:
         disp = DispersionDM(dm_param_names=("DM", "DM1"))
         freq = 1400.0
         dt_days = jnp.array([365.25, 730.5, 1095.75])  # 1, 2, 3 years
-        params = _make_params(dm=15.0, dm1=0.1, dmepoch_int=59000.0, dmepoch_frac=0.0)
-        toa_data = _make_toa_data(
+        params = make_dispersion_dm_params(dm=15.0, dm1=0.1, dmepoch_int=59000.0, dmepoch_frac=0.0)
+        toa_data = make_gbt_toa_data(
             n_toas=3, tdb_int=59000.0 + dt_days, tdb_frac=0.0, freq=freq
         )
         delay = jnp.zeros(3)
@@ -306,8 +274,8 @@ class TestGrad:
     def test_grad_finite(self):
         """All gradients are finite."""
         disp = DispersionDM(dm_param_names=("DM", "DM1"))
-        params = _make_params(dm=15.0, dm1=0.1)
-        toa_data = _make_toa_data()
+        params = make_dispersion_dm_params(dm=15.0, dm1=0.1)
+        toa_data = make_gbt_toa_data()
         delay = jnp.zeros(toa_data.n_toas)
 
         def loss(p):

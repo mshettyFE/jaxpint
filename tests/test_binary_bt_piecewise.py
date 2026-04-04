@@ -7,15 +7,7 @@ import numpy.testing as npt
 import pytest
 
 
-from tests.helpers import make_toa_data as _make_toa_data_base, make_params
-
-
-def _make_toa_data(t_mjd):
-    return _make_toa_data_base(
-        t_mjd=t_mjd,
-        tzr_tdb_int=jnp.array(55000.0), tzr_tdb_frac=jnp.array(0.5),
-        tzr_freq=jnp.array(jnp.inf), tzr_ssb_obs_pos=jnp.zeros(3),
-    )
+from tests.helpers import make_binary_toa_data, make_params
 
 
 @pytest.fixture
@@ -49,7 +41,7 @@ class TestBinaryBTPiecewise:
                         epoch_int_values={"T0": t0_int})
 
         t_mjd = np.linspace(55000.5, 55200.0, 100)
-        toa_data = _make_toa_data(t_mjd)
+        toa_data = make_binary_toa_data(t_mjd, tzr_tdb_int=55000.0)
         n = len(t_mjd)
 
         bt = BinaryBT(pb_name="PB", t0_name="T0", a1_name="A1",
@@ -92,7 +84,7 @@ class TestBinaryBTPiecewise:
         t_in = np.linspace(55010.0, 55090.0, 10)
         t_out = np.linspace(55110.0, 55190.0, 10)
         t_all = np.concatenate([t_in, t_out])
-        toa_data = _make_toa_data(t_all)
+        toa_data = make_binary_toa_data(t_all, tzr_tdb_int=55000.0)
         d = np.array(bt_pw(toa_data, p, jnp.zeros(20)))
 
         # With global A1 everywhere
@@ -140,7 +132,7 @@ class TestBinaryBTPiecewise:
         t_in = np.linspace(55010.0, 55090.0, 10)
         t_out = np.linspace(55110.0, 55190.0, 10)
         t_all = np.concatenate([t_in, t_out])
-        toa_data = _make_toa_data(t_all)
+        toa_data = make_binary_toa_data(t_all, tzr_tdb_int=55000.0)
         d = np.array(bt_pw(toa_data, p, jnp.zeros(20)))
 
         # With global T0 only
@@ -196,7 +188,7 @@ class TestBinaryBTPiecewise:
         t_piece0 = np.linspace(55010.0, 55090.0, 10)
         t_piece1 = np.linspace(55110.0, 55190.0, 10)
         t_all = np.concatenate([t_piece0, t_piece1])
-        toa_data = _make_toa_data(t_all)
+        toa_data = make_binary_toa_data(t_all, tzr_tdb_int=55000.0)
         d = np.array(bt_pw(toa_data, p, jnp.zeros(20)))
 
         # Delays in piece 0 and piece 1 should differ (different A1X)
@@ -244,7 +236,7 @@ class TestBinaryBTPiecewise:
         ]
         p = make_params(param_names, param_values, components="BinaryBTPiecewise",
                         epoch_int_values={"T0": t0_int, "T0X_0000": t0x_int})
-        toa_data = _make_toa_data(t_all)
+        toa_data = make_binary_toa_data(t_all, tzr_tdb_int=55000.0)
         jax_delay = np.array(bt_pw(toa_data, p, jnp.zeros(20)))
 
         # --- PINT reference for in-piece TOAs (T0=T0X, A1=A1X) ---
@@ -301,7 +293,7 @@ class TestBinaryBTPiecewise:
                         epoch_int_values={"T0": t0_int})
 
         n = 10
-        toa_data = _make_toa_data(np.linspace(55010.0, 55090.0, n))
+        toa_data = make_binary_toa_data(np.linspace(55010.0, 55090.0, n), tzr_tdb_int=55000.0)
 
         jitted = jax.jit(bt_pw)
         result = jitted(toa_data, p, jnp.zeros(n))
@@ -336,7 +328,7 @@ class TestBinaryBTPiecewise:
         t_in = np.linspace(55010.0, 55090.0, 5)
         t_out = np.linspace(55110.0, 55190.0, 5)
         t_all = np.concatenate([t_in, t_out])
-        toa_data = _make_toa_data(t_all)
+        toa_data = make_binary_toa_data(t_all, tzr_tdb_int=55000.0)
         n = 10
 
         def delay_fn(param_values):
