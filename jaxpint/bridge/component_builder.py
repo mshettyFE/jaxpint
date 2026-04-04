@@ -277,6 +277,7 @@ def build_timing_model(
     from pint.models.solar_wind_dispersion import SolarWindDispersion as PINTSolarWindDispersion
     from pint.models.troposphere_delay import TroposphereDelay as PINTTroposphereDelay
     from pint.models.jump import PhaseJump as PINTPhaseJump
+    from pint.models.glitch import Glitch as PINTGlitch
 
     from jaxpint.model import TimingModel
     from jaxpint.spin import Spindown
@@ -287,6 +288,7 @@ def build_timing_model(
     from jaxpint.solar_wind import SolarWindDispersion
     from jaxpint.troposphere import TroposphereDelay
     from jaxpint.jump import PhaseJump
+    from jaxpint.glitch import Glitch
 
     delay_components = []
     phase_components = []
@@ -311,6 +313,25 @@ def build_timing_model(
         if isinstance(comp, PINTSpindown):
             spin_names = tuple(comp.F_terms)
             phase_components.append(Spindown(spin_param_names=spin_names))
+
+        elif isinstance(comp, PINTGlitch):
+            comp.setup()
+            glitch_indices = sorted(set(
+                getattr(pint_model, y).index
+                for y in comp.params
+                if y.startswith("GLEP_")
+            ))
+            if glitch_indices:
+                phase_components.append(Glitch(
+                    n_glitches=len(glitch_indices),
+                    glep_names=tuple(f"GLEP_{i}" for i in glitch_indices),
+                    glph_names=tuple(f"GLPH_{i}" for i in glitch_indices),
+                    glf0_names=tuple(f"GLF0_{i}" for i in glitch_indices),
+                    glf1_names=tuple(f"GLF1_{i}" for i in glitch_indices),
+                    glf2_names=tuple(f"GLF2_{i}" for i in glitch_indices),
+                    glf0d_names=tuple(f"GLF0D_{i}" for i in glitch_indices),
+                    gltd_names=tuple(f"GLTD_{i}" for i in glitch_indices),
+                ))
 
         elif isinstance(comp, PINTAstrometryEquatorial):
             if hasattr(comp, "PMRA") and comp.PMRA.value is not None and comp.PMRA.value != 0.0:

@@ -18,6 +18,7 @@ from pint.models.parameter import (
     boolParameter,
     intParameter,
     maskParameter,
+    prefixParameter,
     strParameter,
 )
 from pint.models.timing_model import TimingModel as PINTTimingModel
@@ -124,6 +125,19 @@ def pint_model_to_params(model: PINTTimingModel) -> ParameterVector:
             values.append(float(param.quantity.to(u.s).value))
             units.append("s")
 
+        elif (
+            isinstance(param, prefixParameter)
+            and getattr(param, "parameter_type", None) == "MJD"
+        ):
+            # MJD-type prefix parameters (e.g. GLEP_N, DMXR1_N, PWEP_N):
+            # split the raw MJD float into integer day + fractional day.
+            mjd_val = float(param.value)
+            mjd_int = float(int(mjd_val))
+            mjd_frac = mjd_val - mjd_int
+            epoch_int_values[pname] = mjd_int
+            values.append(mjd_frac)
+            units.append("day")
+
         else:
             # floatParameter, prefixParameter, maskParameter, etc.
             # Convert degree-based units to radian-based (e.g. OM deg → rad,
@@ -184,6 +198,13 @@ def params_to_pint_model(
             # Reconstruct full MJD from integer + fractional day
             full_mjd = params.epoch_int_values[pname] + val
             param.value = full_mjd
+
+        elif (
+            isinstance(param, prefixParameter)
+            and pname in params.epoch_int_values
+        ):
+            # MJD-type prefix parameters: reconstruct full MJD
+            param.value = params.epoch_int_values[pname] + val
 
         elif isinstance(param, AngleParameter):
             # Convert radians back to the parameter's native angle unit
