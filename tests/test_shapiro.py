@@ -10,7 +10,7 @@ from pint.models import get_model
 from pint.simulation import make_fake_toas_uniform
 
 from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params
-from jaxpint.shapiro import SolarSystemShapiroDelay, _ss_obj_shapiro_delay
+from jaxpint.delay.shapiro import SolarSystemShapiroDelay, _ss_obj_shapiro_delay
 
 
 # ---------------------------------------------------------------------------

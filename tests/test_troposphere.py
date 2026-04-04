@@ -12,7 +12,7 @@ from pint.simulation import make_fake_toas_uniform
 from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params
 from jaxpint.constants import NIELL_LAT_BREAKS
 from tests.helpers import make_toa_data, make_params
-from jaxpint.troposphere import (
+from jaxpint.delay.troposphere import (
     TroposphereDelay,
     _herring_map,
     _herring_map_scalar,

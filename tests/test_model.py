@@ -9,8 +9,8 @@ jax.config.update("jax_enable_x64", True)
 
 from jaxpint.types import TOAData
 from jaxpint.phase_result import PhaseResult
-from jaxpint.spin import Spindown
-from jaxpint.dispersion_dm import DispersionDM
+from jaxpint.phase.spin import Spindown
+from jaxpint.delay.dispersion_dm import DispersionDM
 from jaxpint.model import TimingModel, _build_tzr_toa_data
 from tests.helpers import make_toa_data, make_params
 
@@ -509,8 +509,8 @@ class TestVsPINT:
         assert jax_model.phase_components[0].spin_param_names == ("F0", "F1")
 
         # Should have AstrometryEquatorial + SolarSystemShapiroDelay + DispersionDM delay components
-        from jaxpint.astrometry import AstrometryEquatorial
-        from jaxpint.shapiro import SolarSystemShapiroDelay
+        from jaxpint.delay.astrometry import AstrometryEquatorial
+        from jaxpint.delay.shapiro import SolarSystemShapiroDelay
 
         assert len(jax_model.delay_components) == 3
         assert isinstance(jax_model.delay_components[0], AstrometryEquatorial)

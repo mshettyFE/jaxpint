@@ -267,7 +267,7 @@ class TestNGC6440EAstrometry:
         params = pint_model_to_params(pint_model)
         jax_model, _noise = build_timing_model(pint_model)
 
-        from jaxpint.astrometry import AstrometryEquatorial
+        from jaxpint.delay.astrometry import AstrometryEquatorial
 
         for comp in jax_model.delay_components:
             if isinstance(comp, AstrometryEquatorial):

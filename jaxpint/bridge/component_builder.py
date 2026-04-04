@@ -287,18 +287,20 @@ def build_timing_model(
     from pint.models.glitch import Glitch as PINTGlitch
 
     from jaxpint.model import TimingModel
-    from jaxpint.spin import Spindown
-    from jaxpint.dispersion_dm import DispersionDM
-    from jaxpint.dispersion_dmx import DispersionDMX
-    from jaxpint.astrometry import AstrometryEquatorial, AstrometryEcliptic
-    from jaxpint.noise import EcorrNoise, NoiseModel, ScaleToaError
-    from jaxpint.red_noise import PLRedNoise
-    from jaxpint.shapiro import SolarSystemShapiroDelay
-    from jaxpint.solar_wind import SolarWindDispersion
-    from jaxpint.solar_wind_x import SolarWindDispersionX
-    from jaxpint.troposphere import TroposphereDelay
-    from jaxpint.jump import PhaseJump
-    from jaxpint.glitch import Glitch
+    from jaxpint.phase.spin import Spindown
+    from jaxpint.delay.dispersion_dm import DispersionDM
+    from jaxpint.delay.dispersion_dmx import DispersionDMX
+    from jaxpint.delay.astrometry import AstrometryEquatorial, AstrometryEcliptic
+    from jaxpint.noise.ecorr import EcorrNoise
+    from jaxpint.noise.white import ScaleToaError
+    from jaxpint.noise.noise_model import NoiseModel
+    from jaxpint.noise.red_noise import PLRedNoise
+    from jaxpint.delay.shapiro import SolarSystemShapiroDelay
+    from jaxpint.delay.solar_wind import SolarWindDispersion
+    from jaxpint.delay.solar_wind_x import SolarWindDispersionX
+    from jaxpint.delay.troposphere import TroposphereDelay
+    from jaxpint.phase.jump import PhaseJump
+    from jaxpint.phase.glitch import Glitch
 
     delay_components = []
     phase_components = []
@@ -607,16 +609,9 @@ def build_timing_model(
                 else:
                     T = float(np.max(tdb_s) - np.min(tdb_s))
 
-                # Linear frequency grid: f = [1/T, 2/T, ..., n_freqs/T]
-                freqs = np.arange(1, n_freqs + 1) / T
-                freq_bin_widths = np.diff(np.concatenate([[0.0], freqs]))
-
-                # Fourier design matrix: alternating sin/cos columns
-                n_toas = len(tdb_s)
-                F = np.zeros((n_toas, 2 * n_freqs))
-                phase = 2.0 * np.pi * tdb_s[:, None] * freqs[None, :]
-                F[:, 0::2] = np.sin(phase)
-                F[:, 1::2] = np.cos(phase)
+                # Build Fourier design matrix
+                from jaxpint.utils import build_fourier_basis
+                F, freqs, freq_bin_widths = build_fourier_basis(tdb_s, n_freqs, T)
 
                 plred_noise = PLRedNoise(
                     fourier_basis=jnp.asarray(F),

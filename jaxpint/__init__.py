@@ -6,17 +6,11 @@ jax.config.update("jax_enable_x64", True)
 
 from .types import PhaseResult, TOAData, ParameterVector
 from .components import PhaseComponent, DelayComponent
-from .spin import Spindown
-from .glitch import Glitch
-from .dispersion_dm import DispersionDM
+from .phase import Spindown, Glitch
+from .delay import DispersionDM, AstrometryEcliptic, SolarSystemShapiroDelay, SolarWindDispersion, TroposphereDelay
 from .bridge import pint_toas_to_jax, pint_model_to_params, params_to_pint_model, build_timing_model
 from .model import TimingModel
-from .noise import ScaleToaError, EcorrNoise, NoiseModel
-from .red_noise import PLRedNoise
-from .astrometry import AstrometryEcliptic
-from .shapiro import SolarSystemShapiroDelay
-from .solar_wind import SolarWindDispersion
-from .troposphere import TroposphereDelay
+from .noise import ScaleToaError, EcorrNoise, NoiseModel, PLRedNoise
 from .fitter import WLSFitter, WLSFitResult, GLSFitter, GLSFitResult
 from .simulation import apply_delay_to_toas, zero_residuals
 from .utils import (

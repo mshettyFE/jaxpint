@@ -12,8 +12,9 @@ import pytest
 
 from jaxpint.constants import FYR
 from jaxpint.noise import NoiseModel, ScaleToaError
-from jaxpint.red_noise import PLRedNoise
+from jaxpint.noise.red_noise import PLRedNoise
 from jaxpint.simulation import simulate_noise
+from jaxpint.utils import build_fourier_basis
 from tests.helpers import make_params, make_toa_data
 
 
@@ -23,16 +24,9 @@ from tests.helpers import make_params, make_toa_data
 
 
 def _make_fourier_basis(n_toas, n_freqs, T):
-    """Build a Fourier basis, frequency array, and bin widths for tests."""
+    """Build a Fourier basis for tests (thin wrapper around build_fourier_basis)."""
     t = np.linspace(0.0, T, n_toas)
-    freqs = np.arange(1, n_freqs + 1) / T
-    df = np.diff(np.concatenate([[0.0], freqs]))
-
-    F = np.zeros((n_toas, 2 * n_freqs))
-    phase = 2.0 * np.pi * t[:, None] * freqs[None, :]
-    F[:, 0::2] = np.sin(phase)
-    F[:, 1::2] = np.cos(phase)
-
+    F, freqs, df = build_fourier_basis(t, n_freqs, T)
     return jnp.asarray(F), jnp.asarray(freqs), jnp.asarray(df), t
 
 
@@ -320,7 +314,7 @@ class TestGLSWithRedNoise:
         """Generate fake TOAs with white + red noise, fit with GLS."""
         from jaxpint.fitter import GLSFitter
         from jaxpint.model import TimingModel
-        from jaxpint.spin import Spindown
+        from jaxpint.phase.spin import Spindown
 
         # Set up a simple spindown model
         n_toas = 200

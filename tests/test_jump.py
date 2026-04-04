@@ -7,7 +7,7 @@ import pytest
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxpint.jump import PhaseJump
+from jaxpint.phase.jump import PhaseJump
 from jaxpint.phase_result import PhaseResult
 from tests.helpers import make_toa_data, make_params
 

@@ -12,7 +12,7 @@ from pint.models import get_model
 from pint.fitter import WLSFitter as PINTWLSFitter
 from pint.simulation import make_fake_toas_uniform
 
-from jaxpint.astrometry import AstrometryEcliptic, _geometric_delay
+from jaxpint.delay.astrometry import AstrometryEcliptic, _geometric_delay
 from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
 from jaxpint.fitter import WLSFitter, compute_time_residuals
 from jaxpint.constants import OBLIQUITY_ARCSEC

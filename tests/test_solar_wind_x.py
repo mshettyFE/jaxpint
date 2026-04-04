@@ -10,7 +10,7 @@ from pint.models import get_model
 from pint.simulation import make_fake_toas_uniform
 
 from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
-from jaxpint.solar_wind_x import SolarWindDispersionX
+from jaxpint.delay.solar_wind_x import SolarWindDispersionX
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ import pytest
 
 jax.config.update("jax_enable_x64", True)
 
-from jaxpint.glitch import Glitch
+from jaxpint.phase.glitch import Glitch
 from jaxpint.constants import SECS_PER_DAY
 from tests.helpers import make_toa_data, make_params
 

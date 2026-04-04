@@ -7,7 +7,7 @@ import pytest
 jax.config.update("jax_enable_x64", True)
 
 from jaxpint.phase_result import PhaseResult
-from jaxpint.spin import Spindown
+from jaxpint.phase.spin import Spindown
 from tests.helpers import make_toa_data, make_params
 
 

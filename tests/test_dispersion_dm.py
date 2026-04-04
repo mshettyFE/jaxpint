@@ -7,7 +7,7 @@ import pytest
 jax.config.update("jax_enable_x64", True)
 
 from jaxpint.constants import DMCONST
-from jaxpint.dispersion_dm import DispersionDM
+from jaxpint.delay.dispersion_dm import DispersionDM
 from tests.helpers import make_toa_data as _make_toa_data_base, make_params
 
 

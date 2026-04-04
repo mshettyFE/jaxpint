@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Optional, TYPE_CHECKING
 
+import numpy as np
 import jax
 import jax.numpy as jnp
 import jax.scipy.linalg
@@ -519,3 +520,45 @@ def compute_pulsar_direction_ecl(
     )
     rot = ecl_to_icrs_rotation(obliquity_arcsec)
     return L_hat_ecl @ rot
+
+
+# ---------------------------------------------------------------------------
+# Fourier basis construction
+# ---------------------------------------------------------------------------
+
+
+def build_fourier_basis(
+    tdb_times_s: np.ndarray,
+    n_freqs: int,
+    T: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build an alternating sin/cos Fourier design matrix.
+
+    Parameters
+    ----------
+    tdb_times_s : (n_toas,)
+        TOA times in TDB seconds.
+    n_freqs : int
+        Number of frequency modes.
+    T : float
+        Time span in seconds (sets the fundamental frequency 1/T).
+
+    Returns
+    -------
+    F : (n_toas, 2 * n_freqs)
+        Fourier design matrix with columns
+        ``[sin(2πf₁t), cos(2πf₁t), sin(2πf₂t), ...]``.
+    freqs : (n_freqs,)
+        Frequency array in Hz.
+    freq_bin_widths : (n_freqs,)
+        Δf for each frequency bin.
+    """
+    freqs = np.arange(1, n_freqs + 1) / T
+    freq_bin_widths = np.diff(np.concatenate([[0.0], freqs]))
+
+    phase = 2.0 * np.pi * tdb_times_s[:, None] * freqs[None, :]
+    F = np.zeros((len(tdb_times_s), 2 * n_freqs))
+    F[:, 0::2] = np.sin(phase)
+    F[:, 1::2] = np.cos(phase)
+
+    return F, freqs, freq_bin_widths
