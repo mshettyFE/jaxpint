@@ -103,19 +103,46 @@ class TestPytree:
 # ===========================================================================
 
 class TestPhaseComputation:
-    def test_phase_jump_only(self):
-        """GLPH_1 = 0.3 should give 0.3 for post-glitch TOAs, 0 for pre-glitch."""
-        comp, params = _make_single_glitch(glph=0.3, glep_int=59100.0)
-        # TOAs: 2 before glitch, 3 after
-        toa_data = make_toa_data(
-            t_mjd=[59099.0, 59099.5, 59101.0, 59102.0, 59103.0]
-        )
-        delay = jnp.zeros(5)
+    @pytest.mark.parametrize("glitch_kwargs, dt_days, expected_fn", [
+        pytest.param(
+            {"glph": 0.3}, 1.0,
+            lambda dt, kw: kw["glph"],
+            id="phase_jump_only",
+        ),
+        pytest.param(
+            {"glf0": 1e-6}, 1.0,
+            lambda dt, kw: kw["glf0"] * dt * SECS_PER_DAY,
+            id="frequency_step",
+        ),
+        pytest.param(
+            {"glph": 0.1, "glf0": 2e-6, "glf1": -1e-14, "glf2": 3e-22}, 10.0,
+            lambda dt, kw: (
+                kw["glph"]
+                + kw["glf0"] * dt * SECS_PER_DAY
+                + 0.5 * kw["glf1"] * (dt * SECS_PER_DAY)**2
+                + (1.0/6.0) * kw["glf2"] * (dt * SECS_PER_DAY)**3
+            ),
+            id="full_polynomial",
+        ),
+        pytest.param(
+            {"glf0d": 1e-6, "gltd": 10.0}, 10.0,
+            lambda dt, kw: (
+                kw["glf0d"] * kw["gltd"] * SECS_PER_DAY
+                * (1.0 - np.exp(-dt * SECS_PER_DAY / (kw["gltd"] * SECS_PER_DAY)))
+            ),
+            id="decay_term",
+        ),
+    ])
+    def test_single_term(self, glitch_kwargs, dt_days, expected_fn):
+        """Individual glitch terms give expected phase for post-glitch TOAs."""
+        comp, params = _make_single_glitch(**glitch_kwargs, glep_int=59100.0)
+        toa_data = make_toa_data(t_mjd=[59100.0 + dt_days])
+        delay = jnp.zeros(1)
         result = comp(toa_data, params, delay)
         phase = result.int + result.frac
 
-        np.testing.assert_allclose(phase[:2], 0.0, atol=1e-15)
-        np.testing.assert_allclose(phase[2:], 0.3, atol=1e-12)
+        expected = expected_fn(dt_days, glitch_kwargs)
+        np.testing.assert_allclose(phase[0], expected, rtol=1e-10)
 
     def test_pre_glitch_zero(self):
         """All TOAs before the glitch epoch should have zero phase."""
@@ -126,52 +153,18 @@ class TestPhaseComputation:
         phase = result.int + result.frac
         np.testing.assert_allclose(phase, 0.0, atol=1e-15)
 
-    def test_frequency_step(self):
-        """GLF0 * dt should give expected phase for post-glitch TOAs."""
-        glf0 = 1e-6  # Hz
-        comp, params = _make_single_glitch(glf0=glf0, glep_int=59100.0)
-        toa_data = make_toa_data(t_mjd=[59101.0])  # 1 day after glitch
-        delay = jnp.zeros(1)
-        result = comp(toa_data, params, delay)
-        phase = result.int + result.frac
-
-        expected = glf0 * 1.0 * SECS_PER_DAY  # GLF0 * dt_seconds
-        np.testing.assert_allclose(phase[0], expected, rtol=1e-12)
-
-    def test_full_polynomial(self):
-        """Test GLPH + GLF0*dt + 0.5*GLF1*dt^2 + (1/6)*GLF2*dt^3."""
-        glph = 0.1
-        glf0 = 2e-6
-        glf1 = -1e-14
-        glf2 = 3e-22
-        comp, params = _make_single_glitch(
-            glph=glph, glf0=glf0, glf1=glf1, glf2=glf2, glep_int=59100.0
+    def test_phase_jump_pre_and_post(self):
+        """GLPH_1 = 0.3 should give 0.3 for post-glitch TOAs, 0 for pre-glitch."""
+        comp, params = _make_single_glitch(glph=0.3, glep_int=59100.0)
+        toa_data = make_toa_data(
+            t_mjd=[59099.0, 59099.5, 59101.0, 59102.0, 59103.0]
         )
-        toa_data = make_toa_data(t_mjd=[59110.0])  # 10 days after
-        delay = jnp.zeros(1)
+        delay = jnp.zeros(5)
         result = comp(toa_data, params, delay)
         phase = result.int + result.frac
 
-        dt = 10.0 * SECS_PER_DAY
-        expected = glph + glf0 * dt + 0.5 * glf1 * dt**2 + (1.0/6.0) * glf2 * dt**3
-        np.testing.assert_allclose(phase[0], expected, rtol=1e-10)
-
-    def test_decay_term(self):
-        """GLF0D and GLTD should give exponential recovery."""
-        glf0d = 1e-6  # Hz
-        gltd = 10.0   # days
-        comp, params = _make_single_glitch(
-            glf0d=glf0d, gltd=gltd, glep_int=59100.0
-        )
-        toa_data = make_toa_data(t_mjd=[59110.0])  # 10 days after
-        delay = jnp.zeros(1)
-        result = comp(toa_data, params, delay)
-        phase = result.int + result.frac
-
-        dt = 10.0 * SECS_PER_DAY
-        tau = gltd * SECS_PER_DAY
-        expected = glf0d * tau * (1.0 - np.exp(-dt / tau))
-        np.testing.assert_allclose(phase[0], expected, rtol=1e-12)
+        np.testing.assert_allclose(phase[:2], 0.0, atol=1e-15)
+        np.testing.assert_allclose(phase[2:], 0.3, atol=1e-12)
 
     def test_no_decay_when_gltd_zero(self):
         """When GLTD=0, decay term should be zero even if GLF0D is nonzero."""

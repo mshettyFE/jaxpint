@@ -60,57 +60,36 @@ class TestPytree:
 # ===========================================================================
 
 class TestDispersionDelay:
-    def test_constant_dm_known_value(self):
-        """DM=15, freq=1400 MHz -> known delay."""
-        disp = DispersionDM(dm_param_names=("DM",))
-        dm = 15.0
+    @pytest.mark.parametrize("dm_names, coeffs, dt_yr, dm_expected_fn", [
+        pytest.param(
+            ("DM",), {"dm": 15.0}, 0.0,
+            lambda c, dt: c["dm"],
+            id="constant_dm",
+        ),
+        pytest.param(
+            ("DM", "DM1"), {"dm": 15.0, "dm1": 0.1}, 1.0,
+            lambda c, dt: c["dm"] + c["dm1"] * dt,
+            id="dm_dm1_linear",
+        ),
+        pytest.param(
+            ("DM", "DM1", "DM2"), {"dm": 15.0, "dm1": 0.1, "dm2": 0.02}, 2.0,
+            lambda c, dt: c["dm"] + c["dm1"] * dt + c["dm2"] * dt**2 / 2.0,
+            id="dm_dm1_dm2_quadratic",
+        ),
+    ])
+    def test_polynomial_dm(self, dm_names, coeffs, dt_yr, dm_expected_fn):
+        """DM Taylor expansion gives expected delay."""
+        disp = DispersionDM(dm_param_names=dm_names)
         freq = 1400.0
-        params = make_dispersion_dm_params(dm=dm)
-        toa_data = make_gbt_toa_data(n_toas=1, freq=freq)
-        delay = jnp.zeros(1)
-
-        result = disp(toa_data, params, delay)
-        expected = dm * DMCONST / freq ** 2
-        assert jnp.isclose(result[0], expected, rtol=1e-12)
-
-    def test_dm_dm1_linear(self):
-        """DM(t) = DM + DM1 * dt_yr -> linear increase."""
-        disp = DispersionDM(dm_param_names=("DM", "DM1"))
-        dm, dm1 = 15.0, 0.1  # pc/cm^3 and pc/cm^3/yr
-        freq = 1400.0
-        # 1 Julian year after DMEPOCH
-        dt_days = 365.25
-        params = make_dispersion_dm_params(dm=dm, dm1=dm1, dmepoch_int=59000.0, dmepoch_frac=0.0)
-        toa_data = make_gbt_toa_data(
-            n_toas=1, tdb_int=59000.0 + dt_days, tdb_frac=0.0, freq=freq
-        )
-        delay = jnp.zeros(1)
-
-        result = disp(toa_data, params, delay)
-        # dt_yr = 1.0, so DM(t) = 15.0 + 0.1 * 1.0 = 15.1
-        dm_expected = dm + dm1 * 1.0
-        expected = dm_expected * DMCONST / freq ** 2
-        assert jnp.isclose(result[0], expected, rtol=1e-12)
-
-    def test_dm_dm1_dm2_quadratic(self):
-        """DM(t) = DM + DM1*dt + DM2*dt^2/2."""
-        disp = DispersionDM(dm_param_names=("DM", "DM1", "DM2"))
-        dm, dm1, dm2 = 15.0, 0.1, 0.02
-        freq = 1400.0
-        dt_yr = 2.0
         dt_days = dt_yr * 365.25
-        params = make_dispersion_dm_params(
-            dm=dm, dm1=dm1, dm2=dm2,
-            dmepoch_int=59000.0, dmepoch_frac=0.0,
-        )
+        params = make_dispersion_dm_params(**coeffs, dmepoch_int=59000.0, dmepoch_frac=0.0)
         toa_data = make_gbt_toa_data(
             n_toas=1, tdb_int=59000.0 + dt_days, tdb_frac=0.0, freq=freq
         )
         delay = jnp.zeros(1)
 
         result = disp(toa_data, params, delay)
-        dm_expected = dm + dm1 * dt_yr + dm2 * dt_yr ** 2 / 2.0
-        expected = dm_expected * DMCONST / freq ** 2
+        expected = dm_expected_fn(coeffs, dt_yr) * DMCONST / freq ** 2
         assert jnp.isclose(result[0], expected, rtol=1e-12)
 
     def test_frequency_dependence(self):
@@ -235,41 +214,39 @@ class TestJIT:
 # ===========================================================================
 
 class TestGrad:
-    def test_grad_wrt_dm(self):
-        """d(sum(delay))/dDM = sum(DMCONST / freq^2)."""
-        disp = DispersionDM(dm_param_names=("DM",))
-        freqs = jnp.array([800.0, 1400.0, 2000.0])
-        params = make_dispersion_dm_params(dm=15.0)
-        toa_data = make_gbt_toa_data(n_toas=3, freq=freqs)
-        delay = jnp.zeros(3)
-
-        def loss(p):
-            return disp(toa_data, p, delay).sum()
-
-        grads = jax.grad(loss)(params)
-        dm_idx = params.param_index("DM")
-        expected_grad = jnp.sum(DMCONST / freqs ** 2)
-        assert jnp.isclose(grads.values[dm_idx], expected_grad, rtol=1e-10)
-
-    def test_grad_wrt_dm1(self):
-        """d(sum(delay))/dDM1 = sum(dt_yr * DMCONST / freq^2)."""
-        disp = DispersionDM(dm_param_names=("DM", "DM1"))
-        freq = 1400.0
-        dt_days = jnp.array([365.25, 730.5, 1095.75])  # 1, 2, 3 years
-        params = make_dispersion_dm_params(dm=15.0, dm1=0.1, dmepoch_int=59000.0, dmepoch_frac=0.0)
+    @pytest.mark.parametrize("dm_names, coeffs, param_name, freqs, dt_days, expected_grad_fn, rtol", [
+        pytest.param(
+            ("DM",), {"dm": 15.0}, "DM",
+            jnp.array([800.0, 1400.0, 2000.0]),
+            jnp.zeros(3),
+            lambda f, dt: jnp.sum(DMCONST / f ** 2),
+            1e-10,
+            id="grad_wrt_dm",
+        ),
+        pytest.param(
+            ("DM", "DM1"), {"dm": 15.0, "dm1": 0.1}, "DM1",
+            jnp.full(3, 1400.0),
+            jnp.array([365.25, 730.5, 1095.75]),
+            lambda f, dt: jnp.sum((dt / 365.25) * DMCONST / f ** 2),
+            1e-8,
+            id="grad_wrt_dm1",
+        ),
+    ])
+    def test_grad_wrt_param(self, dm_names, coeffs, param_name, freqs, dt_days, expected_grad_fn, rtol):
+        """d(sum(delay))/d(param) matches analytic expectation."""
+        disp = DispersionDM(dm_param_names=dm_names)
+        params = make_dispersion_dm_params(**coeffs, dmepoch_int=59000.0, dmepoch_frac=0.0)
         toa_data = make_gbt_toa_data(
-            n_toas=3, tdb_int=59000.0 + dt_days, tdb_frac=0.0, freq=freq
+            n_toas=len(freqs), tdb_int=59000.0 + dt_days, tdb_frac=0.0, freq=freqs
         )
-        delay = jnp.zeros(3)
+        delay = jnp.zeros(len(freqs))
 
         def loss(p):
             return disp(toa_data, p, delay).sum()
 
         grads = jax.grad(loss)(params)
-        dm1_idx = params.param_index("DM1")
-        dt_yr = dt_days / 365.25
-        expected_grad = jnp.sum(dt_yr * DMCONST / freq ** 2)
-        assert jnp.isclose(grads.values[dm1_idx], expected_grad, rtol=1e-8)
+        idx = params.param_index(param_name)
+        assert jnp.isclose(grads.values[idx], expected_grad_fn(freqs, dt_days), rtol=rtol)
 
     def test_grad_finite(self):
         """All gradients are finite."""

@@ -60,48 +60,36 @@ class TestPytree:
 # ===========================================================================
 
 class TestSpindownPhase:
-    def test_f0_only_known_dt(self):
-        """F0=100 Hz, dt=1 second -> phase=100 cycles."""
-        spindown = Spindown(spin_param_names=("F0",))
-        # PEPOCH at 59000.0, TOA at 59000.0 + 1/86400 (= 1 second later)
-        params = make_spindown_params(f0=100.0, pepoch_int=59000.0, pepoch_frac=0.0)
-        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=1.0 / 86400.0)
+    @pytest.mark.parametrize("coeffs, dt_sec, expected_fn", [
+        pytest.param(
+            {"f0": 100.0}, 1.0,
+            lambda dt, c: c["f0"] * dt,
+            id="f0_only",
+        ),
+        pytest.param(
+            {"f0": 200.0, "f1": -1e-10}, 1000.0,
+            lambda dt, c: c["f0"] * dt + c["f1"] * dt**2 / 2.0,
+            id="f0_f1_quadratic",
+        ),
+        pytest.param(
+            {"f0": 200.0, "f1": -1e-10, "f2": 1e-20}, 1000.0,
+            lambda dt, c: c["f0"] * dt + c["f1"] * dt**2 / 2.0 + c["f2"] * dt**3 / 6.0,
+            id="f0_f1_f2_cubic",
+        ),
+    ])
+    def test_polynomial_phase(self, coeffs, dt_sec, expected_fn):
+        """Phase matches analytic Taylor expansion."""
+        spin_names = tuple(coeffs.keys())
+        spindown = Spindown(spin_param_names=tuple(n.upper() for n in spin_names))
+        params = make_spindown_params(**coeffs, pepoch_int=59000.0, pepoch_frac=0.0)
+        toa_data = make_gbt_toa_data(
+            n_toas=1, tdb_int=59000.0, tdb_frac=dt_sec / 86400.0
+        )
         delay = jnp.zeros(1)
 
         result = spindown(toa_data, params, delay)
+        expected = expected_fn(dt_sec, coeffs)
         assert isinstance(result, PhaseResult)
-        assert jnp.isclose(result.total, 100.0, rtol=1e-12)
-
-    def test_f0_f1_quadratic(self):
-        """Phase = F0*dt + F1*dt^2/2."""
-        spindown = Spindown(spin_param_names=("F0", "F1"))
-        f0, f1 = 200.0, -1e-10
-        dt_sec = 1000.0  # 1000 seconds
-        params = make_spindown_params(f0=f0, f1=f1, pepoch_int=59000.0, pepoch_frac=0.0)
-        toa_data = make_gbt_toa_data(
-            n_toas=1, tdb_int=59000.0, tdb_frac=dt_sec / 86400.0
-        )
-        delay = jnp.zeros(1)
-
-        result = spindown(toa_data, params, delay)
-        expected = f0 * dt_sec + f1 * dt_sec**2 / 2.0
-        assert jnp.isclose(result.total, expected, rtol=1e-12)
-
-    def test_f0_f1_f2_cubic(self):
-        """Phase = F0*dt + F1*dt^2/2 + F2*dt^3/6."""
-        spindown = Spindown(spin_param_names=("F0", "F1", "F2"))
-        f0, f1, f2 = 200.0, -1e-10, 1e-20
-        dt_sec = 1000.0
-        params = make_spindown_params(
-            f0=f0, f1=f1, f2=f2, pepoch_int=59000.0, pepoch_frac=0.0
-        )
-        toa_data = make_gbt_toa_data(
-            n_toas=1, tdb_int=59000.0, tdb_frac=dt_sec / 86400.0
-        )
-        delay = jnp.zeros(1)
-
-        result = spindown(toa_data, params, delay)
-        expected = f0 * dt_sec + f1 * dt_sec**2 / 2.0 + f2 * dt_sec**3 / 6.0
         assert jnp.isclose(result.total, expected, rtol=1e-12)
 
     def test_delay_subtracted(self):
@@ -223,42 +211,37 @@ class TestJIT:
 # ===========================================================================
 
 class TestGrad:
-    def test_grad_wrt_f0(self):
-        """d(sum(phase))/dF0 ~ sum(dt)."""
-        spindown = Spindown(spin_param_names=("F0",))
-        params = make_spindown_params(f0=100.0, pepoch_int=59000.0, pepoch_frac=0.0)
-        dt_secs = jnp.array([1.0, 2.0, 3.0])
+    @pytest.mark.parametrize("spin_names, coeffs, param_name, dt_secs, expected_grad_fn, rtol", [
+        pytest.param(
+            ("F0",), {"f0": 100.0}, "F0",
+            jnp.array([1.0, 2.0, 3.0]),
+            lambda dt: jnp.sum(dt),
+            1e-10,
+            id="grad_wrt_f0",
+        ),
+        pytest.param(
+            ("F0", "F1"), {"f0": 100.0, "f1": -1e-15}, "F1",
+            jnp.array([100.0, 200.0, 300.0]),
+            lambda dt: jnp.sum(dt**2 / 2.0),
+            1e-8,
+            id="grad_wrt_f1",
+        ),
+    ])
+    def test_grad_wrt_param(self, spin_names, coeffs, param_name, dt_secs, expected_grad_fn, rtol):
+        """d(sum(phase))/d(param) matches analytic expectation."""
+        spindown = Spindown(spin_param_names=spin_names)
+        params = make_spindown_params(**coeffs, pepoch_int=59000.0, pepoch_frac=0.0)
         toa_data = make_gbt_toa_data(
-            n_toas=3, tdb_int=59000.0, tdb_frac=dt_secs / 86400.0
+            n_toas=len(dt_secs), tdb_int=59000.0, tdb_frac=dt_secs / 86400.0
         )
-        delay = jnp.zeros(3)
+        delay = jnp.zeros(len(dt_secs))
 
         def loss(p):
             return spindown(toa_data, p, delay).total.sum()
 
         grads = jax.grad(loss)(params)
-        # d(phase)/dF0 = dt for each TOA, so d(sum)/dF0 = sum(dt)
-        f0_idx = params.param_index("F0")
-        expected_grad = jnp.sum(dt_secs)
-        assert jnp.isclose(grads.values[f0_idx], expected_grad, rtol=1e-10)
-
-    def test_grad_wrt_f1(self):
-        """d(sum(phase))/dF1 ~ sum(dt^2 / 2)."""
-        spindown = Spindown(spin_param_names=("F0", "F1"))
-        params = make_spindown_params(f0=100.0, f1=-1e-15, pepoch_int=59000.0, pepoch_frac=0.0)
-        dt_secs = jnp.array([100.0, 200.0, 300.0])
-        toa_data = make_gbt_toa_data(
-            n_toas=3, tdb_int=59000.0, tdb_frac=dt_secs / 86400.0
-        )
-        delay = jnp.zeros(3)
-
-        def loss(p):
-            return spindown(toa_data, p, delay).total.sum()
-
-        grads = jax.grad(loss)(params)
-        f1_idx = params.param_index("F1")
-        expected_grad = jnp.sum(dt_secs**2 / 2.0)
-        assert jnp.isclose(grads.values[f1_idx], expected_grad, rtol=1e-8)
+        idx = params.param_index(param_name)
+        assert jnp.isclose(grads.values[idx], expected_grad_fn(dt_secs), rtol=rtol)
 
     def test_grad_finite(self):
         """All gradients are finite."""
