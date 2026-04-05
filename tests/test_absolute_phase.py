@@ -58,7 +58,7 @@ class TestExtractTzrTdb:
         jaxpint_tdb = tdb_int + tdb_frac
 
         # ~1 ns precision in days is ~1e-14
-        assert abs(jaxpint_tdb - pint_tdb) < 1e-10
+        assert abs(jaxpint_tdb - pint_tdb) < 1e-13
 
     def test_no_model_gives_none(self, ngc6440e):
         """pint_toas_to_jax without model leaves TZR fields as None."""

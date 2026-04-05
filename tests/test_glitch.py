@@ -380,7 +380,7 @@ class TestVsPINT:
             toas, delay=np.zeros(toas.ntoas) * u.s
         ).value.astype(np.float64)
 
-        np.testing.assert_allclose(jax_phase, pint_phase, rtol=1e-8)
+        np.testing.assert_allclose(jax_phase, pint_phase, rtol=1e-12)
 
     def test_glitch_phase_matches_pint_with_delay(self, glitch_model):
         """JaxPINT glitch phase matches PINT's glitch_phase with nonzero delay."""
@@ -409,7 +409,7 @@ class TestVsPINT:
             toas, delay=pint_delay
         ).value.astype(np.float64)
 
-        np.testing.assert_allclose(jax_phase, pint_phase, rtol=1e-8)
+        np.testing.assert_allclose(jax_phase, pint_phase, rtol=1e-12)
 
     def test_full_model_residuals(self, glitch_model):
         """Full-model residuals with glitches match PINT."""
@@ -429,4 +429,4 @@ class TestVsPINT:
         # PINT residuals
         pint_resid = pint.residuals.Residuals(toas, pint_model).phase_resids.value.astype(np.float64)
 
-        np.testing.assert_allclose(jax_resid, pint_resid, atol=1e-6)
+        np.testing.assert_allclose(jax_resid, pint_resid, atol=1e-7)

@@ -152,7 +152,7 @@ class TestBinaryDDKvsPINT:
         pint_delay, obs_pos = self._setup_pint_ddk(ddk_params, t_mjd, k96=True)
         jax_delay = self._make_jax_ddk(ddk_params, t_mjd, obs_pos, k96=True)
 
-        npt.assert_allclose(jax_delay, pint_delay, atol=1e-10, rtol=1e-10)
+        npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
 
     def test_ddk_no_k96(self, ddk_params):
         """DDK with K96=False (parallax only)."""
@@ -163,7 +163,7 @@ class TestBinaryDDKvsPINT:
         pint_nok96, _ = self._setup_pint_ddk(ddk_params, t_mjd, k96=False)
         jax_nok96 = self._make_jax_ddk(ddk_params, t_mjd, obs_pos, k96=False)
 
-        npt.assert_allclose(jax_nok96, pint_nok96, atol=1e-10, rtol=1e-10)
+        npt.assert_allclose(jax_nok96, pint_nok96, atol=1e-12, rtol=1e-12)
         # K96 proper motion corrections are small but nonzero
         assert np.max(np.abs(pint_k96 - pint_nok96)) > 1e-9, "K96 should change the delay"
 

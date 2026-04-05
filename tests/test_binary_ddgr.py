@@ -85,15 +85,15 @@ class TestBinaryDDGRvsPINT:
         jax_dr = gr_factor * (3.0 * m1 ** 2 + 6.0 * m1 * m2 + 2.0 * m2 ** 2)
         jax_dth = gr_factor * (3.5 * m1 ** 2 + 6.0 * m1 * m2 + 2.0 * m2 ** 2)
 
-        npt.assert_allclose(jax_sini, pint_sini, rtol=1e-8,
+        npt.assert_allclose(jax_sini, pint_sini, rtol=2e-10,
                             err_msg="SINI mismatch")
-        npt.assert_allclose(jax_gamma, pint_gamma, rtol=1e-8,
+        npt.assert_allclose(jax_gamma, pint_gamma, rtol=2e-10,
                             err_msg="GAMMA mismatch")
-        npt.assert_allclose(jax_k, pint_k, rtol=1e-8,
+        npt.assert_allclose(jax_k, pint_k, rtol=2e-10,
                             err_msg="k mismatch")
-        npt.assert_allclose(jax_dr, pint_dr, rtol=1e-8,
+        npt.assert_allclose(jax_dr, pint_dr, rtol=2e-10,
                             err_msg="DR mismatch")
-        npt.assert_allclose(jax_dth, pint_dth, rtol=1e-8,
+        npt.assert_allclose(jax_dth, pint_dth, rtol=2e-10,
                             err_msg="DTH mismatch")
 
     def test_ddgr_delay_matches_pint(self, ddgr_params):

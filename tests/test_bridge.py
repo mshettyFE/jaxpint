@@ -244,7 +244,7 @@ class TestPintModelToParams:
         # Reconstruct and compare to original
         original = float(model.PEPOCH.value)
         reconstructed = pepoch_int + pepoch_frac
-        assert abs(reconstructed - original) < 1e-9  # < 0.1 ms
+        assert abs(reconstructed - original) < 1e-12  # sub-ns
 
     def test_angle_in_radians(self, ngc6440e):
         """RAJ and DECJ should be stored in radians."""
@@ -353,7 +353,7 @@ class TestParamsToPintModel:
             original_val = float(getattr(original_model, name).value)
             restored_val = float(getattr(model, name).value)
             # float64 MJD precision is ~10 ps near MJD 53750
-            assert abs(restored_val - original_val) < 1e-9, (
+            assert abs(restored_val - original_val) < 1e-12, (
                 f"{name}: {restored_val} != {original_val}"
             )
 

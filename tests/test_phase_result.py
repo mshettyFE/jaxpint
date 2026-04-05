@@ -673,7 +673,7 @@ class TestRealisticScales:
         # Each step's frac_step = float(ld - int) loses ~1 ULP at scale ~589000,
         # so per-step error ~ 589000 * 2.2e-16 ≈ 1.3e-10, × 1000 ≈ 1.3e-7.
         # In practice ~5e-6 due to correlated rounding.  Still sub-10 ns at 622 Hz.
-        assert err_cycles < 1e-4, f"Accumulated error: {err_cycles} cycles"
+        assert err_cycles < 1e-5, f"Accumulated error: {err_cycles} cycles"
 
     def test_adjacent_toa_differencing(self):
         """Phase difference between TOAs 86.4 us apart at 622 Hz."""

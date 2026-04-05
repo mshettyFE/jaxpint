@@ -626,6 +626,6 @@ class TestPLSWNoiseVsPINT:
 
         npt.assert_allclose(
             jax_cov, pint_cov,
-            rtol=1e-6, atol=1e-25,
+            rtol=1e-8, atol=1e-25,
             err_msg="PLSWNoise covariance matrix mismatch",
         )
