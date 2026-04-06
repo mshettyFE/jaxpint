@@ -5,13 +5,17 @@ description = "JAX-accelerated pulsar timing (port of PINT)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "jax[cpu]>=0.4.20",
+    "jax[cpu,cuda13]>=0.4.20",
     "equinox>=0.11.0",
     "pytest>=7.0",
     "jaxtyping>=0.3.9",
     "git-filter-repo>=2.47.0",
     "hypothesis>=6.0",
     "pint-pulsar>=1.0",
+    "pytest-xdist>=3.8.0",
 ]
 
-
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselected by default, run with --runslow)",
+]

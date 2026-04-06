@@ -221,8 +221,7 @@ class TestPintModelToParams:
         assert len(pv.names) == pv.n_params
         assert len(pv.units) == pv.n_params
         assert len(pv.frozen_mask) == pv.n_params
-        assert len(pv.components) == pv.n_params
-        assert len(pv.bounds) == pv.n_params
+        assert len(pv.units) == pv.n_params
 
     def test_expected_params_present(self, ngc6440e):
         """NGC6440E should have F0, F1, RAJ, DECJ, DM, PEPOCH, POSEPOCH."""
@@ -286,14 +285,6 @@ class TestPintModelToParams:
         for name in pv.names:
             param = getattr(model, name)
             assert not isinstance(param, (strParameter, boolParameter, intParameter))
-
-    def test_component_mapping(self, ngc6440e):
-        """Each parameter should have a valid component name."""
-        model, _ = ngc6440e
-        pv = pint_model_to_params(model)
-
-        for comp in pv.components:
-            assert comp != "Unknown"
 
     def test_name_to_index_consistent(self, ngc6440e):
         model, _ = ngc6440e

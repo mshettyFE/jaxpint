@@ -242,7 +242,6 @@ def make_params(
     units=None,
     components=None,
     epoch_int_values=None,
-    bounds=None,
 ):
     """Build a minimal ParameterVector for tests.
 
@@ -255,10 +254,8 @@ def make_params(
     units : tuple of str, optional
         Defaults to all empty strings.
     components : str or tuple of str, optional
-        If a single string, applied to all params.  Defaults to "test".
+        Ignored (kept for backward compatibility of call sites).
     epoch_int_values : dict, optional
-    bounds : tuple, optional
-        Defaults to (None, None) for each param.
     """
     names = tuple(names)
     n = len(names)
@@ -267,26 +264,15 @@ def make_params(
         frozen_mask = (False,) * n
     if units is None:
         units = ("",) * n
-    if components is None:
-        components = ("test",) * n
-    elif isinstance(components, str):
-        components = (components,) * n
-    else:
-        components = tuple(components)
     if epoch_int_values is None:
         epoch_int_values = {}
     else:
         epoch_int_values = {k: float(v) for k, v in epoch_int_values.items()}
-    if bounds is None:
-        bounds = ((None, None),) * n
 
     return ParameterVector(
         values=jnp.array(values, dtype=jnp.float64),
         frozen_mask=tuple(frozen_mask),
         names=names,
         units=tuple(units),
-        components=components,
-        _name_to_index={name: i for i, name in enumerate(names)},
-        bounds=tuple(bounds),
         epoch_int_values=epoch_int_values,
     )

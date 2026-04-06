@@ -43,7 +43,7 @@ OBLIQUITY_ARCSEC: dict[str, float] = {
 SECS_PER_DAY: float = 86_400.0
 DAYS_PER_JULIAN_YEAR: float = 365.25
 SECS_PER_JULIAN_YEAR: float = 365.25 * 86_400.0
-FYR: float = 1.0 / (365.25 * 86_400.0)  # 1/year in Hz
+FYR: float = 1.0 / SECS_PER_JULIAN_YEAR  # 1/year in Hz
 JD_MJD_OFFSET: float = 2_400_000.5
 
 # ── Unit conversions ──────────────────────────────────────────────

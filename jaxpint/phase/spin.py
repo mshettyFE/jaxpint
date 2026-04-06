@@ -168,9 +168,6 @@ class Spindown(PhaseComponent):
             frozen_mask=new_params.frozen_mask,
             names=new_params.names,
             units=new_params.units,
-            components=new_params.components,
-            _name_to_index=new_params._name_to_index,
-            bounds=new_params.bounds,
             epoch_int_values=new_epoch_ints,
         )
 

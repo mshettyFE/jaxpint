@@ -62,9 +62,6 @@ def _make_param_vector():
         frozen_mask=(False, False, False, True, False, False),
         names=names,
         units=("Hz", "Hz/s", "pc cm^-3", "day", "rad", "rad"),
-        components=("Spindown", "Spindown", "Dispersion", "Spindown", "Astrometry", "Astrometry"),
-        _name_to_index={n: i for i, n in enumerate(names)},
-        bounds=((None, None),) * 6,
         epoch_int_values={"PEPOCH": 59000.0},
     )
 
@@ -198,12 +195,6 @@ class TestParameterVector:
         # New has update
         assert jnp.isclose(pv2.param_value("F0"), 999.0)
 
-    def test_component_mask(self):
-        pv = _make_param_vector()
-        spin_mask = pv.component_mask("Spindown")
-        expected = jnp.array([True, True, False, True, False, False])
-        assert jnp.array_equal(spin_mask, expected)
-
     def test_n_params_and_n_free(self):
         pv = _make_param_vector()
         assert pv.n_params == 6
@@ -278,9 +269,6 @@ class TestParameterVectorValidation:
             frozen_mask=(False, False, False, True, False, False),
             names=names,
             units=("Hz", "Hz/s", "pc cm^-3", "day", "rad", "rad"),
-            components=("Spindown", "Spindown", "Dispersion", "Spindown", "Astrometry", "Astrometry"),
-            _name_to_index={n: i for i, n in enumerate(names)},
-            bounds=((None, None),) * 6,
             epoch_int_values={"PEPOCH": 59000.0},
         )
 
@@ -299,35 +287,10 @@ class TestParameterVectorValidation:
         with pytest.raises(ValueError, match="len\\(units\\)"):
             ParameterVector(**kw)
 
-    def test_components_length_mismatch(self):
-        kw = self._defaults()
-        kw["components"] = ("Spindown",) * 3
-        with pytest.raises(ValueError, match="len\\(components\\)"):
-            ParameterVector(**kw)
-
-    def test_bounds_length_mismatch(self):
-        kw = self._defaults()
-        kw["bounds"] = ((None, None),) * 2
-        with pytest.raises(ValueError, match="len\\(bounds\\)"):
-            ParameterVector(**kw)
-
     def test_values_length_mismatch(self):
         kw = self._defaults()
         kw["values"] = jnp.array([1.0, 2.0])
         with pytest.raises(ValueError, match="values\\.shape\\[0\\]"):
-            ParameterVector(**kw)
-
-    def test_name_to_index_key_mismatch(self):
-        kw = self._defaults()
-        kw["_name_to_index"] = {"F0": 0, "BOGUS": 1}
-        with pytest.raises(ValueError, match="_name_to_index keys"):
-            ParameterVector(**kw)
-
-    def test_name_to_index_out_of_range(self):
-        kw = self._defaults()
-        kw["_name_to_index"] = {n: i for i, n in enumerate(kw["names"])}
-        kw["_name_to_index"]["DECJ"] = 99
-        with pytest.raises(ValueError, match="out of range"):
             ParameterVector(**kw)
 
     def test_epoch_int_values_unknown_key(self):

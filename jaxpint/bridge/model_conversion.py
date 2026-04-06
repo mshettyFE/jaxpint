@@ -8,8 +8,6 @@ fitted values back.
 from __future__ import annotations
 
 import logging
-from typing import Optional
-
 import astropy.units as u
 import jax.numpy as jnp
 from pint.models.parameter import (
@@ -84,14 +82,10 @@ def pint_model_to_params(model: PINTTimingModel) -> ParameterVector:
     model : pint.models.TimingModel
         The timing model to extract parameters from.
     """
-    param_map = model.get_params_mapping()
-
     names: list[str] = []
     values: list[float] = []
     units: list[str] = []
     frozen_mask: list[bool] = []
-    components: list[str] = []
-    bounds: list[tuple[Optional[float], Optional[float]]] = []
     epoch_int_values: dict[str, float] = {}
 
     for pname in model.params:
@@ -121,15 +115,12 @@ def pint_model_to_params(model: PINTTimingModel) -> ParameterVector:
                 continue
             val_a = float(pair[0].value) if hasattr(pair[0], "value") else float(pair[0])
             val_b = float(pair[1].value) if hasattr(pair[1], "value") else float(pair[1])
-            comp = param_map.get(pname, "Unknown")
             unit_str = str(param.units) if param.units is not None else ""
             for suffix, val in [("_A", val_a), ("_B", val_b)]:
                 names.append(pname + suffix)
                 values.append(val)
                 units.append(unit_str)
                 frozen_mask.append(param.frozen)
-                components.append(comp)
-                bounds.append((None, None))
             continue
 
         if isinstance(param, MJDParameter):
@@ -179,22 +170,12 @@ def pint_model_to_params(model: PINTTimingModel) -> ParameterVector:
 
         names.append(pname)
         frozen_mask.append(param.frozen)
-        components.append(param_map.get(pname, "Unknown"))
-
-        # Bounds — PINT does not store these consistently
-        param_bounds: tuple[Optional[float], Optional[float]] = (None, None)
-        bounds.append(param_bounds)
-
-    name_to_index = {n: i for i, n in enumerate(names)}
 
     return ParameterVector(
         values=jnp.asarray(values, dtype=jnp.float64),
         frozen_mask=tuple(frozen_mask),
         names=tuple(names),
         units=tuple(units),
-        components=tuple(components),
-        _name_to_index=name_to_index,
-        bounds=tuple(bounds),
         epoch_int_values=epoch_int_values,
     )
 

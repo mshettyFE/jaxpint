@@ -43,12 +43,21 @@ class TOAData(eqx.Module):
     """
 
     # Core TOA data -- shape (n_toas,)
+    # MJD in UTC. Raw observation time as recorded by telescope
     mjd_int: Float[Array, " n_toas"]
     mjd_frac: Float[Array, " n_toas"]
+    # Same timestamp as MJD, but converted to Barycentric Dynamic Time (TDB)
+    # Timing model oeprates on these values. 
+    # MJD is kept around for matching to original data
     tdb_int: Float[Array, " n_toas"]
     tdb_frac: Float[Array, " n_toas"]
+    # Error in timing from MJD
     error: Float[Array, " n_toas"]
+    # Observational frequency of data
     freq: Float[Array, " n_toas"]
+    # Offset to add to cycle number in phase computation.
+    # Needed to break degeneracy of which cycle number you are on 
+    # For well-timed pulsars, these should all be zero
     delta_pulse_number: Float[Array, " n_toas"]
 
     # Position/velocity vectors -- shape (n_toas, 3)
@@ -113,23 +122,58 @@ class ParameterVector(eqx.Module):
 
     Pytree: only ``values`` is a dynamic leaf (participates in jax.grad).
     All other fields are static metadata frozen into JIT traces.
+
+    Unit conventions
+    ----------------
+    All values are stored as raw float64 in a fixed internal unit system.
+    Components assume these units unconditionally -- no runtime conversion.
+
+    ========================================================  ===========
+    Parameter(s)                                              Unit
+    ========================================================  ===========
+    Angles (RAJ, DECJ, OM, KIN, KOM, ELONG, ELAT)            radians
+    Angular rates (OMDOT, XOMDOT)                             rad/s
+    Proper motion (PMRA, PMDEC, PMELONG, PMELAT)              mas/yr
+    Parallax (PX)                                             mas
+    Epochs (PEPOCH, T0, TASC, POSEPOCH, ...)                  frac day
+    Spin frequency (F0, F1, F2, ...)                          Hz/s^N
+    Dispersion (DM, DM1, DMX_*, CM, CMX_*)                    pc/cm^3
+    Orbital period (PB)                                       day
+    Projected semi-major axis (A1)                            ls
+    Companion mass (M2, MTOT)                                 Msun
+    TOA error scaling (EQUAD, ECORR)                          seconds
+    Frequencies (WXFREQ_*, DMWXFREQ_*, ...)                   1/day
+    Delay amplitudes (WXSIN_*, WXCOS_*, FD*, ...)             seconds
+    Dimensionless (EFAC, SINI, ECC, STIGMA, ...)              --
+    Everything else                                           .par native
+    ========================================================  ===========
+
+    Epoch integer MJD days are stored separately in ``epoch_int_values``
+    to preserve precision; only the fractional day enters ``values``.
     """
 
     values: Float[Array, " n_params"]
 
     # Static metadata
+    # Which fitting parameters to ignore while fitting
     frozen_mask: tuple[bool, ...] = eqx.field(static=True)
+    # Names of parameters which map to values 
+    # Not a ictionary with values to avoi equinox warning, as well as allow 
+    # ifferentiability of parameters in jax
     names: tuple[str, ...] = eqx.field(static=True)
+    # Units assigned to each name
+    # Purely for documentation. JAX has a preset unit system that it will assume as mentioned above
     units: tuple[str, ...] = eqx.field(static=True)
-    components: tuple[str, ...] = eqx.field(static=True)
-    _name_to_index: dict[str, int] = eqx.field(static=True)
-    bounds: tuple[tuple[Optional[float], Optional[float]], ...] = eqx.field(static=True)
+    # Storing the integer portions of the epoch values tacitly assumes that these don't change drastically while you are fitting 
+    # Most of the fitting tests don't break, so I guess this is reasonable?
     epoch_int_values: dict[str, float] = eqx.field(static=True)
+    # Maps parameter names to values location. Autopopulate in check_init
+    _name_to_index: dict[str, int] = eqx.field(static=True, default_factory=dict)
 
     def __check_init__(self):
         n = len(self.names)
 
-        for field_name in ("frozen_mask", "units", "components", "bounds"):
+        for field_name in ("frozen_mask", "units"):
             if len(getattr(self, field_name)) != n:
                 raise ValueError(
                     f"len({field_name}) = {len(getattr(self, field_name))}, "
@@ -141,17 +185,11 @@ class ParameterVector(eqx.Module):
                 f"values.shape[0] = {self.values.shape[0]}, expected {n}"
             )
 
-        if set(self._name_to_index) != set(self.names):
-            raise ValueError(
-                f"_name_to_index keys {set(self._name_to_index)} "
-                f"do not match names {set(self.names)}"
-            )
-
-        for name, idx in self._name_to_index.items():
-            if not (0 <= idx < n):
-                raise ValueError(
-                    f"_name_to_index[{name!r}] = {idx} is out of range [0, {n})"
-                )
+        # Build _name_to_index from names
+        object.__setattr__(
+            self, "_name_to_index",
+            {name: i for i, name in enumerate(self.names)},
+        )
 
         extra = set(self.epoch_int_values) - set(self.names)
         if extra:
@@ -215,10 +253,6 @@ class ParameterVector(eqx.Module):
         idx = self._name_to_index[name]
         new_values = self.values.at[idx].set(val)
         return eqx.tree_at(lambda pv: pv.values, self, new_values)
-
-    def component_mask(self, component: str) -> Bool[Array, " n_params"]:
-        """Boolean mask for parameters belonging to ``component``."""
-        return jnp.array([c == component for c in self.components], dtype=jnp.bool_)
 
     @property
     def n_params(self) -> int:
