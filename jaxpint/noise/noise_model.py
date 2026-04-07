@@ -16,7 +16,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import NoiseComponent
+from jaxpint.components import NoiseComponent, _make_component_names
 from jaxpint.noise.dm_white import ScaleDmError
 from jaxpint.noise.white import ScaleToaError
 from jaxpint.types import TOAData, ParameterVector
@@ -139,3 +139,39 @@ class NoiseModel(eqx.Module):
     def has_correlated(self) -> bool:
         """True if any correlated noise components are present."""
         return len(self.correlated) > 0
+
+    # ------------------------------------------------------------------
+    # Component indexing
+    # ------------------------------------------------------------------
+
+    @property
+    def components(self) -> tuple:
+        """All non-None noise components: white_noise, correlated, dm_white_noise."""
+        result: list = []
+        if self.white_noise is not None:
+            result.append(self.white_noise)
+        result.extend(self.correlated)
+        if self.dm_white_noise is not None:
+            result.append(self.dm_white_noise)
+        return tuple(result)
+
+    @property
+    def component_names(self) -> tuple[str, ...]:
+        """Unique names for all components, auto-disambiguated for duplicates."""
+        return _make_component_names(self.components)
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            names = self.component_names
+            comps = self.components
+            for i, name in enumerate(names):
+                if name == key:
+                    return comps[i]
+            raise KeyError(
+                f"{key!r} not found. Available components: {names}"
+            )
+        elif isinstance(key, (int, slice)):
+            return self.components[key]
+        raise TypeError(
+            f"indices must be str, int, or slice, not {type(key).__name__}"
+        )

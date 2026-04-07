@@ -15,7 +15,12 @@ import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent, DispersionDelayComponent, PhaseComponent
+from jaxpint.components import (
+    DelayComponent,
+    DispersionDelayComponent,
+    PhaseComponent,
+    _make_component_names,
+)
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
@@ -171,6 +176,136 @@ class TimingModel(eqx.Module):
         tzr_phase = self._sum_phase_components(tzr_toa, params, tzr_delay)
         # Broadcast: return shape (1,) so subtraction works with (n_toas,)
         return tzr_phase
+
+    # ------------------------------------------------------------------
+    # Component indexing
+    # ------------------------------------------------------------------
+
+    @property
+    def components(self) -> tuple[DelayComponent | PhaseComponent, ...]:
+        """All components in order: delay components then phase components."""
+        return self.delay_components + self.phase_components
+
+    @property
+    def component_names(self) -> tuple[str, ...]:
+        """Unique names for all components, auto-disambiguated for duplicates."""
+        return _make_component_names(self.components)
+
+    def __getitem__(
+        self, key: str | int | slice
+    ) -> DelayComponent | PhaseComponent | tuple[DelayComponent | PhaseComponent, ...]:
+        if isinstance(key, str):
+            names = self.component_names
+            comps = self.components
+            for i, name in enumerate(names):
+                if name == key:
+                    return comps[i]
+            raise KeyError(
+                f"{key!r} not found. Available components: {names}"
+            )
+        elif isinstance(key, (int, slice)):
+            return self.components[key]
+        raise TypeError(
+            f"indices must be str, int, or slice, not {type(key).__name__}"
+        )
+
+    # ------------------------------------------------------------------
+    # Per-component decomposition (diagnostic / inspection only)
+    # ------------------------------------------------------------------
+
+    def decompose_delay(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+    ) -> dict[str, Float[Array, " n_toas"]]:
+        """Return each delay component's individual contribution.
+
+        Runs the full sequential delay chain, recording each component's
+        delta (what it adds on top of the accumulated delay from prior
+        components).
+
+        .. warning::
+
+           This method uses Python loops and returns a plain ``dict``.
+           It must **not** be called inside ``jax.jit``-compiled
+           functions.  Use :meth:`compute_delay` for JIT-compatible
+           total-delay computation.
+
+        Returns
+        -------
+        dict[str, Array]
+            Mapping from component name to its delay contribution in
+            seconds, shape ``(n_toas,)``.
+        """
+        names = _make_component_names(self.delay_components)
+        result: dict[str, Float[Array, " n_toas"]] = {}
+        accumulated = jnp.zeros(toa_data.n_toas)
+        for name, comp in zip(names, self.delay_components):
+            contribution = comp(toa_data, params, accumulated)
+            result[name] = contribution
+            accumulated = accumulated + contribution
+        return result
+
+    def decompose_phase(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+    ) -> dict[str, DualFloat]:
+        """Return each phase component's individual contribution.
+
+        Computes total delay first, then evaluates each phase component
+        independently (phase components are summed, not sequential).
+
+        .. warning::
+
+           This method uses Python loops and returns a plain ``dict``.
+           It must **not** be called inside ``jax.jit``-compiled
+           functions.  Use :meth:`compute_phase` for JIT-compatible
+           total-phase computation.
+
+        Returns
+        -------
+        dict[str, DualFloat]
+            Mapping from component name to its phase contribution in
+            cycles.
+        """
+        delay = self.compute_delay(toa_data, params)
+        names = _make_component_names(self.phase_components)
+        result: dict[str, DualFloat] = {}
+        for name, comp in zip(names, self.phase_components):
+            result[name] = comp(toa_data, params, delay)
+        return result
+
+    def decompose_dm(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+    ) -> dict[str, Float[Array, " n_toas"]]:
+        """Return each dispersion component's DM contribution.
+
+        Computes total delay first, then calls ``compute_dm`` on each
+        :class:`DispersionDelayComponent`.  Component names match those
+        used by :meth:`decompose_delay` for the same components.
+
+        .. warning::
+
+           This method uses Python loops and returns a plain ``dict``.
+           It must **not** be called inside ``jax.jit``-compiled
+           functions.  Use :meth:`compute_dm` for JIT-compatible
+           total-DM computation.
+
+        Returns
+        -------
+        dict[str, Array]
+            Mapping from component name to its DM contribution in
+            pc/cm³, shape ``(n_toas,)``.
+        """
+        delay = self.compute_delay(toa_data, params)
+        names = _make_component_names(self.dispersion_components)
+        result: dict[str, Float[Array, " n_toas"]] = {}
+        for name, comp in zip(names, self.dispersion_components):
+            result[name] = comp.compute_dm(toa_data, params, delay)
+        return result
 
 
 def _build_tzr_toa_data(toa_data: TOAData) -> TOAData:

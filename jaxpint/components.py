@@ -20,6 +20,29 @@ from jaxpint.dual_float import DualFloat
 # Shared introspection helper
 # ---------------------------------------------------------------------------
 
+def _make_component_names(components: tuple) -> tuple[str, ...]:
+    """Generate unique names for components from their class names.
+
+    When multiple components share the same class name, they are
+    disambiguated with ``_0``, ``_1``, … suffixes.  Components with
+    unique class names are left unsuffixed.
+    """
+    from collections import Counter
+
+    raw = [type(c).__name__ for c in components]
+    counts = Counter(raw)
+    seen: dict[str, int] = {}
+    result: list[str] = []
+    for name in raw:
+        if counts[name] > 1:
+            idx = seen.get(name, 0)
+            seen[name] = idx + 1
+            result.append(f"{name}_{idx}")
+        else:
+            result.append(name)
+    return tuple(result)
+
+
 def _collect_param_names(module) -> tuple[str, ...]:
     """Collect parameter names from fields following the naming convention.
 
