@@ -13,7 +13,7 @@ import jax
 from jaxtyping import Array, Float
 
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.phase_result import PhaseResult
+from jaxpint.dual_float import DualFloat
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ def _collect_param_names(module) -> tuple[str, ...]:
 class PhaseComponent(eqx.Module):
     """Base class for components that contribute to pulse phase.
 
-    Subclasses implement ``__call__(self, toa_data, params, delay) -> PhaseResult``.
+    Subclasses implement ``__call__(self, toa_data, params, delay) -> DualFloat``.
 
     In the timing model, all PhaseComponents see the same total delay
     and their phase contributions are summed.
@@ -54,7 +54,7 @@ class PhaseComponent(eqx.Module):
         toa_data: TOAData,
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
-    ) -> PhaseResult:
+    ) -> DualFloat:
         """Compute this component's phase contribution.
 
         Parameters
@@ -68,7 +68,7 @@ class PhaseComponent(eqx.Module):
 
         Returns
         -------
-        PhaseResult
+        DualFloat
             Phase contribution in cycles (int + frac split).
         """
         raise NotImplementedError

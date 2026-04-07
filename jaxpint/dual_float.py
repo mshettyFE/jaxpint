@@ -104,6 +104,3 @@ class DualFloat(eqx.Module):
 
     def __rmul__(self, scalar) -> DualFloat:
         return self.__mul__(scalar)
-
-    # Backward-compatible alias: PhaseResult.create() still works
-    create = cycles

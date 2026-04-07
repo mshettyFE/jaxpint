@@ -1,7 +1,7 @@
 """Core data types for JaxPINT.
 
 Defines the three foundational types:
-- PhaseResult: Pulse phase as integer + fractional parts
+- DualFloat: Extended-precision value as integer + fractional parts
 - TOAData: Pre-extracted TOA data as JAX arrays
 - ParameterVector: Timing model parameters as a flat JAX array with metadata
 
@@ -18,7 +18,6 @@ import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
 
 from jaxpint.dual_float import DualFloat
-from jaxpint.phase_result import PhaseResult
 
 
 # ---------------------------------------------------------------------------

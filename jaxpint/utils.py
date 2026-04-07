@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 
 from jaxpint.constants import ARCSEC_TO_RAD, DAYS_PER_JULIAN_YEAR, OBLIQUITY_ARCSEC, RAD_PER_MAS, SECS_PER_DAY
 from jaxpint.dual_float import DualFloat
-from jaxpint.phase_result import PhaseResult
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +103,7 @@ def taylor_horner_phase(
     dt_frac_days: Float[Array, " n"],
     delay: Float[Array, " n"],
     coeffs: Float[Array, " n_coeffs"],
-) -> PhaseResult:
+) -> DualFloat:
     """Evaluate a Taylor series with phase precision via int/frac Horner.
 
     Uses the day decomposition ``dt = dt_int_days * 86400 + dt_frac_s``
@@ -126,7 +125,7 @@ def taylor_horner_phase(
 
     Returns
     -------
-    PhaseResult
+    DualFloat
         Phase in cycles, split as integer + fractional part.
     """
     dt_int_days = jnp.asarray(dt_int_days, dtype=jnp.float64)

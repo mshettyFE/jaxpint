@@ -21,7 +21,6 @@ from jaxtyping import Array, Float
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.dual_float import DualFloat
-from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import normalize_designmatrix, woodbury_dot, woodbury_solve
 

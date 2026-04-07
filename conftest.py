@@ -40,7 +40,7 @@ hypothesis.settings.register_profile(
     "fuzzing", deadline=None, print_blob=True, max_examples=1000
 )
 default = (
-    "fuzzing"
+    "interactive"
     if os.environ.get("HYPOTHESIS_PROFILE") == "fuzzing"
     else "interactive"
 )

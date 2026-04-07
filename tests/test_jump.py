@@ -7,7 +7,7 @@ import pytest
 
 
 from jaxpint.phase.jump import PhaseJump
-from jaxpint.phase_result import PhaseResult
+from jaxpint.dual_float import DualFloat
 from tests.helpers import make_toa_data, make_params
 
 
@@ -80,7 +80,7 @@ class TestPhaseJump:
         delay = jnp.zeros(6)
 
         result = jump(toa_data, params, delay)
-        assert isinstance(result, PhaseResult)
+        assert isinstance(result, DualFloat)
 
         expected = jnp.where(jnp.array(mask), jump_val * f0, 0.0)
         assert jnp.allclose(result.total, expected, atol=1e-15)
@@ -186,7 +186,7 @@ class TestJIT:
 
         jitted = jax.jit(jump)
         result = jitted(toa_data, params, delay)
-        assert isinstance(result, PhaseResult)
+        assert isinstance(result, DualFloat)
         assert result.int.shape == (4,)
 
 

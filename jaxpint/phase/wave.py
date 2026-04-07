@@ -23,7 +23,6 @@ from jaxtyping import Array, Float
 from jaxpint.components import PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.dual_float import DualFloat
-from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -71,7 +70,7 @@ class Wave(PhaseComponent):
         toa_data: TOAData,
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
-    ) -> PhaseResult:
+    ) -> DualFloat:
         """Compute Wave phase contribution.
 
         Parameters
@@ -85,7 +84,7 @@ class Wave(PhaseComponent):
 
         Returns
         -------
-        PhaseResult
+        DualFloat
             Phase contribution in cycles (int + frac split).
         """
         ep = params.epoch_dual(self.waveepoch_name)

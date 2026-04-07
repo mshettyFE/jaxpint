@@ -7,7 +7,7 @@ import pytest
 
 
 from jaxpint.types import TOAData
-from jaxpint.phase_result import PhaseResult
+from jaxpint.dual_float import DualFloat
 from jaxpint.phase.spin import Spindown
 from jaxpint.delay.dispersion_dm import DispersionDM
 from jaxpint.model import TimingModel, _build_tzr_toa_data

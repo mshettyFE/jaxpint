@@ -6,7 +6,7 @@ import pytest
 
 
 
-from jaxpint.phase_result import PhaseResult
+from jaxpint.dual_float import DualFloat
 from jaxpint.phase.spin import Spindown
 from tests.helpers import make_gbt_toa_data, make_spindown_params
 
@@ -89,7 +89,7 @@ class TestSpindownPhase:
 
         result = spindown(toa_data, params, delay)
         expected = expected_fn(dt_sec, coeffs)
-        assert isinstance(result, PhaseResult)
+        assert isinstance(result, DualFloat)
         assert jnp.isclose(result.total, expected, rtol=1e-12)
 
     def test_delay_subtracted(self):
@@ -186,7 +186,7 @@ class TestJIT:
 
         jitted = jax.jit(spindown)
         result = jitted(toa_data, params, delay)
-        assert isinstance(result, PhaseResult)
+        assert isinstance(result, DualFloat)
         assert result.int.shape == (toa_data.n_toas,)
 
     def test_jit_same_trace(self):

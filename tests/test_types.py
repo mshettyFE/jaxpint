@@ -1,11 +1,11 @@
-"""Tests for jaxpint.types: PhaseResult, TOAData, ParameterVector."""
+"""Tests for jaxpint.types: DualFloat, TOAData, ParameterVector."""
 
 import jax
 import jax.numpy as jnp
 import pytest
 
-
-from jaxpint.types import PhaseResult, TOAData, ParameterVector
+from jaxpint.dual_float import DualFloat
+from jaxpint.types import TOAData, ParameterVector
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +306,7 @@ class TestParameterVectorValidation:
 
 class TestIntegration:
     def test_jit_function_with_all_types(self):
-        """A JIT function taking (ParameterVector, TOAData) -> PhaseResult."""
+        """A JIT function taking (ParameterVector, TOAData) -> DualFloat."""
         pv = _make_param_vector()
         td = _make_toa_data()
 
@@ -316,7 +316,7 @@ class TestIntegration:
             dt = toa_data.tdb_frac  # simplified: just use fractional day
             phase_val = f0 * dt
             phase_int = jnp.floor(phase_val)
-            return PhaseResult.create(phase_int, phase_val - phase_int)
+            return DualFloat.cycles(phase_int, phase_val - phase_int)
 
         result = mock_phase(pv, td)
         assert result.int.shape == (10,)

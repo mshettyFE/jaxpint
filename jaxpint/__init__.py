@@ -5,7 +5,7 @@ import jax
 jax.config.update("jax_enable_x64", True)
 
 from .dual_float import DualFloat
-from .types import PhaseResult, TOAData, ParameterVector
+from .types import TOAData, ParameterVector
 from .components import PhaseComponent, DelayComponent, NoiseComponent
 from .phase import Spindown, Glitch, IFunc, PhaseJump, PiecewiseSpindown, Wave
 from .delay import (
@@ -109,7 +109,6 @@ __all__ = [
     "ParameterVector",
     "PhaseComponent",
     "PhaseJump",
-    "PhaseResult",
     "PiecewiseSpindown",
     "ScaleToaError",
     "SolarSystemShapiroDelay",

@@ -20,7 +20,6 @@ from jaxtyping import Array, Float
 from jaxpint.components import PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.dual_float import DualFloat
-from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner, taylor_horner_deriv, taylor_horner_phase
 
@@ -88,7 +87,7 @@ class Spindown(PhaseComponent):
         toa_data: TOAData,
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
-    ) -> PhaseResult:
+    ) -> DualFloat:
         """Compute spindown phase contribution.
 
         Implements Eq. 120 of Edwards, Hobbs & Manchester (2006),
@@ -105,7 +104,7 @@ class Spindown(PhaseComponent):
 
         Returns
         -------
-        PhaseResult
+        DualFloat
             Pulse phase in cycles (dimensionless), split as int + frac.
         """
         pepoch = params.epoch_dual(self.pepoch_name)

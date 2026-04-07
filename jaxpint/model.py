@@ -17,7 +17,6 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, DispersionDelayComponent, PhaseComponent
 from jaxpint.dual_float import DualFloat
-from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -95,7 +94,7 @@ class TimingModel(eqx.Module):
         self,
         toa_data: TOAData,
         params: ParameterVector,
-    ) -> PhaseResult:
+    ) -> DualFloat:
         """Compute absolute model phase for each TOA.
 
         1. Computes total delay via :meth:`compute_delay`.
@@ -105,7 +104,7 @@ class TimingModel(eqx.Module):
 
         Returns
         -------
-        PhaseResult
+        DualFloat
             Absolute pulse phase in cycles (int/frac split).
         """
         delay = self.compute_delay(toa_data, params)
@@ -131,7 +130,7 @@ class TimingModel(eqx.Module):
         toa_data: TOAData,
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
-    ) -> PhaseResult:
+    ) -> DualFloat:
         """Sum phase contributions from all phase components."""
         n = len(self.phase_components)
         if n == 0:
@@ -159,12 +158,12 @@ class TimingModel(eqx.Module):
         self,
         toa_data: TOAData,
         params: ParameterVector,
-    ) -> PhaseResult:
+    ) -> DualFloat:
         """Compute model phase at the TZR reference TOA.
 
         Builds a minimal single-element TOAData from the TZR fields
         stored on *toa_data*, evaluates the full delay + phase pipeline
-        at that point, and returns a PhaseResult that broadcasts when
+        at that point, and returns a DualFloat that broadcasts when
         subtracted from the full TOA phases.
         """
         tzr_toa = _build_tzr_toa_data(toa_data)
