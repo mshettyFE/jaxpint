@@ -1,8 +1,8 @@
 """Model builder: ParResult → TimingModel + NoiseModel.
 
-Replicates the logic of ``jaxpint.bridge.component_builder`` but reads
-from a :class:`ParResult` (produced by the standalone .par parser)
-instead of PINT objects.
+Constructs JaxPINT timing and noise components from a :class:`ParResult`.
+The PINT bridge delegates to :func:`build_model` after converting a PINT
+model to ``ParResult`` via :func:`~jaxpint.bridge.model_conversion.pint_model_to_params`.
 """
 
 from __future__ import annotations
@@ -247,7 +247,7 @@ def build_model(
     Parameters
     ----------
     par : ParResult
-        Output of :func:`parse_par`.
+        Output of :func:`jaxpint.bridge.model_conversion.pint_model_to_params`.
     toa_data : TOAData, optional
         If provided, TOA-dependent components (ECORR, red noise, etc.)
         will be constructed.
