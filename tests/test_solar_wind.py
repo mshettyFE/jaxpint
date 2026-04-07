@@ -79,7 +79,7 @@ def _make_setup(par_str):
     )
 
     toa_data = pint_toas_to_jax(toas, model)
-    params = pint_model_to_params(model)
+    params = pint_model_to_params(model).params
     jax_model, _ = build_timing_model(model)
 
     # Extract the JaxPINT solar wind component

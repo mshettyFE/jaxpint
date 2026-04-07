@@ -99,7 +99,7 @@ def _make_setup(par_str, ntoas=50):
     )
 
     toa_data = pint_toas_to_jax(toas, model)
-    params = pint_model_to_params(model)
+    params = pint_model_to_params(model).params
 
     return toa_data, params, pint_delay, model
 
@@ -375,7 +375,7 @@ def jax_fit_result(fit_data):
     """Run JaxPINT's WLS fitter."""
     m_true, toas = fit_data
     toa_data = pint_toas_to_jax(toas, model=m_true)
-    params = pint_model_to_params(m_true)
+    params = pint_model_to_params(m_true).params
     jax_model, _noise = build_timing_model(m_true)
     fitter = WLSFitter(jax_model, toa_data, params)
     return fitter.fit_toas(maxiter=3)
@@ -458,7 +458,7 @@ class TestB1855Delay:
 
         # JaxPINT delay — extract only the astrometry component
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
         jax_model, _ = build_timing_model(pint_model)
 
         ecl_comps = [
@@ -477,7 +477,7 @@ class TestB1855Delay:
         """Delay values should be finite and non-trivially nonzero."""
         pint_model, toas = b1855
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
         jax_model, _ = build_timing_model(pint_model)
 
         ecl_comp = [

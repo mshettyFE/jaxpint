@@ -89,7 +89,7 @@ def jax_objects(synthetic_data):
     """Convert synthetic data to JaxPINT objects."""
     m_true, toas = synthetic_data
     toa_data = pint_toas_to_jax(toas, model=m_true)
-    params = pint_model_to_params(m_true)
+    params = pint_model_to_params(m_true).params
     jax_model, _noise = build_timing_model(m_true)
     return jax_model, toa_data, params
 
@@ -207,7 +207,7 @@ class TestNGC6440E:
     def test_chi2_decreases(self, ngc6440e):
         pint_model, toas = ngc6440e
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
         jax_model, _noise = build_timing_model(pint_model)
 
         # Pre-fit chi2
@@ -224,7 +224,7 @@ class TestNGC6440E:
     def test_multiple_iterations_converge(self, ngc6440e):
         pint_model, toas = ngc6440e
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
         jax_model, _noise = build_timing_model(pint_model)
 
         fitter = WLSFitter(jax_model, toa_data, params)
@@ -236,7 +236,7 @@ class TestNGC6440E:
     def test_design_matrix_shape(self, ngc6440e):
         pint_model, toas = ngc6440e
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
         jax_model, _noise = build_timing_model(pint_model)
 
         M = compute_design_matrix(jax_model, toa_data, params)
@@ -263,7 +263,7 @@ class TestNGC6440EAstrometry:
 
         # JaxPINT delay
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
         jax_model, _noise = build_timing_model(pint_model)
 
         from jaxpint.delay.astrometry import AstrometryEquatorial
@@ -282,7 +282,7 @@ class TestNGC6440EAstrometry:
         pint_model, toas = ngc6440e
 
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
         jax_model, _noise = build_timing_model(pint_model)
         fitter = WLSFitter(jax_model, toa_data, params)
         result = fitter.fit_toas(maxiter=5)

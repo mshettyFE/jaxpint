@@ -340,7 +340,7 @@ class TestJumpIntegration:
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
 
         toa_data = pint_toas_to_jax(toas, model=model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
         jax_model, _ = build_timing_model(model)
 
         jump_comp = [c for c in jax_model.phase_components
@@ -364,7 +364,7 @@ class TestJumpIntegration:
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
 
         toa_data = pint_toas_to_jax(toas, model=model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
         jax_model, _ = build_timing_model(model)
 
         jump_comp = [c for c in jax_model.phase_components
@@ -394,7 +394,7 @@ class TestJumpIntegration:
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
 
         toa_data = pint_toas_to_jax(toas, model=model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
         jax_model, _ = build_timing_model(model)
 
         jump_comp = [c for c in jax_model.phase_components
@@ -425,7 +425,7 @@ class TestJumpIntegration:
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
 
         toa_data = pint_toas_to_jax(toas, model=model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
         jax_model, _ = build_timing_model(model)
 
         jump_comp = [c for c in jax_model.phase_components

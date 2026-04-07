@@ -18,6 +18,7 @@ import numpy as np
 
 from jaxpint.parfile._param_builder import ParResult
 from jaxpint.types import TOAData
+from jaxpint.utils import build_quantization_matrix as _build_quantization_matrix
 
 log = logging.getLogger(__name__)
 
@@ -228,62 +229,6 @@ def _build_binary(par: ParResult, astro_info: dict) -> object:
         raise NotImplementedError(
             f"Binary model {bname!r} is not yet ported to JaxPINT"
         )
-
-
-# ---------------------------------------------------------------------------
-# ECORR quantization matrix (copied from bridge.component_builder)
-# ---------------------------------------------------------------------------
-
-
-def _build_quantization_matrix(
-    tdb_times_s: np.ndarray,
-    ecorr_masks: dict[str, np.ndarray],
-    dt: float = 1.0,
-    nmin: int = 2,
-) -> tuple[np.ndarray, dict[str, tuple[int, int]]]:
-    """Build ECORR quantization matrix.  See bridge.component_builder for docs."""
-    n_toas = len(tdb_times_s)
-    columns: list[np.ndarray] = []
-    epoch_slices: dict[str, tuple[int, int]] = {}
-    col_offset = 0
-
-    for ecorr_name in sorted(ecorr_masks):
-        mask = ecorr_masks[ecorr_name]
-        subset_indices = np.where(mask)[0]
-        if len(subset_indices) == 0:
-            epoch_slices[ecorr_name] = (col_offset, col_offset)
-            continue
-
-        subset_times = tdb_times_s[subset_indices]
-        isort = np.argsort(subset_times)
-        sorted_times = subset_times[isort]
-        sorted_indices = subset_indices[isort]
-
-        epochs: list[list[int]] = [[sorted_indices[0]]]
-        ref_time = sorted_times[0]
-        for j in range(1, len(sorted_times)):
-            if sorted_times[j] - ref_time < dt:
-                epochs[-1].append(sorted_indices[j])
-            else:
-                epochs.append([sorted_indices[j]])
-                ref_time = sorted_times[j]
-
-        epochs = [ep for ep in epochs if len(ep) >= nmin]
-
-        start = col_offset
-        for ep in epochs:
-            col = np.zeros(n_toas, dtype=np.float64)
-            col[ep] = 1.0
-            columns.append(col)
-        col_offset += len(epochs)
-        epoch_slices[ecorr_name] = (start, col_offset)
-
-    if columns:
-        U = np.column_stack(columns)
-    else:
-        U = np.zeros((n_toas, 0), dtype=np.float64)
-
-    return U, epoch_slices
 
 
 # ---------------------------------------------------------------------------
@@ -511,10 +456,13 @@ def build_model(
         ne_sw_names = ["NE_SW"]
         for pname in par.params.names:
             if pname.startswith("NE_SW") and pname != "NE_SW":
-                ne_sw_names.append(pname)
+                # Only include derivatives that are non-zero
+                val = float(par.params.values[par.params._name_to_index[pname]])
+                if val != 0.0:
+                    ne_sw_names.append(pname)
         ne_sw_names.sort()
 
-        # Skip if NE_SW is zero and no derivatives
+        # Skip if NE_SW is zero and no non-zero derivatives
         ne_sw_val = float(par.params.values[par.params._name_to_index.get("NE_SW", 0)])
         if len(ne_sw_names) > 1 or ne_sw_val != 0.0:
             swm = par.int_params.get("SWM", 0)
@@ -538,10 +486,13 @@ def build_model(
     if Component.SOLAR_WIND_DISPERSION_X in comp_set:
         swx_indices = _collect_prefix_indices(par, "SWXDM_")
         if swx_indices:
-            # theta0 needs to be computed from astrometry — for now require toa_data
-            # This is a TODO: compute theta0 from ecliptic coords
-            theta0_rad = 0.0  # placeholder
-            log.warning("SolarWindDispersionX theta0 not computed from parfile alone")
+            # theta0 is precomputed by the bridge (from PINT), or defaults to 0
+            theta0_str = par.metadata.get("_SWX_THETA0_RAD")
+            if theta0_str is not None:
+                theta0_rad = float(theta0_str)
+            else:
+                theta0_rad = 0.0
+                log.warning("SolarWindDispersionX theta0 not available — using 0.0")
 
             delay_components.append(SolarWindDispersionX(
                 n_bins=len(swx_indices),

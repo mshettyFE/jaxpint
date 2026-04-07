@@ -298,7 +298,7 @@ class TestCompareWithBridge:
         not produce any parameter that the bridge doesn't have.
         """
         pint_model = get_model(b1855_par)
-        bridge_params = pint_model_to_params(pint_model)
+        bridge_params = pint_model_to_params(pint_model).params
 
         standalone_result = parse_par(b1855_par)
         standalone_params = standalone_result.params
@@ -327,7 +327,7 @@ class TestCompareWithBridge:
     def test_parameter_values_match(self, b1855_par):
         """Parameter values from both paths should match within tolerance."""
         pint_model = get_model(b1855_par)
-        bridge_params = pint_model_to_params(pint_model)
+        bridge_params = pint_model_to_params(pint_model).params
 
         standalone_result = parse_par(b1855_par)
         standalone_params = standalone_result.params
@@ -350,7 +350,7 @@ class TestCompareWithBridge:
     def test_epoch_int_values_match(self, b1855_par):
         """Epoch integer parts should match exactly."""
         pint_model = get_model(b1855_par)
-        bridge_params = pint_model_to_params(pint_model)
+        bridge_params = pint_model_to_params(pint_model).params
 
         standalone_result = parse_par(b1855_par)
         standalone_params = standalone_result.params
@@ -365,7 +365,7 @@ class TestCompareWithBridge:
     def test_frozen_mask_matches(self, b1855_par):
         """Frozen status should match for all shared parameters."""
         pint_model = get_model(b1855_par)
-        bridge_params = pint_model_to_params(pint_model)
+        bridge_params = pint_model_to_params(pint_model).params
 
         standalone_result = parse_par(b1855_par)
         standalone_params = standalone_result.params
@@ -417,7 +417,7 @@ class TestAllExampleParFiles:
         except Exception as e:
             pytest.skip(f"PINT cannot load this file: {e}")
 
-        bridge_params = pint_model_to_params(pint_model)
+        bridge_params = pint_model_to_params(pint_model).params
         standalone_params = parse_par(par_file).params
 
         shared = set(bridge_params.names) & set(standalone_params.names)
@@ -447,7 +447,7 @@ class TestAllExampleParFiles:
         except Exception:
             pytest.skip("PINT cannot load this file")
 
-        bridge_params = pint_model_to_params(pint_model)
+        bridge_params = pint_model_to_params(pint_model).params
         standalone_params = parse_par(par_file).params
 
         shared = set(bridge_params.epoch_int_values) & set(standalone_params.epoch_int_values)
@@ -462,7 +462,7 @@ class TestAllExampleParFiles:
         except Exception:
             pytest.skip("PINT cannot load this file")
 
-        bridge_params = pint_model_to_params(pint_model)
+        bridge_params = pint_model_to_params(pint_model).params
         standalone_params = parse_par(par_file).params
 
         mismatches = []

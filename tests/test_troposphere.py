@@ -61,7 +61,7 @@ def tropo_setup():
     )
 
     toa_data = pint_toas_to_jax(toas, model)
-    params = pint_model_to_params(model)
+    params = pint_model_to_params(model).params
 
     return toa_data, params, pint_delay
 
@@ -109,7 +109,7 @@ class TestMatchesPINT:
         assert toa_data.tropo_alt is None
 
         comp = TroposphereDelay()
-        jax_delay = comp(toa_data, pint_model_to_params(model), jnp.zeros(toa_data.n_toas))
+        jax_delay = comp(toa_data, pint_model_to_params(model).params, jnp.zeros(toa_data.n_toas))
         np.testing.assert_array_equal(np.array(jax_delay), 0.0)
 
 

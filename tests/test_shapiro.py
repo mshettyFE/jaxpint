@@ -52,7 +52,7 @@ def sun_only_setup():
     )
 
     toa_data = pint_toas_to_jax(toas, model)
-    params = pint_model_to_params(model)
+    params = pint_model_to_params(model).params
 
     return toa_data, params, pint_delay
 
@@ -77,7 +77,7 @@ def planet_setup():
     )
 
     toa_data = pint_toas_to_jax(toas, model)
-    params = pint_model_to_params(model)
+    params = pint_model_to_params(model).params
 
     return toa_data, params, pint_delay
 

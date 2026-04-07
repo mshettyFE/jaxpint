@@ -85,7 +85,7 @@ def pint_toas_raw(pint_model):
 def jax_objects_zeroed(pint_model, pint_toas_zeroed):
     """Convert PINT-zeroed TOAs to JaxPINT objects."""
     toa_data = pint_toas_to_jax(pint_toas_zeroed, model=pint_model)
-    params = pint_model_to_params(pint_model)
+    params = pint_model_to_params(pint_model).params
     jax_model, _noise = build_timing_model(pint_model)
     return jax_model, toa_data, params
 
@@ -94,7 +94,7 @@ def jax_objects_zeroed(pint_model, pint_toas_zeroed):
 def jax_objects_raw(pint_model, pint_toas_raw):
     """Convert raw (unzeroed) PINT TOAs to JaxPINT objects."""
     toa_data = pint_toas_to_jax(pint_toas_raw, model=pint_model)
-    params = pint_model_to_params(pint_model)
+    params = pint_model_to_params(pint_model).params
     jax_model, _noise = build_timing_model(pint_model)
     return jax_model, toa_data, params
 

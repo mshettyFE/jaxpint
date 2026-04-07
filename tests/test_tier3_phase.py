@@ -58,10 +58,10 @@ class TestPhaseOffsetvsPINT:
         model_phoff = get_model(StringIO(_BASE_PAR + "PHOFF 0.3\n"))
 
         toa_data = pint_toas_to_jax(toas, model_phoff)
-        params_phoff = pint_model_to_params(model_phoff)
+        params_phoff = pint_model_to_params(model_phoff).params
         jax_model_phoff, _ = build_timing_model(model_phoff, toas)
 
-        params_base = pint_model_to_params(model_base)
+        params_base = pint_model_to_params(model_base).params
         jax_model_base, _ = build_timing_model(model_base, toas)
 
         return (jax_model_base, jax_model_phoff, toa_data,
@@ -127,7 +127,7 @@ PWF2_1        0.0
         )
 
         toa_data = pint_toas_to_jax(toas, model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
         jax_model, _ = build_timing_model(model, toas)
 
         return jax_model, toa_data, params, pint_resids, model
@@ -187,7 +187,7 @@ WAVE2         0.3e-6 0.8e-6
         )
 
         toa_data = pint_toas_to_jax(toas, model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
         jax_model, _ = build_timing_model(model, toas)
 
         return jax_model, toa_data, params, pint_resids, model
@@ -249,7 +249,7 @@ IFUNC5        55400 -1e-6
         )
 
         toa_data = pint_toas_to_jax(toas, model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
         jax_model, _ = build_timing_model(model, toas)
 
         return jax_model, toa_data, params, pint_resids, model

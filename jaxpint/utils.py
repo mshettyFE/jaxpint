@@ -585,6 +585,78 @@ def fourier_sum(
     return jnp.sum(wx_sins * jnp.sin(arg) + wx_coses * jnp.cos(arg), axis=1)
 
 
+def build_quantization_matrix(
+    tdb_times_s: np.ndarray,
+    ecorr_masks: dict[str, np.ndarray],
+    dt: float = 1.0,
+    nmin: int = 2,
+) -> tuple[np.ndarray, dict[str, tuple[int, int]]]:
+    """Build the ECORR quantization matrix (NumPy, not JIT-compatible).
+
+    Groups TOAs within *dt* seconds into epochs and creates a binary
+    matrix ``U`` mapping TOAs to epochs.  Only epochs with at least
+    *nmin* TOAs are kept.
+
+    Parameters
+    ----------
+    tdb_times_s : (n_toas,) float64
+        TOA times in TDB seconds.
+    ecorr_masks : dict[str, ndarray]
+        Boolean masks keyed by ECORR parameter name.
+    dt, nmin : float, int
+        Epoch grouping threshold (seconds) and minimum TOAs per epoch.
+
+    Returns
+    -------
+    U : (n_toas, n_total_epochs)
+        Binary quantization matrix.
+    epoch_slices : dict[str, (int, int)]
+        Column-index range for each ECORR parameter.
+    """
+    n_toas = len(tdb_times_s)
+    columns: list[np.ndarray] = []
+    epoch_slices: dict[str, tuple[int, int]] = {}
+    col_offset = 0
+
+    for ecorr_name in sorted(ecorr_masks):
+        mask = ecorr_masks[ecorr_name]
+        subset_indices = np.where(mask)[0]
+        if len(subset_indices) == 0:
+            epoch_slices[ecorr_name] = (col_offset, col_offset)
+            continue
+
+        subset_times = tdb_times_s[subset_indices]
+        isort = np.argsort(subset_times)
+        sorted_times = subset_times[isort]
+        sorted_indices = subset_indices[isort]
+
+        epochs: list[list[int]] = [[sorted_indices[0]]]
+        ref_time = sorted_times[0]
+        for j in range(1, len(sorted_times)):
+            if sorted_times[j] - ref_time < dt:
+                epochs[-1].append(sorted_indices[j])
+            else:
+                epochs.append([sorted_indices[j]])
+                ref_time = sorted_times[j]
+
+        epochs = [ep for ep in epochs if len(ep) >= nmin]
+
+        start = col_offset
+        for ep in epochs:
+            col = np.zeros(n_toas, dtype=np.float64)
+            col[ep] = 1.0
+            columns.append(col)
+        col_offset += len(epochs)
+        epoch_slices[ecorr_name] = (start, col_offset)
+
+    if columns:
+        U = np.column_stack(columns)
+    else:
+        U = np.zeros((n_toas, 0), dtype=np.float64)
+
+    return U, epoch_slices
+
+
 def build_fourier_basis(
     tdb_times_s: np.ndarray,
     n_freqs: int,

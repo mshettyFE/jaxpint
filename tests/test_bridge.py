@@ -214,7 +214,7 @@ class TestPintModelToParams:
 
     def test_basic_structure(self, ngc6440e):
         model, _ = ngc6440e
-        pv = pint_model_to_params(model)
+        pv = pint_model_to_params(model).params
 
         assert pv.n_params > 0
         assert pv.values.shape == (pv.n_params,)
@@ -226,7 +226,7 @@ class TestPintModelToParams:
     def test_expected_params_present(self, ngc6440e):
         """NGC6440E should have F0, F1, RAJ, DECJ, DM, PEPOCH, POSEPOCH."""
         model, _ = ngc6440e
-        pv = pint_model_to_params(model)
+        pv = pint_model_to_params(model).params
 
         for expected in ("F0", "F1", "RAJ", "DECJ", "DM"):
             assert expected in pv.names, f"{expected} missing from ParameterVector"
@@ -234,7 +234,7 @@ class TestPintModelToParams:
     def test_epoch_split(self, ngc6440e):
         """PEPOCH should be split into epoch_int_values + fractional in values."""
         model, _ = ngc6440e
-        pv = pint_model_to_params(model)
+        pv = pint_model_to_params(model).params
 
         assert "PEPOCH" in pv.epoch_int_values
         pepoch_int = pv.epoch_int_values["PEPOCH"]
@@ -248,7 +248,7 @@ class TestPintModelToParams:
     def test_angle_in_radians(self, ngc6440e):
         """RAJ and DECJ should be stored in radians."""
         model, _ = ngc6440e
-        pv = pint_model_to_params(model)
+        pv = pint_model_to_params(model).params
 
         raj_idx = pv.param_index("RAJ")
         decj_idx = pv.param_index("DECJ")
@@ -267,7 +267,7 @@ class TestPintModelToParams:
     def test_frozen_mask(self, ngc6440e):
         """Check frozen status matches PINT model."""
         model, _ = ngc6440e
-        pv = pint_model_to_params(model)
+        pv = pint_model_to_params(model).params
 
         for i, name in enumerate(pv.names):
             param = getattr(model, name)
@@ -280,7 +280,7 @@ class TestPintModelToParams:
         from pint.models.parameter import boolParameter, intParameter, strParameter
 
         model, _ = ngc6440e
-        pv = pint_model_to_params(model)
+        pv = pint_model_to_params(model).params
 
         for name in pv.names:
             param = getattr(model, name)
@@ -288,7 +288,7 @@ class TestPintModelToParams:
 
     def test_name_to_index_consistent(self, ngc6440e):
         model, _ = ngc6440e
-        pv = pint_model_to_params(model)
+        pv = pint_model_to_params(model).params
 
         for i, name in enumerate(pv.names):
             assert pv.param_index(name) == i
@@ -306,7 +306,7 @@ class TestParamsToPintModel:
         """Float parameters should survive the round-trip exactly."""
         model, _ = ngc6440e
         original_model = copy.deepcopy(model)
-        pv = pint_model_to_params(model)
+        pv = pint_model_to_params(model).params
         params_to_pint_model(pv, model)
 
         for name in pv.names:
@@ -321,7 +321,7 @@ class TestParamsToPintModel:
         """Angle params should survive radians -> native -> radians."""
         model, _ = ngc6440e
         original_model = copy.deepcopy(model)
-        pv = pint_model_to_params(model)
+        pv = pint_model_to_params(model).params
         params_to_pint_model(pv, model)
 
         import astropy.units as u
@@ -337,7 +337,7 @@ class TestParamsToPintModel:
         """Epoch params (PEPOCH) should round-trip within float64 precision."""
         model, _ = ngc6440e
         original_model = copy.deepcopy(model)
-        pv = pint_model_to_params(model)
+        pv = pint_model_to_params(model).params
         params_to_pint_model(pv, model)
 
         for name in pv.epoch_int_values:
@@ -352,7 +352,7 @@ class TestParamsToPintModel:
         """Model with mask parameters should round-trip correctly."""
         model, _ = b1855
         original_model = copy.deepcopy(model)
-        pv = pint_model_to_params(model)
+        pv = pint_model_to_params(model).params
         params_to_pint_model(pv, model)
 
         for name in pv.names:
@@ -366,7 +366,7 @@ class TestParamsToPintModel:
     def test_modified_values_propagate(self, ngc6440e):
         """If we change a value in ParameterVector, it should propagate back."""
         model, _ = ngc6440e
-        pv = pint_model_to_params(model)
+        pv = pint_model_to_params(model).params
 
         # Perturb F0 slightly
         f0_idx = pv.param_index("F0")

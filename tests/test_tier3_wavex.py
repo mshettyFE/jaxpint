@@ -66,7 +66,7 @@ WXCOS_0002    0.8e-6
         )
 
         toa_data = pint_toas_to_jax(toas, model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
 
         comp = WaveX(
             n_components=2,
@@ -140,7 +140,7 @@ DMWXCOS_0002  0.07
         )
 
         toa_data = pint_toas_to_jax(toas, model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
 
         comp = DMWaveX(
             n_components=2,
@@ -215,7 +215,7 @@ CMWXCOS_0002  0.007
         )
 
         toa_data = pint_toas_to_jax(toas, model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
 
         comp = CMWaveX(
             n_components=2,

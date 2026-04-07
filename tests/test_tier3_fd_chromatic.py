@@ -68,7 +68,7 @@ FD3           5e-7
         )
 
         toa_data = pint_toas_to_jax(toas, model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
 
         comp = FrequencyDependent(fd_param_names=("FD1", "FD2", "FD3"))
         return toa_data, params, pint_delay, model, comp
@@ -127,7 +127,7 @@ TNCHROMIDX    4.0
         )
 
         toa_data = pint_toas_to_jax(toas, model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
 
         comp = ChromaticCM(
             cm_param_names=("CM", "CM1"),
@@ -193,7 +193,7 @@ CMXR2_0002    55500
         )
 
         toa_data = pint_toas_to_jax(toas, model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
 
         comp = ChromaticCMX(
             n_bins=2,

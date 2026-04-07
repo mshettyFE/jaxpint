@@ -443,7 +443,7 @@ class TestVsPINT:
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params
 
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         # Build JaxPINT model with only Spindown + DispersionDM.
         # NGC6440E has no DMEPOCH; use PEPOCH as the DM reference epoch
@@ -486,13 +486,18 @@ class TestVsPINT:
         from jaxpint.delay.shapiro import SolarSystemShapiroDelay
 
         assert len(jax_model.delay_components) == 3
-        assert isinstance(jax_model.delay_components[0], AstrometryEquatorial)
-        assert isinstance(jax_model.delay_components[1], SolarSystemShapiroDelay)
-        assert jax_model.delay_components[1].planet_shapiro is False
-        assert isinstance(jax_model.delay_components[2], DispersionDM)
-        assert jax_model.delay_components[2].dm_param_names == ("DM",)
+        delay_types = {type(c).__name__ for c in jax_model.delay_components}
+        assert delay_types == {"AstrometryEquatorial", "SolarSystemShapiroDelay", "DispersionDM"}
+
+        # Find components by type for detailed assertions
+        astro = [c for c in jax_model.delay_components if isinstance(c, AstrometryEquatorial)][0]
+        shapiro = [c for c in jax_model.delay_components if isinstance(c, SolarSystemShapiroDelay)][0]
+        dm = [c for c in jax_model.delay_components if isinstance(c, DispersionDM)][0]
+
+        assert shapiro.planet_shapiro is False
+        assert dm.dm_param_names == ("DM",)
         # NGC6440E has no DMEPOCH, should fall back to PEPOCH
-        assert jax_model.delay_components[2].dmepoch_name == "PEPOCH"
+        assert dm.dmepoch_name == "PEPOCH"
 
     def test_build_timing_model_phase_matches(self, ngc6440e):
         """build_timing_model produces a model whose phase is finite and consistent."""
@@ -501,7 +506,7 @@ class TestVsPINT:
 
         jax_model, _noise = build_timing_model(pint_model)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         phase = jax_model.compute_phase(toa_data, params)
         total = phase.int + phase.frac
@@ -515,7 +520,7 @@ class TestVsPINT:
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params
 
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         spin = Spindown(spin_param_names=("F0", "F1"))
         jax_model = TimingModel(delay_components=(), phase_components=(spin,))

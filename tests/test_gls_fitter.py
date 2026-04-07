@@ -323,7 +323,7 @@ class TestGLSReducesToWLS:
 
         pint_model, toas = synthetic_data
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
         jax_model, noise_model = build_timing_model(pint_model)
 
         # WLS

@@ -8,6 +8,8 @@ fitted values back.
 from __future__ import annotations
 
 import logging
+from typing import Optional
+
 import astropy.units as u
 import jax.numpy as jnp
 from pint.models.parameter import (
@@ -21,11 +23,53 @@ from pint.models.parameter import (
     strParameter,
 )
 from pint.models.timing_model import TimingModel as PINTTimingModel
+from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
 
 from jaxpint.bridge.toa_conversion import _split_mjd_time
+from jaxpint.parfile._param_builder import ParResult, MaskInfo
+from jaxpint.parfile._registry import BinaryModel, Component
 from jaxpint.types import ParameterVector
 
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# PINT component name → JaxPINT Component enum mapping
+# ---------------------------------------------------------------------------
+
+_PINT_COMPONENT_MAP: dict[str, Component] = {
+    "Spindown": Component.SPINDOWN,
+    "PhaseOffset": Component.PHASE_OFFSET,
+    "AstrometryEquatorial": Component.ASTROMETRY_EQUATORIAL,
+    "AstrometryEcliptic": Component.ASTROMETRY_ECLIPTIC,
+    "DispersionDM": Component.DISPERSION_DM,
+    "DispersionDMX": Component.DISPERSION_DMX,
+    "DispersionJump": Component.DISPERSION_JUMP,
+    "SolarSystemShapiro": Component.SOLAR_SYSTEM_SHAPIRO,
+    "SolarWindDispersion": Component.SOLAR_WIND_DISPERSION,
+    "SolarWindDispersionX": Component.SOLAR_WIND_DISPERSION_X,
+    "TroposphereDelay": Component.TROPOSPHERE_DELAY,
+    "PhaseJump": Component.PHASE_JUMP,
+    "ScaleToaError": Component.SCALE_TOA_ERROR,
+    "ScaleDmError": Component.SCALE_DM_ERROR,
+    "EcorrNoise": Component.ECORR_NOISE,
+    "PLRedNoise": Component.PL_RED_NOISE,
+    "PLDMNoise": Component.PL_DM_NOISE,
+    "PLChromNoise": Component.PL_CHROM_NOISE,
+    "PLSWNoise": Component.PL_SW_NOISE,
+    "WaveX": Component.WAVE_X,
+    "DMWaveX": Component.DM_WAVE_X,
+    "CMWaveX": Component.CM_WAVE_X,
+    "ChromaticCM": Component.CHROMATIC_CM,
+    "ChromaticCMX": Component.CHROMATIC_CMX,
+    "FD": Component.FREQUENCY_DEPENDENT,
+    "FDJump": Component.FD_JUMP,
+    "SimpleExponentialDip": Component.EXPONENTIAL_DIP,
+    "PiecewiseSpindown": Component.PIECEWISE_SPINDOWN,
+    "Wave": Component.WAVE,
+    "IFunc": Component.IFUNC,
+    "Glitch": Component.GLITCH,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -70,12 +114,14 @@ def _split_epoch_jd(quantity) -> tuple[float, float]:
 # ---------------------------------------------------------------------------
 
 
-def pint_model_to_params(model: PINTTimingModel) -> ParameterVector:
-    """Convert a PINT TimingModel to a JaxPINT :class:`ParameterVector`.
+def pint_model_to_params(model: PINTTimingModel) -> ParResult:
+    """Convert a PINT TimingModel to a JaxPINT :class:`ParResult`.
 
     Iterates all parameters, skipping non-numeric types (str, bool, int,
-    func).  MJD epochs are split into a static integer day and a dynamic
-    fractional day.  Angles are converted to radians.
+    func) for the ParameterVector but collecting them into metadata,
+    bool_params, and int_params dicts.  MJD epochs are split into a
+    static integer day and a dynamic fractional day.  Angles are
+    converted to radians.
 
     Parameters
     ----------
@@ -88,18 +134,50 @@ def pint_model_to_params(model: PINTTimingModel) -> ParameterVector:
     frozen_mask: list[bool] = []
     epoch_int_values: dict[str, float] = {}
 
+    metadata: dict[str, str] = {}
+    int_params: dict[str, int] = {}
+    bool_params: dict[str, bool] = {}
+    mask_info: dict[str, MaskInfo] = {}
+
     for pname in model.params:
         param = getattr(model, pname)
 
-        # Skip non-numeric parameter types
-        if isinstance(param, (strParameter, boolParameter, intParameter)):
+        # Collect non-numeric parameter types into side dicts
+        if isinstance(param, strParameter):
+            if param.value is not None:
+                metadata[pname] = str(param.value)
             continue
+        if isinstance(param, boolParameter):
+            if param.value is not None:
+                bool_params[pname] = bool(param.value)
+            continue
+        if isinstance(param, intParameter):
+            if param.value is not None:
+                int_params[pname] = int(param.value)
+            continue
+
         # funcParameter has no .value — skip anything without it
         if not hasattr(param, "value") or not hasattr(param, "quantity"):
             continue
         # Skip unset parameters
         if param.quantity is None:
             continue
+
+        # Collect mask_info for maskParameters
+        if isinstance(param, maskParameter):
+            if hasattr(param, 'key') and param.key is not None:
+                key_value2 = None
+                if hasattr(param, 'key_value') and isinstance(param.key_value, (list, tuple)) and len(param.key_value) == 2:
+                    key_value2 = str(param.key_value[1])
+                    kv = str(param.key_value[0])
+                else:
+                    kv = str(param.key_value) if param.key_value is not None else ""
+                mask_info[pname] = MaskInfo(
+                    name=pname,
+                    key=str(param.key),
+                    key_value=kv,
+                    key_value2=key_value2,
+                )
 
         # Pair parameters (e.g. WAVE, IFUNC) store [value_a, value_b] lists.
         # Detected via pairParameter type OR prefixParameter with parameter_type="pair".
@@ -171,12 +249,64 @@ def pint_model_to_params(model: PINTTimingModel) -> ParameterVector:
         names.append(pname)
         frozen_mask.append(param.frozen)
 
-    return ParameterVector(
+    # Some PINT floatParameters are semantically integers and the standalone
+    # parser puts them in int_params.  Mirror that here so _model_builder
+    # picks them up via par.int_params.get(...).
+    _INT_VALUED_FLOATS = {"TNREDC", "TNDMC", "TNCHROMC", "TNSWC", "SWM", "SIFUNC"}
+    for ivname in _INT_VALUED_FLOATS:
+        if hasattr(model, ivname):
+            p = getattr(model, ivname)
+            if p.value is not None:
+                int_params[ivname] = int(p.value)
+
+    # Build component_set from PINT model's component registry
+    component_set: set[Component] = set()
+    binary_model: Optional[BinaryModel] = None
+
+    for comp_name, comp in model.components.items():
+        if comp_name in ("AbsPhase",):
+            continue
+        if comp_name in _PINT_COMPONENT_MAP:
+            component_set.add(_PINT_COMPONENT_MAP[comp_name])
+            # Precompute theta0 for SolarWindDispersionX from PINT
+            if comp_name == "SolarWindDispersionX":
+                try:
+                    theta0_rad = float(comp.theta0.to(u.rad).value)
+                    metadata["_SWX_THETA0_RAD"] = str(theta0_rad)
+                except Exception:
+                    log.warning("Could not compute SWX theta0 from PINT")
+        elif isinstance(comp, PINTPulsarBinary):
+            bname = comp.binary_model_name
+            try:
+                binary_model = BinaryModel(bname)
+            except ValueError:
+                log.warning("Unknown binary model %r", bname)
+            if bname == "BT_piecewise":
+                component_set.add(Component.BINARY_BT_PIECEWISE)
+            else:
+                component_set.add(Component.BINARY)
+        else:
+            log.warning(
+                "Unknown PINT component %r (%s) — skipping for component_set",
+                comp_name, type(comp).__name__,
+            )
+
+    param_vector = ParameterVector(
         values=jnp.asarray(values, dtype=jnp.float64),
         frozen_mask=tuple(frozen_mask),
         names=tuple(names),
         units=tuple(units),
         epoch_int_values=epoch_int_values,
+    )
+
+    return ParResult(
+        params=param_vector,
+        component_set=component_set,
+        binary_model=binary_model,
+        metadata=metadata,
+        mask_info=mask_info,
+        int_params=int_params,
+        bool_params=bool_params,
     )
 
 

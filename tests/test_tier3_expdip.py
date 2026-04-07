@@ -56,7 +56,7 @@ EXPDIPTAU_1   100
         )
 
         toa_data = pint_toas_to_jax(toas, model)
-        params = pint_model_to_params(model)
+        params = pint_model_to_params(model).params
 
         comp = ExponentialDip(
             n_dips=1,

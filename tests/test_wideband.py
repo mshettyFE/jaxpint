@@ -54,7 +54,7 @@ def jax_wb(pint_wb):
     """Convert wideband data to JaxPINT objects."""
     pint_model, toas = pint_wb
     toa_data = pint_toas_to_jax(toas, model=pint_model)
-    params = pint_model_to_params(pint_model)
+    params = pint_model_to_params(pint_model).params
     jax_model, noise_model = build_timing_model(pint_model, toas=toas)
     return jax_model, toa_data, params, noise_model
 

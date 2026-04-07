@@ -242,7 +242,7 @@ class TestPLRedNoiseVsPINT:
         pint_weights = plred_comp.get_noise_weights(toas)
 
         _tm, noise_model = build_timing_model(pint_model, toas)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.red_noise import PLRedNoise
         plred_jax = None
@@ -272,7 +272,7 @@ class TestPLRedNoiseVsPINT:
 
         _tm, noise_model = build_timing_model(pint_model, toas)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.red_noise import PLRedNoise
         plred_jax = None
@@ -341,7 +341,7 @@ class TestPLDMNoiseVsPINT:
         pint_weights = pldm_comp.get_noise_weights(toas)
 
         _tm, noise_model = build_timing_model(pint_model, toas)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.dm_noise import PLDMNoise
         pldm_jax = None
@@ -370,7 +370,7 @@ class TestPLDMNoiseVsPINT:
 
         _tm, noise_model = build_timing_model(pint_model, toas)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.dm_noise import PLDMNoise
         pldm_jax = None
@@ -450,7 +450,7 @@ class TestPLChromNoiseVsPINT:
 
         _tm, noise_model = build_timing_model(pint_model, toas)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.chrom_noise import PLChromNoise
         plchrom_jax = None
@@ -480,7 +480,7 @@ class TestPLChromNoiseVsPINT:
         pint_weights = plchrom_comp.get_noise_weights(toas)
 
         _tm, noise_model = build_timing_model(pint_model, toas)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.chrom_noise import PLChromNoise
         plchrom_jax = None
@@ -509,7 +509,7 @@ class TestPLChromNoiseVsPINT:
 
         _tm, noise_model = build_timing_model(pint_model, toas)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.chrom_noise import PLChromNoise
         plchrom_jax = None
@@ -553,7 +553,7 @@ class TestPLSWNoiseVsPINT:
 
         _tm, noise_model = build_timing_model(pint_model, toas)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.sw_noise import PLSWNoise
         plsw_jax = None
@@ -583,7 +583,7 @@ class TestPLSWNoiseVsPINT:
         pint_weights = plsw_comp.get_noise_weights(toas)
 
         _tm, noise_model = build_timing_model(pint_model, toas)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.sw_noise import PLSWNoise
         plsw_jax = None
@@ -612,7 +612,7 @@ class TestPLSWNoiseVsPINT:
 
         _tm, noise_model = build_timing_model(pint_model, toas)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model)
+        params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.sw_noise import PLSWNoise
         plsw_jax = None
