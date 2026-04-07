@@ -12,13 +12,13 @@ import logging
 import re
 from typing import Optional
 
-from jaxpint.parfile._registry import BinaryModel, Component
+from jaxpint.bridge._registry import BinaryModel, Component
 from jaxpint._component_order import PRIORITY, DEFAULT_ORDER
 
 import jax.numpy as jnp
 import numpy as np
 
-from jaxpint.parfile._param_builder import ParResult
+from jaxpint.bridge._param_builder import ParResult
 from jaxpint.types import TOAData
 from jaxpint.utils import build_quantization_matrix as _build_quantization_matrix
 

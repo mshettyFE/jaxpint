@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from jaxpint.parfile._registry import BinaryModel, Component
+from jaxpint.bridge._registry import BinaryModel, Component
 from jaxpint.types import ParameterVector
 
 
@@ -27,7 +27,7 @@ class ParResult:
     """Complete result of converting a timing model to JaxPINT's internal format.
 
     Produced by :func:`jaxpint.bridge.model_conversion.pint_model_to_params`
-    and consumed by :func:`jaxpint.parfile._model_builder.build_model`.
+    and consumed by :func:`jaxpint.bridge._model_builder.build_model`.
     """
     params: ParameterVector  # JIT-able values that jax can trace
     component_set: set[Component] = field(default_factory=set)  # What components need to be built

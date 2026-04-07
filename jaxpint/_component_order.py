@@ -1,14 +1,14 @@
 """Component ordering mirroring PINT's DEFAULT_ORDER.
 
 Defines the canonical execution order for timing model components.
-Used by :func:`jaxpint.parfile._model_builder.build_model` to process
+Used by :func:`jaxpint.bridge._model_builder.build_model` to process
 components via a priority queue so that delays are chained in the
 correct physical order.
 """
 
 from __future__ import annotations
 
-from jaxpint.parfile._registry import Component
+from jaxpint.bridge._registry import Component
 
 # Mirrors PINT's DEFAULT_ORDER (timing_model.py:119-135), extended with
 # categories PINT doesn't list (they sort to end in PINT) and noise

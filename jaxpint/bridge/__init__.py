@@ -16,7 +16,7 @@ from jaxpint.bridge.component_builder import (
     build_timing_model,
     _build_quantization_matrix,
 )
-from jaxpint.parfile._param_builder import ParResult
+from jaxpint.bridge._param_builder import ParResult
 
 __all__ = [
     "_build_quantization_matrix",

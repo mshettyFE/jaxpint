@@ -26,8 +26,8 @@ from pint.models.timing_model import TimingModel as PINTTimingModel
 from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
 
 from jaxpint.bridge.toa_conversion import _split_mjd_time
-from jaxpint.parfile._param_builder import ParResult, MaskInfo
-from jaxpint.parfile._registry import BinaryModel, Component
+from jaxpint.bridge._param_builder import ParResult, MaskInfo
+from jaxpint.bridge._registry import BinaryModel, Component
 from jaxpint.types import ParameterVector
 
 log = logging.getLogger(__name__)

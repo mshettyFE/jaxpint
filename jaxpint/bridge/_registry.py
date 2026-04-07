@@ -3,7 +3,7 @@
 These enums identify which timing model components are active and which
 binary orbital model is in use.  They are the shared vocabulary between
 the PINT bridge (:mod:`jaxpint.bridge.model_conversion`) and the model
-builder (:mod:`jaxpint.parfile._model_builder`).
+builder (:mod:`jaxpint.bridge._model_builder`).
 """
 
 from __future__ import annotations
