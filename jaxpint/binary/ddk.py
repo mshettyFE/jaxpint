@@ -103,7 +103,7 @@ class BinaryDDK(DelayComponent):
     ) -> Float[Array, " n_toas"]:
         # --- Extract DD parameters ---
         pb_d = params.param_value(self.pb_name)
-        t0_int, t0_frac = params.epoch_value(self.t0_name)
+        t0 = params.epoch_dual(self.t0_name)
         a1_ls = params.param_value(self.a1_name)
         ecc0 = params.param_value(self.ecc_name)
         om_rad = params.param_value(self.om_name)
@@ -136,8 +136,8 @@ class BinaryDDK(DelayComponent):
             pmra = params.param_value(self.pmra_name)    # mas/yr
             pmdec = params.param_value(self.pmdec_name)  # mas/yr
 
-            posepoch_int, posepoch_frac = params.epoch_value(self.posepoch_name)
-            dt_pos_days = (toa_data.tdb_int - posepoch_int) + (toa_data.tdb_frac - posepoch_frac)
+            posepoch = params.epoch_dual(self.posepoch_name)
+            dt_pos_days = (toa_data.tdb - posepoch).total
             dt_pos_yr = dt_pos_days / 365.25
 
             # Update RA/DEC with PM (per TOA)
@@ -159,7 +159,7 @@ class BinaryDDK(DelayComponent):
         cos_KOM = jnp.cos(kom)
 
         # --- Compute time since T0 (corrected for accumulated delay) ---
-        tt0_s = compute_tt0(toa_data.tdb_int, toa_data.tdb_frac, t0_int, t0_frac, delay=delay)
+        tt0_s = compute_tt0(toa_data.tdb, t0, delay=delay)
 
         # --- Base a1 and omega (before Kopeikin corrections) ---
         a1_base = compute_a1(a1_ls, a1dot, tt0_s)
@@ -226,7 +226,7 @@ class BinaryDDK(DelayComponent):
 
         # --- Solve Kepler's equation ---
         M = compute_orbital_phase(
-            toa_data.tdb_int, toa_data.tdb_frac, t0_int, t0_frac,
+            toa_data.tdb, t0,
             pb_d, pbdot, xpbdot, delay=delay,
         )
         E = compute_eccentric_anomaly(ecc, M)

@@ -4,6 +4,7 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 
+from .dual_float import DualFloat
 from .types import PhaseResult, TOAData, ParameterVector
 from .components import PhaseComponent, DelayComponent, NoiseComponent
 from .phase import Spindown, Glitch, IFunc, PhaseJump, PiecewiseSpindown, Wave
@@ -104,6 +105,7 @@ __all__ = [
     "PLDMNoise",
     "PLRedNoise",
     "PLSWNoise",
+    "DualFloat",
     "ParameterVector",
     "PhaseComponent",
     "PhaseJump",

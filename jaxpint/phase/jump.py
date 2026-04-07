@@ -15,6 +15,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import PhaseComponent
+from jaxpint.dual_float import DualFloat
 from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 
@@ -75,4 +76,4 @@ class PhaseJump(PhaseComponent):
             jump_val = params.param_value(jump_name)
             phase = jnp.where(mask, phase + jump_val * f0, phase)
 
-        return PhaseResult.create(jnp.zeros(toa_data.n_toas), phase)
+        return DualFloat.cycles(jnp.zeros(toa_data.n_toas), phase)

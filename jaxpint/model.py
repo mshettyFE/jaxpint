@@ -16,6 +16,7 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, DispersionDelayComponent, PhaseComponent
+from jaxpint.dual_float import DualFloat
 from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 
@@ -119,7 +120,7 @@ class TimingModel(eqx.Module):
         # cancel out (PINT applies PHOFF only to observation TOAs).
         if self.phoff_name is not None:
             phoff = params.param_value(self.phoff_name)
-            phase = phase + PhaseResult.create(
+            phase = phase + DualFloat.cycles(
                 jnp.zeros(toa_data.n_toas), -phoff * jnp.ones(toa_data.n_toas)
             )
 
@@ -135,7 +136,7 @@ class TimingModel(eqx.Module):
         n = len(self.phase_components)
         if n == 0:
             zeros = jnp.zeros(toa_data.n_toas)
-            return PhaseResult.create(zeros, zeros)
+            return DualFloat.cycles(zeros, zeros)
 
         branches = [
             lambda td, p, d, comp=comp: comp(td, p, d)
@@ -145,14 +146,14 @@ class TimingModel(eqx.Module):
         def body(i, acc):
             phase_int, phase_frac = acc
             contribution = jax.lax.switch(i, branches, toa_data, params, delay)
-            summed = PhaseResult.create(phase_int, phase_frac) + contribution
+            summed = DualFloat.cycles(phase_int, phase_frac) + contribution
             return (summed.int, summed.frac)
 
         zeros = jnp.zeros(toa_data.n_toas)
         result_int, result_frac = jax.lax.fori_loop(
             0, n, body, (zeros, zeros)
         )
-        return PhaseResult.create(result_int, result_frac)
+        return DualFloat.cycles(result_int, result_frac)
 
     def _tzr_phase(
         self,

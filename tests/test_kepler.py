@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jaxpint.dual_float import DualFloat
 import numpy.testing as npt
 import pytest
 
@@ -106,11 +107,9 @@ class TestCommonOrbital:
 
     def test_compute_tt0_precision(self):
         """int/frac split preserves precision for large MJDs."""
-        tdb_int = jnp.array([59000.0, 59001.0])
-        tdb_frac = jnp.array([0.5, 0.75])
-        epoch_int = 59000.0
-        epoch_frac = 0.0
-        tt0 = compute_tt0(tdb_int, tdb_frac, epoch_int, epoch_frac)
+        tdb = DualFloat(int=jnp.array([59000.0, 59001.0]), frac=jnp.array([0.5, 0.75]))
+        epoch = DualFloat(int=jnp.array(59000.0), frac=jnp.array(0.0))
+        tt0 = compute_tt0(tdb, epoch)
         expected = jnp.array([0.5 * SECS_PER_DAY, 1.75 * SECS_PER_DAY])
         npt.assert_allclose(tt0, expected, atol=1e-10)
 

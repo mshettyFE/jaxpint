@@ -16,6 +16,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.binary.kepler import solve_kepler
 from jaxpint.constants import SECS_PER_DAY, SECS_PER_JULIAN_YEAR, TSUN
+from jaxpint.dual_float import DualFloat
 from jaxpint.types import ParameterVector
 
 
@@ -25,20 +26,18 @@ from jaxpint.types import ParameterVector
 # ---------------------------------------------------------------------------
 
 def compute_tt0(
-    tdb_int: Float[Array, " n_toas"],
-    tdb_frac: Float[Array, " n_toas"],
-    epoch_int: float,
-    epoch_frac: float,
+    tdb: DualFloat,
+    epoch: DualFloat,
     delay: Float[Array, " n_toas"] = None,
 ) -> Float[Array, " n_toas"]:
-    """Time from epoch to each TOA in seconds, using int/frac split.
+    """Time from epoch to each TOA in seconds, using DualFloat precision.
 
     Parameters
     ----------
-    tdb_int, tdb_frac : array
-        TDB MJD of each TOA split as integer day + fractional day.
-    epoch_int, epoch_frac : float
-        Reference epoch (T0 or TASC) split as integer day + fractional day.
+    tdb : DualFloat
+        TDB MJD of each TOA (int day + fractional day).
+    epoch : DualFloat
+        Reference epoch (T0 or TASC) as int day + fractional day.
     delay : array, optional
         Accumulated delay from prior components (seconds).  Subtracted
         from TDB to form the barycentric time used by the binary model,
@@ -49,9 +48,8 @@ def compute_tt0(
     array
         ``(tdb - delay - epoch)`` in seconds, shape ``(n_toas,)``.
     """
-    dt_int = tdb_int - epoch_int
-    dt_frac = tdb_frac - epoch_frac
-    tt0 = (dt_int + dt_frac) * SECS_PER_DAY
+    dt = tdb - epoch
+    tt0 = dt.total * SECS_PER_DAY
     if delay is not None:
         tt0 = tt0 - delay
     return tt0
@@ -108,16 +106,14 @@ def compute_mean_anomaly(orbits: Float[Array, " n_toas"]) -> Float[Array, " n_to
 
 
 def compute_orbital_phase(
-    tdb_int: Float[Array, " n_toas"],
-    tdb_frac: Float[Array, " n_toas"],
-    epoch_int: float,
-    epoch_frac: float,
+    tdb: DualFloat,
+    epoch: DualFloat,
     pb_d: float,
     pbdot: float = 0.0,
     xpbdot: float = 0.0,
     delay: Float[Array, " n_toas"] = None,
 ) -> Float[Array, " n_toas"]:
-    """Orbital phase in [0, 2*pi) using int/frac day split for precision.
+    """Orbital phase in [0, 2*pi) using DualFloat precision.
 
     Avoids the precision loss that occurs when a large orbit count
     (e.g. 167.083...) is computed as a single float64 and the fractional
@@ -127,10 +123,10 @@ def compute_orbital_phase(
 
     Parameters
     ----------
-    tdb_int, tdb_frac : array
-        TDB MJD of each TOA split as integer day + fractional day.
-    epoch_int, epoch_frac : float
-        Reference epoch (T0 or TASC) split as integer day + fractional day.
+    tdb : DualFloat
+        TDB MJD of each TOA (int day + fractional day).
+    epoch : DualFloat
+        Reference epoch (T0 or TASC) as int day + fractional day.
     pb_d : float
         Binary period PB in days.
     pbdot : float
@@ -146,8 +142,9 @@ def compute_orbital_phase(
     array
         Orbital phase (mean anomaly) in [0, 2*pi), in radians.
     """
-    dt_int_days = tdb_int - epoch_int      # exact integer days
-    dt_frac_days = tdb_frac - epoch_frac   # fractional day, full precision
+    dt = tdb - epoch
+    dt_int_days = dt.int      # exact integer days
+    dt_frac_days = dt.frac    # fractional day, full precision
 
     # Subtract accumulated delay (convert seconds → days) from fractional part.
     if delay is not None:

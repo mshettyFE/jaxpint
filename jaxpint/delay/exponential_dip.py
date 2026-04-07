@@ -19,6 +19,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
+from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -87,13 +88,12 @@ class ExponentialDip(DelayComponent):
         fref = params.param_value(self.expdipfref_name)  # MHz
         ffac = toa_data.freq / fref
 
-        toa_tdb = toa_data.tdb_int + toa_data.tdb_frac  # MJD (days)
+        toa_tdb = toa_data.tdb.total  # MJD (days)
 
         total = jnp.zeros(toa_data.n_toas)
 
         for i in range(self.n_dips):
-            T_int, T_frac = params.epoch_value(self.expdipep_names[i])
-            T = T_int + T_frac
+            T = params.epoch_dual(self.expdipep_names[i]).total
             dt = toa_tdb - T  # days
 
             A = params.param_value(self.expdipamp_names[i])      # seconds

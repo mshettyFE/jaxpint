@@ -36,6 +36,7 @@ from jaxtyping import Array, Float
 from jaxpint.components import DelayComponent
 from jaxpint.constants import AU_KM, DMCONST
 from jaxpint.delay.solar_wind import _solar_wind_geometry_swm1, _sun_angle_and_distance
+from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
 
@@ -129,7 +130,7 @@ class SolarWindDispersionX(DelayComponent):
         theta, r_km = _sun_angle_and_distance(toa_data, psr_dir)
 
         # 3. TOA MJD for bin assignment (UTC, matching PINT's mjd_float).
-        toa_mjd = toa_data.mjd_int + toa_data.mjd_frac
+        toa_mjd = toa_data.mjd.total
 
         # 4. Fiducial angles for conjunction/opposition (1-element arrays for
         #    compatibility with _solar_wind_geometry_swm1).
@@ -142,10 +143,8 @@ class SolarWindDispersionX(DelayComponent):
 
         for i in range(self.n_bins):
             # Bin boundaries
-            r1_int, r1_frac = params.epoch_value(self.swxr1_names[i])
-            r2_int, r2_frac = params.epoch_value(self.swxr2_names[i])
-            r1 = r1_int + r1_frac
-            r2 = r2_int + r2_frac
+            r1 = params.epoch_dual(self.swxr1_names[i]).total
+            r2 = params.epoch_dual(self.swxr2_names[i]).total
             in_bin = (toa_mjd >= r1) & (toa_mjd <= r2)
 
             # Segment parameters

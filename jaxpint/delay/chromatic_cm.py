@@ -22,6 +22,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
 from jaxpint.constants import DAYS_PER_JULIAN_YEAR, DMCONST
+from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
 
@@ -54,10 +55,8 @@ class ChromaticCM(DelayComponent):
         params: ParameterVector,
     ) -> Float[Array, " n_toas"]:
         """Time from CMEPOCH to each TOA, in Julian years."""
-        cmepoch_int, cmepoch_frac = params.epoch_value(self.cmepoch_name)
-        dt_int = toa_data.tdb_int - cmepoch_int
-        dt_frac = toa_data.tdb_frac - cmepoch_frac
-        dt_days = dt_int + dt_frac
+        epoch = params.epoch_dual(self.cmepoch_name)
+        dt_days = (toa_data.tdb - epoch).total
         return dt_days / DAYS_PER_JULIAN_YEAR
 
     def _get_cm_coeffs(

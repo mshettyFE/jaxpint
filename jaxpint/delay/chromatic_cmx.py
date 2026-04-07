@@ -22,6 +22,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
 from jaxpint.constants import DMCONST
+from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -80,15 +81,13 @@ class ChromaticCMX(DelayComponent):
         array, shape (n_toas,)
             Chromatic delay in seconds.
         """
-        toa_mjd = toa_data.mjd_int + toa_data.mjd_frac
+        toa_mjd = toa_data.mjd.total
 
         cm = jnp.zeros(toa_data.n_toas)
 
         for i in range(self.n_bins):
-            r1_int, r1_frac = params.epoch_value(self.cmxr1_names[i])
-            r2_int, r2_frac = params.epoch_value(self.cmxr2_names[i])
-            r1 = r1_int + r1_frac
-            r2 = r2_int + r2_frac
+            r1 = params.epoch_dual(self.cmxr1_names[i]).total
+            r2 = params.epoch_dual(self.cmxr2_names[i]).total
 
             in_bin = (toa_mjd >= r1) & (toa_mjd <= r2)
             cmx_val = params.param_value(self.cmx_names[i])

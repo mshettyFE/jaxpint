@@ -23,6 +23,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent
 from jaxpint.constants import DAYS_PER_JULIAN_YEAR, DMCONST
+from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
 
@@ -69,11 +70,8 @@ class DispersionDM(DispersionDelayComponent):
         Uses the integer/fractional MJD split to avoid catastrophic
         cancellation when TDB and DMEPOCH are close in value.
         """
-        dmepoch_int, dmepoch_frac = params.epoch_value(self.dmepoch_name)
-
-        dt_int = toa_data.tdb_int - dmepoch_int
-        dt_frac = toa_data.tdb_frac - dmepoch_frac
-        dt_days = dt_int + dt_frac
+        epoch = params.epoch_dual(self.dmepoch_name)
+        dt_days = (toa_data.tdb - epoch).total
         return dt_days / DAYS_PER_JULIAN_YEAR
 
     def _get_dm_coeffs(

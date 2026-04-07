@@ -17,6 +17,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
 from jaxpint.constants import SECS_PER_DAY
+from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import fourier_sum
 
@@ -76,11 +77,8 @@ class WaveX(DelayComponent):
         array, shape (n_toas,)
             WaveX delay in seconds.
         """
-        epoch_int, epoch_frac = params.epoch_value(self.wxepoch_name)
-
-        dt_int = toa_data.tdb_int - epoch_int
-        dt_frac = toa_data.tdb_frac - epoch_frac
-        dt_days = dt_int + dt_frac - delay / SECS_PER_DAY
+        epoch = params.epoch_dual(self.wxepoch_name)
+        dt_days = (toa_data.tdb - epoch).total - delay / SECS_PER_DAY
 
         freqs = jnp.array([params.param_value(n) for n in self.wxfreq_names])
         sins = jnp.array([params.param_value(n) for n in self.wxsin_names])

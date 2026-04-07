@@ -104,7 +104,7 @@ class BinaryDDGR(DelayComponent):
     ) -> Float[Array, " n_toas"]:
         # --- Extract orbital parameters ---
         pb_d = params.param_value(self.pb_name)
-        t0_int, t0_frac = params.epoch_value(self.t0_name)
+        t0 = params.epoch_dual(self.t0_name)
         a1_ls = params.param_value(self.a1_name)
         ecc0 = params.param_value(self.ecc_name)
         om_rad = params.param_value(self.om_name)
@@ -161,7 +161,7 @@ class BinaryDDGR(DelayComponent):
         dth = gr_factor * (3.5 * m1 ** 2 + 6.0 * m1 * m2 + 2.0 * m2 ** 2)
 
         # --- Compute time since periastron (corrected for accumulated delay) ---
-        tt0_s = compute_tt0(toa_data.tdb_int, toa_data.tdb_frac, t0_int, t0_frac, delay=delay)
+        tt0_s = compute_tt0(toa_data.tdb, t0, delay=delay)
 
         # --- Time-dependent orbital elements ---
         ecc = compute_ecc(ecc0, edot, tt0_s)
@@ -169,7 +169,7 @@ class BinaryDDGR(DelayComponent):
 
         # --- Solve Kepler's equation ---
         M = compute_orbital_phase(
-            toa_data.tdb_int, toa_data.tdb_frac, t0_int, t0_frac,
+            toa_data.tdb, t0,
             pb_d, pbdot, xpbdot, delay=delay,
         )
         E = compute_eccentric_anomaly(ecc, M)

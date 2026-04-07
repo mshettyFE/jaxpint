@@ -17,6 +17,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
+from jaxpint.dual_float import DualFloat
 from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
@@ -89,22 +90,18 @@ class PiecewiseSpindown(PhaseComponent):
         PhaseResult
             Phase contribution in cycles (int + frac split).
         """
-        toa_tdb = toa_data.tdb_int + toa_data.tdb_frac
+        toa_tdb = toa_data.tdb.total
         phase = jnp.zeros(toa_data.n_toas)
 
         for i in range(self.n_pieces):
             # Segment boundaries
-            start_int, start_frac = params.epoch_value(self.pwstart_names[i])
-            stop_int, stop_frac = params.epoch_value(self.pwstop_names[i])
-            start = start_int + start_frac
-            stop = stop_int + stop_frac
+            start = params.epoch_dual(self.pwstart_names[i]).total
+            stop = params.epoch_dual(self.pwstop_names[i]).total
             affected = (toa_tdb >= start) & (toa_tdb < stop)
 
-            # Time since segment epoch (int/frac split for precision)
-            ep_int, ep_frac = params.epoch_value(self.pwep_names[i])
-            dt_int = toa_data.tdb_int - ep_int
-            dt_frac = toa_data.tdb_frac - ep_frac
-            dt = (dt_int + dt_frac) * SECS_PER_DAY - delay
+            # Time since segment epoch (DualFloat precision)
+            ep = params.epoch_dual(self.pwep_names[i])
+            dt = (toa_data.tdb - ep).total * SECS_PER_DAY - delay
 
             # Taylor coefficients: [PWPH, PWF0, PWF1, PWF2]
             pwph = params.param_value(self.pwph_names[i])
@@ -116,4 +113,4 @@ class PiecewiseSpindown(PhaseComponent):
             piece_phase = taylor_horner(dt, coeffs)
             phase = phase + jnp.where(affected, piece_phase, 0.0)
 
-        return PhaseResult.create(jnp.zeros(toa_data.n_toas), phase)
+        return DualFloat.cycles(jnp.zeros(toa_data.n_toas), phase)

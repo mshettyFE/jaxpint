@@ -53,6 +53,7 @@ from jaxpint.constants import (
     DMCONST,
     PC_TO_KM,
 )
+from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation, taylor_horner
 
@@ -246,10 +247,8 @@ class SolarWindDispersion(DelayComponent):
         params: ParameterVector,
     ) -> Float[Array, " n_toas"]:
         """Time from SWEPOCH to each TOA, in Julian years."""
-        epoch_int, epoch_frac = params.epoch_value(self.swepoch_name)
-        dt_int = toa_data.tdb_int - epoch_int
-        dt_frac = toa_data.tdb_frac - epoch_frac
-        dt_days = dt_int + dt_frac
+        epoch = params.epoch_dual(self.swepoch_name)
+        dt_days = (toa_data.tdb - epoch).total
         return dt_days / DAYS_PER_JULIAN_YEAR
 
     def _get_ne_sw_coeffs(

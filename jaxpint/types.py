@@ -17,6 +17,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
 
+from jaxpint.dual_float import DualFloat
 from jaxpint.phase_result import PhaseResult
 
 
@@ -100,6 +101,16 @@ class TOAData(eqx.Module):
     #   tdb: days (int/frac split, same as tdb_int/tdb_frac)
     #   freq: MHz (barycentric Doppler-corrected TZRFRQ; inf means no dispersion delay)
     #   ssb_obs_pos: km, shape (3,) — SSB observer position at TZR epoch
+    @property
+    def tdb(self) -> DualFloat:
+        """TDB timestamp as a DualFloat (int day + fractional day)."""
+        return DualFloat(int=self.tdb_int, frac=self.tdb_frac)
+
+    @property
+    def mjd(self) -> DualFloat:
+        """MJD timestamp as a DualFloat (int day + fractional day)."""
+        return DualFloat(int=self.mjd_int, frac=self.mjd_frac)
+
     tzr_tdb_int: Optional[float] = eqx.field(static=True, default=None)
     tzr_tdb_frac: Optional[float] = eqx.field(static=True, default=None)
     tzr_freq: Optional[float] = eqx.field(static=True, default=None)
@@ -226,6 +237,16 @@ class ParameterVector(eqx.Module):
         differentiable.
         """
         return self.epoch_int_values[name], self.values[self._name_to_index[name]]
+
+    def epoch_dual(self, name: str) -> DualFloat:
+        """For epoch parameters: returns a DualFloat(integer_mjd, fractional_day).
+
+        The full MJD is ``result.int + result.frac``. Only the fractional
+        part is differentiable.
+        """
+        int_val = jnp.asarray(self.epoch_int_values[name], dtype=jnp.float64)
+        frac_val = self.values[self._name_to_index[name]]
+        return DualFloat(int=int_val, frac=frac_val)
 
     # -- Free / frozen helpers --
 

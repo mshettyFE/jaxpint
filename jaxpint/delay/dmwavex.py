@@ -19,6 +19,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent
 from jaxpint.constants import DMCONST
+from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import fourier_sum
 
@@ -62,11 +63,8 @@ class DMWaveX(DispersionDelayComponent):
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
-        epoch_int, epoch_frac = params.epoch_value(self.dmwxepoch_name)
-
-        dt_int = toa_data.tdb_int - epoch_int
-        dt_frac = toa_data.tdb_frac - epoch_frac
-        dt_days = dt_int + dt_frac
+        epoch = params.epoch_dual(self.dmwxepoch_name)
+        dt_days = (toa_data.tdb - epoch).total
 
         freqs = jnp.array([params.param_value(n) for n in self.dmwxfreq_names])
         sins = jnp.array([params.param_value(n) for n in self.dmwxsin_names])

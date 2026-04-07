@@ -23,6 +23,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent
 from jaxpint.constants import DMCONST
+from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -62,15 +63,13 @@ class DispersionDMX(DispersionDelayComponent):
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
-        toa_mjd = toa_data.mjd_int + toa_data.mjd_frac
+        toa_mjd = toa_data.mjd.total
 
         dm = jnp.zeros(toa_data.n_toas)
 
         for i in range(self.n_bins):
-            r1_int, r1_frac = params.epoch_value(self.dmxr1_names[i])
-            r2_int, r2_frac = params.epoch_value(self.dmxr2_names[i])
-            r1 = r1_int + r1_frac
-            r2 = r2_int + r2_frac
+            r1 = params.epoch_dual(self.dmxr1_names[i]).total
+            r2 = params.epoch_dual(self.dmxr2_names[i]).total
 
             in_bin = (toa_mjd >= r1) & (toa_mjd <= r2)
             dmx_val = params.param_value(self.dmx_names[i])

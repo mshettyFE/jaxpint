@@ -19,6 +19,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
+from jaxpint.dual_float import DualFloat
 from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner, taylor_horner_deriv, taylor_horner_phase
@@ -62,13 +63,9 @@ class Spindown(PhaseComponent):
         Uses the integer/fractional MJD split to avoid catastrophic
         cancellation when TDB and PEPOCH are close in value.
         """
-        pepoch_int, pepoch_frac = params.epoch_value(self.pepoch_name)
-
-        dt_int = toa_data.tdb_int - pepoch_int    # exact integer-day difference
-        dt_frac = toa_data.tdb_frac - pepoch_frac  # fractional-day difference
-        dt_seconds = (dt_int + dt_frac) * SECS_PER_DAY - delay
-
-        return dt_seconds
+        pepoch = params.epoch_dual(self.pepoch_name)
+        dt = toa_data.tdb - pepoch
+        return dt.total * SECS_PER_DAY - delay
 
     def _get_spin_coeffs(
         self, params: ParameterVector
@@ -111,11 +108,10 @@ class Spindown(PhaseComponent):
         PhaseResult
             Pulse phase in cycles (dimensionless), split as int + frac.
         """
-        pepoch_int, pepoch_frac = params.epoch_value(self.pepoch_name)
-        dt_int_days = toa_data.tdb_int - pepoch_int
-        dt_frac_days = toa_data.tdb_frac - pepoch_frac
+        pepoch = params.epoch_dual(self.pepoch_name)
+        dt = toa_data.tdb - pepoch
         coeffs = self._get_spin_coeffs(params)
-        return taylor_horner_phase(dt_int_days, dt_frac_days, delay, coeffs)
+        return taylor_horner_phase(dt.int, dt.frac, delay, coeffs)
 
     def change_pepoch(
         self,

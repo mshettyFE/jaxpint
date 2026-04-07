@@ -18,6 +18,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
+from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.binary.common import (
@@ -79,7 +80,7 @@ class BinaryBTPiecewise(DelayComponent):
     ) -> Float[Array, " n_toas"]:
         # --- Extract global parameters ---
         pb_d = params.param_value(self.pb_name)
-        t0_int, t0_frac = params.epoch_value(self.t0_name)
+        t0 = params.epoch_dual(self.t0_name)
         a1_ls = params.param_value(self.a1_name)
         ecc0 = params.param_value(self.ecc_name)
         om_rad = params.param_value(self.om_name)
@@ -92,12 +93,12 @@ class BinaryBTPiecewise(DelayComponent):
         xpbdot = params.param_value_or(self.xpbdot_name)
 
         n_toas = toa_data.n_toas
-        toa_mjd = toa_data.tdb_int + toa_data.tdb_frac
+        toa_mjd = toa_data.tdb.total
 
         # --- Build per-TOA T0 and A1 from piecewise intervals ---
         # Start with global values
-        t0_int_per_toa = jnp.full(n_toas, t0_int)
-        t0_frac_per_toa = jnp.full(n_toas, t0_frac)
+        t0_int_per_toa = jnp.full(n_toas, t0.int)
+        t0_frac_per_toa = jnp.full(n_toas, t0.frac)
         a1_per_toa = jnp.full(n_toas, a1_ls)
 
         for i in range(self.n_pieces):
@@ -106,18 +107,17 @@ class BinaryBTPiecewise(DelayComponent):
             in_piece = (toa_mjd >= xr1) & (toa_mjd < xr2)
 
             if self.t0x_names and i < len(self.t0x_names):
-                t0x_int, t0x_frac = params.epoch_value(self.t0x_names[i])
-                t0_int_per_toa = jnp.where(in_piece, t0x_int, t0_int_per_toa)
-                t0_frac_per_toa = jnp.where(in_piece, t0x_frac, t0_frac_per_toa)
+                t0x = params.epoch_dual(self.t0x_names[i])
+                t0_int_per_toa = jnp.where(in_piece, t0x.int, t0_int_per_toa)
+                t0_frac_per_toa = jnp.where(in_piece, t0x.frac, t0_frac_per_toa)
 
             if self.a1x_names and i < len(self.a1x_names):
                 a1x = params.param_value(self.a1x_names[i])
                 a1_per_toa = jnp.where(in_piece, a1x, a1_per_toa)
 
         # --- Compute time since (piecewise) T0 (corrected for accumulated delay) ---
-        dt_int = toa_data.tdb_int - t0_int_per_toa
-        dt_frac = toa_data.tdb_frac - t0_frac_per_toa
-        tt0_s = (dt_int + dt_frac) * SECS_PER_DAY - delay
+        dt = toa_data.tdb - DualFloat(int=t0_int_per_toa, frac=t0_frac_per_toa)
+        tt0_s = dt.total * SECS_PER_DAY - delay
 
         # --- Time-dependent orbital elements ---
         ecc = compute_ecc(ecc0, edot, tt0_s)
@@ -126,9 +126,9 @@ class BinaryBTPiecewise(DelayComponent):
 
         # --- Solve Kepler's equation ---
         # Use the piecewise T0 for orbital phase computation
+        t0_per_toa = DualFloat(int=t0_int_per_toa, frac=t0_frac_per_toa)
         M = _compute_orbital_phase_piecewise(
-            toa_data.tdb_int, toa_data.tdb_frac,
-            t0_int_per_toa, t0_frac_per_toa,
+            toa_data.tdb, t0_per_toa,
             pb_d, pbdot, xpbdot, delay=delay,
         )
         E = compute_eccentric_anomaly(ecc, M)
@@ -152,12 +152,13 @@ class BinaryBTPiecewise(DelayComponent):
 
 
 def _compute_orbital_phase_piecewise(
-    tdb_int, tdb_frac, epoch_int, epoch_frac, pb_d, pbdot, xpbdot,
+    tdb, epoch, pb_d, pbdot, xpbdot,
     delay=None,
 ):
     """Orbital phase with per-TOA epoch (vectorized version of compute_orbital_phase)."""
-    dt_int_days = tdb_int - epoch_int
-    dt_frac_days = tdb_frac - epoch_frac
+    dt = tdb - epoch
+    dt_int_days = dt.int
+    dt_frac_days = dt.frac
     if delay is not None:
         dt_frac_days = dt_frac_days - delay / SECS_PER_DAY
 

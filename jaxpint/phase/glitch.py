@@ -18,6 +18,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
+from jaxpint.dual_float import DualFloat
 from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 
@@ -85,11 +86,9 @@ class Glitch(PhaseComponent):
         phase = jnp.zeros(toa_data.n_toas)
 
         for i in range(self.n_glitches):
-            glep_int, glep_frac = params.epoch_value(self.glep_names[i])
-
-            dt_int_days = toa_data.tdb_int - glep_int
-            dt_frac_days = toa_data.tdb_frac - glep_frac
-            dt = (dt_int_days + dt_frac_days) * SECS_PER_DAY - delay
+            glep = params.epoch_dual(self.glep_names[i])
+            dt_dual = toa_data.tdb - glep
+            dt = dt_dual.total * SECS_PER_DAY - delay
 
             glph = params.param_value(self.glph_names[i])
             glf0 = params.param_value(self.glf0_names[i])
@@ -115,4 +114,4 @@ class Glitch(PhaseComponent):
             # Only apply for TOAs after the glitch epoch
             phase = phase + jnp.where(dt > 0.0, glitch_phase, 0.0)
 
-        return PhaseResult.create(jnp.zeros(toa_data.n_toas), phase)
+        return DualFloat.cycles(jnp.zeros(toa_data.n_toas), phase)

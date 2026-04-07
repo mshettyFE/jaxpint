@@ -22,6 +22,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
 from jaxpint.constants import DMCONST
+from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import fourier_sum
 
@@ -84,11 +85,8 @@ class CMWaveX(DelayComponent):
         array, shape (n_toas,)
             CMWaveX delay in seconds.
         """
-        epoch_int, epoch_frac = params.epoch_value(self.cmwxepoch_name)
-
-        dt_int = toa_data.tdb_int - epoch_int
-        dt_frac = toa_data.tdb_frac - epoch_frac
-        dt_days = dt_int + dt_frac
+        epoch = params.epoch_dual(self.cmwxepoch_name)
+        dt_days = (toa_data.tdb - epoch).total
 
         freqs = jnp.array([params.param_value(n) for n in self.cmwxfreq_names])
         sins = jnp.array([params.param_value(n) for n in self.cmwxsin_names])

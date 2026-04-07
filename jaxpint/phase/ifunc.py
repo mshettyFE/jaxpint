@@ -22,6 +22,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
+from jaxpint.dual_float import DualFloat
 from jaxpint.phase_result import PhaseResult
 from jaxpint.types import TOAData, ParameterVector
 
@@ -75,7 +76,7 @@ class IFunc(PhaseComponent):
             Phase contribution in cycles (int + frac split).
         """
         f0 = params.param_value(self.f0_name)
-        t = toa_data.tdb_int + toa_data.tdb_frac - delay / SECS_PER_DAY
+        t = toa_data.tdb.total - delay / SECS_PER_DAY
 
         mjds = jnp.array(self.control_mjds)
         delays = jnp.array(self.control_delays)
@@ -91,4 +92,4 @@ class IFunc(PhaseComponent):
 
         phase = interp_delay * f0
 
-        return PhaseResult.create(jnp.zeros(toa_data.n_toas), phase)
+        return DualFloat.cycles(jnp.zeros(toa_data.n_toas), phase)

@@ -158,7 +158,7 @@ class BinaryELL1(DelayComponent):
         """Compute ELL1 binary delay."""
         # --- Extract parameters ---
         pb_d = params.param_value(self.pb_name)
-        tasc_int, tasc_frac = params.epoch_value(self.tasc_name)
+        tasc = params.epoch_dual(self.tasc_name)
         a1_ls = params.param_value(self.a1_name)
 
         pbdot = params.param_value_or(self.pbdot_name)
@@ -171,7 +171,7 @@ class BinaryELL1(DelayComponent):
         )
 
         # --- Time since TASC (corrected for accumulated delay) ---
-        ttasc_s = compute_tt0(toa_data.tdb_int, toa_data.tdb_frac, tasc_int, tasc_frac, delay=delay)
+        ttasc_s = compute_tt0(toa_data.tdb, tasc, delay=delay)
 
         # --- Time-dependent orbital elements ---
         a1 = a1_ls + a1dot * ttasc_s  # light-seconds = seconds
@@ -180,7 +180,7 @@ class BinaryELL1(DelayComponent):
         # --- Orbital phase (precision-preserving via int/frac day split) ---
         pb_prime_s = pb_d * SECS_PER_DAY + pbdot * ttasc_s
         Phi = compute_orbital_phase(
-            toa_data.tdb_int, toa_data.tdb_frac, tasc_int, tasc_frac,
+            toa_data.tdb, tasc,
             pb_d, pbdot, delay=delay,
         )
 

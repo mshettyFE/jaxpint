@@ -18,6 +18,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
+from jaxpint.dual_float import DualFloat
 from jaxpint.constants import (
     C_M_PER_S,
     NIELL_A_AMP,
@@ -217,7 +218,7 @@ class TroposphereDelay(DelayComponent):
         if toa_data.tropo_alt is None:
             return jnp.zeros(toa_data.n_toas)
 
-        tdb_mjd = toa_data.tdb_int + toa_data.tdb_frac
+        tdb_mjd = toa_data.tdb.total
         sin_alt = jnp.sin(toa_data.tropo_alt)
         abs_lat = jnp.abs(toa_data.obs_geodetic_lat)
         year_frac = _year_fraction(tdb_mjd, toa_data.obs_geodetic_lat)

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from jaxpint.types import TOAData, ParameterVector
 
 from jaxpint.constants import ARCSEC_TO_RAD, DAYS_PER_JULIAN_YEAR, OBLIQUITY_ARCSEC, RAD_PER_MAS, SECS_PER_DAY
+from jaxpint.dual_float import DualFloat
 from jaxpint.phase_result import PhaseResult
 
 
@@ -166,7 +167,7 @@ def taylor_horner_phase(
 
     z = jnp.zeros_like(dt_int_days)
     result_int, result_frac = jax.lax.fori_loop(0, n_coeffs, body, (z, z))
-    return PhaseResult.create(result_int, result_frac)
+    return DualFloat.cycles(result_int, result_frac)
 
 
 # ---------------------------------------------------------------------------
@@ -475,10 +476,8 @@ def compute_pulsar_direction(
     dec0 = params.param_value(decj_name)
 
     if pmra_name is not None or pmdec_name is not None:
-        posepoch_int, posepoch_frac = params.epoch_value(posepoch_name)
-        dt_int = toa_data.tdb_int - posepoch_int
-        dt_frac = toa_data.tdb_frac - posepoch_frac
-        dt_yr = (dt_int + dt_frac) / DAYS_PER_JULIAN_YEAR
+        posepoch = params.epoch_dual(posepoch_name)
+        dt_yr = (toa_data.tdb - posepoch).total / DAYS_PER_JULIAN_YEAR
 
         if pmra_name is not None:
             pmra = params.param_value(pmra_name)  # mas/yr
