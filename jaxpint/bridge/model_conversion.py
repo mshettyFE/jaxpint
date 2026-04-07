@@ -268,6 +268,7 @@ def pint_model_to_params(model: PINTTimingModel) -> ParResult:
             continue
         if comp_name in _PINT_COMPONENT_MAP:
             component_set.add(_PINT_COMPONENT_MAP[comp_name])
+            #  TODO: HACKY way of storing theta0. Need to find a workaround 
             # Precompute theta0 for SolarWindDispersionX from PINT
             if comp_name == "SolarWindDispersionX":
                 try:

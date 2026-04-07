@@ -21,10 +21,7 @@ from jaxpint.components import NoiseComponent
 from jaxpint.fitter import compute_time_residuals
 from jaxpint.model import TimingModel
 from jaxpint.types import TOAData, ParameterVector
-
-# Seconds per day (exact).
-_SECS_PER_DAY = 86400.0
-
+from jaxpint.constants import SECS_PER_DAY
 
 def apply_delay_to_toas(
     toa_data: TOAData,
@@ -48,7 +45,7 @@ def apply_delay_to_toas(
         Copy of *toa_data* with ``mjd_int/mjd_frac`` and
         ``tdb_int/tdb_frac`` updated.
     """
-    delay_days = delays_seconds / _SECS_PER_DAY
+    delay_days = delays_seconds / SECS_PER_DAY
 
     new_mjd_frac = toa_data.mjd_frac + delay_days
     mjd_overflow = jnp.floor(new_mjd_frac)
