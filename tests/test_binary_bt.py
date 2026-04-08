@@ -33,6 +33,7 @@ def bt_params():
 class TestBinaryBTvsPINT:
     """Compare JaxPINT BinaryBT against PINT's standalone BTmodel."""
 
+    @pytest.mark.slow
     def test_bt_delay_matches_pint(self, bt_params):
         """BT delay should match PINT to float64 precision."""
         pytest.importorskip("pint")

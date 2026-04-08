@@ -69,6 +69,7 @@ EXPDIPTAU_1   100
         )
         return toa_data, params, pint_delay, model, comp
 
+    @pytest.mark.slow
     def test_delay_matches_pint(self, pint_setup):
         toa_data, params, pint_delay, _, comp = pint_setup
         jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
@@ -76,6 +77,7 @@ EXPDIPTAU_1   100
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
+    @pytest.mark.slow
     def test_jit_compatible(self, pint_setup):
         toa_data, params, _, _, comp = pint_setup
         delay = jnp.zeros(toa_data.n_toas)
@@ -83,6 +85,7 @@ EXPDIPTAU_1   100
         jitted = jax.jit(comp)(toa_data, params, delay)
         np.testing.assert_allclose(np.array(jitted), np.array(eager), rtol=1e-14)
 
+    @pytest.mark.slow
     def test_grad_finite_for_amplitudes(self, pint_setup):
         toa_data, params, _, _, comp = pint_setup
 
@@ -96,6 +99,7 @@ EXPDIPTAU_1   100
         amp_idx = params._name_to_index["EXPDIPAMP_1"]
         assert jnp.isfinite(grads.values[amp_idx])
 
+    @pytest.mark.slow
     def test_bridge_builds_expdip(self, pint_setup):
         _, _, _, model, _ = pint_setup
         tm, _ = build_timing_model(model)

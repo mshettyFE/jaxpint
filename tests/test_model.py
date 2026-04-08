@@ -432,6 +432,7 @@ class TestVsPINT:
         toas = toa.get_TOAs(examplefile("NGC6440E.tim"), ephem="DE421")
         return model, toas
 
+    @pytest.mark.slow
     def test_phase_matches_pint(self, ngc6440e):
         """Absolute phase matches PINT within float64 precision.
 
@@ -469,6 +470,7 @@ class TestVsPINT:
         # relative to TZR epoch — order 10^9 is expected.
         assert jnp.max(jnp.abs(total_phase)) < 1e11
 
+    @pytest.mark.slow
     def test_build_timing_model_factory(self, ngc6440e):
         """build_timing_model creates correct component types."""
         pint_model, toas = ngc6440e
@@ -499,6 +501,7 @@ class TestVsPINT:
         # NGC6440E has no DMEPOCH, should fall back to PEPOCH
         assert dm.dmepoch_name == "PEPOCH"
 
+    @pytest.mark.slow
     def test_build_timing_model_phase_matches(self, ngc6440e):
         """build_timing_model produces a model whose phase is finite and consistent."""
         pint_model, toas = ngc6440e
@@ -514,6 +517,7 @@ class TestVsPINT:
         assert jnp.all(jnp.isfinite(total))
         assert total.shape == (toas.ntoas,)
 
+    @pytest.mark.slow
     def test_spindown_phase_matches_pint_component(self, ngc6440e):
         """Spindown phase alone matches PINT's spindown_phase function."""
         pint_model, toas = ngc6440e

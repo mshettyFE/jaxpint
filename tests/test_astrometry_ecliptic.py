@@ -172,6 +172,7 @@ class TestRotationMatrix:
 class TestDelayMatchesPINT:
     """AstrometryEcliptic delay matches PINT's solar_system_geometric_delay."""
 
+    @pytest.mark.slow
     def test_simple_no_pm(self, ecl_simple):
         """No proper motion, no parallax: delay matches PINT."""
         toa_data, params, pint_delay, _ = ecl_simple
@@ -185,6 +186,7 @@ class TestDelayMatchesPINT:
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
+    @pytest.mark.slow
     def test_with_proper_motion(self, ecl_pm):
         """With proper motion: delay matches PINT."""
         toa_data, params, pint_delay, _ = ecl_pm
@@ -201,6 +203,7 @@ class TestDelayMatchesPINT:
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
+    @pytest.mark.slow
     def test_with_parallax(self, ecl_px):
         """With proper motion and parallax: delay matches PINT.
 
@@ -222,6 +225,7 @@ class TestDelayMatchesPINT:
             np.array(jax_delay), pint_delay, rtol=5e-7, atol=1e-10,
         )
 
+    @pytest.mark.slow
     def test_delay_is_nonzero(self, ecl_simple):
         """Delay should be non-trivially nonzero."""
         toa_data, params, _, _ = ecl_simple
@@ -243,6 +247,7 @@ class TestDelayMatchesPINT:
 class TestBridge:
     """build_timing_model correctly creates AstrometryEcliptic."""
 
+    @pytest.mark.slow
     def test_bridge_creates_ecliptic_component(self, ecl_px):
         _, _, _, pint_model = ecl_px
         jax_model, _ = build_timing_model(pint_model)
@@ -254,6 +259,7 @@ class TestBridge:
         assert len(ecl_comps) == 1
         assert ecl_comps[0].obliquity_arcsec == OBLIQUITY_ARCSEC["IERS2010"]
 
+    @pytest.mark.slow
     def test_bridge_full_phase_finite(self, ecl_px):
         """Full model phase is finite with ecliptic astrometry."""
         toa_data, params, _, pint_model = ecl_px
@@ -274,6 +280,7 @@ class TestBridge:
 class TestAutodiff:
     """AstrometryEcliptic is differentiable w.r.t. sky position."""
 
+    @pytest.mark.slow
     def test_grad_elong_finite(self, ecl_simple):
         toa_data, params, _, _ = ecl_simple
         comp = AstrometryEcliptic(
@@ -289,6 +296,7 @@ class TestAutodiff:
         assert jnp.isfinite(grad.values[elong_idx])
         assert grad.values[elong_idx] != 0.0
 
+    @pytest.mark.slow
     def test_grad_elat_finite(self, ecl_simple):
         toa_data, params, _, _ = ecl_simple
         comp = AstrometryEcliptic(
@@ -304,6 +312,7 @@ class TestAutodiff:
         assert jnp.isfinite(grad.values[elat_idx])
         assert grad.values[elat_idx] != 0.0
 
+    @pytest.mark.slow
     def test_jit_compatible(self, ecl_simple):
         """AstrometryEcliptic runs under jax.jit."""
         toa_data, params, _, _ = ecl_simple
@@ -384,38 +393,45 @@ def jax_fit_result(fit_data):
 class TestFitMatchesPINT:
     """JaxPINT WLS fit of an ecliptic pulsar matches PINT."""
 
+    @pytest.mark.slow
     def test_chi2_matches(self, pint_fit_result, jax_fit_result):
         """Post-fit chi2 should agree between PINT and JaxPINT."""
         pint_chi2 = pint_fit_result.resids.chi2
         jax_chi2 = jax_fit_result.chi2
         np.testing.assert_allclose(jax_chi2, pint_chi2, rtol=0.01)
 
+    @pytest.mark.slow
     def test_reduced_chi2_reasonable(self, jax_fit_result):
         """Reduced chi2 should be close to 1 for synthetic data."""
         assert 0.1 < jax_fit_result.reduced_chi2 < 5.0
 
+    @pytest.mark.slow
     def test_f0_matches(self, pint_fit_result, jax_fit_result):
         pint_val = float(pint_fit_result.model.F0.value)
         jax_val = float(jax_fit_result.params.param_value("F0"))
         pint_err = float(pint_fit_result.model.F0.uncertainty_value)
         assert abs(jax_val - pint_val) < 3 * pint_err
 
+    @pytest.mark.slow
     def test_elong_matches(self, pint_fit_result, jax_fit_result):
         pint_val = float(pint_fit_result.model.ELONG.quantity.to(u.rad).value)
         jax_val = float(jax_fit_result.params.param_value("ELONG"))
         np.testing.assert_allclose(jax_val, pint_val, atol=5e-9)
 
+    @pytest.mark.slow
     def test_elat_matches(self, pint_fit_result, jax_fit_result):
         pint_val = float(pint_fit_result.model.ELAT.quantity.to(u.rad).value)
         jax_val = float(jax_fit_result.params.param_value("ELAT"))
         np.testing.assert_allclose(jax_val, pint_val, atol=5e-9)
 
+    @pytest.mark.slow
     def test_dm_matches(self, pint_fit_result, jax_fit_result):
         pint_val = float(pint_fit_result.model.DM.value)
         jax_val = float(jax_fit_result.params.param_value("DM"))
         pint_err = float(pint_fit_result.model.DM.uncertainty_value)
         assert abs(jax_val - pint_val) < 3 * pint_err
 
+    @pytest.mark.slow
     def test_uncertainties_positive(self, jax_fit_result):
         assert jnp.all(jax_fit_result.parameter_uncertainties > 0)
 
@@ -440,6 +456,7 @@ class TestB1855Delay:
         )
         return model, toas
 
+    @pytest.mark.slow
     def test_geometric_delay_matches_pint(self, b1855):
         """Roemer+parallax delay matches PINT for a real ecliptic pulsar.
 
@@ -473,6 +490,7 @@ class TestB1855Delay:
             np.array(jax_delay), pint_delay, rtol=5e-6, atol=1e-10,
         )
 
+    @pytest.mark.slow
     def test_delay_nonzero_and_finite(self, b1855):
         """Delay values should be finite and non-trivially nonzero."""
         pint_model, toas = b1855

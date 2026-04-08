@@ -323,6 +323,7 @@ PLANET_SHAPIRO       N
 
         return toa_data, params, pint_delay
 
+    @pytest.mark.slow
     def test_matches_pint(self, pint_setup):
         """JaxPINT dispersion delay matches PINT within float64 tolerance."""
         toa_data, params, pint_delay = pint_setup

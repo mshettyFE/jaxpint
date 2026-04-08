@@ -144,6 +144,7 @@ class TestDesignMatrix:
 class TestSyntheticFit:
     """Compare JaxPINT WLS fit against PINT on synthetic data."""
 
+    @pytest.mark.slow
     def test_chi2_matches(self, pint_fit, jax_fit):
         pint_chi2 = pint_fit.resids.chi2
         jax_chi2 = jax_fit.chi2
@@ -152,45 +153,53 @@ class TestSyntheticFit:
         # small residual differences that accumulate into chi2.
         np.testing.assert_allclose(jax_chi2, pint_chi2, rtol=0.03)
 
+    @pytest.mark.slow
     def test_f0_matches(self, pint_fit, jax_fit):
         pint_val = float(pint_fit.model.F0.value)
         jax_val = float(jax_fit.params.param_value("F0"))
         pint_err = float(pint_fit.model.F0.uncertainty_value)
         assert abs(jax_val - pint_val) < 3 * pint_err
 
+    @pytest.mark.slow
     def test_f1_matches(self, pint_fit, jax_fit):
         pint_val = float(pint_fit.model.F1.value)
         jax_val = float(jax_fit.params.param_value("F1"))
         pint_err = float(pint_fit.model.F1.uncertainty_value)
         assert abs(jax_val - pint_val) < 3 * pint_err
 
+    @pytest.mark.slow
     def test_dm_matches(self, pint_fit, jax_fit):
         pint_val = float(pint_fit.model.DM.value)
         jax_val = float(jax_fit.params.param_value("DM"))
         pint_err = float(pint_fit.model.DM.uncertainty_value)
         assert abs(jax_val - pint_val) < 3 * pint_err
 
+    @pytest.mark.slow
     def test_uncertainties_positive(self, jax_fit):
         assert jnp.all(jax_fit.parameter_uncertainties > 0)
 
+    @pytest.mark.slow
     def test_covariance_symmetric(self, jax_fit):
         cov = jax_fit.covariance_matrix
         np.testing.assert_allclose(
             np.array(cov), np.array(cov.T), atol=1e-20
         )
 
+    @pytest.mark.slow
     def test_correlation_diagonal_ones(self, jax_fit):
         corr = jax_fit.correlation_matrix
         np.testing.assert_allclose(
             np.diag(np.array(corr)), 1.0, atol=1e-12
         )
 
+    @pytest.mark.slow
     def test_dof(self, synthetic_data, jax_fit):
         _, toas = synthetic_data
         n_toas = len(toas)
         n_free = jax_fit.params.n_free
         assert jax_fit.dof == n_toas - n_free
 
+    @pytest.mark.slow
     def test_reduced_chi2_reasonable(self, jax_fit):
         """Reduced chi2 should be close to 1 for synthetic data."""
         assert 0.5 < jax_fit.reduced_chi2 < 2.0
@@ -204,6 +213,7 @@ class TestSyntheticFit:
 class TestNGC6440E:
     """Tests on real NGC6440E data with astrometry."""
 
+    @pytest.mark.slow
     def test_chi2_decreases(self, ngc6440e):
         pint_model, toas = ngc6440e
         toa_data = pint_toas_to_jax(toas, model=pint_model)
@@ -221,6 +231,7 @@ class TestNGC6440E:
 
         assert result.chi2 < chi2_pre
 
+    @pytest.mark.slow
     def test_multiple_iterations_converge(self, ngc6440e):
         pint_model, toas = ngc6440e
         toa_data = pint_toas_to_jax(toas, model=pint_model)
@@ -233,6 +244,7 @@ class TestNGC6440E:
         assert result.chi2 > 0
         assert result.reduced_chi2 < 1e6
 
+    @pytest.mark.slow
     def test_design_matrix_shape(self, ngc6440e):
         pint_model, toas = ngc6440e
         toa_data = pint_toas_to_jax(toas, model=pint_model)
@@ -252,6 +264,7 @@ class TestNGC6440E:
 class TestNGC6440EAstrometry:
     """Compare JaxPINT astrometry delay and fitted positions against PINT."""
 
+    @pytest.mark.slow
     def test_geometric_delay_matches_pint(self, ngc6440e):
         """Roemer delay from JaxPINT matches PINT's solar_system_geometric_delay."""
         pint_model, toas = ngc6440e
@@ -277,6 +290,7 @@ class TestNGC6440EAstrometry:
             np.array(jax_delay), pint_delay.to(u.s).value, rtol=1e-10
         )
 
+    @pytest.mark.slow
     def test_fit_converges_with_astrometry(self, ngc6440e):
         """JaxPINT fit with RAJ/DECJ free converges to a good chi2."""
         pint_model, toas = ngc6440e

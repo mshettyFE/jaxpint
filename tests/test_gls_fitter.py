@@ -312,6 +312,7 @@ class TestGLSReducesToWLS:
         toas = make_fake_toas_uniform(54990, 55010, 40, m, add_noise=True)
         return m, toas
 
+    @pytest.mark.slow
     def test_gls_matches_wls(self, synthetic_data):
         """GLSFitter with no ECORR gives same chi2 as WLSFitter."""
         from jaxpint.bridge import (
@@ -353,6 +354,7 @@ class TestGLSReducesToWLS:
 class TestQuantizationVsPINT:
     """Compare quantization matrix against PINT's implementation."""
 
+    @pytest.mark.slow
     def test_matches_pint_ecorr_basis(self):
         """Our quantization matrix matches PINT's get_noise_basis."""
         from pathlib import Path

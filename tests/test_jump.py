@@ -286,6 +286,7 @@ class TestJumpIntegration:
 
     # -- mask consistency ------------------------------------------------
 
+    @pytest.mark.slow
     def test_mask_consistency(self, b1855_9yv1):
         """Bridge flag_masks match PINT's select_toa_mask for a single JUMP."""
         model, toas = b1855_9yv1
@@ -305,6 +306,7 @@ class TestJumpIntegration:
         assert np.any(expected)
         assert not np.all(expected)
 
+    @pytest.mark.slow
     def test_mask_consistency_multi_jump(self, b1855_dfg12):
         """Bridge flag_masks match PINT for all 21 JUMPs."""
         model, toas = b1855_dfg12
@@ -333,6 +335,7 @@ class TestJumpIntegration:
 
     # -- phase values ----------------------------------------------------
 
+    @pytest.mark.slow
     def test_phase_values_match(self, b1855_9yv1):
         """JaxPINT jump phase matches PINT for 1-JUMP data."""
         model, toas = b1855_9yv1
@@ -358,6 +361,7 @@ class TestJumpIntegration:
 
         np.testing.assert_allclose(jax_phase, pint_phase, rtol=1e-12, atol=1e-15)
 
+    @pytest.mark.slow
     def test_phase_values_match_multi_jump(self, b1855_dfg12):
         """JaxPINT jump phase matches PINT for 21-JUMP data."""
         model, toas = b1855_dfg12
@@ -387,6 +391,7 @@ class TestJumpIntegration:
 
     # -- derivatives -----------------------------------------------------
 
+    @pytest.mark.slow
     def test_derivative_match(self, b1855_9yv1):
         """JAX autodiff d(phase)/d(JUMP) matches PINT's analytical derivative."""
         model, toas = b1855_9yv1
@@ -418,6 +423,7 @@ class TestJumpIntegration:
 
         np.testing.assert_allclose(jax_deriv, pint_deriv, rtol=1e-12)
 
+    @pytest.mark.slow
     def test_derivative_match_multi_jump(self, b1855_dfg12):
         """JAX autodiff derivatives match PINT for all 21 JUMPs."""
         model, toas = b1855_dfg12

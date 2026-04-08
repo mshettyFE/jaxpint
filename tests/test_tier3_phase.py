@@ -67,6 +67,7 @@ class TestPhaseOffsetvsPINT:
         return (jax_model_base, jax_model_phoff, toa_data,
                 params_base, params_phoff, model_phoff)
 
+    @pytest.mark.slow
     def test_phoff_shifts_residuals(self, pint_setup):
         (jax_model_base, jax_model_phoff, toa_data,
          params_base, params_phoff, _) = pint_setup
@@ -85,6 +86,7 @@ class TestPhaseOffsetvsPINT:
             rtol=1e-10, atol=1e-12,
         )
 
+    @pytest.mark.slow
     def test_bridge_handles_phaseoffset(self, pint_setup):
         _, jax_model_phoff, _, _, _, _ = pint_setup
         assert jax_model_phoff.phoff_name == "PHOFF"
@@ -132,6 +134,7 @@ PWF2_1        0.0
 
         return jax_model, toa_data, params, pint_resids, model
 
+    @pytest.mark.slow
     def test_residuals_match_pint(self, pint_setup):
         """Residuals match PINT."""
         jax_model, toa_data, params, pint_resids, _ = pint_setup
@@ -142,6 +145,7 @@ PWF2_1        0.0
             rtol=0.1, atol=1e-6,
         )
 
+    @pytest.mark.slow
     def test_jit_compatible(self, pint_setup):
         jax_model, toa_data, params, _, _ = pint_setup
         eager = jax_model.compute_phase(toa_data, params)
@@ -150,6 +154,7 @@ PWF2_1        0.0
             np.array(jitted.frac), np.array(eager.frac), rtol=1e-14,
         )
 
+    @pytest.mark.slow
     def test_bridge_builds_piecewise(self, pint_setup):
         _, _, _, _, model = pint_setup
         tm, _ = build_timing_model(model)
@@ -192,6 +197,7 @@ WAVE2         0.3e-6 0.8e-6
 
         return jax_model, toa_data, params, pint_resids, model
 
+    @pytest.mark.slow
     def test_residuals_match_pint(self, pint_setup):
         """Residuals match PINT."""
         jax_model, toa_data, params, pint_resids, _ = pint_setup
@@ -202,6 +208,7 @@ WAVE2         0.3e-6 0.8e-6
             rtol=0.1, atol=1e-6,
         )
 
+    @pytest.mark.slow
     def test_jit_compatible(self, pint_setup):
         jax_model, toa_data, params, _, _ = pint_setup
         eager = jax_model.compute_phase(toa_data, params)
@@ -210,6 +217,7 @@ WAVE2         0.3e-6 0.8e-6
             np.array(jitted.frac), np.array(eager.frac), rtol=1e-14,
         )
 
+    @pytest.mark.slow
     def test_bridge_builds_wave(self, pint_setup):
         _, _, _, _, model = pint_setup
         tm, _ = build_timing_model(model)
@@ -254,6 +262,7 @@ IFUNC5        55400 -1e-6
 
         return jax_model, toa_data, params, pint_resids, model
 
+    @pytest.mark.slow
     def test_residuals_match_pint(self, pint_setup):
         """Residuals match PINT."""
         jax_model, toa_data, params, pint_resids, _ = pint_setup
@@ -264,6 +273,7 @@ IFUNC5        55400 -1e-6
             rtol=0.1, atol=1e-6,
         )
 
+    @pytest.mark.slow
     def test_bridge_builds_ifunc(self, pint_setup):
         _, _, _, _, model = pint_setup
         tm, _ = build_timing_model(model)

@@ -73,6 +73,7 @@ def tropo_setup():
 class TestMatchesPINT:
     """Troposphere delay matches PINT output."""
 
+    @pytest.mark.slow
     def test_matches_pint(self, tropo_setup):
         toa_data, params, pint_delay = tropo_setup
 
@@ -83,6 +84,7 @@ class TestMatchesPINT:
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
+    @pytest.mark.slow
     def test_nonzero(self, tropo_setup):
         """Troposphere delay should be non-trivially nonzero."""
         toa_data, params, _ = tropo_setup
@@ -93,6 +95,7 @@ class TestMatchesPINT:
         assert jnp.all(jnp.isfinite(jax_delay))
         assert jnp.max(jnp.abs(jax_delay)) > 1e-12
 
+    @pytest.mark.slow
     def test_correct_troposphere_n(self):
         """When CORRECT_TROPOSPHERE N, no troposphere data should be populated."""
         par = _PAR.replace("CORRECT_TROPOSPHERE  Y", "CORRECT_TROPOSPHERE  N")
@@ -205,6 +208,7 @@ class TestHelpers:
 class TestMonotonicity:
     """Physical sanity checks: delay should vary monotonically."""
 
+    @pytest.mark.slow
     def test_delay_decreases_with_altitude(self, tropo_setup):
         """Troposphere delay should decrease as target rises higher."""
         toa_data, params, _ = tropo_setup
@@ -230,6 +234,7 @@ class TestMonotonicity:
 class TestJIT:
     """Component works under JIT compilation."""
 
+    @pytest.mark.slow
     def test_jit_compiles(self, tropo_setup):
         toa_data, params, pint_delay = tropo_setup
         comp = TroposphereDelay()
@@ -243,6 +248,7 @@ class TestJIT:
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
+    @pytest.mark.slow
     def test_jit_consistent(self, tropo_setup):
         """JIT and non-JIT produce identical results."""
         toa_data, params, _ = tropo_setup

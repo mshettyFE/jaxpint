@@ -194,6 +194,7 @@ class TestBinaryBTPiecewise:
         # Delays in piece 0 and piece 1 should differ (different A1X)
         assert not np.allclose(d[:10], d[10:]), "Pieces should have different delays"
 
+    @pytest.mark.slow
     def test_piecewise_matches_pint_regular_bt(self, bt_params):
         """Each piece should match PINT's regular BT with piece parameters.
 

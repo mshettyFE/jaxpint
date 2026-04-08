@@ -24,6 +24,7 @@ def b1855():
 class TestBinaryIntegration:
     """End-to-end binary delay comparison using real par/tim files."""
 
+    @pytest.mark.slow
     def test_b1855_dd_binary_delay(self, b1855):
         """B1855+09 DD binary delay should match PINT to <1 ps."""
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
@@ -48,6 +49,7 @@ class TestBinaryIntegration:
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-11, rtol=1e-11)
 
+    @pytest.mark.slow
     def test_b1855_binary_delay_jit(self, b1855):
         """Binary delay on real data should be JIT-compilable."""
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
@@ -65,6 +67,7 @@ class TestBinaryIntegration:
         assert result.shape == (toa_data.n_toas,)
         assert jnp.all(jnp.isfinite(result))
 
+    @pytest.mark.slow
     def test_b1855_binary_delay_autodiff(self, b1855):
         """Jacobian of binary delay w.r.t. parameters on real data."""
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model

@@ -28,6 +28,7 @@ def ell1_params():
 class TestBinaryELL1vsPINT:
     """Compare JaxPINT BinaryELL1 against PINT's standalone ELL1model."""
 
+    @pytest.mark.slow
     def test_ell1_delay_matches_pint(self, ell1_params):
         """ELL1 delay should match PINT to float64 precision."""
         pytest.importorskip("pint")
@@ -75,6 +76,7 @@ class TestBinaryELL1vsPINT:
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
 
+    @pytest.mark.slow
     def test_ell1_no_shapiro(self, ell1_params):
         """ELL1 without Shapiro delay."""
         pytest.importorskip("pint")

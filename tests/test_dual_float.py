@@ -119,7 +119,6 @@ class TestDaysNormalization:
         assert jnp.array_equal(d.int, d2.int)
         assert jnp.array_equal(d.frac, d2.frac)
 
-
 # ===========================================================================
 # DualFloat.cycles() normalization
 # ===========================================================================

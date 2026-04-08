@@ -38,6 +38,7 @@ def dd_params():
 class TestBinaryDDvsPINT:
     """Compare JaxPINT BinaryDD against PINT's standalone DDmodel."""
 
+    @pytest.mark.slow
     def test_dd_delay_matches_pint(self, dd_params):
         """DD delay should match PINT to float64 precision."""
         pytest.importorskip("pint")
@@ -93,6 +94,7 @@ class TestBinaryDDvsPINT:
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
 
+    @pytest.mark.slow
     def test_dd_no_shapiro(self, dd_params):
         """DD without Shapiro (M2=SINI=0) should match inverse + aberration only."""
         pytest.importorskip("pint")
@@ -135,6 +137,7 @@ class TestBinaryDDvsPINT:
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
 
+    @pytest.mark.slow
     def test_dds_delay_matches_pint(self, dd_params):
         """DDS delay should match PINT to float64 precision."""
         pytest.importorskip("pint")

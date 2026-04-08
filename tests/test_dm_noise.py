@@ -162,6 +162,7 @@ class TestPLDMNoiseBasic:
 class TestPLDMNoiseWhitening:
     """Validate that generate() is consistent with covariance()."""
 
+    @pytest.mark.slow
     def test_dm_noise_whitening(self):
         """Empirical variance matches analytic covariance diagonal."""
         n_toas = 60
@@ -335,18 +336,21 @@ class TestGLSWithDMNoise:
 
         return whitened, result
 
+    @pytest.mark.slow
     def test_whitened_std(self, gls_fit_result):
         whitened, _ = gls_fit_result
         assert np.isclose(np.std(whitened), 1.0, atol=0.15), (
             f"std = {np.std(whitened):.4f}"
         )
 
+    @pytest.mark.slow
     def test_whitened_mean(self, gls_fit_result):
         whitened, _ = gls_fit_result
         assert np.isclose(np.mean(whitened), 0.0, atol=0.1), (
             f"mean = {np.mean(whitened):.4f}"
         )
 
+    @pytest.mark.slow
     def test_reduced_chi2_near_one(self, gls_fit_result):
         _, result = gls_fit_result
         assert np.isclose(result.reduced_chi2, 1.0, atol=0.3), (

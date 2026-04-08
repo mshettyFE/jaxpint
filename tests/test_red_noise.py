@@ -145,6 +145,7 @@ class TestPLRedNoiseBasic:
 class TestPLRedNoiseWhitening:
     """Validate that generate() is consistent with covariance()."""
 
+    @pytest.mark.slow
     def test_red_noise_only_whitening(self):
         """Empirical variance of red noise draws matches analytic covariance.
 
@@ -183,6 +184,7 @@ class TestPLRedNoiseWhitening:
             err_msg="Empirical variance doesn't match analytic covariance diagonal",
         )
 
+    @pytest.mark.slow
     def test_combined_white_red_whitening(self):
         """White + red noise: Cholesky-whiten combined draws."""
         n_toas = 60
@@ -396,6 +398,7 @@ class TestGLSWithRedNoise:
 
         return whitened, result
 
+    @pytest.mark.slow
     def test_whitened_std(self, gls_fit_result):
         """Whitened residuals should have std ~ 1.
 
@@ -408,6 +411,7 @@ class TestGLSWithRedNoise:
             f"std = {np.std(whitened):.4f}"
         )
 
+    @pytest.mark.slow
     def test_whitened_mean(self, gls_fit_result):
         """Whitened residuals should have mean ~ 0.
 
@@ -420,6 +424,7 @@ class TestGLSWithRedNoise:
             f"mean = {np.mean(whitened):.4f}"
         )
 
+    @pytest.mark.slow
     def test_reduced_chi2_near_one(self, gls_fit_result):
         """Reduced chi-squared should be near 1.
 

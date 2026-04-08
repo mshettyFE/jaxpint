@@ -144,6 +144,7 @@ class TestBinaryDDKvsPINT:
         jax_delay = np.array(ddk(toa_data, params, jnp.zeros(n_toas)))
         return jax_delay
 
+    @pytest.mark.slow
     def test_ddk_delay_matches_pint(self, ddk_params):
         """DDK delay should match PINT."""
         pytest.importorskip("pint")
@@ -154,6 +155,7 @@ class TestBinaryDDKvsPINT:
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
 
+    @pytest.mark.slow
     def test_ddk_no_k96(self, ddk_params):
         """DDK with K96=False (parallax only)."""
         pytest.importorskip("pint")
@@ -262,6 +264,7 @@ class TestBinaryDDKvsPINT:
         assert jnp.any(jnp.abs(J[:, kin_col]) > 0)
         assert jnp.any(jnp.abs(J[:, kom_col]) > 0)
 
+    @pytest.mark.slow
     def test_ddk_large_px_matches_dd(self, ddk_params):
         """With large PX (far distance), DDK should reduce to DD with SINI=sin(KIN)."""
         from jaxpint.binary.ddk import BinaryDDK

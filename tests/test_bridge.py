@@ -44,6 +44,7 @@ def b1855():
 class TestPintToasToJax:
     """Tests for TOA conversion."""
 
+    @pytest.mark.slow
     def test_basic_fields(self, ngc6440e):
         model, toas = ngc6440e
         td = pint_toas_to_jax(toas)
@@ -60,6 +61,7 @@ class TestPintToasToJax:
         assert td.obs_sun_pos.shape == (td.n_toas, 3)
         assert td.obs_indices.shape == (td.n_toas,)
 
+    @pytest.mark.slow
     def test_dtypes(self, ngc6440e):
         _, toas = ngc6440e
         td = pint_toas_to_jax(toas)
@@ -69,6 +71,7 @@ class TestPintToasToJax:
         assert td.error.dtype == jnp.float64
         assert td.obs_indices.dtype == jnp.int32
 
+    @pytest.mark.slow
     def test_mjd_int_frac_reconstruction(self, ngc6440e):
         """Verify MJD int+frac reconstructs to within ~1 ns of the original."""
         _, toas = ngc6440e
@@ -87,6 +90,7 @@ class TestPintToasToJax:
             rtol=0,
         )
 
+    @pytest.mark.slow
     def test_mjd_frac_in_range(self, ngc6440e):
         """Fractional day should be in [0, 1)."""
         _, toas = ngc6440e
@@ -97,6 +101,7 @@ class TestPintToasToJax:
         assert jnp.all(td.tdb_frac >= 0.0)
         assert jnp.all(td.tdb_frac < 1.0)
 
+    @pytest.mark.slow
     def test_mjd_int_is_integer(self, ngc6440e):
         """Integer day should actually be an integer."""
         _, toas = ngc6440e
@@ -109,17 +114,20 @@ class TestPintToasToJax:
             np.asarray(td.tdb_int), np.floor(np.asarray(td.tdb_int))
         )
 
+    @pytest.mark.slow
     def test_error_positive(self, ngc6440e):
         """TOA errors should be positive (in seconds)."""
         _, toas = ngc6440e
         td = pint_toas_to_jax(toas)
         assert jnp.all(td.error > 0)
 
+    @pytest.mark.slow
     def test_freq_positive(self, ngc6440e):
         _, toas = ngc6440e
         td = pint_toas_to_jax(toas)
         assert jnp.all(td.freq > 0)
 
+    @pytest.mark.slow
     def test_freq_is_barycentric(self, ngc6440e):
         """When model is provided, freq should be barycentric (Doppler-corrected)."""
         import astropy.units as u
@@ -133,6 +141,7 @@ class TestPintToasToJax:
         )
         np.testing.assert_allclose(np.asarray(td.freq), expected, rtol=1e-14)
 
+    @pytest.mark.slow
     def test_observatory_names(self, ngc6440e):
         _, toas = ngc6440e
         td = pint_toas_to_jax(toas)
@@ -143,12 +152,14 @@ class TestPintToasToJax:
         assert jnp.all(td.obs_indices >= 0)
         assert jnp.all(td.obs_indices < len(td.obs_names))
 
+    @pytest.mark.slow
     def test_no_model_gives_empty_masks(self, ngc6440e):
         """Without a model, flag_masks should be empty."""
         _, toas = ngc6440e
         td = pint_toas_to_jax(toas, model=None)
         assert td.flag_masks == {}
 
+    @pytest.mark.slow
     def test_flag_masks_with_model(self, b1855):
         """With a model that has mask params, flag_masks should be populated."""
         model, toas = b1855
@@ -160,6 +171,7 @@ class TestPintToasToJax:
             assert mask.shape == (td.n_toas,)
             assert mask.dtype == jnp.bool_
 
+    @pytest.mark.slow
     def test_flag_masks_match_pint(self, b1855):
         """Verify flag masks match PINT's select_toa_mask for each param."""
         model, toas = b1855
@@ -178,6 +190,7 @@ class TestPintToasToJax:
                     np.asarray(td.flag_masks[pname]), expected
                 )
 
+    @pytest.mark.slow
     def test_no_planets_by_default(self, ngc6440e):
         """NGC6440E doesn't compute planet positions by default."""
         _, toas = ngc6440e
@@ -186,6 +199,7 @@ class TestPintToasToJax:
         if td.planet_positions is not None:
             assert len(td.planet_positions) == 0
 
+    @pytest.mark.slow
     def test_no_wideband_dm(self, ngc6440e):
         """NGC6440E is narrowband — no DM values."""
         _, toas = ngc6440e
@@ -193,6 +207,7 @@ class TestPintToasToJax:
         assert td.dm_values is None
         assert td.dm_errors is None
 
+    @pytest.mark.slow
     def test_auto_compute_tdb(self):
         """If TDBs not computed, pint_toas_to_jax should compute them."""
         toas = toa.get_TOAs(examplefile("NGC6440E.tim"), ephem="DE421")
@@ -212,6 +227,7 @@ class TestPintToasToJax:
 class TestPintModelToParams:
     """Tests for parameter extraction."""
 
+    @pytest.mark.slow
     def test_basic_structure(self, ngc6440e):
         model, _ = ngc6440e
         pv = pint_model_to_params(model).params
@@ -223,6 +239,7 @@ class TestPintModelToParams:
         assert len(pv.frozen_mask) == pv.n_params
         assert len(pv.units) == pv.n_params
 
+    @pytest.mark.slow
     def test_expected_params_present(self, ngc6440e):
         """NGC6440E should have F0, F1, RAJ, DECJ, DM, PEPOCH, POSEPOCH."""
         model, _ = ngc6440e
@@ -231,6 +248,7 @@ class TestPintModelToParams:
         for expected in ("F0", "F1", "RAJ", "DECJ", "DM"):
             assert expected in pv.names, f"{expected} missing from ParameterVector"
 
+    @pytest.mark.slow
     def test_epoch_split(self, ngc6440e):
         """PEPOCH should be split into epoch_int_values + fractional in values."""
         model, _ = ngc6440e
@@ -245,6 +263,7 @@ class TestPintModelToParams:
         reconstructed = pepoch_int + pepoch_frac
         assert abs(reconstructed - original) < 1e-12  # sub-ns
 
+    @pytest.mark.slow
     def test_angle_in_radians(self, ngc6440e):
         """RAJ and DECJ should be stored in radians."""
         model, _ = ngc6440e
@@ -264,6 +283,7 @@ class TestPintModelToParams:
             float(pv.values[raj_idx]), expected_raj_rad, rtol=1e-15
         )
 
+    @pytest.mark.slow
     def test_frozen_mask(self, ngc6440e):
         """Check frozen status matches PINT model."""
         model, _ = ngc6440e
@@ -275,6 +295,7 @@ class TestPintModelToParams:
                 f"{name}: expected frozen={param.frozen}, got {pv.frozen_mask[i]}"
             )
 
+    @pytest.mark.slow
     def test_no_string_or_bool_params(self, ngc6440e):
         """String and bool parameters should not appear."""
         from pint.models.parameter import boolParameter, intParameter, strParameter
@@ -286,6 +307,7 @@ class TestPintModelToParams:
             param = getattr(model, name)
             assert not isinstance(param, (strParameter, boolParameter, intParameter))
 
+    @pytest.mark.slow
     def test_name_to_index_consistent(self, ngc6440e):
         model, _ = ngc6440e
         pv = pint_model_to_params(model).params
@@ -302,6 +324,7 @@ class TestPintModelToParams:
 class TestParamsToPintModel:
     """Tests for writing parameters back to PINT."""
 
+    @pytest.mark.slow
     def test_roundtrip_float_params(self, ngc6440e):
         """Float parameters should survive the round-trip exactly."""
         model, _ = ngc6440e
@@ -317,6 +340,7 @@ class TestParamsToPintModel:
                     f"{name}: {param.value} != {original.value}"
                 )
 
+    @pytest.mark.slow
     def test_roundtrip_angle_params(self, ngc6440e):
         """Angle params should survive radians -> native -> radians."""
         model, _ = ngc6440e
@@ -333,6 +357,7 @@ class TestParamsToPintModel:
             restored_rad = model.__getattr__(name).quantity.to(u.rad).value
             np.testing.assert_allclose(restored_rad, original_rad, atol=1e-15)
 
+    @pytest.mark.slow
     def test_roundtrip_epoch_params(self, ngc6440e):
         """Epoch params (PEPOCH) should round-trip within float64 precision."""
         model, _ = ngc6440e
@@ -348,6 +373,7 @@ class TestParamsToPintModel:
                 f"{name}: {restored_val} != {original_val}"
             )
 
+    @pytest.mark.slow
     def test_roundtrip_with_mask_params(self, b1855):
         """Model with mask parameters should round-trip correctly."""
         model, _ = b1855
@@ -363,6 +389,7 @@ class TestParamsToPintModel:
                     f"{name}: {param.value} != {original.value}"
                 )
 
+    @pytest.mark.slow
     def test_modified_values_propagate(self, ngc6440e):
         """If we change a value in ParameterVector, it should propagate back."""
         model, _ = ngc6440e

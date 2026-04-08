@@ -97,10 +97,23 @@ The **bridge layer** (`jaxpint.bridge`) converts between PINT objects and JaxPIN
 
 ## Testing
 
-Run the full test suite with:
+Run the fast test suite (unit tests only):
 
 ```bash
 pytest
+```
+
+Slow tests (PINT integration, fitting, noise whitening) are skipped by default.
+Run the full suite including slow tests with:
+
+```bash
+pytest --runslow
+```
+
+Run only the slow tests:
+
+```bash
+pytest -m slow --runslow
 ```
 
 Note: the full suite takes 5+ minutes due to numerical validation against PINT.

@@ -233,6 +233,7 @@ UNITS         TDB
         t = toa.merge_TOAs([t1, t2])
         return m, t
 
+    @pytest.mark.slow
     def test_scaled_sigma_matches_pint(self, synthetic_with_noise):
         """JaxPINT scaled sigma matches PINT's scaled_toa_uncertainty."""
         import astropy.units as u
@@ -261,6 +262,7 @@ UNITS         TDB
         )
 
 
+    @pytest.mark.slow
     def test_wls_chi2_matches_pint(self, synthetic_with_noise):
         """WLS fit with EFAC/EQUAD: JaxPINT chi2 matches PINT."""
         import copy

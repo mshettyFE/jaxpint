@@ -77,6 +77,7 @@ WXCOS_0002    0.8e-6
         )
         return toa_data, params, pint_delay, model, comp
 
+    @pytest.mark.slow
     def test_delay_matches_pint(self, pint_setup):
         toa_data, params, pint_delay, _, comp = pint_setup
         jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
@@ -84,6 +85,7 @@ WXCOS_0002    0.8e-6
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
+    @pytest.mark.slow
     def test_jit_compatible(self, pint_setup):
         toa_data, params, _, _, comp = pint_setup
         delay = jnp.zeros(toa_data.n_toas)
@@ -91,6 +93,7 @@ WXCOS_0002    0.8e-6
         jitted = jax.jit(comp)(toa_data, params, delay)
         np.testing.assert_allclose(np.array(jitted), np.array(eager), rtol=1e-14)
 
+    @pytest.mark.slow
     def test_grad_finite(self, pint_setup):
         toa_data, params, _, _, comp = pint_setup
         delay = jnp.zeros(toa_data.n_toas)
@@ -101,6 +104,7 @@ WXCOS_0002    0.8e-6
         grads = jax.grad(loss)(params)
         assert jnp.all(jnp.isfinite(grads.values))
 
+    @pytest.mark.slow
     def test_bridge_builds_wavex(self, pint_setup):
         _, _, _, model, _ = pint_setup
         tm, _ = build_timing_model(model)
@@ -151,6 +155,7 @@ DMWXCOS_0002  0.07
         )
         return toa_data, params, pint_delay, model, comp
 
+    @pytest.mark.slow
     def test_delay_matches_pint(self, pint_setup):
         toa_data, params, pint_delay, _, comp = pint_setup
         jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
@@ -158,6 +163,7 @@ DMWXCOS_0002  0.07
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
+    @pytest.mark.slow
     def test_jit_compatible(self, pint_setup):
         toa_data, params, _, _, comp = pint_setup
         delay = jnp.zeros(toa_data.n_toas)
@@ -165,6 +171,7 @@ DMWXCOS_0002  0.07
         jitted = jax.jit(comp)(toa_data, params, delay)
         np.testing.assert_allclose(np.array(jitted), np.array(eager), rtol=1e-14)
 
+    @pytest.mark.slow
     def test_grad_finite(self, pint_setup):
         toa_data, params, _, _, comp = pint_setup
         delay = jnp.zeros(toa_data.n_toas)
@@ -175,6 +182,7 @@ DMWXCOS_0002  0.07
         grads = jax.grad(loss)(params)
         assert jnp.all(jnp.isfinite(grads.values))
 
+    @pytest.mark.slow
     def test_bridge_builds_dmwavex(self, pint_setup):
         _, _, _, model, _ = pint_setup
         tm, _ = build_timing_model(model)
@@ -227,6 +235,7 @@ CMWXCOS_0002  0.007
         )
         return toa_data, params, pint_delay, model, comp
 
+    @pytest.mark.slow
     def test_delay_matches_pint(self, pint_setup):
         toa_data, params, pint_delay, _, comp = pint_setup
         jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
@@ -234,6 +243,7 @@ CMWXCOS_0002  0.007
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
+    @pytest.mark.slow
     def test_jit_compatible(self, pint_setup):
         toa_data, params, _, _, comp = pint_setup
         delay = jnp.zeros(toa_data.n_toas)
@@ -241,6 +251,7 @@ CMWXCOS_0002  0.007
         jitted = jax.jit(comp)(toa_data, params, delay)
         np.testing.assert_allclose(np.array(jitted), np.array(eager), rtol=1e-14)
 
+    @pytest.mark.slow
     def test_grad_finite(self, pint_setup):
         toa_data, params, _, _, comp = pint_setup
         delay = jnp.zeros(toa_data.n_toas)
@@ -251,6 +262,7 @@ CMWXCOS_0002  0.007
         grads = jax.grad(loss)(params)
         assert jnp.all(jnp.isfinite(grads.values))
 
+    @pytest.mark.slow
     def test_bridge_builds_cmwavex(self, pint_setup):
         _, _, _, model, _ = pint_setup
         tm, _ = build_timing_model(model)

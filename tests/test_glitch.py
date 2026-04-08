@@ -347,6 +347,7 @@ class TestVsPINT:
         )
         return model, toas
 
+    @pytest.mark.slow
     def test_glitch_phase_matches_pint(self, glitch_model):
         """JaxPINT glitch phase matches PINT's glitch_phase with zero delay."""
         import astropy.units as u
@@ -382,6 +383,7 @@ class TestVsPINT:
 
         np.testing.assert_allclose(jax_phase, pint_phase, rtol=1e-12)
 
+    @pytest.mark.slow
     def test_glitch_phase_matches_pint_with_delay(self, glitch_model):
         """JaxPINT glitch phase matches PINT's glitch_phase with nonzero delay."""
         import astropy.units as u
@@ -411,6 +413,7 @@ class TestVsPINT:
 
         np.testing.assert_allclose(jax_phase, pint_phase, rtol=1e-12)
 
+    @pytest.mark.slow
     def test_full_model_residuals(self, glitch_model):
         """Full-model residuals with glitches match PINT."""
         import pint.residuals

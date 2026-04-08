@@ -28,6 +28,7 @@ def ddgr_params():
 class TestBinaryDDGRvsPINT:
     """Compare JaxPINT BinaryDDGR against PINT's standalone DDGRmodel."""
 
+    @pytest.mark.slow
     def test_ddgr_pk_parameters(self, ddgr_params):
         """Verify GR-derived PK parameters match PINT."""
         pytest.importorskip("pint")
@@ -96,6 +97,7 @@ class TestBinaryDDGRvsPINT:
         npt.assert_allclose(jax_dth, pint_dth, rtol=2e-10,
                             err_msg="DTH mismatch")
 
+    @pytest.mark.slow
     def test_ddgr_delay_matches_pint(self, ddgr_params):
         """Full DDGR delay should match PINT."""
         pytest.importorskip("pint")
@@ -144,6 +146,7 @@ class TestBinaryDDGRvsPINT:
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-11, rtol=1e-11)
 
+    @pytest.mark.slow
     def test_ddgr_matches_dd_with_same_pk(self, ddgr_params):
         """DDGR delay should equal DD delay when given equivalent PK values."""
         pytest.importorskip("pint")
@@ -230,6 +233,7 @@ class TestBinaryDDGRvsPINT:
 
         npt.assert_allclose(delay_ddgr, delay_dd, atol=1e-11, rtol=1e-11)
 
+    @pytest.mark.slow
     def test_ddgr_xomdot(self, ddgr_params):
         """XOMDOT should produce a different delay than without it."""
         from jaxpint.binary.ddgr import BinaryDDGR

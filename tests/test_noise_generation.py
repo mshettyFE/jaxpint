@@ -370,16 +370,19 @@ class TestGLSWhitening:
 
         return whitened, result
 
+    @pytest.mark.slow
     def test_whitened_std(self, gls_fit_result):
         """Whitened residuals should have std ~ 1."""
         whitened, _ = gls_fit_result
         assert np.isclose(np.std(whitened), 1.0, atol=0.2)
 
+    @pytest.mark.slow
     def test_whitened_mean(self, gls_fit_result):
         """Whitened residuals should have mean ~ 0."""
         whitened, _ = gls_fit_result
         assert np.isclose(np.mean(whitened), 0.0, atol=0.05)
 
+    @pytest.mark.slow
     def test_reduced_chi2_near_one(self, gls_fit_result):
         """Reduced chi-squared should be near 1 for correctly generated noise."""
         _, result = gls_fit_result

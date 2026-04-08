@@ -195,6 +195,7 @@ UNITS         TDB
 class TestPLRedNoiseVsPINT:
     """Verify PLRedNoise basis and weights match PINT's PLRedNoise."""
 
+    @pytest.mark.slow
     def test_red_noise_basis_matches_pint(self, plred_pint_model):
         """JaxPINT Fourier basis matches PINT's get_noise_basis().
 
@@ -232,6 +233,7 @@ class TestPLRedNoiseVsPINT:
             err_msg="PLRedNoise Fourier basis mismatch",
         )
 
+    @pytest.mark.slow
     def test_red_noise_weights_match_pint(self, plred_pint_model):
         """JaxPINT PSD weights match PINT's get_noise_weights()."""
         from jaxpint.bridge import build_timing_model, pint_model_to_params
@@ -260,6 +262,7 @@ class TestPLRedNoiseVsPINT:
             err_msg="PLRedNoise PSD weights mismatch",
         )
 
+    @pytest.mark.slow
     def test_red_noise_covariance_matches_pint(self, plred_pint_model):
         """JaxPINT full covariance F @ diag(w) @ F.T matches PINT."""
         from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params
@@ -299,6 +302,7 @@ class TestPLRedNoiseVsPINT:
 class TestPLDMNoiseVsPINT:
     """Verify PLDMNoise basis and weights match PINT's PLDMNoise."""
 
+    @pytest.mark.slow
     def test_dm_noise_basis_matches_pint(self, pldm_pint_model):
         """JaxPINT DM-scaled Fourier basis matches PINT's get_noise_basis().
 
@@ -331,6 +335,7 @@ class TestPLDMNoiseVsPINT:
             err_msg="PLDMNoise basis mismatch",
         )
 
+    @pytest.mark.slow
     def test_dm_noise_weights_match_pint(self, pldm_pint_model):
         """JaxPINT PSD weights match PINT's get_noise_weights()."""
         from jaxpint.bridge import build_timing_model, pint_model_to_params
@@ -359,6 +364,7 @@ class TestPLDMNoiseVsPINT:
             err_msg="PLDMNoise PSD weights mismatch",
         )
 
+    @pytest.mark.slow
     def test_dm_noise_covariance_matches_pint(self, pldm_pint_model):
         """Full DM noise covariance matches PINT's pl_dm_cov_matrix()."""
         from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params
@@ -388,6 +394,7 @@ class TestPLDMNoiseVsPINT:
             err_msg="PLDMNoise covariance matrix mismatch",
         )
 
+    @pytest.mark.slow
     def test_dm_noise_frequency_scaling(self, pldm_pint_model):
         """820 MHz TOAs should have ~2.9x larger basis columns than 1400 MHz.
 
@@ -434,6 +441,7 @@ class TestPLDMNoiseVsPINT:
 class TestPLChromNoiseVsPINT:
     """Verify PLChromNoise basis and weights match PINT's PLChromNoise."""
 
+    @pytest.mark.slow
     def test_chrom_noise_basis_matches_pint(self, plchrom_pint_model):
         """JaxPINT chromatic basis matches PINT's get_noise_basis().
 
@@ -470,6 +478,7 @@ class TestPLChromNoiseVsPINT:
             err_msg="PLChromNoise basis mismatch",
         )
 
+    @pytest.mark.slow
     def test_chrom_noise_weights_match_pint(self, plchrom_pint_model):
         """JaxPINT PSD weights match PINT's get_noise_weights()."""
         from jaxpint.bridge import build_timing_model, pint_model_to_params
@@ -498,6 +507,7 @@ class TestPLChromNoiseVsPINT:
             err_msg="PLChromNoise PSD weights mismatch",
         )
 
+    @pytest.mark.slow
     def test_chrom_noise_covariance_matches_pint(self, plchrom_pint_model):
         """Full chromatic noise covariance matches PINT's pl_chrom_cov_matrix()."""
         from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params
@@ -536,6 +546,7 @@ class TestPLChromNoiseVsPINT:
 class TestPLSWNoiseVsPINT:
     """Verify PLSWNoise basis and weights match PINT's PLSWNoise."""
 
+    @pytest.mark.slow
     def test_sw_noise_basis_matches_pint(self, plsw_pint_model):
         """JaxPINT SW-scaled Fourier basis matches PINT's get_noise_basis().
 
@@ -573,6 +584,7 @@ class TestPLSWNoiseVsPINT:
             err_msg="PLSWNoise basis mismatch",
         )
 
+    @pytest.mark.slow
     def test_sw_noise_weights_match_pint(self, plsw_pint_model):
         """JaxPINT PSD weights match PINT's get_noise_weights()."""
         from jaxpint.bridge import build_timing_model, pint_model_to_params
@@ -601,6 +613,7 @@ class TestPLSWNoiseVsPINT:
             err_msg="PLSWNoise PSD weights mismatch",
         )
 
+    @pytest.mark.slow
     def test_sw_noise_covariance_matches_pint(self, plsw_pint_model):
         """Full SW noise covariance matches PINT's pl_sw_cov_matrix()."""
         from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params

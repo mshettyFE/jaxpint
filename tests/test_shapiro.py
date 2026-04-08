@@ -90,6 +90,7 @@ def planet_setup():
 class TestSunOnly:
     """Solar Shapiro delay (Sun only) matches PINT."""
 
+    @pytest.mark.slow
     def test_matches_pint(self, sun_only_setup):
         toa_data, params, pint_delay = sun_only_setup
 
@@ -100,6 +101,7 @@ class TestSunOnly:
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
+    @pytest.mark.slow
     def test_nonzero(self, sun_only_setup):
         """Shapiro delay should be non-trivially nonzero."""
         toa_data, params, _ = sun_only_setup
@@ -114,6 +116,7 @@ class TestSunOnly:
 class TestWithPlanets:
     """Solar Shapiro delay (Sun + planets) matches PINT."""
 
+    @pytest.mark.slow
     def test_matches_pint(self, planet_setup):
         toa_data, params, pint_delay = planet_setup
 
@@ -124,6 +127,7 @@ class TestWithPlanets:
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
+    @pytest.mark.slow
     def test_planets_add_contribution(self, sun_only_setup, planet_setup):
         """Planet contribution should differ from Sun-only."""
         toa_data_sun, params_sun, _ = sun_only_setup
@@ -142,6 +146,7 @@ class TestWithPlanets:
 class TestAutodiff:
     """Shapiro delay is differentiable w.r.t. sky position."""
 
+    @pytest.mark.slow
     def test_grad_raj_finite(self, sun_only_setup):
         toa_data, params, _ = sun_only_setup
         comp = SolarSystemShapiroDelay(planet_shapiro=False)
@@ -156,6 +161,7 @@ class TestAutodiff:
         assert jnp.isfinite(grad_vals.values[raj_idx])
         assert grad_vals.values[raj_idx] != 0.0
 
+    @pytest.mark.slow
     def test_grad_decj_finite(self, sun_only_setup):
         toa_data, params, _ = sun_only_setup
         comp = SolarSystemShapiroDelay(planet_shapiro=False)

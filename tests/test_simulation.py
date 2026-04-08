@@ -195,6 +195,7 @@ class TestApplyDelayToToas:
 class TestZeroResiduals:
     """Tests for zero_residuals."""
 
+    @pytest.mark.slow
     def test_converges_from_raw(self, jax_objects_raw):
         """Starting from unzeroed TOAs, residuals should converge to < 1 ns."""
         model, toa_data, params = jax_objects_raw
@@ -210,6 +211,7 @@ class TestZeroResiduals:
 
         assert max_resid < tol, f"max |residual| = {max_resid:.3e} s > {tol:.3e} s"
 
+    @pytest.mark.slow
     def test_already_zeroed_is_noop(self, jax_objects_zeroed):
         """If residuals are already below tolerance, TOAs should not change."""
         model, toa_data, params = jax_objects_zeroed
@@ -223,6 +225,7 @@ class TestZeroResiduals:
         )
         np.testing.assert_array_equal(zeroed.tdb_int, zeroed_again.tdb_int)
 
+    @pytest.mark.slow
     def test_vs_pint(self, jax_objects_raw):
         """JaxPINT zero_residuals should produce sub-nanosecond residuals."""
         model, toa_data, params = jax_objects_raw
@@ -233,6 +236,7 @@ class TestZeroResiduals:
 
         assert float(jnp.max(jnp.abs(jax_resids))) < tol
 
+    @pytest.mark.slow
     def test_raises_on_nonconvergence(self, jax_objects_raw):
         """Should raise RuntimeError if maxiter is too small."""
         model, toa_data, params = jax_objects_raw

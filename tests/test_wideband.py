@@ -67,24 +67,29 @@ def jax_wb(pint_wb):
 class TestWidebandTOAConversion:
     """Verify wideband DM data is correctly converted to JaxPINT."""
 
+    @pytest.mark.slow
     def test_dm_values_present(self, jax_wb):
         _, toa_data, _, _ = jax_wb
         assert toa_data.dm_values is not None
 
+    @pytest.mark.slow
     def test_dm_errors_present(self, jax_wb):
         _, toa_data, _, _ = jax_wb
         assert toa_data.dm_errors is not None
 
+    @pytest.mark.slow
     def test_dm_values_shape(self, jax_wb, pint_wb):
         _, toa_data, _, _ = jax_wb
         _, toas = pint_wb
         assert toa_data.dm_values.shape == (toas.ntoas,)
 
+    @pytest.mark.slow
     def test_dm_errors_shape(self, jax_wb, pint_wb):
         _, toa_data, _, _ = jax_wb
         _, toas = pint_wb
         assert toa_data.dm_errors.shape == (toas.ntoas,)
 
+    @pytest.mark.slow
     def test_dm_values_match_pint(self, jax_wb, pint_wb):
         _, toa_data, _, _ = jax_wb
         _, toas = pint_wb
@@ -93,6 +98,7 @@ class TestWidebandTOAConversion:
             np.array(toa_data.dm_values), pint_dms, rtol=1e-14,
         )
 
+    @pytest.mark.slow
     def test_dm_errors_match_pint(self, jax_wb, pint_wb):
         _, toa_data, _, _ = jax_wb
         _, toas = pint_wb
@@ -101,10 +107,12 @@ class TestWidebandTOAConversion:
             np.array(toa_data.dm_errors), pint_dme, rtol=1e-14,
         )
 
+    @pytest.mark.slow
     def test_dm_values_positive(self, jax_wb):
         _, toa_data, _, _ = jax_wb
         assert jnp.all(toa_data.dm_values > 0)
 
+    @pytest.mark.slow
     def test_dm_errors_positive(self, jax_wb):
         _, toa_data, _, _ = jax_wb
         assert jnp.all(toa_data.dm_errors > 0)
@@ -118,17 +126,20 @@ class TestWidebandTOAConversion:
 class TestModelDM:
     """Test that JaxPINT's model.compute_dm matches PINT's total_dm."""
 
+    @pytest.mark.slow
     def test_compute_dm_shape(self, jax_wb, pint_wb):
         jax_model, toa_data, params, _ = jax_wb
         _, toas = pint_wb
         dm = jax_model.compute_dm(toa_data, params)
         assert dm.shape == (toas.ntoas,)
 
+    @pytest.mark.slow
     def test_compute_dm_no_nan(self, jax_wb):
         jax_model, toa_data, params, _ = jax_wb
         dm = jax_model.compute_dm(toa_data, params)
         assert not jnp.any(jnp.isnan(dm))
 
+    @pytest.mark.slow
     def test_compute_dm_matches_pint(self, jax_wb, pint_wb):
         """JaxPINT compute_dm should match PINT total_dm."""
         jax_model, toa_data, params, _ = jax_wb
@@ -139,10 +150,12 @@ class TestModelDM:
 
         npt.assert_allclose(jax_dm, pint_dm, rtol=1e-10)
 
+    @pytest.mark.slow
     def test_dispersion_components_populated(self, jax_wb):
         jax_model, _, _, _ = jax_wb
         assert len(jax_model.dispersion_components) > 0
 
+    @pytest.mark.slow
     def test_compute_dm_differentiable(self, jax_wb):
         """compute_dm should be differentiable via jax.jacobian."""
         jax_model, toa_data, params, _ = jax_wb
@@ -164,12 +177,14 @@ class TestModelDM:
 class TestDMResiduals:
     """Test DM residual computation against PINT."""
 
+    @pytest.mark.slow
     def test_dm_residuals_shape(self, jax_wb, pint_wb):
         jax_model, toa_data, params, _ = jax_wb
         _, toas = pint_wb
         dm_resid = compute_dm_residuals(jax_model, toa_data, params)
         assert dm_resid.shape == (toas.ntoas,)
 
+    @pytest.mark.slow
     def test_dm_residuals_match_pint(self, jax_wb, pint_wb):
         """DM residuals should match PINT's WidebandDMResiduals."""
         jax_model, toa_data, params, _ = jax_wb
@@ -183,6 +198,7 @@ class TestDMResiduals:
 
         npt.assert_allclose(jax_dm_resid, pint_dm_resid, rtol=1e-10)
 
+    @pytest.mark.slow
     def test_dm_residuals_no_nan(self, jax_wb):
         jax_model, toa_data, params, _ = jax_wb
         dm_resid = compute_dm_residuals(jax_model, toa_data, params)
@@ -197,6 +213,7 @@ class TestDMResiduals:
 class TestTimeResiduals:
     """Verify that narrowband time residuals match PINT."""
 
+    @pytest.mark.slow
     def test_time_residuals_finite(self, jax_wb):
         """Time residuals should be finite and have the right shape."""
         jax_model, toa_data, params, _ = jax_wb
@@ -205,6 +222,7 @@ class TestTimeResiduals:
         assert not jnp.any(jnp.isnan(time_resid))
         assert not jnp.any(jnp.isinf(time_resid))
 
+    @pytest.mark.slow
     def test_time_residuals_match_pint(self, jax_wb, pint_wb):
         """Time residuals should match PINT to ~100 ns."""
         jax_model, toa_data, params, _ = jax_wb
@@ -224,12 +242,14 @@ class TestTimeResiduals:
 class TestWidebandResiduals:
     """Test combined [time_resid; dm_resid] vector."""
 
+    @pytest.mark.slow
     def test_shape(self, jax_wb, pint_wb):
         jax_model, toa_data, params, _ = jax_wb
         _, toas = pint_wb
         wb_resid = compute_wideband_residuals(jax_model, toa_data, params)
         assert wb_resid.shape == (2 * toas.ntoas,)
 
+    @pytest.mark.slow
     def test_first_half_is_time(self, jax_wb, pint_wb):
         """First N entries should be time residuals."""
         jax_model, toa_data, params, _ = jax_wb
@@ -243,6 +263,7 @@ class TestWidebandResiduals:
             np.array(wb_resid[:n]), np.array(time_resid),
         )
 
+    @pytest.mark.slow
     def test_second_half_is_dm(self, jax_wb, pint_wb):
         """Last N entries should be DM residuals."""
         jax_model, toa_data, params, _ = jax_wb
@@ -256,6 +277,7 @@ class TestWidebandResiduals:
             np.array(wb_resid[n:]), np.array(dm_resid),
         )
 
+    @pytest.mark.slow
     def test_no_nan(self, jax_wb):
         jax_model, toa_data, params, _ = jax_wb
         wb_resid = compute_wideband_residuals(jax_model, toa_data, params)
@@ -270,17 +292,20 @@ class TestWidebandResiduals:
 class TestWidebandDesignMatrix:
     """Test the combined wideband design matrix."""
 
+    @pytest.mark.slow
     def test_shape(self, jax_wb, pint_wb):
         jax_model, toa_data, params, _ = jax_wb
         _, toas = pint_wb
         M = compute_wideband_design_matrix(jax_model, toa_data, params)
         assert M.shape == (2 * toas.ntoas, params.n_free)
 
+    @pytest.mark.slow
     def test_no_nan(self, jax_wb):
         jax_model, toa_data, params, _ = jax_wb
         M = compute_wideband_design_matrix(jax_model, toa_data, params)
         assert not jnp.any(jnp.isnan(M))
 
+    @pytest.mark.slow
     def test_columns_nonzero(self, jax_wb):
         """Each free parameter should affect at least one residual."""
         jax_model, toa_data, params, _ = jax_wb
@@ -288,6 +313,7 @@ class TestWidebandDesignMatrix:
         col_norms = jnp.linalg.norm(M, axis=0)
         assert jnp.all(col_norms > 0)
 
+    @pytest.mark.slow
     def test_toa_block_matches_narrowband(self, jax_wb, pint_wb):
         """Top half of wideband design matrix should match narrowband."""
         from jaxpint.fitter import compute_design_matrix
@@ -303,6 +329,7 @@ class TestWidebandDesignMatrix:
             np.array(M_wb[:n, :]), np.array(M_nb), rtol=1e-12,
         )
 
+    @pytest.mark.slow
     def test_dm_block_nonzero_for_dm_params(self, jax_wb, pint_wb):
         """DM rows should be nonzero for DM-related parameters."""
         jax_model, toa_data, params, _ = jax_wb
@@ -325,21 +352,25 @@ class TestWidebandDesignMatrix:
 class TestDMWhiteNoise:
     """Test ScaleDmError (DMEFAC/DMEQUAD) via the NoiseModel."""
 
+    @pytest.mark.slow
     def test_dm_white_noise_present(self, jax_wb):
         _, _, _, noise_model = jax_wb
         assert noise_model.dm_white_noise is not None
 
+    @pytest.mark.slow
     def test_scaled_dm_sigma_shape(self, jax_wb, pint_wb):
         _, toa_data, params, noise_model = jax_wb
         _, toas = pint_wb
         sigma_dm = noise_model.scaled_dm_sigma(toa_data, params)
         assert sigma_dm.shape == (toas.ntoas,)
 
+    @pytest.mark.slow
     def test_scaled_dm_sigma_positive(self, jax_wb):
         _, toa_data, params, noise_model = jax_wb
         sigma_dm = noise_model.scaled_dm_sigma(toa_data, params)
         assert jnp.all(sigma_dm > 0)
 
+    @pytest.mark.slow
     def test_scaled_dm_sigma_matches_pint(self, jax_wb, pint_wb):
         """Scaled DM sigma should match PINT's scaled_dm_uncertainty."""
         _, toa_data, params, noise_model = jax_wb
@@ -352,6 +383,7 @@ class TestDMWhiteNoise:
 
         npt.assert_allclose(jax_sigma, pint_sigma, rtol=1e-12)
 
+    @pytest.mark.slow
     def test_wideband_covariance_shapes(self, jax_wb, pint_wb):
         _, toa_data, params, noise_model = jax_wb
         _, toas = pint_wb
@@ -373,6 +405,7 @@ class TestDMWhiteNoise:
 class TestDispersionJump:
     """Test DMJUMP component."""
 
+    @pytest.mark.slow
     def test_dmjump_in_dispersion_components(self, jax_wb):
         from jaxpint.delay.dispersion_jump import DispersionJump
 
@@ -383,6 +416,7 @@ class TestDispersionJump:
         )
         assert has_dmjump
 
+    @pytest.mark.slow
     def test_dmjump_zero_delay(self, jax_wb):
         """DMJUMP should contribute zero timing delay."""
         from jaxpint.delay.dispersion_jump import DispersionJump
@@ -396,6 +430,7 @@ class TestDispersionJump:
                 npt.assert_array_equal(np.array(delay), 0.0)
                 break
 
+    @pytest.mark.slow
     def test_dmjump_nonzero_dm(self, jax_wb):
         """DMJUMP should contribute nonzero DM for some TOAs."""
         from jaxpint.delay.dispersion_jump import DispersionJump
@@ -418,6 +453,7 @@ class TestDispersionJump:
 class TestWidebandGLSFitter:
     """Test the wideband GLS fitter."""
 
+    @pytest.mark.slow
     def test_fitter_creates(self, jax_wb):
         jax_model, toa_data, params, noise_model = jax_wb
         fitter = WidebandGLSFitter(
@@ -425,6 +461,7 @@ class TestWidebandGLSFitter:
         )
         assert fitter is not None
 
+    @pytest.mark.slow
     def test_fit_returns_result(self, jax_wb):
         jax_model, toa_data, params, noise_model = jax_wb
         fitter = WidebandGLSFitter(
@@ -433,6 +470,7 @@ class TestWidebandGLSFitter:
         result = fitter.fit_toas(maxiter=1)
         assert result is not None
 
+    @pytest.mark.slow
     def test_result_has_both_residuals(self, jax_wb):
         jax_model, toa_data, params, noise_model = jax_wb
         fitter = WidebandGLSFitter(
@@ -442,6 +480,7 @@ class TestWidebandGLSFitter:
         assert result.time_residuals.shape == (toa_data.n_toas,)
         assert result.dm_residuals.shape == (toa_data.n_toas,)
 
+    @pytest.mark.slow
     def test_dof_correct(self, jax_wb):
         jax_model, toa_data, params, noise_model = jax_wb
         fitter = WidebandGLSFitter(
@@ -451,6 +490,7 @@ class TestWidebandGLSFitter:
         expected_dof = 2 * toa_data.n_toas - params.n_free
         assert result.dof == expected_dof
 
+    @pytest.mark.slow
     def test_prefit_design_matrix_and_solve(self, jax_wb):
         """Verify the WLS solve step produces finite dpars before update."""
         from jaxpint.fitter import (
@@ -477,6 +517,7 @@ class TestWidebandGLSFitter:
         assert not jnp.any(jnp.isnan(dpars))
         assert not jnp.any(jnp.isnan(jnp.diag(cov)))
 
+    @pytest.mark.slow
     def test_covariance_symmetric(self, jax_wb):
         """Pre-fit covariance from the solve step should be symmetric."""
         from jaxpint.fitter import _subtract_weighted_mean, wls_step
@@ -503,6 +544,7 @@ class TestWidebandGLSFitter:
 
         npt.assert_allclose(np.array(cov), np.array(cov.T), atol=1e-20)
 
+    @pytest.mark.slow
     def test_postfit_residuals_finite(self, jax_wb):
         """Post-fit time and DM residuals should be finite."""
         jax_model, toa_data, params, noise_model = jax_wb
@@ -543,12 +585,14 @@ class TestWidebandFitVsPINT:
         )
         return fitter.fit_toas(maxiter=1)
 
+    @pytest.mark.slow
     def test_chi2_matches(self, pint_wb_fit, jax_wb_fit):
         """Post-fit chi2 should agree between JaxPINT and PINT."""
         pint_chi2 = pint_wb_fit.resids.chi2
         jax_chi2 = jax_wb_fit.chi2
         npt.assert_allclose(jax_chi2, pint_chi2, rtol=0.05)
 
+    @pytest.mark.slow
     def test_chi2_decreases(self, pint_wb, jax_wb, jax_wb_fit):
         """Post-fit chi2 should be lower than pre-fit chi2."""
         from jaxpint.fitter import _subtract_weighted_mean
@@ -566,25 +610,30 @@ class TestWidebandFitVsPINT:
         )
         assert jax_wb_fit.chi2 < chi2_pre
 
+    @pytest.mark.slow
     def test_f0_matches(self, pint_wb_fit, jax_wb_fit):
         pint_val = float(pint_wb_fit.model.F0.value)
         jax_val = float(jax_wb_fit.params.param_value("F0"))
         pint_err = float(pint_wb_fit.model.F0.uncertainty_value)
         assert abs(jax_val - pint_val) < 3 * pint_err
 
+    @pytest.mark.slow
     def test_f1_matches(self, pint_wb_fit, jax_wb_fit):
         pint_val = float(pint_wb_fit.model.F1.value)
         jax_val = float(jax_wb_fit.params.param_value("F1"))
         pint_err = float(pint_wb_fit.model.F1.uncertainty_value)
         assert abs(jax_val - pint_val) < 3 * pint_err
 
+    @pytest.mark.slow
     def test_uncertainties_positive(self, jax_wb_fit):
         assert jnp.all(jax_wb_fit.parameter_uncertainties > 0)
 
+    @pytest.mark.slow
     def test_covariance_symmetric(self, jax_wb_fit):
         cov = jax_wb_fit.covariance_matrix
         npt.assert_allclose(np.array(cov), np.array(cov.T), atol=1e-20)
 
+    @pytest.mark.slow
     def test_postfit_residuals_finite(self, jax_wb_fit):
         assert not jnp.any(jnp.isnan(jax_wb_fit.time_residuals))
         assert not jnp.any(jnp.isnan(jax_wb_fit.dm_residuals))
