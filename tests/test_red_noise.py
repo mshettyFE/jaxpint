@@ -314,7 +314,7 @@ class TestGLSWithRedNoise:
     @pytest.fixture(scope="class")
     def gls_fit_result(self):
         """Generate fake TOAs with white + red noise, fit with GLS."""
-        from jaxpint.fitter import GLSFitter
+        from jaxpint.fitters import GLSFitter
         from jaxpint.model import TimingModel
         from jaxpint.phase.spin import Spindown
 

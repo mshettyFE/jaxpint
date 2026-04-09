@@ -302,7 +302,7 @@ class TestGLSWhitening:
             pint_model_to_params,
             pint_toas_to_jax,
         )
-        from jaxpint.fitter import GLSFitter
+        from jaxpint.fitters import GLSFitter
 
         # Use PINT's B1855+09 example data (has EFAC, EQUAD, ECORR)
         pint_data = Path(pm.__file__).parent.parent / "data" / "examples"

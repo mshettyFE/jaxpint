@@ -19,7 +19,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import NoiseComponent
 from jaxpint.dual_float import DualFloat
-from jaxpint.fitter import compute_time_residuals
+from jaxpint.fitters import compute_time_residuals
 from jaxpint.model import TimingModel
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.constants import SECS_PER_DAY

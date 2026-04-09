@@ -23,7 +23,7 @@ from typing import Optional
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.fitter import compute_time_residuals
+from jaxpint.fitters import compute_time_residuals
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector

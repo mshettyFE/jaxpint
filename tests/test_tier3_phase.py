@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
-from jaxpint.fitter import compute_phase_residuals
+from jaxpint.fitters import compute_phase_residuals
 from jaxpint.phase.piecewise_spindown import PiecewiseSpindown
 from jaxpint.phase.wave import Wave
 from jaxpint.phase.ifunc import IFunc

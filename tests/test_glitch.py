@@ -418,7 +418,7 @@ class TestVsPINT:
         """Full-model residuals with glitches match PINT."""
         import pint.residuals
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
-        from jaxpint.fitter import compute_phase_residuals
+        from jaxpint.fitters import compute_phase_residuals
 
         pint_model, toas = glitch_model
 

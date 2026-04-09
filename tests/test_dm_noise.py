@@ -254,7 +254,7 @@ class TestGLSWithDMNoise:
 
     @pytest.fixture(scope="class")
     def gls_fit_result(self):
-        from jaxpint.fitter import GLSFitter
+        from jaxpint.fitters import GLSFitter
         from jaxpint.model import TimingModel
         from jaxpint.phase.spin import Spindown
         from jaxpint.delay.dispersion_dm import DispersionDM
