@@ -274,7 +274,7 @@ UNITS         TDB
             pint_model_to_params,
             pint_toas_to_jax,
         )
-        from jaxpint.fitter import WLSFitter
+        from jaxpint.fitters import WLSFitter
 
         pint_model, toas = synthetic_with_noise
 

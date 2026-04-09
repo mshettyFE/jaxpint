@@ -15,7 +15,7 @@ import pint.models as models
 from pint.simulation import make_fake_toas_uniform
 
 from jaxpint.bridge import build_timing_model, pint_model_to_params, pint_toas_to_jax
-from jaxpint.fitter import compute_time_residuals
+from jaxpint.fitters import compute_time_residuals
 from jaxpint.likelihood import single_pulsar_logL
 from jaxpint.noise import NoiseModel, ScaleToaError
 from jaxpint.noise.red_noise import PLRedNoise

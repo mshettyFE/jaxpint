@@ -197,7 +197,7 @@ class TestGLSChi2:
 
     def test_matches_explicit(self):
         """GLS chi2 via Woodbury matches explicit r^T C^{-1} r."""
-        from jaxpint.fitter import compute_gls_chi2
+        from jaxpint.fitters import compute_gls_chi2
 
         n, k = 30, 4
         key = jax.random.PRNGKey(7)
@@ -255,7 +255,7 @@ class TestGLSSteps:
 
     def test_fullcov_augmented_dpars_agree(self, synthetic_gls_problem):
         """fullcov and augmented approaches give same dpars."""
-        from jaxpint.fitter import gls_step_augmented, gls_step_fullcov
+        from jaxpint.fitters import gls_step_augmented, gls_step_fullcov
 
         residuals, Ndiag, U, Phidiag, M, threshold = synthetic_gls_problem
 
@@ -320,7 +320,7 @@ class TestGLSReducesToWLS:
             pint_model_to_params,
             pint_toas_to_jax,
         )
-        from jaxpint.fitter import GLSFitter, WLSFitter
+        from jaxpint.fitters import GLSFitter, WLSFitter
 
         pint_model, toas = synthetic_data
         toa_data = pint_toas_to_jax(toas, model=pint_model)

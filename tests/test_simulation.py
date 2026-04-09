@@ -21,7 +21,7 @@ from jaxpint.bridge import (
     pint_model_to_params,
     pint_toas_to_jax,
 )
-from jaxpint.fitter import compute_time_residuals
+from jaxpint.fitters import compute_time_residuals
 from jaxpint.simulation import apply_delay_to_toas, zero_residuals
 from tests.helpers import make_toa_data
 

@@ -27,7 +27,7 @@ from jaxpint.bridge import (
     pint_model_to_params,
     pint_toas_to_jax,
 )
-from jaxpint.fitter import (
+from jaxpint.fitters import (
     WLSFitter,
     compute_design_matrix,
     compute_time_residuals,

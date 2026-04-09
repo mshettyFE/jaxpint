@@ -45,7 +45,7 @@ from .noise import (
     ScaleToaError,
 )
 from .model import TimingModel
-from .fitter import (
+from .fitters import (
     GLSFitResult,
     GLSFitter,
     WLSFitResult,

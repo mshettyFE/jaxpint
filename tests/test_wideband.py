@@ -25,7 +25,7 @@ from jaxpint.bridge import (
     pint_model_to_params,
     pint_toas_to_jax,
 )
-from jaxpint.fitter import (
+from jaxpint.fitters import (
     WidebandGLSFitter,
     compute_dm_residuals,
     compute_time_residuals,
@@ -316,7 +316,7 @@ class TestWidebandDesignMatrix:
     @pytest.mark.slow
     def test_toa_block_matches_narrowband(self, jax_wb, pint_wb):
         """Top half of wideband design matrix should match narrowband."""
-        from jaxpint.fitter import compute_design_matrix
+        from jaxpint.fitters import compute_design_matrix
 
         jax_model, toa_data, params, _ = jax_wb
         _, toas = pint_wb
@@ -493,7 +493,7 @@ class TestWidebandGLSFitter:
     @pytest.mark.slow
     def test_prefit_design_matrix_and_solve(self, jax_wb):
         """Verify the WLS solve step produces finite dpars before update."""
-        from jaxpint.fitter import (
+        from jaxpint.fitters import (
             _subtract_weighted_mean,
             wls_step,
         )
@@ -520,7 +520,7 @@ class TestWidebandGLSFitter:
     @pytest.mark.slow
     def test_covariance_symmetric(self, jax_wb):
         """Pre-fit covariance from the solve step should be symmetric."""
-        from jaxpint.fitter import _subtract_weighted_mean, wls_step
+        from jaxpint.fitters import _subtract_weighted_mean, wls_step
 
         jax_model, toa_data, params, noise_model = jax_wb
 
@@ -595,7 +595,7 @@ class TestWidebandFitVsPINT:
     @pytest.mark.slow
     def test_chi2_decreases(self, pint_wb, jax_wb, jax_wb_fit):
         """Post-fit chi2 should be lower than pre-fit chi2."""
-        from jaxpint.fitter import _subtract_weighted_mean
+        from jaxpint.fitters import _subtract_weighted_mean
 
         jax_model, toa_data, params, noise_model = jax_wb
         sigma_toa = noise_model.scaled_sigma(toa_data, params)
