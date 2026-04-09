@@ -168,7 +168,7 @@ class ParameterVector(eqx.Module):
     # Which fitting parameters to ignore while fitting
     frozen_mask: tuple[bool, ...] = eqx.field(static=True)
     # Names of parameters which map to values 
-    # Not a ictionary with values to avoi equinox warning, as well as allow 
+    # Not a dictionary with values to avoi equinox warning, as well as allow 
     # ifferentiability of parameters in jax
     names: tuple[str, ...] = eqx.field(static=True)
     # Units assigned to each name
@@ -179,6 +179,9 @@ class ParameterVector(eqx.Module):
     epoch_int_values: dict[str, float] = eqx.field(static=True)
     # Maps parameter names to values location. Autopopulate in check_init
     _name_to_index: dict[str, int] = eqx.field(static=True, default_factory=dict)
+    # Integer indices of free (unfrozen) parameters. Autopopulated in check_init
+    # Needed since the jit compiler doesn't like boolean jnp masks
+    _free_indices: tuple[int, ...] = eqx.field(static=True, default=())
 
     def __check_init__(self):
         n = len(self.names)
@@ -199,6 +202,13 @@ class ParameterVector(eqx.Module):
         object.__setattr__(
             self, "_name_to_index",
             {name: i for i, name in enumerate(self.names)},
+        )
+
+        # Integer indices of free parameters, used by JIT-compiled fitter code.
+        # Boolean indexing is not supported inside jax.jit; integer indices are.
+        object.__setattr__(
+            self, "_free_indices",
+            tuple(i for i, f in enumerate(self.frozen_mask) if not f),
         )
 
         extra = set(self.epoch_int_values) - set(self.names)
@@ -252,6 +262,10 @@ class ParameterVector(eqx.Module):
     def free_mask_array(self) -> Bool[Array, " n_params"]:
         """Boolean array: True where parameter is free (not frozen)."""
         return jnp.array([not f for f in self.frozen_mask], dtype=jnp.bool_)
+
+    def free_indices_array(self) -> Int[Array, " n_free"]:
+        """Integer indices of free parameters as a JAX array (JIT-safe)."""
+        return jnp.array(self._free_indices, dtype=jnp.int32)
 
     def free_values(self) -> Float[Array, " n_free"]:
         """Extract values of free (unfrozen) parameters."""

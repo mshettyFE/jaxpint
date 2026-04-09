@@ -13,6 +13,7 @@ dependencies = [
     "hypothesis>=6.0",
     "pint-pulsar>=1.0",
     "pytest-xdist>=3.8.0",
+    "ipykernel>=7.2.0",
 ]
 
 [tool.pytest.ini_options]

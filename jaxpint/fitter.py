@@ -7,7 +7,6 @@ matrix and JAX's native linear-algebra routines for the solve step.
 * ``GLSFitter`` — Generalised Least Squares (supports ECORR via
   low-rank covariance updates).
 """
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -76,15 +75,130 @@ def compute_design_matrix(
     ``M[i, j] = -d(time_resid_i) / d(param_j)``.  This ensures that
     the WLS update ``p_new = p_old + dpars`` reduces residuals.
     """
+    J, M = _compute_jacobian_and_design(model, toa_data, params)
+    return M
+
+
+@eqx.filter_jit
+def _compute_jacobian_and_design(
+    model: TimingModel,
+    toa_data: TOAData,
+    params: ParameterVector,
+) -> tuple[Float[Array, "n_toas n_params"], Float[Array, "n_toas n_free"]]:
+    """JIT-compiled Jacobian and design matrix computation."""
+    free_indices = params.free_indices_array()
 
     def time_resid_fn(all_values: Float[Array, " n_params"]):
         p = eqx.tree_at(lambda pv: pv.values, params, all_values)
         return compute_time_residuals(model, toa_data, p)
 
-    J = jax.jacobian(time_resid_fn)(params.values)  # (n_toas, n_params)
-    # negative sign matches PINT convention
-    return -J[:, params.free_mask_array()]
+    J = jax.jacobian(time_resid_fn)(params.values)
+    M = -J[:, free_indices]
+    return J, M
 
+
+@eqx.filter_jit
+def _wls_iteration_core(
+    model: TimingModel,
+    toa_data: TOAData,
+    params: ParameterVector,
+    noise_model: Optional[NoiseModel],
+    threshold: float,
+) -> tuple[Float[Array, " n_params"], Float[Array, "n_free n_free"]]:
+    """JIT-compiled core of one WLS Gauss-Newton iteration.
+
+    Returns updated parameter values and covariance matrix.
+    """
+    free_indices = params.free_indices_array()
+
+    if noise_model is not None:
+        sigma = noise_model.scaled_sigma(toa_data, params)
+    else:
+        sigma = toa_data.error
+
+    time_resid = compute_time_residuals(model, toa_data, params)
+    time_resid = _subtract_weighted_mean(time_resid, sigma)
+
+    def time_resid_fn(all_values: Float[Array, " n_params"]):
+        p = eqx.tree_at(lambda pv: pv.values, params, all_values)
+        return compute_time_residuals(model, toa_data, p)
+
+    J = jax.jacobian(time_resid_fn)(params.values)
+    M = -J[:, free_indices]
+
+    dpars, covariance, _norms = wls_step(time_resid, sigma, M, threshold)
+
+    new_values = params.values.at[free_indices].set(
+        params.values[free_indices] + dpars
+    )
+    return new_values, covariance
+
+
+@eqx.filter_jit
+def _gls_iteration_core(
+    model: TimingModel,
+    toa_data: TOAData,
+    params: ParameterVector,
+    noise_model: Optional[NoiseModel],
+    threshold: float,
+    full_cov: bool,
+) -> tuple[
+    Float[Array, " n_params"],
+    Float[Array, "n_free n_free"],
+    Float[Array, " n_basis"],
+]:
+    """JIT-compiled core of one GLS Gauss-Newton iteration.
+
+    Returns updated parameter values, covariance, and noise realizations.
+    """
+    free_indices = params.free_indices_array()
+
+    if noise_model is not None:
+        sigma = noise_model.scaled_sigma(toa_data, params)
+        Ndiag, U, Phidiag = noise_model.covariance(toa_data, params)
+    else:
+        sigma = toa_data.error
+        Ndiag = sigma ** 2
+        U = jnp.zeros((toa_data.n_toas, 0))
+        Phidiag = jnp.zeros(0)
+
+    n_basis = U.shape[1]
+
+    time_resid = compute_time_residuals(model, toa_data, params)
+    if n_basis > 0:
+        time_resid = _subtract_gls_weighted_mean(
+            time_resid, Ndiag, U, Phidiag
+        )
+    else:
+        time_resid = _subtract_weighted_mean(time_resid, sigma)
+
+    def time_resid_fn(all_values: Float[Array, " n_params"]):
+        p = eqx.tree_at(lambda pv: pv.values, params, all_values)
+        return compute_time_residuals(model, toa_data, p)
+
+    J = jax.jacobian(time_resid_fn)(params.values)
+    M = -J[:, free_indices]
+
+    noise_realizations = jnp.zeros(0)
+    if full_cov:
+        dpars, covariance, _norms = gls_step_fullcov(
+            time_resid, Ndiag, U, Phidiag, M, threshold
+        )
+    elif n_basis > 0:
+        dpars, covariance, _norms, noise_realizations = (
+            gls_step_augmented(
+                time_resid, Ndiag, U, Phidiag, M, threshold
+            )
+        )
+    else:
+        dpars, covariance, _norms = wls_step(
+            time_resid, sigma, M, threshold
+        )
+
+    new_values = params.values.at[free_indices].set(
+        params.values[free_indices] + dpars
+    )
+    return new_values, covariance, noise_realizations
 
 
 def _subtract_weighted_mean(
@@ -234,18 +348,11 @@ class WLSFitter:
         -------
         (new_params, covariance)
         """
-        sigma = self._get_sigma(params)
-
-        time_resid = compute_time_residuals(
-            self.model, self.toa_data, params
+        new_values, covariance = _wls_iteration_core(
+            self.model, self.toa_data, params,
+            self.noise_model, threshold,
         )
-        time_resid = _subtract_weighted_mean(time_resid, sigma)
-
-        M = compute_design_matrix(self.model, self.toa_data, params)
-        dpars, covariance, _norms = wls_step(time_resid, sigma, M, threshold)
-
-        new_free = params.free_values() + dpars
-        new_params = params.with_free_values(new_free)
+        new_params = eqx.tree_at(lambda pv: pv.values, params, new_values)
         return new_params, covariance
 
     def _build_result(
@@ -302,7 +409,6 @@ class WLSFitter:
         """
         if threshold is None:
             threshold = 1e-14 * max(self.toa_data.n_toas, self.params.n_free)
-
 
         params = self.params
         covariance = None
@@ -577,40 +683,12 @@ class GLSFitter:
         -------
         (new_params, covariance, noise_realizations)
         """
-        sigma, Ndiag, U, Phidiag = self._get_noise(params)
-        n_basis = U.shape[1]
-
-        time_resid = compute_time_residuals(
-            self.model, self.toa_data, params
+        new_values, covariance, noise_real = _gls_iteration_core(
+            self.model, self.toa_data, params,
+            self.noise_model, threshold, full_cov,
         )
-        if n_basis > 0:
-            time_resid = _subtract_gls_weighted_mean(
-                time_resid, Ndiag, U, Phidiag
-            )
-        else:
-            time_resid = _subtract_weighted_mean(time_resid, sigma)
-
-        M = compute_design_matrix(self.model, self.toa_data, params)
-
-        # GLS solve
-        noise_realizations = None
-        if full_cov:
-            dpars, covariance, _norms = gls_step_fullcov(
-                time_resid, Ndiag, U, Phidiag, M, threshold
-            )
-        elif n_basis > 0:
-            dpars, covariance, _norms, noise_realizations = (
-                gls_step_augmented(
-                    time_resid, Ndiag, U, Phidiag, M, threshold
-                )
-            )
-        else:
-            dpars, covariance, _norms = wls_step(
-                time_resid, sigma, M, threshold
-            )
-
-        new_free = params.free_values() + dpars
-        new_params = params.with_free_values(new_free)
+        new_params = eqx.tree_at(lambda pv: pv.values, params, new_values)
+        noise_realizations = noise_real if noise_real.size > 0 else None
         return new_params, covariance, noise_realizations
 
     def _build_result(
@@ -750,13 +828,106 @@ def compute_wideband_design_matrix(
     vector w.r.t. all parameters, then extracts free columns.
     Negated per PINT convention.
     """
+    J, M = _compute_wideband_jacobian_and_design(model, toa_data, params)
+    return M
+
+
+@eqx.filter_jit
+def _compute_wideband_jacobian_and_design(
+    model: TimingModel,
+    toa_data: TOAData,
+    params: ParameterVector,
+) -> tuple[Float[Array, "n2_toas n_params"], Float[Array, "n2_toas n_free"]]:
+    """JIT-compiled wideband Jacobian and design matrix computation."""
+    free_indices = params.free_indices_array()
 
     def combined_resid_fn(all_values: Float[Array, " n_params"]):
         p = eqx.tree_at(lambda pv: pv.values, params, all_values)
         return compute_wideband_residuals(model, toa_data, p)
 
     J = jax.jacobian(combined_resid_fn)(params.values)  # (2N, n_params)
-    return -J[:, params.free_mask_array()]
+    M = -J[:, free_indices]
+    return J, M
+
+
+@eqx.filter_jit
+def _wideband_iteration_core(
+    model: TimingModel,
+    toa_data: TOAData,
+    params: ParameterVector,
+    noise_model: Optional[NoiseModel],
+    threshold: float,
+    full_cov: bool,
+) -> tuple[
+    Float[Array, " n_params"],
+    Float[Array, "n_free n_free"],
+    Float[Array, " n_basis"],
+]:
+    """JIT-compiled core of one wideband GLS Gauss-Newton iteration."""
+    free_indices = params.free_indices_array()
+    n = toa_data.n_toas
+
+    # Noise
+    if noise_model is not None:
+        sigma_toa = noise_model.scaled_sigma(toa_data, params)
+        Ndiag_toa, U_toa, Phi_toa, Ndiag_dm = (
+            noise_model.wideband_covariance(toa_data, params)
+        )
+    else:
+        sigma_toa = toa_data.error
+        Ndiag_toa = sigma_toa ** 2
+        U_toa = jnp.zeros((n, 0))
+        Phi_toa = jnp.zeros(0)
+        Ndiag_dm = toa_data.dm_errors ** 2
+
+    Ndiag = jnp.concatenate([Ndiag_toa, Ndiag_dm])
+    U = jnp.concatenate([U_toa, jnp.zeros((n, U_toa.shape[1]))], axis=0)
+    Phidiag = Phi_toa
+    n_basis = U.shape[1]
+
+    # Residuals
+    time_resid = compute_time_residuals(model, toa_data, params)
+    dm_resid = compute_dm_residuals(model, toa_data, params)
+
+    if n_basis > 0:
+        time_resid = _subtract_gls_weighted_mean(
+            time_resid, Ndiag_toa, U_toa, Phidiag
+        )
+    else:
+        time_resid = _subtract_weighted_mean(time_resid, sigma_toa)
+
+    residuals = jnp.concatenate([time_resid, dm_resid])
+
+    # Design matrix
+    def combined_resid_fn(all_values: Float[Array, " n_params"]):
+        p = eqx.tree_at(lambda pv: pv.values, params, all_values)
+        return compute_wideband_residuals(model, toa_data, p)
+
+    J = jax.jacobian(combined_resid_fn)(params.values)
+    M = -J[:, free_indices]
+
+    # Solve
+    noise_realizations = jnp.zeros(0)
+    if full_cov:
+        dpars, covariance, _norms = gls_step_fullcov(
+            residuals, Ndiag, U, Phidiag, M, threshold
+        )
+    elif n_basis > 0:
+        dpars, covariance, _norms, noise_realizations = (
+            gls_step_augmented(
+                residuals, Ndiag, U, Phidiag, M, threshold
+            )
+        )
+    else:
+        sigma_combined = jnp.sqrt(Ndiag)
+        dpars, covariance, _norms = wls_step(
+            residuals, sigma_combined, M, threshold
+        )
+
+    new_values = params.values.at[free_indices].set(
+        params.values[free_indices] + dpars
+    )
+    return new_values, covariance, noise_realizations
 
 
 # ---------------------------------------------------------------------------
@@ -860,55 +1031,12 @@ class WidebandGLSFitter:
         Optional[Float[Array, " n_basis"]],
     ]:
         """Run one Gauss-Newton iteration."""
-        sigma_toa, Ndiag, U, Phidiag, sigma_dm = self._get_wideband_noise(
-            params
+        new_values, covariance, noise_real = _wideband_iteration_core(
+            self.model, self.toa_data, params,
+            self.noise_model, threshold, full_cov,
         )
-        n_basis = U.shape[1]
-        n = self.toa_data.n_toas
-
-        # Compute residuals
-        time_resid = compute_time_residuals(
-            self.model, self.toa_data, params
-        )
-        dm_resid = compute_dm_residuals(self.model, self.toa_data, params)
-
-        # Subtract weighted mean from TOA residuals only
-        if n_basis > 0:
-            Ndiag_toa = Ndiag[:n]
-            U_toa = U[:n, :]
-            time_resid = _subtract_gls_weighted_mean(
-                time_resid, Ndiag_toa, U_toa, Phidiag
-            )
-        else:
-            time_resid = _subtract_weighted_mean(time_resid, sigma_toa)
-
-        # Combined residual vector (2N,)
-        residuals = jnp.concatenate([time_resid, dm_resid])
-
-        # Combined design matrix (2N, n_free)
-        M = compute_wideband_design_matrix(self.model, self.toa_data, params)
-
-        # GLS solve
-        noise_realizations = None
-        if full_cov:
-            dpars, covariance, _norms = gls_step_fullcov(
-                residuals, Ndiag, U, Phidiag, M, threshold
-            )
-        elif n_basis > 0:
-            dpars, covariance, _norms, noise_realizations = (
-                gls_step_augmented(
-                    residuals, Ndiag, U, Phidiag, M, threshold
-                )
-            )
-        else:
-            # No correlated noise — use WLS with combined diagonal
-            sigma_combined = jnp.sqrt(Ndiag)
-            dpars, covariance, _norms = wls_step(
-                residuals, sigma_combined, M, threshold
-            )
-
-        new_free = params.free_values() + dpars
-        new_params = params.with_free_values(new_free)
+        new_params = eqx.tree_at(lambda pv: pv.values, params, new_values)
+        noise_realizations = noise_real if noise_real.size > 0 else None
         return new_params, covariance, noise_realizations
 
     def _build_result(
