@@ -2,6 +2,18 @@
 
 Composes residuals, noise covariance, and the Woodbury solver into a
 differentiable, JIT-compatible log-likelihood evaluation.
+
+The Gaussian log-likelihood is evaluated via the Woodbury matrix identity
+to avoid forming the full n_toas x n_toas covariance matrix; see
+van Haasteren et al. (2009) [1]_ Appendix A and Lentati et al. (2013) [2]_
+Section II.B.
+
+References
+----------
+.. [1] van Haasteren et al. (2009), "On measuring the gravitational-wave
+   background using pulsar timing arrays", MNRAS 395, 1005.
+.. [2] Lentati et al. (2013), "Hyper-efficient model-independent Bayesian
+   method for the analysis of pulsar timing data", PRD 87, 104021.
 """
 
 from __future__ import annotations
