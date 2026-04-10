@@ -269,8 +269,8 @@ class ParameterVector(eqx.Module):
 
     def free_values(self) -> Float[Array, " n_free"]:
         """Extract values of free (unfrozen) parameters."""
-        mask = self.free_mask_array()
-        return self.values[mask]
+        indices = self.free_indices_array()
+        return self.values[indices]
 
     def free_names(self) -> tuple[str, ...]:
         """Names of free parameters (Python-level, not JIT-compatible)."""
@@ -278,8 +278,8 @@ class ParameterVector(eqx.Module):
 
     def with_free_values(self, new_free: Float[Array, " n_free"]) -> ParameterVector:
         """Return a new ParameterVector with free parameter values replaced."""
-        mask = self.free_mask_array()
-        new_values = self.values.at[mask].set(new_free)
+        indices = self.free_indices_array()
+        new_values = self.values.at[indices].set(new_free)
         return eqx.tree_at(lambda pv: pv.values, self, new_values)
 
     def with_value(self, name: str, val: float) -> ParameterVector:
