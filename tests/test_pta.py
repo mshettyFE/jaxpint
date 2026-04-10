@@ -20,7 +20,10 @@ import numpy as np
 import pytest
 
 from jaxpint.pta.params import GlobalParams
-from jaxpint.pta.signals.cw import fplus_fcross, cw_delay, CWInjector, CW_PARAM_DEFAULTS
+from jaxpint.pta.signals.cw import (
+    fplus_fcross, cw_delay, cw_delay_from_array, sum_cw_delays,
+    CWInjector, CWInjectorStack, CW_PARAM_DEFAULTS,
+)
 from jaxpint.pta.signals.gwb import (
     powerlaw_psd, fourier_basis, gwb_covariance, CURNInjector, CURN_PARAM_DEFAULTS, FYR,
 )
@@ -355,6 +358,322 @@ class TestCWInjector:
         positions = jnp.array([[1.0, 0.0, 0.0]])
         inj = CWInjector(positions)
         assert inj.covariance(0, None, None, None) is None
+
+
+# ===================================================================
+# TestCWDelayFromArray
+# ===================================================================
+
+
+class TestCWDelayFromArray:
+    """Tests for the vmappable cw_delay_from_array function."""
+
+    def test_matches_cw_delay(self):
+        """cw_delay_from_array must produce identical output to cw_delay."""
+        toa_data = _make_simple_toa_data(20)
+        pos = jnp.array([0.0, 0.0, 1.0])
+        dist = jnp.float64(1.5)
+
+        overrides = {
+            "log10_h": -13.0,
+            "cos_gwtheta": 0.3,
+            "gwphi": 1.5,
+            "log10_fgw": -8.5,
+            "cos_inc": -0.2,
+            "psi": 0.7,
+            "phase0": 2.1,
+        }
+
+        gp = _make_cw_global_params(**overrides)
+        delay_named = cw_delay(toa_data, pos, dist, gp)
+
+        cw_params = jnp.array([overrides[k] for k in CW_PARAM_DEFAULTS])
+        delay_array = cw_delay_from_array(toa_data, pos, dist, cw_params)
+
+        assert jnp.allclose(delay_named, delay_array, atol=1e-15)
+
+    def test_jit(self):
+        toa_data = _make_simple_toa_data(10)
+        pos = jnp.array([0.0, 0.0, 1.0])
+        cw_params = jnp.array([-13.0, 0.3, 1.5, -8.0, 0.0, 0.0, 0.0])
+        result = jax.jit(cw_delay_from_array)(
+            toa_data, pos, jnp.float64(1.0), cw_params
+        )
+        assert result.shape == (10,)
+        assert jnp.all(jnp.isfinite(result))
+
+    def test_grad(self):
+        toa_data = _make_simple_toa_data(10)
+        pos = jnp.array([0.0, 1.0, 0.0])
+        cw_params = jnp.array(list(CW_PARAM_DEFAULTS.values()))
+        cw_params = cw_params.at[0].set(-13.0)  # log10_h
+
+        grad = jax.grad(
+            lambda p: jnp.sum(cw_delay_from_array(toa_data, pos, jnp.float64(1.0), p))
+        )(cw_params)
+        assert grad.shape == (7,)
+        assert jnp.all(jnp.isfinite(grad))
+
+
+# ===================================================================
+# TestSumCWDelays
+# ===================================================================
+
+
+class TestSumCWDelays:
+    """Tests for sum_cw_delays (vmap over CW sources)."""
+
+    def test_single_source_matches_cw_delay_from_array(self):
+        toa_data = _make_simple_toa_data(15)
+        pos = jnp.array([0.0, 0.0, 1.0])
+        dist = jnp.float64(2.0)
+        cw_params = jnp.array(list(CW_PARAM_DEFAULTS.values()))
+        cw_params = cw_params.at[0].set(-13.0)
+
+        single = cw_delay_from_array(toa_data, pos, dist, cw_params)
+        stacked = sum_cw_delays(toa_data, pos, dist, cw_params[None, :])
+
+        assert jnp.allclose(single, stacked, atol=1e-15)
+
+    def test_multiple_sources_sum(self):
+        """Sum of individual delays must match sum_cw_delays."""
+        toa_data = _make_simple_toa_data(10)
+        pos = jnp.array([1.0, 0.0, 0.0])
+        dist = jnp.float64(1.0)
+
+        rng = np.random.default_rng(123)
+        n_cw = 5
+        stack = jnp.array([
+            [-13.0, rng.uniform(-1, 1), rng.uniform(0, 6.28),
+             rng.uniform(-9, -7), rng.uniform(-1, 1), rng.uniform(0, 3.14),
+             rng.uniform(0, 6.28)]
+            for _ in range(n_cw)
+        ])
+
+        expected = sum(
+            cw_delay_from_array(toa_data, pos, dist, stack[i])
+            for i in range(n_cw)
+        )
+        result = sum_cw_delays(toa_data, pos, dist, stack)
+
+        assert jnp.allclose(expected, result, atol=1e-12)
+
+
+# ===================================================================
+# TestCWInjectorStack
+# ===================================================================
+
+
+class TestCWInjectorStack:
+    """Tests for CWInjectorStack (vectorized multi-source CW injector)."""
+
+    def _make_positions(self, n_psr=3):
+        rng = np.random.default_rng(0)
+        pos = rng.standard_normal((n_psr, 3))
+        pos /= np.linalg.norm(pos, axis=1, keepdims=True)
+        return jnp.array(pos)
+
+    def _make_per_source_values(self, n_cw, seed=42):
+        rng = np.random.default_rng(seed)
+        return [
+            {
+                "log10_h": -13.0,
+                "cos_gwtheta": float(rng.uniform(-1, 1)),
+                "gwphi": float(rng.uniform(0, 2 * np.pi)),
+                "log10_fgw": float(rng.uniform(-9, -7)),
+            }
+            for _ in range(n_cw)
+        ]
+
+    def test_register_params(self):
+        positions = self._make_positions(2)
+        inj = CWInjectorStack(positions, n_sources=3)
+        gp = inj.register_params(GlobalParams.empty())
+        assert gp.n_params == 3 * 7
+        assert all(
+            f"cw{m}_log10_h" in gp.names for m in range(3)
+        )
+
+    def test_register_params_preserves_values(self):
+        """Registered values must match per_source_values."""
+        positions = self._make_positions(2)
+        per_src = self._make_per_source_values(2)
+        inj = CWInjectorStack(positions, n_sources=2, per_source_values=per_src)
+        gp = inj.register_params(GlobalParams.empty())
+
+        for m in range(2):
+            for key, val in per_src[m].items():
+                assert jnp.isclose(
+                    gp.param_value(f"cw{m}_{key}"), val
+                ), f"cw{m}_{key} mismatch"
+
+    def test_delay_matches_individual_injectors(self):
+        """CWInjectorStack.delay must match sum of CWInjector.delay calls."""
+        n_psr, n_cw = 3, 4
+        positions = self._make_positions(n_psr)
+        per_src = self._make_per_source_values(n_cw)
+
+        # Individual injectors
+        individual = [
+            CWInjector(positions, prefix=f"cw{m}_", initial_values=per_src[m])
+            for m in range(n_cw)
+        ]
+        gp_ind = GlobalParams.empty()
+        for inj in individual:
+            gp_ind = inj.register_params(gp_ind)
+
+        # Stacked injector
+        stack = CWInjectorStack(positions, n_sources=n_cw, per_source_values=per_src)
+        gp_stack = GlobalParams.empty()
+        gp_stack = stack.register_params(gp_stack)
+
+        toa_data = _make_simple_toa_data(20)
+        pp = _make_pulsar_params_with_px(1.5)
+
+        for p in range(n_psr):
+            delay_ind = sum(inj.delay(p, toa_data, pp, gp_ind) for inj in individual)
+            delay_stack = stack.delay(p, toa_data, pp, gp_stack)
+            assert jnp.allclose(delay_ind, delay_stack, atol=1e-15), (
+                f"Pulsar {p}: max diff = {float(jnp.max(jnp.abs(delay_ind - delay_stack)))}"
+            )
+
+    def test_delay_shape(self):
+        positions = self._make_positions(2)
+        inj = CWInjectorStack(positions, n_sources=3)
+        gp = inj.register_params(GlobalParams.empty())
+        toa_data = _make_simple_toa_data(15)
+        pp = _make_pulsar_params_with_px()
+
+        delay = inj.delay(0, toa_data, pp, gp)
+        assert delay.shape == (15,)
+        assert jnp.all(jnp.isfinite(delay))
+
+    def test_covariance_returns_none(self):
+        positions = self._make_positions(1)
+        inj = CWInjectorStack(positions, n_sources=2)
+        assert inj.covariance(0, None, None, None) is None
+
+    def test_jit_through_delay(self):
+        positions = self._make_positions(2)
+        inj = CWInjectorStack(positions, n_sources=3)
+        gp = inj.register_params(GlobalParams.empty())
+        toa_data = _make_simple_toa_data(10)
+        pp = _make_pulsar_params_with_px()
+
+        @jax.jit
+        def f(gp_vals):
+            gp2 = GlobalParams(gp_vals, gp.names, gp._name_to_index)
+            return jnp.sum(inj.delay(0, toa_data, pp, gp2))
+
+        result = f(gp.values)
+        assert jnp.isfinite(result)
+
+    def test_grad_through_delay(self):
+        positions = self._make_positions(2)
+        inj = CWInjectorStack(positions, n_sources=3)
+        gp = inj.register_params(GlobalParams.empty())
+        toa_data = _make_simple_toa_data(10)
+        pp = _make_pulsar_params_with_px()
+
+        @jax.jit
+        def f(gp_vals):
+            gp2 = GlobalParams(gp_vals, gp.names, gp._name_to_index)
+            return jnp.sum(inj.delay(0, toa_data, pp, gp2))
+
+        grad = jax.grad(f)(gp.values)
+        assert grad.shape == gp.values.shape
+        assert jnp.all(jnp.isfinite(grad))
+
+    def test_grad_matches_individual_injectors(self):
+        """Gradients through CWInjectorStack must match individual CWInjectors."""
+        n_psr, n_cw = 2, 3
+        positions = self._make_positions(n_psr)
+        per_src = self._make_per_source_values(n_cw)
+
+        # Individual
+        individual = [
+            CWInjector(positions, prefix=f"cw{m}_", initial_values=per_src[m])
+            for m in range(n_cw)
+        ]
+        gp_ind = GlobalParams.empty()
+        for inj in individual:
+            gp_ind = inj.register_params(gp_ind)
+
+        # Stacked
+        stack = CWInjectorStack(positions, n_sources=n_cw, per_source_values=per_src)
+        gp_stack = GlobalParams.empty()
+        gp_stack = stack.register_params(gp_stack)
+
+        toa_data = _make_simple_toa_data(10)
+        pp = _make_pulsar_params_with_px()
+
+        def f_ind(vals):
+            gp2 = GlobalParams(vals, gp_ind.names, gp_ind._name_to_index)
+            return sum(
+                jnp.sum(inj.delay(0, toa_data, pp, gp2)) for inj in individual
+            )
+
+        def f_stack(vals):
+            gp2 = GlobalParams(vals, gp_stack.names, gp_stack._name_to_index)
+            return jnp.sum(stack.delay(0, toa_data, pp, gp2))
+
+        grad_ind = jax.grad(f_ind)(gp_ind.values)
+        grad_stack = jax.grad(f_stack)(gp_stack.values)
+        assert jnp.allclose(grad_ind, grad_stack, atol=1e-10)
+
+    def test_unknown_param_raises(self):
+        positions = self._make_positions(1)
+        with pytest.raises(ValueError, match="Unknown CW parameters"):
+            CWInjectorStack(positions, n_sources=1,
+                            initial_values={"bad_param": 1.0})
+
+    def test_per_source_values_length_mismatch_raises(self):
+        positions = self._make_positions(1)
+        with pytest.raises(ValueError, match="n_sources"):
+            CWInjectorStack(positions, n_sources=2,
+                            per_source_values=[{"log10_h": -13.0}])
+
+    def test_initial_values_applied_to_all(self):
+        """initial_values should apply to every source."""
+        positions = self._make_positions(1)
+        inj = CWInjectorStack(positions, n_sources=3,
+                               initial_values={"log10_h": -11.0})
+        gp = inj.register_params(GlobalParams.empty())
+        for m in range(3):
+            assert jnp.isclose(gp.param_value(f"cw{m}_log10_h"), -11.0)
+
+    def test_jit_time_scales_O1(self):
+        """JIT compilation time should be roughly constant regardless of n_sources."""
+        import time
+
+        positions = self._make_positions(3)
+        toa_data = _make_simple_toa_data(50)
+        pp = _make_pulsar_params_with_px()
+
+        def make_and_compile(n_cw):
+            per_src = self._make_per_source_values(n_cw, seed=99)
+            inj = CWInjectorStack(positions, n_sources=n_cw,
+                                   per_source_values=per_src)
+            gp = GlobalParams.empty()
+            gp = inj.register_params(gp)
+
+            def f(gp_vals):
+                gp2 = GlobalParams(gp_vals, gp.names, gp._name_to_index)
+                return jnp.sum(inj.delay(0, toa_data, pp, gp2))
+
+            t0 = time.perf_counter()
+            jax.jit(f).lower(gp.values).compile()
+            return time.perf_counter() - t0
+
+        t_small = make_and_compile(2)
+        t_large = make_and_compile(20)
+
+        # With vmap, 20 sources should compile in comparable time to 2.
+        # Allow up to 3x overhead (generous margin for CI variability).
+        assert t_large < t_small * 3, (
+            f"JIT time scaled too much: {t_small:.2f}s (2 CW) vs "
+            f"{t_large:.2f}s (20 CW) — ratio {t_large/t_small:.1f}x"
+        )
 
 
 # ===================================================================
