@@ -14,7 +14,9 @@ from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import woodbury_dot, woodbury_solve
 
-from ._common import (
+from ._base import (
+    BaseFitter,
+    BaseFitResult,
     compute_time_residuals,
     _subtract_weighted_mean,
     wls_step,
@@ -264,16 +266,9 @@ def _gls_iteration_core(
 
 
 @dataclass
-class GLSFitResult:
+class GLSFitResult(BaseFitResult):
     """Result of a GLS fit."""
 
-    params: ParameterVector
-    covariance_matrix: Float[Array, "n_free n_free"]
-    correlation_matrix: Float[Array, "n_free n_free"]
-    parameter_uncertainties: Float[Array, " n_free"]
-    chi2: float
-    dof: int
-    reduced_chi2: float
     residuals: Float[Array, " n_toas"]
     noise_realizations: Optional[Float[Array, " n_epochs"]]
 
@@ -283,7 +278,7 @@ class GLSFitResult:
 # ---------------------------------------------------------------------------
 
 
-class GLSFitter:
+class GLSFitter(BaseFitter):
     """Generalised Least Squares fitter.
 
     The fitter is an immutable configuration container.  Calling
@@ -293,30 +288,7 @@ class GLSFitter:
     Supports arbitrary correlated noise sources (ECORR, red noise, etc.)
     through the :class:`~jaxpint.noise.NoiseModel` interface.  When no
     correlated components are present the GLS fitter reduces to WLS.
-
-    Parameters
-    ----------
-    model : TimingModel
-        JaxPINT timing model.
-    toa_data : TOAData
-        Pre-extracted TOA data.
-    params : ParameterVector
-        Initial parameter values.
-    noise_model : NoiseModel, optional
-        Noise model containing white and/or correlated components.
     """
-
-    def __init__(
-        self,
-        model: TimingModel,
-        toa_data: TOAData,
-        params: ParameterVector,
-        noise_model: Optional[NoiseModel] = None,
-    ):
-        self.model = model
-        self.toa_data = toa_data
-        self.params = params
-        self.noise_model = noise_model
 
     def _get_noise(
         self,
@@ -392,11 +364,8 @@ class GLSFitter:
 
         dof = self.toa_data.n_toas - params.n_free
 
-        errors = jnp.sqrt(jnp.diag(covariance))
-        errors_safe = jnp.where(errors==0, 1.0, errors)
-        correlation = (covariance / errors_safe).T / errors_safe
-
-        reduced_chi2 = chi2_val / dof if dof >0 else float('nan')
+        errors, correlation = self._covariance_to_correlation(covariance)
+        reduced_chi2 = self._reduced_chi2(chi2_val, dof)
 
         return GLSFitResult(
             params=params,

@@ -13,7 +13,9 @@ from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
 
-from ._common import (
+from ._base import (
+    BaseFitter,
+    BaseFitResult,
     compute_time_residuals,
     _subtract_weighted_mean,
     wls_step,
@@ -69,16 +71,9 @@ def _wls_iteration_core(
 
 
 @dataclass
-class WLSFitResult:
+class WLSFitResult(BaseFitResult):
     """Result of a WLS fit."""
 
-    params: ParameterVector
-    covariance_matrix: Float[Array, "n_free n_free"]
-    correlation_matrix: Float[Array, "n_free n_free"]
-    parameter_uncertainties: Float[Array, " n_free"]
-    chi2: float
-    dof: int
-    reduced_chi2: float
     residuals: Float[Array, " n_toas"]
 
 
@@ -87,36 +82,14 @@ class WLSFitResult:
 # ---------------------------------------------------------------------------
 
 
-class WLSFitter:
+class WLSFitter(BaseFitter):
     """Weighted Least Squares fitter (Gauss-Newton with SVD).
 
     The fitter is an immutable configuration container.  Calling
     :meth:`fit_toas` returns a :class:`WLSFitResult` without mutating
-    the fitter itself.
-
-    Parameters
-    ----------
-    model : TimingModel
-        JaxPINT timing model.
-    toa_data : TOAData
-        Pre-extracted TOA data.
-    params : ParameterVector
-        Initial parameter values (free/frozen flags determine what is fit).
-    noise_model : NoiseModel, optional
-        Noise model (only diagonal / white-noise part is used by WLS).
+    the fitter itself.  Only the diagonal (white-noise) part of the
+    noise model is used.
     """
-
-    def __init__(
-        self,
-        model: TimingModel,
-        toa_data: TOAData,
-        params: ParameterVector,
-        noise_model: Optional[NoiseModel] = None,
-    ):
-        self.model = model
-        self.toa_data = toa_data
-        self.params = params
-        self.noise_model = noise_model
 
     def _get_sigma(self, params: ParameterVector) -> Float[Array, " n_toas"]:
         """Return noise-scaled TOA uncertainties."""
@@ -157,11 +130,8 @@ class WLSFitter:
         chi2_val = float(compute_chi2(final_resid, sigma))
         dof = self.toa_data.n_toas - params.n_free
 
-        errors = jnp.sqrt(jnp.diag(covariance))
-        errors_safe = jnp.where(errors==0, 1.0, errors)
-        correlation = (covariance / errors_safe).T / errors_safe
-
-        reduced_chi2 = chi2_val / dof if dof >0 else float('nan')
+        errors, correlation = self._covariance_to_correlation(covariance)
+        reduced_chi2 = self._reduced_chi2(chi2_val, dof)
 
         return WLSFitResult(
             params=params,
