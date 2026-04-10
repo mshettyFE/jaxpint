@@ -1,6 +1,8 @@
 """WLS, GLS, and wideband fitters for JaxPINT."""
 
-from ._common import (
+from ._base import (
+    BaseFitter,
+    BaseFitResult,
     compute_chi2,
     compute_design_matrix,
     compute_phase_residuals,
@@ -25,6 +27,8 @@ from .wideband import (
 )
 
 __all__ = [
+    "BaseFitter",
+    "BaseFitResult",
     "WLSFitResult",
     "WLSFitter",
     "GLSFitResult",

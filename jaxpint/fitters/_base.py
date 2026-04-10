@@ -1,5 +1,9 @@
-"""Shared pure-JAX functions used by all fitters."""
+"""Base classes and shared pure-JAX functions for all fitters."""
 from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Optional
 
 import equinox as eqx
 import jax
@@ -8,8 +12,83 @@ from jaxtyping import Array, Float
 
 from jaxpint.model import TimingModel
 from jaxpint.dual_float import DualFloat
+from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import normalize_designmatrix
+
+
+# ---------------------------------------------------------------------------
+# Base fit result
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class BaseFitResult:
+    """Common fields shared by all fit results."""
+
+    params: ParameterVector
+    covariance_matrix: Float[Array, "n_free n_free"]
+    correlation_matrix: Float[Array, "n_free n_free"]
+    parameter_uncertainties: Float[Array, " n_free"]
+    chi2: float
+    dof: int
+    reduced_chi2: float
+
+
+# ---------------------------------------------------------------------------
+# Base fitter
+# ---------------------------------------------------------------------------
+
+
+class BaseFitter(ABC):
+    """Abstract base for all JaxPINT fitters.
+
+    Subclasses must implement :meth:`fit_toas` (the main entry point)
+    and typically also implement ``_iteration`` and ``_build_result``.
+
+    Parameters
+    ----------
+    model : TimingModel
+        JaxPINT timing model.
+    toa_data : TOAData
+        Pre-extracted TOA data.
+    params : ParameterVector
+        Initial parameter values (free/frozen flags determine what is fit).
+    noise_model : NoiseModel, optional
+        Noise model.
+    """
+
+    def __init__(
+        self,
+        model: TimingModel,
+        toa_data: TOAData,
+        params: ParameterVector,
+        noise_model: Optional[NoiseModel] = None,
+    ):
+        self.model = model
+        self.toa_data = toa_data
+        self.params = params
+        self.noise_model = noise_model
+
+    @abstractmethod
+    def fit_toas(self, maxiter: int = 1, **kwargs) -> BaseFitResult:
+        """Run the fit. Subclasses narrow the return type to their specific result."""
+        ...
+
+    @staticmethod
+    def _covariance_to_correlation(
+        covariance: Float[Array, " n n"],
+    ) -> tuple[Float[Array, " n"], Float[Array, " n n"]]:
+        """Compute parameter uncertainties and correlation matrix from covariance."""
+        errors = jnp.sqrt(jnp.diag(covariance))
+        errors_safe = jnp.where(errors == 0, 1.0, errors)
+        correlation = (covariance / errors_safe).T / errors_safe
+        return errors, correlation
+
+    @staticmethod
+    def _reduced_chi2(chi2_val: float, dof: int) -> float:
+        """Compute reduced chi-squared, returning NaN if dof <= 0."""
+        return chi2_val / dof if dof > 0 else float("nan")
 
 
 # ---------------------------------------------------------------------------
