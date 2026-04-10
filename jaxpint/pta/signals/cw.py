@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
@@ -142,66 +143,12 @@ def cw_delay(
     .. [2] Ellis (2013), CQG 30, 224004.
     .. [3] Detweiler (1979), ApJ 234, 1100.
     """
-    # Extract CW source parameters via named access
-    h0 = 10.0 ** global_params.param_value(f"{prefix}log10_h")
-    f0 = 10.0 ** global_params.param_value(f"{prefix}log10_fgw")
-    gwtheta = jnp.arccos(global_params.param_value(f"{prefix}cos_gwtheta"))
-    gwphi = global_params.param_value(f"{prefix}gwphi")
-    inc = jnp.arccos(global_params.param_value(f"{prefix}cos_inc"))
-    psi = global_params.param_value(f"{prefix}psi")
-    phase0 = global_params.param_value(f"{prefix}phase0")
-
-    # Antenna patterns
-    fp, fc = fplus_fcross(pos, gwtheta, gwphi)
-
-    # TOA times in seconds (float64)
-    toas_s = (
-        toa_data.tdb_int.astype(jnp.float64) * 86400.0
-        + toa_data.tdb_frac * 86400.0
-    )
-
-    # Earth-term phase
-    phase_earth = phase0 + 2.0 * jnp.pi * f0 * (toas_s - _TREF)
-
-    # GW propagation direction (towards the source)
-    sin_theta = jnp.sin(gwtheta)
-    cos_theta = jnp.cos(gwtheta)
-    omhat = jnp.array(
-        [
-            -sin_theta * jnp.cos(gwphi),
-            -sin_theta * jnp.sin(gwphi),
-            -cos_theta,
-        ]
-    )
-
-    # Pulsar-term phase offset from light travel time
-    cos_mu = jnp.dot(omhat, pos)
-    dist_m = pulsar_dist * _KPC_TO_M
-    phase_pulsar = phase_earth - (
-        2.0 * jnp.pi * f0 * dist_m / _C * (1.0 + cos_mu)
-    )
-
-    # Amplitude scaling
-    alpha = h0 / (2.0 * jnp.pi * f0)
-
-    # Phase averaging (Earth + pulsar terms combined)
-    phi_avg = 0.5 * (phase_earth + phase_pulsar)
-    phi_diff = 0.5 * (phase_earth - phase_pulsar)
-
-    delta_sin = 2.0 * jnp.cos(phi_avg) * jnp.sin(phi_diff)
-    delta_cos = -2.0 * jnp.sin(phi_avg) * jnp.sin(phi_diff)
-
-    # Polarisation tensor components
-    cos_inc = jnp.cos(inc)
-    At = -(1.0 + cos_inc**2) * delta_sin
-    Bt = 2.0 * cos_inc * delta_cos
-
-    cos2psi = jnp.cos(2.0 * psi)
-    sin2psi = jnp.sin(2.0 * psi)
-    rplus = alpha * (-At * cos2psi + Bt * sin2psi)
-    rcross = alpha * (At * sin2psi + Bt * cos2psi)
-
-    return -fp * rplus - fc * rcross
+    # Extract CW source parameters and delegate to cw_delay_from_array
+    cw_params = jnp.array([
+        global_params.param_value(f"{prefix}{name}")
+        for name in CW_PARAM_DEFAULTS
+    ])
+    return cw_delay_from_array(toa_data, pos, pulsar_dist, cw_params)
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +226,223 @@ class CWInjector(SignalInjector):
             pulsar_params.param_value(self.dist_param),
             global_params,
             prefix=self.prefix,
+        )
+
+    # covariance() inherited from SignalInjector — returns None (CW is deterministic)
+
+
+# ---------------------------------------------------------------------------
+# Vectorized CW delay (vmappable over sources)
+# ---------------------------------------------------------------------------
+
+# Canonical parameter order matching CW_PARAM_DEFAULTS keys
+_CW_PARAM_NAMES: tuple[str, ...] = tuple(CW_PARAM_DEFAULTS.keys())
+_N_CW_PARAMS: int = len(_CW_PARAM_NAMES)
+
+
+def cw_delay_from_array(
+    toa_data: TOAData,
+    pos: Float[Array, "3"],
+    pulsar_dist: Float[Array, ""],
+    cw_params: Float[Array, " 7"],
+) -> Float[Array, " n_toas"]:
+    """CW timing delay using a flat parameter array (vmappable over sources).
+
+    Identical physics to :func:`cw_delay` but takes CW parameters as a
+    positional ``(7,)`` array instead of named lookups into
+    :class:`~jaxpint.pta.params.GlobalParams`.
+
+    Parameter order (matching :data:`CW_PARAM_DEFAULTS` key order):
+        0: log10_h, 1: cos_gwtheta, 2: gwphi, 3: log10_fgw,
+        4: cos_inc, 5: psi, 6: phase0
+    """
+    h0 = 10.0 ** cw_params[0]
+    gwtheta = jnp.arccos(cw_params[1])
+    gwphi = cw_params[2]
+    f0 = 10.0 ** cw_params[3]
+    inc = jnp.arccos(cw_params[4])
+    psi = cw_params[5]
+    phase0 = cw_params[6]
+
+    fp, fc = fplus_fcross(pos, gwtheta, gwphi)
+
+    toas_s = (
+        toa_data.tdb_int.astype(jnp.float64) * 86400.0
+        + toa_data.tdb_frac * 86400.0
+    )
+
+    phase_earth = phase0 + 2.0 * jnp.pi * f0 * (toas_s - _TREF)
+
+    sin_theta = jnp.sin(gwtheta)
+    cos_theta = jnp.cos(gwtheta)
+    omhat = jnp.array([
+        -sin_theta * jnp.cos(gwphi),
+        -sin_theta * jnp.sin(gwphi),
+        -cos_theta,
+    ])
+
+    cos_mu = jnp.dot(omhat, pos)
+    dist_m = pulsar_dist * _KPC_TO_M
+    phase_pulsar = phase_earth - (
+        2.0 * jnp.pi * f0 * dist_m / _C * (1.0 + cos_mu)
+    )
+
+    alpha = h0 / (2.0 * jnp.pi * f0)
+
+    phi_avg = 0.5 * (phase_earth + phase_pulsar)
+    phi_diff = 0.5 * (phase_earth - phase_pulsar)
+
+    delta_sin = 2.0 * jnp.cos(phi_avg) * jnp.sin(phi_diff)
+    delta_cos = -2.0 * jnp.sin(phi_avg) * jnp.sin(phi_diff)
+
+    cos_inc = jnp.cos(inc)
+    At = -(1.0 + cos_inc**2) * delta_sin
+    Bt = 2.0 * cos_inc * delta_cos
+
+    cos2psi = jnp.cos(2.0 * psi)
+    sin2psi = jnp.sin(2.0 * psi)
+    rplus = alpha * (-At * cos2psi + Bt * sin2psi)
+    rcross = alpha * (At * sin2psi + Bt * cos2psi)
+
+    return -fp * rplus - fc * rcross
+
+
+def sum_cw_delays(
+    toa_data: TOAData,
+    pos: Float[Array, "3"],
+    pulsar_dist: Float[Array, ""],
+    cw_params_stack: Float[Array, "n_cw 7"],
+) -> Float[Array, " n_toas"]:
+    """Sum CW delays from multiple sources via vmap.
+
+    Parameters
+    ----------
+    toa_data : TOAData
+        Pulse time-of-arrival data.
+    pos : (3,) array
+        Pulsar unit vector.
+    pulsar_dist : scalar
+        Pulsar distance in kpc.
+    cw_params_stack : (n_cw, 7) array
+        Stacked CW parameters for all sources.
+
+    Returns
+    -------
+    delay : (n_toas,) array
+        Total CW delay summed over all sources.
+    """
+    per_source = jax.vmap(
+        lambda p: cw_delay_from_array(toa_data, pos, pulsar_dist, p)
+    )(cw_params_stack)  # (n_cw, n_toas)
+    return jnp.sum(per_source, axis=0)
+
+
+# ---------------------------------------------------------------------------
+# Vectorized CW injector (single trace for M sources)
+# ---------------------------------------------------------------------------
+
+
+class CWInjectorStack(SignalInjector):
+    """Vectorized injector for multiple CW sources.
+
+    Replaces M separate :class:`CWInjector` instances with a single object
+    that uses ``jax.vmap`` over sources.  JIT compilation time is O(1) in
+    the number of sources instead of O(M).
+
+    Implements the :class:`~jaxpint.pta.likelihood.SignalInjector` protocol,
+    so it works as a drop-in replacement in :class:`PTAConfig`.
+
+    Parameters
+    ----------
+    pulsar_positions : (n_psr, 3) array
+        Unit vectors pointing to each pulsar.
+    n_sources : int
+        Number of CW sources.
+    dist_param_name : str
+        Name of the distance parameter in each pulsar's
+        :class:`~jaxpint.types.ParameterVector` (default ``'PX'``).
+    initial_values : dict, optional
+        Override default initial values (applied to all sources).
+        Keys must be in :data:`CW_PARAM_DEFAULTS`.
+    per_source_values : list of dict, optional
+        Per-source overrides (length must equal *n_sources*).
+        Takes precedence over *initial_values* for each source.
+
+    Examples
+    --------
+    >>> # Before: M separate injectors (M JIT traces)
+    >>> injectors = [CWInjector(positions, prefix=f"cw{i}_") for i in range(M)]
+    >>>
+    >>> # After: one stacked injector (1 JIT trace)
+    >>> injector = CWInjectorStack(positions, n_sources=M)
+    >>> config = PTAConfig(..., signal_injectors=(injector,))
+    """
+
+    def __init__(
+        self,
+        pulsar_positions: Float[Array, "n_psr 3"],
+        n_sources: int,
+        dist_param_name: str = "PX",
+        initial_values: Optional[dict[str, float]] = None,
+        per_source_values: Optional[list[dict[str, float]]] = None,
+    ):
+        self.positions = pulsar_positions
+        self.dist_param = dist_param_name
+        self.n_sources = n_sources
+        self.prefixes = tuple(f"cw{i}_" for i in range(n_sources))
+
+        # Build per-source param specs
+        self.param_specs: list[dict[str, float]] = []
+        for m in range(n_sources):
+            spec = dict(CW_PARAM_DEFAULTS)
+            if initial_values is not None:
+                unknown = set(initial_values) - set(CW_PARAM_DEFAULTS)
+                if unknown:
+                    raise ValueError(
+                        f"Unknown CW parameters: {unknown}. "
+                        f"Valid: {list(CW_PARAM_DEFAULTS.keys())}"
+                    )
+                spec.update(initial_values)
+            if per_source_values is not None:
+                if len(per_source_values) != n_sources:
+                    raise ValueError(
+                        f"per_source_values length {len(per_source_values)} "
+                        f"!= n_sources {n_sources}"
+                    )
+                unknown = set(per_source_values[m]) - set(CW_PARAM_DEFAULTS)
+                if unknown:
+                    raise ValueError(
+                        f"Unknown CW parameters in source {m}: {unknown}"
+                    )
+                spec.update(per_source_values[m])
+            self.param_specs.append(spec)
+
+        # _param_indices will be set during register_params
+        self._param_indices: Optional[jnp.ndarray] = None
+
+    def register_params(self, global_params):
+        """Register all CW sources' parameters into *global_params*."""
+        indices = []
+        for m in range(self.n_sources):
+            prefix = self.prefixes[m]
+            spec = self.param_specs[m]
+            names = [f"{prefix}{n}" for n in _CW_PARAM_NAMES]
+            values = [spec[n] for n in _CW_PARAM_NAMES]
+            offset = global_params.n_params
+            global_params = global_params.add_params(names, values)
+            indices.append(list(range(offset, offset + _N_CW_PARAMS)))
+
+        self._param_indices = jnp.array(indices, dtype=jnp.int32)
+        return global_params
+
+    def delay(self, p, toa_data, pulsar_params, global_params):
+        """Compute total CW delay for pulsar *p* (vmapped over sources)."""
+        cw_stack = global_params.values[self._param_indices]  # (n_sources, 7)
+        return sum_cw_delays(
+            toa_data,
+            self.positions[p],
+            pulsar_params.param_value(self.dist_param),
+            cw_stack,
         )
 
     # covariance() inherited from SignalInjector — returns None (CW is deterministic)
