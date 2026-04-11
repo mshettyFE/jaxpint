@@ -69,7 +69,7 @@ class PLChromNoise(NoiseComponent):
         self,
         params: ParameterVector,
     ) -> Float[Array, " n_basis"]:
-        """Compute power-law PSD weights.
+        """Compute power-law PSD weights for the chromatic noise Fourier basis.
 
         The power spectral density follows the convention::
 
@@ -78,9 +78,16 @@ class PLChromNoise(NoiseComponent):
         Each weight is ``P(f) · Δf``, repeated twice for the sin/cos
         pair at that frequency.
 
+        Parameters
+        ----------
+        params : ParameterVector
+            Must contain values for ``TNCHROMAMP`` (log10 amplitude)
+            and ``TNCHROMGAM`` (spectral index).
+
         Returns
         -------
         weights : (2 * n_freqs,)
+            PSD weights for each basis column.
         """
         log10_A = params.param_value(self.tnchromamp_name)
         gamma = params.param_value(self.tnchromgam_name)
@@ -125,9 +132,28 @@ class PLChromNoise(NoiseComponent):
         Float[Array, "n_toas n_basis"],
         Float[Array, " n_basis"],
     ]:
-        """Return the Woodbury ``(Ndiag, U, Phidiag)`` triple.
+        """Return the Woodbury ``(Ndiag, U, Phidiag)`` triple for chromatic noise.
 
-        Chromatic noise is purely low-rank: ``Ndiag = 0``.
+        Chromatic noise is purely low-rank: ``Ndiag = 0``. The basis is
+        scaled at runtime by ``(f_ref / f_obs)^alpha`` to account for the
+        chromatic index.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Observed TOA data including radio frequencies for chromatic scaling.
+        params : ParameterVector
+            Current parameter values for amplitude, spectral index, and
+            chromatic index.
+
+        Returns
+        -------
+        Ndiag : (n_toas,)
+            Zero diagonal (chromatic noise has no white component).
+        U : (n_toas, 2 * n_freqs)
+            Chromatically-scaled Fourier design matrix.
+        Phidiag : (2 * n_freqs,)
+            Power-law PSD weights.
         """
         Ndiag = jnp.zeros(toa_data.n_toas)
         return Ndiag, self._scaled_basis(toa_data, params), self.psd_weights(params)
@@ -142,6 +168,21 @@ class PLChromNoise(NoiseComponent):
 
         Draws standard-normal Fourier amplitudes and projects them
         through the chromatically-scaled basis matrix.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Observed TOA data including radio frequencies for chromatic scaling.
+        params : ParameterVector
+            Current parameter values for amplitude, spectral index, and
+            chromatic index.
+        key : jax.Array
+            PRNG key for random sampling.
+
+        Returns
+        -------
+        noise : (n_toas,)
+            Chromatic noise realization in seconds.
         """
         weights = self.psd_weights(params)
         basis = self._scaled_basis(toa_data, params)

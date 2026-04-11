@@ -81,6 +81,27 @@ class EcorrNoise(NoiseComponent):
         Float[Array, "n_toas n_epochs"],
         Float[Array, " n_epochs"],
     ]:
+        """Return the Woodbury ``(Ndiag, U, Phidiag)`` triple for ECORR noise.
+
+        ECORR is purely low-rank: ``Ndiag = 0``. The basis is the
+        quantization matrix mapping TOAs to observing epochs.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Observed TOA data (used for array sizing).
+        params : ParameterVector
+            Current parameter values for all ECORR parameters.
+
+        Returns
+        -------
+        Ndiag : (n_toas,)
+            Zero diagonal (ECORR has no white component).
+        U : (n_toas, n_epochs)
+            Binary quantization matrix.
+        Phidiag : (n_epochs,)
+            Squared ECORR values (seconds squared) per epoch.
+        """
         U = self.quantization_matrix
         Phidiag = self.ecorr_weights(params)
         Ndiag = jnp.zeros(toa_data.n_toas)
@@ -92,6 +113,25 @@ class EcorrNoise(NoiseComponent):
         params: ParameterVector,
         key: jax.Array,
     ) -> Float[Array, " n_toas"]:
+        """Draw a random ECORR noise realization.
+
+        Draws standard-normal epoch amplitudes and projects them through
+        the quantization matrix scaled by sqrt(ECORR squared) values.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Observed TOA data (used for array dimensions).
+        params : ParameterVector
+            Current parameter values for all ECORR parameters.
+        key : jax.Array
+            PRNG key for random sampling.
+
+        Returns
+        -------
+        noise : (n_toas,)
+            ECORR noise realization in seconds.
+        """
         U = self.quantization_matrix
         weights = self.ecorr_weights(params)
         n_epochs = U.shape[1]

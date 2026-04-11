@@ -101,6 +101,28 @@ class BinaryDDK(DelayComponent):
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
+        """Compute DDK binary delay with Kopeikin parallax and proper-motion corrections.
+
+        Extends the DD model by correcting the projected semi-major axis
+        (A1) and longitude of periastron (OM) for annual-orbital parallax
+        (Kopeikin 1995) and, optionally, proper motion (Kopeikin 1996).
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data (TDB times, SSB-observatory positions, etc.).
+        params : ParameterVector
+            Timing-model parameters containing DD orbital elements,
+            Kopeikin parameters (KIN, KOM, PX), and astrometry (RAJ, DECJ).
+        delay : array, shape (n_toas,)
+            Accumulated signal delay in seconds, used to correct
+            the time of arrival to emission time.
+
+        Returns
+        -------
+        array, shape (n_toas,)
+            Binary delay in seconds.
+        """
         # --- Extract DD parameters ---
         pb_d = params.param_value(self.pb_name)
         t0 = params.epoch_dual(self.t0_name)

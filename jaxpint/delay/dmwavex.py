@@ -39,6 +39,14 @@ class DMWaveX(DispersionDelayComponent):
         Names of the sine amplitude parameters (pc cm^-3).
     dmwxcos_names : tuple[str, ...]
         Names of the cosine amplitude parameters (pc cm^-3).
+
+    Raises
+    ------
+    ValueError
+        If ``n_components`` is less than 1.
+    ValueError
+        If the length of ``dmwxfreq_names``, ``dmwxsin_names``, or
+        ``dmwxcos_names`` does not match ``n_components``.
     """
 
     n_components: int = eqx.field(static=True)
@@ -63,6 +71,23 @@ class DMWaveX(DispersionDelayComponent):
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
+        """Compute DM as a Fourier sum about DMWXEPOCH.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data (TDB times for dt from DMWXEPOCH).
+        params : ParameterVector
+            Timing-model parameters containing DMWXFREQ, DMWXSIN,
+            DMWXCOS, and DMWXEPOCH values.
+        delay : array, shape (n_toas,)
+            Accumulated signal delay in seconds (unused by this method).
+
+        Returns
+        -------
+        array, shape (n_toas,)
+            Fourier-basis DM in pc cm^-3 at each TOA.
+        """
         epoch = params.epoch_dual(self.dmwxepoch_name)
         dt_days = (toa_data.tdb - epoch).total
 

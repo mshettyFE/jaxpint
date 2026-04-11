@@ -61,7 +61,7 @@ def single_pulsar_logL(
 
     Returns
     -------
-    float
+    logL : float
         Log-likelihood value.
     """
     # 1. Residuals from the timing model

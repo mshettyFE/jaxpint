@@ -209,6 +209,17 @@ class SolarWindDispersion(DelayComponent):
         Position epoch parameter name.
     obliquity_arcsec : float or None
         When set, coordinates are ecliptic; rotate to ICRS.
+
+    Raises
+    ------
+    ValueError
+        If no NE_SW terms are provided (``ne_sw_param_names`` is empty).
+    ValueError
+        If the first NE_SW term is not ``'NE_SW'``.
+    ValueError
+        If ``swm`` is not 0 or 1.
+    ValueError
+        If ``swm`` is 1 and ``swp_name`` is None.
     """
 
     ne_sw_param_names: tuple[str, ...] = eqx.field(static=True)

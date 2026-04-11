@@ -82,7 +82,18 @@ class BinaryDD(DelayComponent):
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
-        """Compute DD binary delay.
+        """Compute DD binary delay (Roemer + Einstein + Shapiro + aberration).
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data (TDB times, etc.).
+        params : ParameterVector
+            Timing-model parameters containing orbital elements and
+            post-Keplerian parameters (SINI, M2, GAMMA, DR, DTH, etc.).
+        delay : array, shape (n_toas,)
+            Accumulated signal delay in seconds, used to correct
+            the time of arrival to emission time.
 
         Returns
         -------

@@ -28,6 +28,11 @@ class FrequencyDependent(DelayComponent):
     fd_param_names : tuple[str, ...]
         Names of the FD parameters, ordered starting from FD1.
         E.g. ``("FD1", "FD2", "FD3")``.
+
+    Raises
+    ------
+    ValueError
+        If no FD terms are provided (``fd_param_names`` is empty).
     """
 
     fd_param_names: tuple[str, ...] = eqx.field(static=True)

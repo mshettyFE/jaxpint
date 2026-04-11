@@ -37,6 +37,14 @@ class WaveX(DelayComponent):
         Names of the sine amplitude parameters (seconds).
     wxcos_names : tuple[str, ...]
         Names of the cosine amplitude parameters (seconds).
+
+    Raises
+    ------
+    ValueError
+        If ``n_components`` is less than 1.
+    ValueError
+        If the length of ``wxfreq_names``, ``wxsin_names``, or
+        ``wxcos_names`` does not match ``n_components``.
     """
 
     n_components: int = eqx.field(static=True)

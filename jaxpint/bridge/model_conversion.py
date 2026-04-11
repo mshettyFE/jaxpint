@@ -127,6 +127,14 @@ def pint_model_to_params(model: PINTTimingModel) -> ParResult:
     ----------
     model : pint.models.TimingModel
         The timing model to extract parameters from.
+
+    Returns
+    -------
+    ParResult
+        A container holding the ``ParameterVector``, the set of detected
+        timing-model components, optional binary model identifier,
+        string metadata, mask info, integer parameters, and boolean
+        parameters extracted from the PINT model.
     """
     names: list[str] = []
     values: list[float] = []
@@ -327,6 +335,13 @@ def params_to_pint_model(
         The (possibly fitted) parameter values.
     model : pint.models.TimingModel
         The PINT model to update.
+
+    Returns
+    -------
+    pint.models.TimingModel
+        The same *model* instance, modified in-place with the updated
+        parameter values (angles converted back to degrees, epochs
+        reconstructed from integer + fractional day, etc.).
     """
     # Collect pair parameter halves (_A / _B) for recombination
     pair_halves: dict[str, dict[str, float]] = {}  # base_name → {"_A": val, "_B": val}

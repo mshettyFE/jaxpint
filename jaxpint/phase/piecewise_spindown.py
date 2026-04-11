@@ -43,6 +43,14 @@ class PiecewiseSpindown(PhaseComponent):
         Names of segment frequency derivative parameters (Hz/s).
     pwf2_names : tuple[str, ...]
         Names of segment second derivative parameters (Hz/s^2).
+
+    Raises
+    ------
+    ValueError
+        If ``n_pieces`` is less than 1.
+    ValueError
+        If the length of any segment parameter name tuple does not match
+        ``n_pieces``.
     """
 
     n_pieces: int = eqx.field(static=True)

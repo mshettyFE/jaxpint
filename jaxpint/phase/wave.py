@@ -46,6 +46,14 @@ class Wave(PhaseComponent):
         These are the ``WAVEn_B`` entries.
     f0_name : str
         Name of the spin frequency parameter (default ``"F0"``).
+
+    Raises
+    ------
+    ValueError
+        If ``n_terms`` is less than 1.
+    ValueError
+        If the length of ``wave_sin_names`` or ``wave_cos_names`` does not
+        match ``n_terms``.
     """
 
     n_terms: int = eqx.field(static=True)

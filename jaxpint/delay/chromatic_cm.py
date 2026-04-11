@@ -39,6 +39,11 @@ class ChromaticCM(DelayComponent):
         Name of the reference-epoch parameter (default ``"CMEPOCH"``).
     tnchromidx_name : str
         Name of the chromatic index parameter (default ``"TNCHROMIDX"``).
+
+    Raises
+    ------
+    ValueError
+        If no CM terms are provided (``cm_param_names`` is empty).
     """
 
     cm_param_names: tuple[str, ...] = eqx.field(static=True)

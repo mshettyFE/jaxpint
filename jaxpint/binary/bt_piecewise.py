@@ -78,6 +78,27 @@ class BinaryBTPiecewise(DelayComponent):
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
+        """Compute piecewise BT binary delay.
+
+        TOAs falling within a defined piece use its T0X and A1X values;
+        TOAs outside all pieces use the global T0 and A1.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data (TDB times, etc.).
+        params : ParameterVector
+            Timing-model parameters containing global orbital elements,
+            piecewise T0X/A1X values, and piece boundaries XR1/XR2.
+        delay : array, shape (n_toas,)
+            Accumulated signal delay in seconds, used to correct
+            the time of arrival to emission time.
+
+        Returns
+        -------
+        array, shape (n_toas,)
+            Binary delay in seconds.
+        """
         # --- Extract global parameters ---
         pb_d = params.param_value(self.pb_name)
         t0 = params.epoch_dual(self.t0_name)

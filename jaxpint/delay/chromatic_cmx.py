@@ -41,6 +41,14 @@ class ChromaticCMX(DelayComponent):
         Names of bin-end MJD epoch parameters.
     tnchromidx_name : str
         Name of the chromatic index parameter (default ``"TNCHROMIDX"``).
+
+    Raises
+    ------
+    ValueError
+        If ``n_bins`` is less than 1.
+    ValueError
+        If the length of ``cmx_names``, ``cmxr1_names``, or ``cmxr2_names``
+        does not match ``n_bins``.
     """
 
     n_bins: int = eqx.field(static=True)

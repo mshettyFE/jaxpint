@@ -56,6 +56,17 @@ def build_universal_param_layout(
     The universal layout is the union of all parameter names across pulsars.
     Parameter ordering: parameters appear in the order they're first seen,
     iterating over pulsars in order.
+
+    Parameters
+    ----------
+    pulsar_params : tuple of ParameterVector
+        Per-pulsar parameter vectors whose names will be merged.
+
+    Returns
+    -------
+    UniversalParamLayout
+        Frozen dataclass containing the superset of parameter names,
+        frozen masks, units, and a template values array.
     """
     seen_names: dict[str, int] = {}  # name -> first-seen index
     all_units: dict[str, str] = {}
@@ -110,11 +121,23 @@ def reindex_param_values(
 ) -> Float[Array, " n_params_universal"]:
     """Map a pulsar's parameter values to the universal layout.
 
-    Returns a flat array of shape (layout.n_params,) with this pulsar's
+    Returns a flat array of shape ``(layout.n_params,)`` with this pulsar's
     values placed at the correct universal indices.  Missing parameters
     get default values (0.0, or 1.0 for EFAC).
 
     JIT/grad compatible: uses jnp scatter operations, not Python floats.
+
+    Parameters
+    ----------
+    params : ParameterVector
+        Single pulsar's parameter vector.
+    layout : UniversalParamLayout
+        Universal layout produced by :func:`build_universal_param_layout`.
+
+    Returns
+    -------
+    values : (n_params_universal,) array
+        Parameter values reindexed into the universal layout.
     """
     # Build index mapping (static, computed once)
     indices = jnp.array(
@@ -129,7 +152,21 @@ def make_universal_parameter_vector(
     param_values: Float[Array, " n_params_universal"],
     layout: UniversalParamLayout,
 ) -> ParameterVector:
-    """Create a ParameterVector with universal layout and given values."""
+    """Create a ParameterVector with universal layout and given values.
+
+    Parameters
+    ----------
+    param_values : (n_params_universal,) array
+        Parameter values in the universal ordering.
+    layout : UniversalParamLayout
+        Universal layout produced by :func:`build_universal_param_layout`.
+
+    Returns
+    -------
+    ParameterVector
+        New parameter vector using the universal layout's metadata and
+        the provided values.
+    """
     return ParameterVector(
         values=param_values,
         frozen_mask=layout.frozen_mask,
@@ -189,12 +226,26 @@ def pad_toa_data(toa_data: TOAData, n_max: int) -> TOAData:
     """Pad TOAData arrays from n_toas to n_max.
 
     Padding strategy:
+
     - Float arrays: pad with 0.0
     - Boolean masks: pad with False (padded TOAs belong to no flag group)
     - Integer indices: pad with 0
     - error: pad with 1.0 (so Ndiag padding = 1.0 after squaring)
     - freq: pad with 1e9 (avoid division by zero in dispersion)
     - Positions/velocities: pad with 0.0
+
+    Parameters
+    ----------
+    toa_data : TOAData
+        Original pulse time-of-arrival data.
+    n_max : int
+        Target number of TOAs after padding.
+
+    Returns
+    -------
+    TOAData
+        Padded copy with ``n_toas == n_max``.  If ``toa_data.n_toas``
+        is already >= *n_max*, the input is returned unchanged.
     """
     if toa_data.n_toas >= n_max:
         return toa_data
@@ -289,12 +340,26 @@ def pad_noise_model(noise_model: NoiseModel, n_max: int) -> NoiseModel:
     """Pad noise model stored arrays from n_toas to n_max (row dimension).
 
     Required because noise model arrays (fourier_basis, quantization_matrix)
-    are captured in lax.switch branch closures and must match the padded
+    are captured in ``lax.switch`` branch closures and must match the padded
     TOAData dimensions.
 
     Padding:
+
     - fourier_basis: pad rows with 0.0 (zero basis at padded TOAs)
     - quantization_matrix: pad rows with 0.0 (padded TOAs in no epoch)
+
+    Parameters
+    ----------
+    noise_model : NoiseModel
+        Original noise model for a single pulsar.
+    n_max : int
+        Target number of TOAs (row dimension) after padding.
+
+    Returns
+    -------
+    NoiseModel
+        Padded copy whose correlated-noise basis arrays have *n_max*
+        rows.  White noise and DM white noise components are unchanged.
     """
     padded_correlated = []
     for comp in noise_model.correlated:

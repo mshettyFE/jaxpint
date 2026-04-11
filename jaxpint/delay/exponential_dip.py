@@ -42,6 +42,15 @@ class ExponentialDip(DelayComponent):
         Names of chromatic index parameters (dimensionless).
     expdiptau_names : tuple[str, ...]
         Names of decay timescale parameters (days).
+
+    Raises
+    ------
+    ValueError
+        If ``n_dips`` is less than 1.
+    ValueError
+        If the length of ``expdipep_names``, ``expdipamp_names``,
+        ``expdipidx_names``, or ``expdiptau_names`` does not match
+        ``n_dips``.
     """
 
     n_dips: int = eqx.field(static=True)

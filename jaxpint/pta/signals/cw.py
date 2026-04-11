@@ -6,16 +6,16 @@ protocol.  Ported from Discovery's ``deterministic.py``.
 
 References
 ----------
-.. [1] Ellis, Siemens & Creighton (2012), "Optimal strategies for
+.. [cw_mod_esc12] Ellis, Siemens & Creighton (2012), "Optimal strategies for
    continuous gravitational wave detection in pulsar timing arrays",
    ApJ 756, 175.  Eqs. 1--3 (antenna patterns F+, Fx).
-.. [2] Sesana & Vecchio (2010), "Measuring the parameters of massive
+.. [cw_mod_sv10] Sesana & Vecchio (2010), "Measuring the parameters of massive
    black hole binary systems with pulsar timing array observations of
    gravitational waves", PRD 81, 104008.  Eq. 5 (CW timing residual).
-.. [3] Ellis (2013), "A Bayesian analysis pipeline for continuous GW
+.. [cw_mod_e13] Ellis (2013), "A Bayesian analysis pipeline for continuous GW
    sources in the PTA band", CQG 30, 224004.  Eq. 4 (phase-averaging
    decomposition of Earth + pulsar terms).
-.. [4] Detweiler (1979), "Pulsar timing measurements and the search for
+.. [cw_mod_d79] Detweiler (1979), "Pulsar timing measurements and the search for
    gravitational waves", ApJ 234, 1100.  Eq. 5 (strain-to-residual
    scaling alpha = h / (2*pi*f)).
 """
@@ -51,7 +51,7 @@ def fplus_fcross(
 ) -> tuple[Float[Array, ""], Float[Array, ""]]:
     """Compute F+ and Fx antenna pattern response for a single pulsar.
 
-    Implements Eqs. 1--3 of Ellis, Siemens & Creighton (2012) [1]_.
+    Implements Eqs. 1--3 of Ellis, Siemens & Creighton (2012) [cw_esc12]_.
 
     Parameters
     ----------
@@ -69,7 +69,7 @@ def fplus_fcross(
 
     References
     ----------
-    .. [1] Ellis, Siemens & Creighton (2012), ApJ 756, 175.
+    .. [cw_esc12] Ellis, Siemens & Creighton (2012), ApJ 756, 175.
     """
     x, y, z = pos[0], pos[1], pos[2]
 
@@ -111,10 +111,10 @@ def cw_delay(
 ) -> Float[Array, " n_toas"]:
     """CW-induced timing delay for one pulsar (Earth + pulsar term).
 
-    Implements the timing residual from Sesana & Vecchio (2010) [1]_ Eq. 5,
-    using the phase-averaging decomposition of Ellis (2013) [2]_ Eq. 4.
+    Implements the timing residual from Sesana & Vecchio (2010) [cw_sv10]_ Eq. 5,
+    using the phase-averaging decomposition of Ellis (2013) [cw_e13]_ Eq. 4.
     The strain-to-residual scaling ``alpha = h / (2*pi*f)`` follows from
-    Detweiler (1979) [3]_ Eq. 5.
+    Detweiler (1979) [cw_d79]_ Eq. 5.
 
     The pulsar-term phase depends on pulsar distance, which is what makes
     the Fisher matrix informative for distance constraints.
@@ -139,9 +139,9 @@ def cw_delay(
 
     References
     ----------
-    .. [1] Sesana & Vecchio (2010), PRD 81, 104008.
-    .. [2] Ellis (2013), CQG 30, 224004.
-    .. [3] Detweiler (1979), ApJ 234, 1100.
+    .. [cw_sv10] Sesana & Vecchio (2010), PRD 81, 104008.
+    .. [cw_e13] Ellis (2013), CQG 30, 224004.
+    .. [cw_d79] Detweiler (1979), ApJ 234, 1100.
     """
     # Extract CW source parameters and delegate to cw_delay_from_array
     cw_params = jnp.array([
@@ -213,13 +213,41 @@ class CWInjector(SignalInjector):
     # -- SignalInjector protocol ------------------------------------------------
 
     def register_params(self, global_params):
-        """Register CW source parameters into *global_params*."""
+        """Register CW source parameters into *global_params*.
+
+        Parameters
+        ----------
+        global_params : GlobalParams
+            Mutable accumulator of shared PTA parameters.
+
+        Returns
+        -------
+        GlobalParams
+            Updated copy with this CW source's parameters appended.
+        """
         names = [f"{self.prefix}{n}" for n in self.param_spec]
         values = list(self.param_spec.values())
         return global_params.add_params(names, values)
 
     def delay(self, p, toa_data, pulsar_params, global_params):
-        """Compute CW delay for pulsar *p*."""
+        """Compute CW delay for pulsar *p*.
+
+        Parameters
+        ----------
+        p : int
+            Pulsar index within the PTA.
+        toa_data : TOAData
+            Pulse time-of-arrival data for pulsar *p*.
+        pulsar_params : ParameterVector
+            Timing and noise parameters for pulsar *p*.
+        global_params : GlobalParams
+            Shared PTA parameters containing this source's CW values.
+
+        Returns
+        -------
+        (n_toas,) array
+            CW timing residual in seconds.
+        """
         return cw_delay(
             toa_data,
             self.positions[p],
@@ -255,6 +283,22 @@ def cw_delay_from_array(
     Parameter order (matching :data:`CW_PARAM_DEFAULTS` key order):
         0: log10_h, 1: cos_gwtheta, 2: gwphi, 3: log10_fgw,
         4: cos_inc, 5: psi, 6: phase0
+
+    Parameters
+    ----------
+    toa_data : TOAData
+        Pulse time-of-arrival data (uses TDB timestamps).
+    pos : (3,) array
+        Unit vector pointing to the pulsar.
+    pulsar_dist : scalar
+        Pulsar distance in kpc.
+    cw_params : (7,) array
+        Flat CW parameter vector in canonical order.
+
+    Returns
+    -------
+    delay : (n_toas,) array
+        CW timing residual in seconds.
     """
     h0 = 10.0 ** cw_params[0]
     gwtheta = jnp.arccos(cw_params[1])
@@ -421,7 +465,18 @@ class CWInjectorStack(SignalInjector):
         self._param_indices: Optional[jnp.ndarray] = None
 
     def register_params(self, global_params):
-        """Register all CW sources' parameters into *global_params*."""
+        """Register all CW sources' parameters into *global_params*.
+
+        Parameters
+        ----------
+        global_params : GlobalParams
+            Mutable accumulator of shared PTA parameters.
+
+        Returns
+        -------
+        GlobalParams
+            Updated copy with all CW sources' parameters appended.
+        """
         indices = []
         for m in range(self.n_sources):
             prefix = self.prefixes[m]
@@ -436,7 +491,24 @@ class CWInjectorStack(SignalInjector):
         return global_params
 
     def delay(self, p, toa_data, pulsar_params, global_params):
-        """Compute total CW delay for pulsar *p* (vmapped over sources)."""
+        """Compute total CW delay for pulsar *p* (vmapped over sources).
+
+        Parameters
+        ----------
+        p : int
+            Pulsar index within the PTA.
+        toa_data : TOAData
+            Pulse time-of-arrival data for pulsar *p*.
+        pulsar_params : ParameterVector
+            Timing and noise parameters for pulsar *p*.
+        global_params : GlobalParams
+            Shared PTA parameters containing all CW source values.
+
+        Returns
+        -------
+        (n_toas,) array
+            Total CW timing residual summed over all sources, in seconds.
+        """
         cw_stack = global_params.values[self._param_indices]  # (n_sources, 7)
         return sum_cw_delays(
             toa_data,

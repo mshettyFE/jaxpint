@@ -85,6 +85,27 @@ class ScaleToaError(NoiseComponent):
         toa_data: TOAData,
         params: ParameterVector,
     ) -> tuple[Float[Array, " n_toas"], None, None]:
+        """Compute the white noise diagonal covariance.
+
+        Returns the EFAC/EQUAD-scaled variance as the diagonal term,
+        with no low-rank (basis) contribution.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Observed TOA data including raw uncertainties and flag masks.
+        params : ParameterVector
+            Current parameter values for all EFAC/EQUAD parameters.
+
+        Returns
+        -------
+        Ndiag : (n_toas,)
+            Scaled variance for each TOA (seconds squared).
+        U : None
+            No basis matrix (white noise is purely diagonal).
+        Phidiag : None
+            No basis weights.
+        """
         sigma = self.scaled_sigma(toa_data, params)
         return sigma ** 2, None, None
 
@@ -94,5 +115,24 @@ class ScaleToaError(NoiseComponent):
         params: ParameterVector,
         key: jax.Array,
     ) -> Float[Array, " n_toas"]:
+        """Draw a random white noise realization.
+
+        Samples independent Gaussian noise scaled by the EFAC/EQUAD-adjusted
+        TOA uncertainties.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Observed TOA data including raw uncertainties and flag masks.
+        params : ParameterVector
+            Current parameter values for all EFAC/EQUAD parameters.
+        key : jax.Array
+            PRNG key for random sampling.
+
+        Returns
+        -------
+        noise : (n_toas,)
+            White noise realization in seconds.
+        """
         sigma = self.scaled_sigma(toa_data, params)
         return sigma * jax.random.normal(key, shape=(toa_data.n_toas,))

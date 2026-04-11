@@ -33,6 +33,11 @@ class PhaseJump(PhaseComponent):
         e.g. ``("JUMP1", "JUMP2", "JUMP3")``.
     f0_name : str
         Name of the spin frequency parameter (default ``"F0"``).
+
+    Raises
+    ------
+    ValueError
+        If no JUMP parameters are provided (``jump_param_names`` is empty).
     """
 
     jump_param_names: tuple[str, ...] = eqx.field(static=True)

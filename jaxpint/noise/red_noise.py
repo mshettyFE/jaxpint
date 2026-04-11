@@ -71,9 +71,16 @@ class PLRedNoise(NoiseComponent):
         Each weight is ``P(f) · Δf``, repeated twice for the sin/cos
         pair at that frequency.
 
+        Parameters
+        ----------
+        params : ParameterVector
+            Must contain values for ``TNREDAMP`` (log10 amplitude)
+            and ``TNREDGAM`` (spectral index).
+
         Returns
         -------
         weights : (2 * n_freqs,)
+            PSD weights for each basis column.
         """
         log10_A = params.param_value(self.tnredamp_name)
         gamma = params.param_value(self.tnredgam_name)
@@ -97,9 +104,25 @@ class PLRedNoise(NoiseComponent):
         Float[Array, "n_toas n_basis"],
         Float[Array, " n_basis"],
     ]:
-        """Return the Woodbury ``(Ndiag, U, Phidiag)`` triple.
+        """Return the Woodbury ``(Ndiag, U, Phidiag)`` triple for red noise.
 
         Red noise is purely low-rank: ``Ndiag = 0``.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Observed TOA data (used for array sizing).
+        params : ParameterVector
+            Current parameter values for amplitude and spectral index.
+
+        Returns
+        -------
+        Ndiag : (n_toas,)
+            Zero diagonal (red noise has no white component).
+        U : (n_toas, 2 * n_freqs)
+            Fourier design matrix.
+        Phidiag : (2 * n_freqs,)
+            Power-law PSD weights.
         """
         Ndiag = jnp.zeros(toa_data.n_toas)
         return Ndiag, self.fourier_basis, self.psd_weights(params)
@@ -113,7 +136,21 @@ class PLRedNoise(NoiseComponent):
         """Draw a random red noise realization.
 
         Draws standard-normal Fourier amplitudes and projects them
-        through the basis matrix scaled by √weights.
+        through the basis matrix scaled by sqrt(weights).
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Observed TOA data (used for basis matrix dimensions).
+        params : ParameterVector
+            Current parameter values for amplitude and spectral index.
+        key : jax.Array
+            PRNG key for random sampling.
+
+        Returns
+        -------
+        noise : (n_toas,)
+            Red noise realization in seconds.
         """
         weights = self.psd_weights(params)
         n_basis = self.fourier_basis.shape[1]
