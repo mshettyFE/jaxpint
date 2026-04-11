@@ -5,15 +5,15 @@ common red noise) injector.  Ported from Discovery's ``signals.py``.
 
 References
 ----------
-.. [1] Phinney (2001), "A practical theorem on gravitational wave
+.. [gwb_mod_p01] Phinney (2001), "A practical theorem on gravitational wave
    backgrounds", astro-ph/0108028.  Characteristic strain to PSD relation.
-.. [2] Arzoumanian et al. (2016), "The NANOGrav Nine-year Data Set: Limits
+.. [gwb_mod_a16] Arzoumanian et al. (2016), "The NANOGrav Nine-year Data Set: Limits
    on the Isotropic Stochastic Gravitational Wave Background", ApJ 821, 13.
    Eq. 1 (NANOGrav power-law PSD parameterisation).
-.. [3] Lentati et al. (2013), "Hyper-efficient model-independent Bayesian
+.. [gwb_mod_l13] Lentati et al. (2013), "Hyper-efficient model-independent Bayesian
    method for the analysis of pulsar timing data", PRD 87, 104021.
    Section II.A (Fourier basis for GP red noise modelling).
-.. [4] van Haasteren & Vallisneri (2014), "New advances in the
+.. [gwb_mod_vh14] van Haasteren & Vallisneri (2014), "New advances in the
    Gaussian-process approach to pulsar-timing data analysis",
    PRD 90, 104012.
 """
@@ -39,8 +39,8 @@ def powerlaw_psd(
 ) -> Float[Array, " n_freq"]:
     """Power-law power spectral density (NANOGrav convention).
 
-    Follows the parameterisation of Arzoumanian et al. (2016) [1]_ Eq. 1,
-    derived from the characteristic-strain relation of Phinney (2001) [2]_:
+    Follows the parameterisation of Arzoumanian et al. (2016) [gwb_a16]_ Eq. 1,
+    derived from the characteristic-strain relation of Phinney (2001) [gwb_p01]_:
     ``S(f) = h_c^2(f) / (12 pi^2 f^3)``.
 
     .. math::
@@ -57,10 +57,15 @@ def powerlaw_psd(
     gamma : scalar
         Spectral index (positive for red noise).
 
+    Returns
+    -------
+    psd : (n_freq,) array
+        Power spectral density in units of s^3.
+
     References
     ----------
-    .. [1] Arzoumanian et al. (2016), ApJ 821, 13.
-    .. [2] Phinney (2001), astro-ph/0108028.
+    .. [gwb_a16] Arzoumanian et al. (2016), ApJ 821, 13.
+    .. [gwb_p01] Phinney (2001), astro-ph/0108028.
     """
     return (
         (10.0 ** (2.0 * log10_A))
@@ -78,8 +83,8 @@ def fourier_basis(
     """Fourier design matrix (sine/cosine pairs).
 
     Constructs the basis used for Gaussian-process red noise modelling
-    as described in Lentati et al. (2013) [1]_ Section II.A and
-    van Haasteren & Vallisneri (2014) [2]_.
+    as described in Lentati et al. (2013) [gwb_l13]_ Section II.A and
+    van Haasteren & Vallisneri (2014) [gwb_vh14]_.
 
     Parameters
     ----------
@@ -99,8 +104,8 @@ def fourier_basis(
 
     References
     ----------
-    .. [1] Lentati et al. (2013), PRD 87, 104021.
-    .. [2] van Haasteren & Vallisneri (2014), PRD 90, 104012.
+    .. [gwb_l13] Lentati et al. (2013), PRD 87, 104021.
+    .. [gwb_vh14] van Haasteren & Vallisneri (2014), PRD 90, 104012.
     """
     freqs = jnp.arange(1, n_components + 1) / T_span
     phase = 2.0 * jnp.pi * toas_seconds[:, None] * freqs[None, :]
@@ -204,6 +209,19 @@ class CURNInjector(SignalInjector):
     # -- SignalInjector ABC -----------------------------------------------------
 
     def register_params(self, global_params):
+        """Register CURN amplitude and spectral index into *global_params*.
+
+        Parameters
+        ----------
+        global_params : GlobalParams
+            Mutable accumulator of shared PTA parameters.
+
+        Returns
+        -------
+        GlobalParams
+            Updated copy with ``{prefix}log10_A`` and ``{prefix}gamma``
+            appended.
+        """
         names = [f"{self.prefix}{n}" for n in self.param_spec]
         values = list(self.param_spec.values())
         return global_params.add_params(names, values)
@@ -211,6 +229,26 @@ class CURNInjector(SignalInjector):
     # delay() inherited from SignalInjector — returns None (CURN is stochastic)
 
     def covariance(self, p, toa_data, pulsar_params, global_params):
+        """Compute ``(U, Phi)`` GWB covariance contribution for pulsar *p*.
+
+        Parameters
+        ----------
+        p : int
+            Pulsar index within the PTA (unused; CURN is identical for
+            all pulsars).
+        toa_data : TOAData
+            Pulse time-of-arrival data for pulsar *p*.
+        pulsar_params : ParameterVector
+            Timing and noise parameters for pulsar *p* (unused).
+        global_params : GlobalParams
+            Shared PTA parameters containing GWB amplitude and spectral
+            index.
+
+        Returns
+        -------
+        tuple of ((n_toas, 2*n_components) array, (2*n_components,) array)
+            Fourier design matrix ``U`` and diagonal PSD vector ``Phi``.
+        """
         log10_A = global_params.param_value(f"{self.prefix}log10_A")
         gamma = global_params.param_value(f"{self.prefix}gamma")
         return gwb_covariance(

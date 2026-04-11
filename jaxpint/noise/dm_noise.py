@@ -59,7 +59,7 @@ class PLDMNoise(NoiseComponent):
         self,
         params: ParameterVector,
     ) -> Float[Array, " n_basis"]:
-        """Compute power-law PSD weights for the Fourier basis.
+        """Compute power-law PSD weights for the DM noise Fourier basis.
 
         The power spectral density follows the convention::
 
@@ -68,9 +68,16 @@ class PLDMNoise(NoiseComponent):
         Each weight is ``P(f) · Δf``, repeated twice for the sin/cos
         pair at that frequency.
 
+        Parameters
+        ----------
+        params : ParameterVector
+            Must contain values for ``TNDMAMP`` (log10 amplitude)
+            and ``TNDMGAM`` (spectral index).
+
         Returns
         -------
         weights : (2 * n_freqs,)
+            PSD weights for each basis column.
         """
         log10_A = params.param_value(self.tndmamp_name)
         gamma = params.param_value(self.tndmgam_name)
@@ -93,9 +100,25 @@ class PLDMNoise(NoiseComponent):
         Float[Array, "n_toas n_basis"],
         Float[Array, " n_basis"],
     ]:
-        """Return the Woodbury ``(Ndiag, U, Phidiag)`` triple.
+        """Return the Woodbury ``(Ndiag, U, Phidiag)`` triple for DM noise.
 
         DM noise is purely low-rank: ``Ndiag = 0``.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Observed TOA data (used for array sizing).
+        params : ParameterVector
+            Current parameter values for DM amplitude and spectral index.
+
+        Returns
+        -------
+        Ndiag : (n_toas,)
+            Zero diagonal (DM noise has no white component).
+        U : (n_toas, 2 * n_freqs)
+            DM-scaled Fourier design matrix.
+        Phidiag : (2 * n_freqs,)
+            Power-law PSD weights.
         """
         Ndiag = jnp.zeros(toa_data.n_toas)
         return Ndiag, self.fourier_basis, self.psd_weights(params)
@@ -109,7 +132,21 @@ class PLDMNoise(NoiseComponent):
         """Draw a random DM noise realization.
 
         Draws standard-normal Fourier amplitudes and projects them
-        through the DM-scaled basis matrix scaled by √weights.
+        through the DM-scaled basis matrix scaled by sqrt(weights).
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Observed TOA data (used for basis matrix dimensions).
+        params : ParameterVector
+            Current parameter values for DM amplitude and spectral index.
+        key : jax.Array
+            PRNG key for random sampling.
+
+        Returns
+        -------
+        noise : (n_toas,)
+            DM noise realization in seconds.
         """
         weights = self.psd_weights(params)
         n_basis = self.fourier_basis.shape[1]

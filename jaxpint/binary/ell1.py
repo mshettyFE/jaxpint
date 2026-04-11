@@ -155,7 +155,28 @@ class BinaryELL1(DelayComponent):
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
-        """Compute ELL1 binary delay."""
+        """Compute ELL1 binary delay for low-eccentricity orbits.
+
+        Uses a third-order analytic expansion in rectangular eccentricity
+        (EPS1, EPS2) instead of solving Kepler's equation, plus an
+        optional Shapiro delay term.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data (TDB times, etc.).
+        params : ParameterVector
+            Timing-model parameters containing ELL1 orbital elements
+            (PB, TASC, A1, EPS1, EPS2) and optional Shapiro parameters.
+        delay : array, shape (n_toas,)
+            Accumulated signal delay in seconds, used to correct
+            the time of arrival to emission time.
+
+        Returns
+        -------
+        array, shape (n_toas,)
+            Binary delay in seconds.
+        """
         # --- Extract parameters ---
         pb_d = params.param_value(self.pb_name)
         tasc = params.epoch_dual(self.tasc_name)

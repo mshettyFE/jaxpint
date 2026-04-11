@@ -6,11 +6,11 @@ pulsars, with signal injections (CW, GWB, etc.) mediated by the
 
 The per-pulsar likelihood uses the Woodbury matrix identity to evaluate
 the Gaussian log-likelihood without forming the full covariance matrix;
-see van Haasteren et al. (2009) [1]_ Appendix A.
+see van Haasteren et al. (2009) [pta_vh09]_ Appendix A.
 
 References
 ----------
-.. [1] van Haasteren et al. (2009), "On measuring the gravitational-wave
+.. [pta_vh09] van Haasteren et al. (2009), "On measuring the gravitational-wave
    background using pulsar timing arrays", MNRAS 395, 1005.
 """
 
@@ -56,7 +56,18 @@ class SignalInjector(ABC):
 
     @abstractmethod
     def register_params(self, global_params: GlobalParams) -> GlobalParams:
-        """Append this signal's parameters to *global_params*."""
+        """Append this signal's parameters to *global_params*.
+
+        Parameters
+        ----------
+        global_params : GlobalParams
+            Mutable accumulator of shared PTA parameters.
+
+        Returns
+        -------
+        GlobalParams
+            Updated copy with this signal's parameters appended.
+        """
         ...
 
     def delay(
@@ -70,6 +81,23 @@ class SignalInjector(ABC):
 
         Override for deterministic signals.  The default returns ``None``
         (no delay contribution).
+
+        Parameters
+        ----------
+        p : int
+            Pulsar index within the PTA.
+        toa_data : TOAData
+            Pulse time-of-arrival data for pulsar *p*.
+        pulsar_params : ParameterVector
+            Timing and noise parameters for pulsar *p*.
+        global_params : GlobalParams
+            Shared PTA parameters (CW source properties, GWB spectrum, etc.).
+
+        Returns
+        -------
+        (n_toas,) array or None
+            Deterministic timing delay in seconds, or ``None`` if this
+            injector does not contribute a delay.
         """
         return None
 
@@ -86,6 +114,23 @@ class SignalInjector(ABC):
 
         Override for stochastic signals.  The default returns ``None``
         (no covariance contribution).
+
+        Parameters
+        ----------
+        p : int
+            Pulsar index within the PTA.
+        toa_data : TOAData
+            Pulse time-of-arrival data for pulsar *p*.
+        pulsar_params : ParameterVector
+            Timing and noise parameters for pulsar *p*.
+        global_params : GlobalParams
+            Shared PTA parameters (CW source properties, GWB spectrum, etc.).
+
+        Returns
+        -------
+        tuple of ((n_toas, n_basis) array, (n_basis,) array) or None
+            Design matrix ``U`` and diagonal PSD vector ``Phi``, or
+            ``None`` if this injector does not contribute covariance.
         """
         return None
 
@@ -123,6 +168,13 @@ class PTAConfig(eqx.Module):
 
     @property
     def n_pulsars(self) -> int:
+        """Number of pulsars in this PTA configuration.
+
+        Returns
+        -------
+        int
+            Length of ``toa_data_list``.
+        """
         return len(self.toa_data_list)
 
 

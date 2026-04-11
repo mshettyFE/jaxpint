@@ -102,6 +102,28 @@ class BinaryDDGR(DelayComponent):
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
+        """Compute DDGR binary delay with GR-derived post-Keplerian parameters.
+
+        Derives SINI, GAMMA, PBDOT, OMDOT, DR, and DTH from the total
+        system mass (MTOT) and companion mass (M2) via General Relativity,
+        then evaluates the standard DD delay formula.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data (TDB times, etc.).
+        params : ParameterVector
+            Timing-model parameters containing orbital elements (PB, T0,
+            A1, ECC, OM) and masses (MTOT, M2).
+        delay : array, shape (n_toas,)
+            Accumulated signal delay in seconds, used to correct
+            the time of arrival to emission time.
+
+        Returns
+        -------
+        array, shape (n_toas,)
+            Binary delay in seconds.
+        """
         # --- Extract orbital parameters ---
         pb_d = params.param_value(self.pb_name)
         t0 = params.epoch_dual(self.t0_name)

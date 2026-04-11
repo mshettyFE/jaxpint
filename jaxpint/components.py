@@ -93,6 +93,11 @@ class PhaseComponent(eqx.Module):
         -------
         DualFloat
             Phase contribution in cycles (int + frac split).
+
+        Raises
+        ------
+        NotImplementedError
+            Must be overridden by subclasses.
         """
         raise NotImplementedError
 
@@ -144,6 +149,13 @@ class NoiseComponent(eqx.Module):
         For purely diagonal noise, return ``(Ndiag, None, None)``.
         For purely low-rank noise, return ``(zeros, U, Phidiag)``.
 
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data (TDB times, frequencies, positions, etc.).
+        params : ParameterVector
+            Timing model parameters.
+
         Returns
         -------
         Ndiag : (n_toas,)
@@ -152,6 +164,11 @@ class NoiseComponent(eqx.Module):
             Basis matrix for low-rank contribution.
         Phidiag : (n_basis,) or None
             Basis weights for low-rank contribution.
+
+        Raises
+        ------
+        NotImplementedError
+            Must be overridden by subclasses.
         """
         raise NotImplementedError
 
@@ -176,6 +193,11 @@ class NoiseComponent(eqx.Module):
         -------
         (n_toas,)
             Noise delays in seconds.
+
+        Raises
+        ------
+        NotImplementedError
+            Must be overridden by subclasses.
         """
         raise NotImplementedError
 
@@ -222,6 +244,11 @@ class DelayComponent(eqx.Module):
         -------
         (n_toas,)
             Delay contribution in seconds.
+
+        Raises
+        ------
+        NotImplementedError
+            Must be overridden by subclasses.
         """
         raise NotImplementedError
 
@@ -265,5 +292,10 @@ class DispersionDelayComponent(DelayComponent):
         -------
         (n_toas,)
             DM contribution in pc/cm³.
+
+        Raises
+        ------
+        NotImplementedError
+            Must be overridden by subclasses.
         """
         raise NotImplementedError

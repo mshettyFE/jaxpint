@@ -100,10 +100,26 @@ def extract_tzr_toa(
     auto-generated from the TOAs (first TOA after PEPOCH), matching
     PINT's guarantee in ``timing_model.phase()``.
 
-    Returns a dict with keys:
-        ``tdb_int``, ``tdb_frac`` — TDB time in days (MJD, float64)
-        ``freq`` — observing frequency in MHz (float; inf = no dispersion)
-        ``ssb_obs_pos`` — SSB observer position in km, shape (3,)
+    Parameters
+    ----------
+    model : pint.models.TimingModel
+        PINT timing model, which should contain an ``AbsPhase`` component
+        (or one will be auto-generated).
+    toas : pint.toa.TOAs
+        The TOA set used to generate the TZR TOA if ``AbsPhase`` is absent.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys:
+
+        - ``tdb_int`` (float) -- Integer MJD day of the TZR TOA in TDB.
+        - ``tdb_frac`` (float) -- Fractional MJD day of the TZR TOA in TDB.
+        - ``freq`` (float) -- Observing frequency in MHz.
+        - ``ssb_obs_pos`` (numpy.ndarray, shape (3,)) -- SSB observer
+          position in km.
+        - ``obs_sun_pos`` (numpy.ndarray, shape (3,)) -- Observer-to-Sun
+          position in km (zeros for barycentric observations).
     """
     if "AbsPhase" not in model.components:
         log.info("No AbsPhase in model; auto-generating TZR TOA from TOAs.")
@@ -160,7 +176,16 @@ def pint_toas_to_jax(
         called (or this function calls them).
     model : pint.models.TimingModel, optional
         If provided, pre-computes boolean flag masks for all
-        ``maskParameter`` instances (JUMP, EFAC, EQUAD, DMX, etc.).
+        ``maskParameter`` instances (JUMP, EFAC, EQUAD, DMX, etc.)
+        and extracts TZR TOA data for absolute phase computation.
+
+    Returns
+    -------
+    TOAData
+        A frozen container of JAX float64 arrays holding MJD times,
+        TDB times, uncertainties, frequencies, SSB positions/velocities,
+        observatory indices, flag masks, and optional fields (planet
+        positions, wideband DM, troposphere data, TZR TOA).
     """
     n_toas = toas.ntoas
 

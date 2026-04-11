@@ -66,6 +66,14 @@ class SolarWindDispersionX(DelayComponent):
         Position epoch parameter name.
     obliquity_arcsec : float or None
         When set, coordinates are ecliptic; rotate to ICRS.
+
+    Raises
+    ------
+    ValueError
+        If ``n_bins`` is less than 1.
+    ValueError
+        If the length of ``swxdm_names``, ``swxp_names``, ``swxr1_names``,
+        or ``swxr2_names`` does not match ``n_bins``.
     """
 
     n_bins: int = eqx.field(static=True)

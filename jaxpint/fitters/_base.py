@@ -72,7 +72,24 @@ class BaseFitter(ABC):
 
     @abstractmethod
     def fit_toas(self, maxiter: int = 1, **kwargs) -> BaseFitResult:
-        """Run the fit. Subclasses narrow the return type to their specific result."""
+        """Run the fit and return a result container.
+
+        Subclasses narrow the return type to their specific result class
+        (e.g. ``WLSFitResult``, ``GLSFitResult``).
+
+        Parameters
+        ----------
+        maxiter : int, optional
+            Maximum number of Gauss-Newton iterations. Default is 1.
+        **kwargs
+            Subclass-specific options (e.g. ``threshold``, ``full_cov``).
+
+        Returns
+        -------
+        BaseFitResult
+            A dataclass containing updated parameters, covariance,
+            uncertainties, chi-squared, and degrees of freedom.
+        """
         ...
 
     @staticmethod
@@ -103,7 +120,23 @@ def compute_phase_residuals(
 ) -> Float[Array, " n_toas"]:
     """Compute phase residuals using nearest-pulse tracking.
 
-    Returns the fractional part of the model phase (in cycles).
+    Returns the fractional part of the model phase (in cycles), after
+    adjusting for ``delta_pulse_number`` offsets stored in the TOA data.
+
+    Parameters
+    ----------
+    model : TimingModel
+        JaxPINT timing model used to compute pulse phase.
+    toa_data : TOAData
+        Pre-extracted TOA data containing observation times and
+        ``delta_pulse_number`` corrections.
+    params : ParameterVector
+        Current parameter values for the timing model.
+
+    Returns
+    -------
+    residuals : jax.Array, shape (n_toas,)
+        Phase residuals in cycles (fractional part of adjusted phase).
     """
     phase = model.compute_phase(toa_data, params)
     # Add delta_pulse_number before extracting fractional part
@@ -121,7 +154,22 @@ def compute_time_residuals(
 ) -> Float[Array, " n_toas"]:
     """Compute time residuals in seconds.
 
-    Converts phase residuals (cycles) to time by dividing by F0 (Hz).
+    Converts phase residuals (cycles) to time by dividing by the spin
+    frequency F0 (Hz).
+
+    Parameters
+    ----------
+    model : TimingModel
+        JaxPINT timing model.
+    toa_data : TOAData
+        Pre-extracted TOA data.
+    params : ParameterVector
+        Current parameter values (must include ``F0``).
+
+    Returns
+    -------
+    residuals : jax.Array, shape (n_toas,)
+        Time residuals in seconds.
     """
     phase_resid = compute_phase_residuals(model, toa_data, params)
     f0 = params.param_value("F0")
@@ -141,6 +189,21 @@ def compute_design_matrix(
     Following PINT's convention, the design matrix is negated so that
     ``M[i, j] = -d(time_resid_i) / d(param_j)``.  This ensures that
     the WLS update ``p_new = p_old + dpars`` reduces residuals.
+
+    Parameters
+    ----------
+    model : TimingModel
+        JaxPINT timing model.
+    toa_data : TOAData
+        Pre-extracted TOA data.
+    params : ParameterVector
+        Current parameter values. The ``frozen_mask`` attribute determines
+        which columns (free parameters) appear in the output.
+
+    Returns
+    -------
+    M : jax.Array, shape (n_toas, n_free)
+        Negated Jacobian of time residuals with respect to free parameters.
     """
     J, M = _compute_jacobian_and_design(model, toa_data, params)
     return M
@@ -240,5 +303,20 @@ def compute_chi2(
     residuals: Float[Array, " n_toas"],
     sigma: Float[Array, " n_toas"],
 ) -> Float[Array, ""]:
-    """Weighted chi-squared."""
+    """Compute the weighted chi-squared statistic.
+
+    Calculates ``sum((residuals / sigma) ** 2)``.
+
+    Parameters
+    ----------
+    residuals : jax.Array, shape (n_toas,)
+        Time residuals in seconds.
+    sigma : jax.Array, shape (n_toas,)
+        TOA uncertainties in seconds.
+
+    Returns
+    -------
+    chi2 : jax.Array, shape ()
+        Scalar weighted chi-squared value.
+    """
     return jnp.sum((residuals / sigma) ** 2)

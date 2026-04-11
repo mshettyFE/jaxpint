@@ -24,6 +24,19 @@ def flatten_params(
     """Pack all differentiable parameters into a single flat array.
 
     Layout: ``[global_params.values | pp[0].values | pp[1].values | ...]``
+
+    Parameters
+    ----------
+    global_params : GlobalParams
+        Shared PTA parameters.
+    pulsar_params : tuple of ParameterVector
+        Per-pulsar timing and noise parameters.
+
+    Returns
+    -------
+    flat : (n_total,) array
+        Concatenated parameter values, where
+        ``n_total = n_global + sum(n_pp_i)``.
     """
     return jnp.concatenate(
         [global_params.values] + [pp.values for pp in pulsar_params]

@@ -3,3 +3,5 @@ __pycache__/
 .hypothesis/
 .ipynb_checkpoints/
 *.egg-info/
+docs/_build/
+docs/api/generated/

@@ -36,6 +36,14 @@ class Glitch(PhaseComponent):
         frequency-derivative parameter names.
     glf0d_names, gltd_names : tuple[str, ...]
         Decaying-frequency and decay-time-constant parameter names.
+
+    Raises
+    ------
+    ValueError
+        If ``n_glitches`` is less than 1.
+    ValueError
+        If the length of any glitch parameter name tuple does not match
+        ``n_glitches``.
     """
 
     n_glitches: int = eqx.field(static=True)

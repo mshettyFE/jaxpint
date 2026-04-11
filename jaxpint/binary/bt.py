@@ -73,6 +73,17 @@ class BinaryBT(DelayComponent):
     ) -> Float[Array, " n_toas"]:
         """Compute BT binary delay.
 
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data (TDB times, etc.).
+        params : ParameterVector
+            Timing-model parameters containing orbital elements (PB, T0,
+            A1, ECC, OM) and optional secular derivatives.
+        delay : array, shape (n_toas,)
+            Accumulated signal delay in seconds, used to correct
+            the time of arrival to emission time.
+
         Returns
         -------
         array, shape (n_toas,)

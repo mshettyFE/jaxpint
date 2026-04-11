@@ -39,6 +39,13 @@ class IFunc(PhaseComponent):
         Delay values at control points (seconds).
     f0_name : str
         Name of the spin frequency parameter (default ``"F0"``).
+
+    Raises
+    ------
+    ValueError
+        If ``interp_type`` is not 0 or 2.
+    ValueError
+        If fewer than one control point is provided.
     """
 
     interp_type: int = eqx.field(static=True)

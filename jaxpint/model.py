@@ -57,6 +57,13 @@ class TimingModel(eqx.Module):
 
         Each component sees the accumulated delay from prior components.
 
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pulse time-of-arrival data.
+        params : ParameterVector
+            Timing model parameters.
+
         Returns
         -------
         Float[Array, " n_toas"]
@@ -88,6 +95,13 @@ class TimingModel(eqx.Module):
         Sums DM contributions from all :class:`DispersionDelayComponent`
         instances in :attr:`dispersion_components`.  Used for wideband
         DM residual computation.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pulse time-of-arrival data.
+        params : ParameterVector
+            Timing model parameters.
         """
         delay = self.compute_delay(toa_data, params)
         dm = jnp.zeros(toa_data.n_toas)
@@ -106,6 +120,13 @@ class TimingModel(eqx.Module):
         2. Sums phase contributions from all phase components.
         3. Subtracts the TZR reference phase for absolute phase
            (using ``toa_data.tzr_tdb_int/frac``).
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pulse time-of-arrival data.
+        params : ParameterVector
+            Timing model parameters.
 
         Returns
         -------
@@ -194,6 +215,28 @@ class TimingModel(eqx.Module):
     def __getitem__(
         self, key: str | int | slice
     ) -> DelayComponent | PhaseComponent | tuple[DelayComponent | PhaseComponent, ...]:
+        """Retrieve component(s) by name, integer index, or slice.
+
+        Parameters
+        ----------
+        key : str, int, or slice
+            If ``str``, looks up a component by its unique name (see
+            :attr:`component_names`).  If ``int`` or ``slice``, indexes
+            into the combined ``(delay_components + phase_components)``
+            tuple.
+
+        Returns
+        -------
+        DelayComponent, PhaseComponent, or tuple thereof
+            The matched component(s).
+
+        Raises
+        ------
+        KeyError
+            If *key* is a string that does not match any component name.
+        TypeError
+            If *key* is not ``str``, ``int``, or ``slice``.
+        """
         if isinstance(key, str):
             names = self.component_names
             comps = self.components

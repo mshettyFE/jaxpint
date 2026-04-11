@@ -138,28 +138,51 @@ class ParameterVector(eqx.Module):
     All values are stored as raw float64 in a fixed internal unit system.
     Components assume these units unconditionally -- no runtime conversion.
 
-    ========================================================  ===========
-    Parameter(s)                                              Unit
-    ========================================================  ===========
-    Angles (RAJ, DECJ, OM, KIN, KOM, ELONG, ELAT)            radians
-    Angular rates (OMDOT, XOMDOT)                             rad/s
-    Proper motion (PMRA, PMDEC, PMELONG, PMELAT)              mas/yr
-    Parallax (PX)                                             mas
-    Epochs (PEPOCH, T0, TASC, POSEPOCH, ...)                  frac day
-    Spin frequency (F0, F1, F2, ...)                          Hz/s^N
-    Dispersion (DM, DM1, DMX_*, CM, CMX_*)                    pc/cm^3
-    Orbital period (PB)                                       day
-    Projected semi-major axis (A1)                            ls
-    Companion mass (M2, MTOT)                                 Msun
-    TOA error scaling (EQUAD, ECORR)                          seconds
-    Frequencies (WXFREQ_*, DMWXFREQ_*, ...)                   1/day
-    Delay amplitudes (WXSIN_*, WXCOS_*, FD*, ...)             seconds
-    Dimensionless (EFAC, SINI, ECC, STIGMA, ...)              --
-    Everything else                                           .par native
-    ========================================================  ===========
+    .. list-table::
+       :header-rows: 1
+       :widths: 60 20
+
+       * - Parameter(s)
+         - Unit
+       * - Angles (RAJ, DECJ, OM, KIN, KOM, ELONG, ELAT)
+         - radians
+       * - Angular rates (OMDOT, XOMDOT)
+         - rad/s
+       * - Proper motion (PMRA, PMDEC, PMELONG, PMELAT)
+         - mas/yr
+       * - Parallax (PX)
+         - mas
+       * - Epochs (PEPOCH, T0, TASC, POSEPOCH, ...)
+         - frac day
+       * - Spin frequency (F0, F1, F2, ...)
+         - Hz/s^N
+       * - Dispersion (DM, DM1, ``DMX_*``, CM, ``CMX_*``)
+         - pc/cm^3
+       * - Orbital period (PB)
+         - day
+       * - Projected semi-major axis (A1)
+         - ls
+       * - Companion mass (M2, MTOT)
+         - Msun
+       * - TOA error scaling (EQUAD, ECORR)
+         - seconds
+       * - Frequencies (``WXFREQ_*``, ``DMWXFREQ_*``, ...)
+         - 1/day
+       * - Delay amplitudes (``WXSIN_*``, ``WXCOS_*``, ``FD*``, ...)
+         - seconds
+       * - Dimensionless (EFAC, SINI, ECC, STIGMA, ...)
+         - --
+       * - Everything else
+         - .par native
 
     Epoch integer MJD days are stored separately in ``epoch_int_values``
     to preserve precision; only the fractional day enters ``values``.
+
+    Raises
+    ------
+    ValueError
+        If lengths of ``frozen_mask``, ``units``, or ``values`` don't match
+        ``names``, or if ``epoch_int_values`` contains keys not in ``names``.
     """
 
     values: Float[Array, " n_params"]
@@ -220,11 +243,33 @@ class ParameterVector(eqx.Module):
     # -- Lookup helpers --
 
     def param_index(self, name: str) -> int:
-        """Index of parameter ``name`` in the values array."""
+        """Index of parameter ``name`` in the values array.
+
+        Parameters
+        ----------
+        name : str
+            Parameter name.
+
+        Returns
+        -------
+        int
+            Zero-based index into ``values``.
+        """
         return self._name_to_index[name]
 
     def param_value(self, name: str) -> Float[Array, ""]:
-        """Value of a single parameter. JIT-compatible if ``name`` is a static string."""
+        """Value of a single parameter. JIT-compatible if ``name`` is a static string.
+
+        Parameters
+        ----------
+        name : str
+            Parameter name.
+
+        Returns
+        -------
+        scalar
+            The parameter's current value.
+        """
         return self.values[self._name_to_index[name]]
 
     def param_value_or(self, name: str | None, default: float = 0.0):
@@ -244,6 +289,16 @@ class ParameterVector(eqx.Module):
 
         The full MJD is ``int_day + frac_day``. Only ``frac_day`` is
         differentiable.
+
+        Parameters
+        ----------
+        name : str
+            Epoch parameter name (e.g. ``"PEPOCH"``, ``"T0"``).
+
+        Returns
+        -------
+        tuple of (float, scalar)
+            ``(integer_mjd_day, fractional_day)``.
         """
         return self.epoch_int_values[name], self.values[self._name_to_index[name]]
 
@@ -252,6 +307,16 @@ class ParameterVector(eqx.Module):
 
         The full MJD is ``result.int + result.frac``. Only the fractional
         part is differentiable.
+
+        Parameters
+        ----------
+        name : str
+            Epoch parameter name (e.g. ``"PEPOCH"``, ``"T0"``).
+
+        Returns
+        -------
+        DualFloat
+            Extended-precision epoch value.
         """
         int_val = jnp.asarray(self.epoch_int_values[name], dtype=jnp.float64)
         frac_val = self.values[self._name_to_index[name]]
@@ -277,13 +342,37 @@ class ParameterVector(eqx.Module):
         return tuple(n for n, f in zip(self.names, self.frozen_mask) if not f)
 
     def with_free_values(self, new_free: Float[Array, " n_free"]) -> ParameterVector:
-        """Return a new ParameterVector with free parameter values replaced."""
+        """Return a new ParameterVector with free parameter values replaced.
+
+        Parameters
+        ----------
+        new_free : array, shape (n_free,)
+            Replacement values for the free (unfrozen) parameters.
+
+        Returns
+        -------
+        ParameterVector
+            Copy with updated free-parameter values.
+        """
         indices = self.free_indices_array()
         new_values = self.values.at[indices].set(new_free)
         return eqx.tree_at(lambda pv: pv.values, self, new_values)
 
     def with_value(self, name: str, val: float) -> ParameterVector:
-        """Return a new ParameterVector with one parameter updated."""
+        """Return a new ParameterVector with one parameter updated.
+
+        Parameters
+        ----------
+        name : str
+            Parameter name.
+        val : float
+            New value.
+
+        Returns
+        -------
+        ParameterVector
+            Copy with the specified parameter updated.
+        """
         idx = self._name_to_index[name]
         new_values = self.values.at[idx].set(val)
         return eqx.tree_at(lambda pv: pv.values, self, new_values)

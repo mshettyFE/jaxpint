@@ -44,6 +44,14 @@ class CMWaveX(DelayComponent):
         Names of the cosine amplitude parameters (cmu).
     tnchromidx_name : str
         Name of the chromatic index parameter.
+
+    Raises
+    ------
+    ValueError
+        If ``n_components`` is less than 1.
+    ValueError
+        If the length of ``cmwxfreq_names``, ``cmwxsin_names``, or
+        ``cmwxcos_names`` does not match ``n_components``.
     """
 
     n_components: int = eqx.field(static=True)

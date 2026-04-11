@@ -93,7 +93,7 @@ class PLSWNoise(NoiseComponent):
         self,
         params: ParameterVector,
     ) -> Float[Array, " n_basis"]:
-        """Compute power-law PSD weights.
+        """Compute power-law PSD weights for the solar wind noise Fourier basis.
 
         The power spectral density follows the convention::
 
@@ -102,9 +102,16 @@ class PLSWNoise(NoiseComponent):
         Each weight is ``P(f) · Δf``, repeated twice for the sin/cos
         pair at that frequency.
 
+        Parameters
+        ----------
+        params : ParameterVector
+            Must contain values for ``TNSWAMP`` (log10 amplitude)
+            and ``TNSWGAM`` (spectral index).
+
         Returns
         -------
         weights : (2 * n_freqs,)
+            PSD weights for each basis column.
         """
         log10_A = params.param_value(self.tnswamp_name)
         gamma = params.param_value(self.tnswgam_name)
@@ -171,9 +178,28 @@ class PLSWNoise(NoiseComponent):
         Float[Array, "n_toas n_basis"],
         Float[Array, " n_basis"],
     ]:
-        """Return the Woodbury ``(Ndiag, U, Phidiag)`` triple.
+        """Return the Woodbury ``(Ndiag, U, Phidiag)`` triple for solar wind noise.
 
-        Solar wind noise is purely low-rank: ``Ndiag = 0``.
+        Solar wind noise is purely low-rank: ``Ndiag = 0``. The basis is
+        scaled at runtime by the solar wind geometry factor and
+        ``DMCONST / f_obs^2``.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Observed TOA data including Sun positions and radio frequencies.
+        params : ParameterVector
+            Current parameter values for amplitude, spectral index, and
+            astrometry parameters.
+
+        Returns
+        -------
+        Ndiag : (n_toas,)
+            Zero diagonal (solar wind noise has no white component).
+        U : (n_toas, 2 * n_freqs)
+            Solar-wind-geometry-scaled Fourier design matrix.
+        Phidiag : (2 * n_freqs,)
+            Power-law PSD weights.
         """
         Ndiag = jnp.zeros(toa_data.n_toas)
         return Ndiag, self._scaled_basis(toa_data, params), self.psd_weights(params)
@@ -188,6 +214,21 @@ class PLSWNoise(NoiseComponent):
 
         Draws standard-normal Fourier amplitudes and projects them
         through the SW-geometry-scaled basis matrix.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Observed TOA data including Sun positions and radio frequencies.
+        params : ParameterVector
+            Current parameter values for amplitude, spectral index, and
+            astrometry parameters.
+        key : jax.Array
+            PRNG key for random sampling.
+
+        Returns
+        -------
+        noise : (n_toas,)
+            Solar wind noise realization in seconds.
         """
         weights = self.psd_weights(params)
         basis = self._scaled_basis(toa_data, params)

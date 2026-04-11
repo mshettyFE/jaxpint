@@ -215,6 +215,27 @@ class TroposphereDelay(DelayComponent):
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
+        """Compute troposphere delay using Niell mapping functions.
+
+        Applies the Davis zenith hydrostatic delay mapped to the source
+        elevation angle via the Niell (1996) continued-fraction mapping.
+        Returns zero for TOAs without valid elevation data.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data including elevation angles, observatory
+            latitude, and height (pre-computed by the bridge layer).
+        params : ParameterVector
+            Timing-model parameters (unused; no fittable parameters).
+        delay : array, shape (n_toas,)
+            Accumulated signal delay in seconds (unused).
+
+        Returns
+        -------
+        array, shape (n_toas,)
+            Troposphere delay in seconds.
+        """
         if toa_data.tropo_alt is None:
             return jnp.zeros(toa_data.n_toas)
 

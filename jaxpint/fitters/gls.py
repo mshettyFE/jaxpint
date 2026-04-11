@@ -65,11 +65,29 @@ def gls_step_fullcov(
     :func:`~jaxpint.utils.woodbury_solve`, then SVD-solves the
     ``(n_free, n_free)`` normal equations.
 
+    Parameters
+    ----------
+    residuals : jax.Array, shape (n_toas,)
+        Time residuals in seconds (GLS-weighted mean already subtracted).
+    Ndiag : jax.Array, shape (n_toas,)
+        Diagonal of the white-noise covariance matrix (variances).
+    U : jax.Array, shape (n_toas, n_epochs)
+        Basis matrix for correlated noise components.
+    Phidiag : jax.Array, shape (n_epochs,)
+        Diagonal prior covariance of the correlated noise amplitudes.
+    M : jax.Array, shape (n_toas, n_free)
+        Design matrix (free-parameter columns only).
+    threshold : float
+        Singular values below ``threshold * S_max`` are discarded.
+
     Returns
     -------
-    dpars : (n_free,)
-    covariance : (n_free, n_free)
-    norms : (n_free,)
+    dpars : jax.Array, shape (n_free,)
+        Parameter updates.
+    covariance : jax.Array, shape (n_free, n_free)
+        Parameter covariance matrix.
+    norms : jax.Array, shape (n_free,)
+        Column norms used for normalisation (diagnostic).
     """
     # C^{-1} M  and  C^{-1} r  via Woodbury (never forms n_toas×n_toas)
     Mr = jnp.column_stack([M, residuals[:, None]])          # (n, n_free+1)
@@ -119,15 +137,30 @@ def gls_step_augmented(
     Augments the design matrix as ``M_aug = [M | U]`` and solves with
     diagonal weighting ``N^{-1}`` plus a prior on noise amplitudes.
 
+    Parameters
+    ----------
+    residuals : jax.Array, shape (n_toas,)
+        Time residuals in seconds (GLS-weighted mean already subtracted).
+    Ndiag : jax.Array, shape (n_toas,)
+        Diagonal of the white-noise covariance matrix (variances).
+    U : jax.Array, shape (n_toas, n_epochs)
+        Basis matrix for correlated noise components.
+    Phidiag : jax.Array, shape (n_epochs,)
+        Diagonal prior covariance of the correlated noise amplitudes.
+    M : jax.Array, shape (n_toas, n_free)
+        Design matrix (free-parameter columns only).
+    threshold : float
+        Singular values below ``threshold * S_max`` are discarded.
+
     Returns
     -------
-    dpars : (n_free,)
+    dpars : jax.Array, shape (n_free,)
         Timing parameter updates.
-    covariance : (n_free, n_free)
+    covariance : jax.Array, shape (n_free, n_free)
         Timing parameter covariance.
-    norms : (n_free + n_epochs,)
+    norms : jax.Array, shape (n_free + n_epochs,)
         Column norms of the augmented system (diagnostic).
-    noise_realizations : (n_epochs,)
+    noise_realizations : jax.Array, shape (n_epochs,)
         MAP noise amplitude estimates.
     """
     n_free = M.shape[1]
@@ -183,7 +216,27 @@ def compute_gls_chi2(
     U: Float[Array, "n_toas n_epochs"],
     Phidiag: Float[Array, " n_epochs"],
 ) -> Float[Array, ""]:
-    """GLS chi-squared: ``r^T C^{-1} r``."""
+    """Compute the GLS chi-squared statistic: ``r^T C^{-1} r``.
+
+    The covariance ``C = diag(N) + U diag(Phi) U^T`` is inverted via
+    the Woodbury identity without forming the full matrix.
+
+    Parameters
+    ----------
+    residuals : jax.Array, shape (n_toas,)
+        Time residuals in seconds.
+    Ndiag : jax.Array, shape (n_toas,)
+        Diagonal of the white-noise covariance matrix (variances).
+    U : jax.Array, shape (n_toas, n_epochs)
+        Basis matrix for correlated noise components.
+    Phidiag : jax.Array, shape (n_epochs,)
+        Diagonal prior covariance of the correlated noise amplitudes.
+
+    Returns
+    -------
+    chi2 : jax.Array, shape ()
+        Scalar GLS chi-squared value.
+    """
     chi2, _ = woodbury_dot(Ndiag, U, Phidiag, residuals, residuals)
     return chi2
 

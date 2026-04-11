@@ -34,6 +34,13 @@ class Spindown(PhaseComponent):
         ordered by derivative index.  E.g. ``("F0",)`` or ``("F0", "F1", "F2")``.
     pepoch_name : str
         Name of the reference-epoch parameter (default ``"PEPOCH"``).
+
+    Raises
+    ------
+    ValueError
+        If no spin terms are provided (``spin_param_names`` is empty).
+    ValueError
+        If the first spin term is not ``'F0'``.
     """
 
     spin_param_names: tuple[str, ...] = eqx.field(static=True)

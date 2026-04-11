@@ -33,6 +33,12 @@ class FDJump(DelayComponent):
         Polynomial power for each parameter (1-indexed: FD1 → 1, FD2 → 2, ...).
     use_log : bool
         If True, use log(freq/GHz); if False, use freq/GHz.
+
+    Raises
+    ------
+    ValueError
+        If ``fdjump_param_names`` and ``fdjump_fd_indices`` have different
+        lengths.
     """
 
     fdjump_param_names: tuple[str, ...] = eqx.field(static=True)

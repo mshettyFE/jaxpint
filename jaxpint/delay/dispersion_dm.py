@@ -43,6 +43,13 @@ class DispersionDM(DispersionDelayComponent):
         or ``("DM", "DM1", "DM2")`` for a second-order expansion.
     dmepoch_name : str
         Name of the reference-epoch parameter (default ``"DMEPOCH"``).
+
+    Raises
+    ------
+    ValueError
+        If no DM terms are provided (``dm_param_names`` is empty).
+    ValueError
+        If the first DM term is not ``'DM'``.
     """
 
     dm_param_names: tuple[str, ...] = eqx.field(static=True)
@@ -92,6 +99,22 @@ class DispersionDM(DispersionDelayComponent):
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
+        """Evaluate the DM Taylor expansion at each TOA.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Pre-extracted TOA data (TDB times used for dt from DMEPOCH).
+        params : ParameterVector
+            Timing-model parameters containing DM, DM1, ..., and DMEPOCH.
+        delay : array, shape (n_toas,)
+            Accumulated signal delay in seconds (unused by this method).
+
+        Returns
+        -------
+        array, shape (n_toas,)
+            Dispersion measure in pc cm^-3 at each TOA.
+        """
         dt_yr = self._compute_dt_yr(toa_data, params)
         dm_coeffs = self._get_dm_coeffs(params)
         return taylor_horner(dt_yr, dm_coeffs)

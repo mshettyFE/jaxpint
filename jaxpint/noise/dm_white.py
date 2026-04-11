@@ -37,7 +37,24 @@ class ScaleDmError(eqx.Module):
         toa_data: TOAData,
         params: ParameterVector,
     ) -> Float[Array, " n_toas"]:
-        """Compute noise-scaled DM uncertainties in pc/cm³."""
+        """Compute noise-scaled DM uncertainties in pc/cm³.
+
+        Applies DMEQUAD in quadrature first, then multiplies by DMEFAC,
+        matching PINT's ``ScaleDmError`` convention.
+
+        Parameters
+        ----------
+        toa_data : TOAData
+            Must contain ``dm_errors`` (pc/cm³) and ``flag_masks`` with
+            entries for every name in ``dmefac_names`` and ``dmequad_names``.
+        params : ParameterVector
+            Must contain values for all DMEFAC/DMEQUAD parameters.
+
+        Returns
+        -------
+        sigma_scaled : (n_toas,)
+            Scaled DM uncertainties in pc/cm³.
+        """
         sigma_sq = toa_data.dm_errors ** 2
 
         for dmequad_name in self.dmequad_names:
