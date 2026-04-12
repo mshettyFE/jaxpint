@@ -6,12 +6,18 @@ pulsars with shared signal injections (CW sources, GWB, etc.).
 
 from jaxpint.pta.params import GlobalParams
 from jaxpint.pta.likelihood import PTAConfig, SignalInjector, pta_logL
+from jaxpint.pta.correlated_likelihood import (
+    CorrelatedPTAConfig,
+    CorrelatedSignalInjector,
+    pta_logL_correlated,
+)
 from jaxpint.pta.fisher import fisher_matrix, flatten_params, unflatten_params
 from jaxpint.pta.signals import (
     CW_PARAM_DEFAULTS,
     CWInjector,
     CURN_PARAM_DEFAULTS,
     CURNInjector,
+    HDCorrelatedGWBInjector,
     cw_delay,
     fplus_fcross,
     fourier_basis,
@@ -28,6 +34,10 @@ __all__ = [
     "PTAConfig",
     "SignalInjector",
     "pta_logL",
+    # Correlated
+    "CorrelatedPTAConfig",
+    "CorrelatedSignalInjector",
+    "pta_logL_correlated",
     # Fisher
     "fisher_matrix",
     "flatten_params",
@@ -40,6 +50,7 @@ __all__ = [
     # GWB / red noise
     "CURN_PARAM_DEFAULTS",
     "CURNInjector",
+    "HDCorrelatedGWBInjector",
     "fourier_basis",
     "gwb_covariance",
     "powerlaw_psd",
