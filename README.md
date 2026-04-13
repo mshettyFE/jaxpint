@@ -30,54 +30,57 @@ JaxPINT is not a replacement for PINT. The two libraries serve complementary rol
 
 ## Installation
 
-Requires Python >= 3.12.
+Requires Python >= 3.12 and the package manager uv.
 
-```bash
-git clone <repo-url>
-cd JaxPINT
-pip install -e .
-```
+Just run ```uv sync``` to set up a virtual enviornment with all the dependencies. The virtual enviornment can be activated via      ```source .venv/bin/activate``` in the repository base.
 
-### Dependencies
-
-- `jax[cpu] >= 0.4.20` — array computation and autodiff
-- `equinox >= 0.11.0` — pytree-based neural network / module library
-- `pint-pulsar >= 1.0` — I/O, ephemeris computation, data conversion
-- `jaxtyping >= 0.3.9` — shape/dtype annotations for JAX arrays
-- `hypothesis >= 6.0` — property-based testing
-
-For GPU support, install JAX with CUDA following the [JAX installation guide](https://jax.readthedocs.io/en/latest/installation.html).
+By default, uv will try and install the GPU version of JAX. For GPU support, install JAX with CUDA following the [JAX installation guide](https://jax.readthedocs.io/en/latest/installation.html).
 
 ## Quick Start
 
 ```python
+# Used to load example data
 import pint.models as pm
 import pint.toa as pt
+from pint.config import examplefile
+
 from jaxpint import (
     build_timing_model,
     pint_model_to_params,
     pint_toas_to_jax,
+    ParameterVector,
     compute_time_residuals,
-    WLSFitter,
+    WLSFitter
 )
 
-# Load data using PINT
-pint_model = pm.get_model("pulsar.par")
-pint_toas = pt.get_TOAs("pulsar.tim")
+## Temporarily have PINT shut up with DEBUG and INFO messages 
+from loguru import logger
+logger.disable("pint")      
 
-# Convert to JaxPINT types
-toa_data = pint_toas_to_jax(pint_toas, pint_model)
-params = pint_model_to_params(pint_model, pint_toas)
-timing_model = build_timing_model(pint_model, pint_toas)
 
-# Compute residuals (pure JAX — JIT-compatible)
-residuals = compute_time_residuals(timing_model, toa_data, params)
+# Load example data from pint
+par_file = examplefile("NGC6440E.par")
+tim_file = examplefile("NGC6440E.tim")
+pint_model = pm.get_model(par_file)
+pint_toas = pt.get_TOAs(tim_file, ephem="DE421")
 
-# Fit parameters
-fitter = WLSFitter(timing_model, toa_data, params)
-result = fitter.fit_toas(maxiter=5)
+#  convert PINT model and TOA data to JAX primitives
+# Actual TOA data
+toa_data = pint_toas_to_jax(pint_toas, model=pint_model)
+# Value store for all the possible parameters in the fitter
+params = pint_model_to_params(pint_model).params
+# Actual differentiable models. Split into deterministic and stochastic (re: corrrelation matrix) contributions
+timing_model, noise_model = build_timing_model(pint_model, pint_toas)
+
+fitter = WLSFitter(timing_model, toa_data, params, noise_model=noise_model)
+# JIT Warmup
+print("Warming up the fitter...")
+result = fitter.fit_toas(maxiter=1)
+print("Running...")
+result = fitter.fit_toas(maxiter=99)
 
 print(f"Chi-squared: {result.chi2:.2f}")
+print(f"Degrees of freedom: {result.dof}")
 print(f"Reduced chi-squared: {result.reduced_chi2:.4f}")
 ```
 
@@ -116,7 +119,7 @@ Run only the slow tests:
 pytest -m slow --runslow
 ```
 
-Note: the full suite takes 5+ minutes due to numerical validation against PINT.
+Note: the full suite takes 10+ minutes due to numerical validation against PINT.
 
 JaxPINT uses [Hypothesis](https://hypothesis.readthedocs.io/) for property-based testing. Three profiles are available:
 
@@ -131,6 +134,12 @@ HYPOTHESIS_PROFILE=ci pytest
 HYPOTHESIS_PROFILE=fuzzing pytest
 ```
 
+## Disclosure
+
+Claude code was used to generate the documentation. It was aided in the design and implementation of JaxPINT. 
+
 ## License
 
 MIT
+
+
