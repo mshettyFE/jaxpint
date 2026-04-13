@@ -136,7 +136,7 @@ HYPOTHESIS_PROFILE=fuzzing pytest
 
 ## Disclosure
 
-Claude code was used to generate the documentation. It was aided in the design and implementation of JaxPINT. 
+Claude code was used to generate the documentation. It also helped designing and implementing JaxPINT. 
 
 ## License
 
