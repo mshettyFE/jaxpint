@@ -51,7 +51,7 @@ def fplus_fcross(
 ) -> tuple[Float[Array, ""], Float[Array, ""]]:
     """Compute F+ and Fx antenna pattern response for a single pulsar.
 
-    Implements Eqs. 1--3 of Ellis, Siemens & Creighton (2012) [cw_esc12]_.
+    Implements Eqs. 4--10 of Ellis, Siemens & Creighton (2012) [cw_esc12]_.
 
     Parameters
     ----------
