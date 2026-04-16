@@ -315,6 +315,7 @@ def cw_delay_from_array(
         + toa_data.tdb_frac * 86400.0
     )
 
+    # Main contribution of pulsar distance is the phase as measured at earth and pulsar
     phase_earth = phase0 + 2.0 * jnp.pi * f0 * (toas_s - _TREF)
 
     sin_theta = jnp.sin(gwtheta)
@@ -333,6 +334,7 @@ def cw_delay_from_array(
 
     alpha = h0 / (2.0 * jnp.pi * f0)
 
+    # Since we are subtracting evaluations at t_p and t_e, we do the following trig subtraction trick
     phi_avg = 0.5 * (phase_earth + phase_pulsar)
     phi_diff = 0.5 * (phase_earth - phase_pulsar)
 
