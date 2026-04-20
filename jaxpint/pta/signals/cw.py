@@ -328,13 +328,15 @@ def cw_delay_from_array(
 
     cos_mu = jnp.dot(omhat, pos)
     dist_m = pulsar_dist * _KPC_TO_M
+    # Pulsar phase gets delayed by light vacuum time
     phase_pulsar = phase_earth - (
         2.0 * jnp.pi * f0 * dist_m / _C * (1.0 + cos_mu)
     )
 
     alpha = h0 / (2.0 * jnp.pi * f0)
 
-    # Since we are subtracting evaluations at t_p and t_e, we do the following trig subtraction trick
+    # Sum to product formula  to convert sin(t_{p}) - sin(t_{e}) = sin((t_{p}+t_{e})/2)cos((t_{p}-t_{e})/2)
+    # Similar for cosine differences as well
     phi_avg = 0.5 * (phase_earth + phase_pulsar)
     phi_diff = 0.5 * (phase_earth - phase_pulsar)
 
