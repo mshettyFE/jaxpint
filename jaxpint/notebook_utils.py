@@ -83,6 +83,7 @@ def generate_random_par(
     start_mjd: float,
     noise: str = "simple",
     include_dm: bool = False,
+    free_params: bool = False,
     extra_params: Optional[dict[str, str]] = None,
 ) -> str:
     """Return a PINT-parsable ``.par`` string for a randomly drawn pulsar.
@@ -102,10 +103,14 @@ def generate_random_par(
         (``TNRedAmp``/``TNRedGam``/``TNRedC``) with randomized amplitudes.
     include_dm : bool
         If True, include a random ``DM`` line drawn from U(10, 50) pc/cm^3.
+    free_params : bool
+        If True, append PINT's fit flag (`` 1``) after each value line for
+        RAJ, DECJ, F0, F1, DM (if present), PX. Use this when downstream
+        code needs those parameters to be free (e.g. WLS fitting, NUTS).
     extra_params : dict[str, str] | None
         Additional ``.par`` lines to append verbatim as ``"{key} {value}\\n"``.
-        Use this to add DMX, free-parameter flags, etc. without bloating the
-        signature.
+        Use this to add DMX, EQUAD-per-backend overrides, etc. without
+        bloating the signature.
 
     Returns
     -------
@@ -137,19 +142,20 @@ def generate_random_par(
     f1 = -(10 ** rng.uniform(-16, -14))
     px_kpc = rng.uniform(0.5, 3.0)
 
+    fit = "  1" if free_params else ""
     lines = [
         f"PSR           J{ra_h:02d}{ra_m:02d}{dec_sign}{dec_d:02d}{dec_m:02d}_{idx:02d}",
-        f"RAJ           {ra_h:02d}:{ra_m:02d}:{ra_s:08.5f}",
-        f"DECJ          {dec_sign}{dec_d:02d}:{dec_m:02d}:{dec_s:07.4f}",
-        f"F0            {f0:.10f}",
-        f"F1            {f1:.6e}",
+        f"RAJ           {ra_h:02d}:{ra_m:02d}:{ra_s:08.5f}{fit}",
+        f"DECJ          {dec_sign}{dec_d:02d}:{dec_m:02d}:{dec_s:07.4f}{fit}",
+        f"F0            {f0:.10f}{fit}",
+        f"F1            {f1:.6e}{fit}",
         f"PEPOCH        {start_mjd:.1f}",
     ]
     if include_dm:
         dm = rng.uniform(10, 50)
-        lines.append(f"DM            {dm:.4f}")
+        lines.append(f"DM            {dm:.4f}{fit}")
     lines.extend([
-        f"PX            {px_kpc:.4f}",
+        f"PX            {px_kpc:.4f}{fit}",
         "EPHEM         DE440",
         "CLK           TT(BIPM2019)",
         "UNITS         TDB",
@@ -195,33 +201,46 @@ class SyntheticPTA(NamedTuple):
 def setup_synthetic_pta(
     pint_models: list,
     *,
-    start_mjd: float,
-    end_mjd: float,
-    n_toas: int,
+    start_mjd: Optional[float] = None,
+    end_mjd: Optional[float] = None,
+    n_toas: Optional[int] = None,
     toa_error_s: float,
     freq_mhz: float,
     obs: str = "GBT",
+    mjds_per_pulsar: Optional[list[np.ndarray]] = None,
 ) -> SyntheticPTA:
     """Generate fake TOAs for a list of PINT models and convert to JaxPINT.
 
-    Wraps the ``make_fake_toas_uniform`` → ``pint_toas_to_jax`` →
-    ``pint_model_to_params`` → ``build_timing_model`` pipeline that appears
-    verbatim in most example notebooks.
+    Wraps the ``make_fake_toas_uniform`` / ``make_fake_toas_fromMJDs`` →
+    ``pint_toas_to_jax`` → ``pint_model_to_params`` → ``build_timing_model``
+    pipeline that appears verbatim in most example notebooks.
+
+    Two modes are supported:
+
+    1. **Uniform cadence (default)**: pass ``start_mjd``, ``end_mjd``, and
+       ``n_toas``. All pulsars share the same TOA span and count.
+    2. **Custom MJDs**: pass ``mjds_per_pulsar`` — a list of ``np.ndarray``
+       of TOA MJDs, one entry per pulsar. Each pulsar gets exactly those
+       TOAs. ``start_mjd``/``end_mjd``/``n_toas`` are ignored.
 
     Parameters
     ----------
     pint_models : list
         Parsed PINT timing models (one per pulsar).
-    start_mjd, end_mjd : float
-        Uniform TOA span (same for every pulsar).
-    n_toas : int
-        Number of TOAs per pulsar.
+    start_mjd, end_mjd : float, optional
+        Uniform-cadence TOA span. Required unless ``mjds_per_pulsar`` is given.
+    n_toas : int, optional
+        Number of TOAs per pulsar. Required unless ``mjds_per_pulsar`` is given.
     toa_error_s : float
-        TOA uncertainty in seconds (passed to ``make_fake_toas_uniform``).
+        TOA uncertainty in seconds.
     freq_mhz : float
         Observing frequency in MHz.
     obs : str
         PINT observatory code (default ``"GBT"``).
+    mjds_per_pulsar : list of arrays, optional
+        If given, each element is the MJDs for that pulsar; routed through
+        ``pint.simulation.make_fake_toas_fromMJDs``. Length must match
+        ``len(pint_models)``.
 
     Returns
     -------
@@ -229,21 +248,43 @@ def setup_synthetic_pta(
         Named tuple of per-pulsar tuples ready to feed into
         :func:`inject_and_build_config`.
     """
+    if mjds_per_pulsar is not None:
+        if len(mjds_per_pulsar) != len(pint_models):
+            raise ValueError(
+                f"mjds_per_pulsar has length {len(mjds_per_pulsar)}, "
+                f"expected {len(pint_models)} (one per pulsar)."
+            )
+    else:
+        if start_mjd is None or end_mjd is None or n_toas is None:
+            raise ValueError(
+                "Uniform mode requires start_mjd, end_mjd, and n_toas. "
+                "Alternatively pass mjds_per_pulsar for custom cadence."
+            )
+
     toa_data_list: list[TOAData] = []
     pulsar_params_list: list[ParameterVector] = []
     timing_models: list[TimingModel] = []
     noise_models: list[NoiseModel] = []
 
-    for model in pint_models:
-        toas = psim.make_fake_toas_uniform(
-            start_mjd,
-            end_mjd,
-            n_toas,
-            model,
-            obs=obs,
-            error=toa_error_s * u.s,
-            freq=freq_mhz * u.MHz,
-        )
+    for p, model in enumerate(pint_models):
+        if mjds_per_pulsar is not None:
+            toas = psim.make_fake_toas_fromMJDs(
+                mjds_per_pulsar[p],
+                model,
+                obs=obs,
+                error=toa_error_s * u.s,
+                freq=freq_mhz * u.MHz,
+            )
+        else:
+            toas = psim.make_fake_toas_uniform(
+                start_mjd,
+                end_mjd,
+                n_toas,
+                model,
+                obs=obs,
+                error=toa_error_s * u.s,
+                freq=freq_mhz * u.MHz,
+            )
         toa_data = pint_toas_to_jax(toas, model)
         par_result = pint_model_to_params(model)
         tm, nm = build_timing_model(model, toas)
