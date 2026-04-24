@@ -229,7 +229,7 @@ Once the raw ``.par``/``.tim`` files have been converted to JAX-native objects, 
 - :class:`~jaxpint.noise.noise_model.NoiseModel` -- optional; carries ``EFAC``/``EQUAD``/``ECORR``/red-noise contributions.
 
 Residuals
----------
+=========
 
 Residuals come in two flavors, both pure functions of ``(model, toa_data, params)``:
 
@@ -284,7 +284,7 @@ Signal injectors
 - ``covariance(p, toa_data, pulsar_params, global_params)`` -- returns a ``(U, Phi)`` pair that augments pulsar :math:`i`'s noise model. Used for stochastic signals such as a common-spectrum red process.
 
 How the injector contributions enter the per-pulsar likelihood
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 For each pulsar :math:`i`, ``pta_logL`` collects the ``delay`` outputs from every injector :math:`\alpha` and **subtracts their sum** from the timing residual that goes into :math:`\ln \mathcal{L}_i`:
 
