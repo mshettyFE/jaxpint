@@ -9,6 +9,7 @@ built on `JAX <https://github.com/jax-ml/jax>`_ and
    :maxdepth: 2
    :caption: Contents
 
+   guides/index
    api/index
 
 Indices and tables
