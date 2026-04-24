@@ -165,7 +165,7 @@ Docs are also built and deployed to GitHub Pages on every push to `main` via `.g
 Before pushing to main, run the following command at the root of JaxPINT: 
 
 ```
-run: uv run sphinx-build -W --keep-going -b html docs docs/_build/html
+uv run sphinx-build -W --keep-going -b html docs docs/_build/html
 ```
 
 This converts sphinx warnings to errors, which forces you to fix them.
