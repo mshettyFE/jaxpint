@@ -119,8 +119,10 @@ def generate_random_par(
 
     Notes
     -----
-    ``CWInjector`` reads the ``PX`` parameter directly as pulsar distance in
-    kpc (not parallax in mas), drawn here from U(0.5, 3.0).
+    ``PX`` is stored as parallax in mas (types.py convention). A distance is
+    drawn from U(0.5, 3.0) kpc and inverted to mas before being written into
+    the par string; ``CWInjector`` converts back to kpc internally following
+    Ellis+2012.
     """
     if noise not in ("simple", "realistic"):
         raise ValueError(f"noise must be 'simple' or 'realistic', got {noise!r}")
@@ -140,7 +142,8 @@ def generate_random_par(
 
     f0 = rng.uniform(100, 500)
     f1 = -(10 ** rng.uniform(-16, -14))
-    px_kpc = rng.uniform(0.5, 3.0)
+    distance_kpc = rng.uniform(0.5, 3.0)
+    px_mas = 1.0 / distance_kpc
 
     fit = "  1" if free_params else ""
     lines = [
@@ -155,7 +158,7 @@ def generate_random_par(
         dm = rng.uniform(10, 50)
         lines.append(f"DM            {dm:.4f}{fit}")
     lines.extend([
-        f"PX            {px_kpc:.4f}{fit}",
+        f"PX            {px_mas:.6f}{fit}",
         "EPHEM         DE440",
         "CLK           TT(BIPM2019)",
         "UNITS         TDB",
