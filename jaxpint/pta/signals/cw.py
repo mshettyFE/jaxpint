@@ -126,7 +126,8 @@ def cw_delay(
     pos : (3,) array
         Unit vector pointing to the pulsar.
     pulsar_dist : scalar
-        Pulsar distance in kpc.
+        Pulsar parallax in mas (types.py convention). Converted internally
+        to physical distance in kpc for the Ellis+2012 pulsar-term phase.
     global_params : GlobalParams
         Shared PTA parameters (accessed by prefixed name).
     prefix : str
@@ -178,8 +179,10 @@ class CWInjector(SignalInjector):
     pulsar_positions : (n_psr, 3) array
         Unit vectors pointing to each pulsar.
     dist_param_name : str
-        Name of the distance parameter in each pulsar's
-        :class:`~jaxpint.types.ParameterVector` (default ``'PX'``).
+        Name of the parallax parameter in each pulsar's
+        :class:`~jaxpint.types.ParameterVector` (default ``'PX'``, in mas).
+        The pulsar-term phase is computed from distance
+        ``L_kpc = 1 / PX_mas`` internally (Ellis+2012).
     prefix : str
         Naming prefix for this source in :class:`GlobalParams`.
     initial_values : dict, optional
@@ -291,7 +294,8 @@ def cw_delay_from_array(
     pos : (3,) array
         Unit vector pointing to the pulsar.
     pulsar_dist : scalar
-        Pulsar distance in kpc.
+        Pulsar parallax in mas (types.py convention). Converted internally
+        to physical distance in kpc for the Ellis+2012 pulsar-term phase.
     cw_params : (7,) array
         Flat CW parameter vector in canonical order.
 
@@ -327,7 +331,10 @@ def cw_delay_from_array(
     ])
 
     cos_mu = jnp.dot(omhat, pos)
-    dist_m = pulsar_dist * _KPC_TO_M
+    # pulsar_dist is parallax in mas (types.py convention).
+    # Ellis+2012 (arXiv:1204.4218) writes the pulsar-term phase in terms of
+    # the physical distance L; convert mas -> kpc via L_kpc = 1 / PX_mas.
+    dist_m = (1.0 / pulsar_dist) * _KPC_TO_M
     # Pulsar phase gets delayed by light vacuum time
     phase_pulsar = phase_earth - (
         2.0 * jnp.pi * f0 * dist_m / _C * (1.0 + cos_mu)
@@ -370,7 +377,8 @@ def sum_cw_delays(
     pos : (3,) array
         Pulsar unit vector.
     pulsar_dist : scalar
-        Pulsar distance in kpc.
+        Pulsar parallax in mas (types.py convention). Converted internally
+        to physical distance in kpc for the Ellis+2012 pulsar-term phase.
     cw_params_stack : (n_cw, 7) array
         Stacked CW parameters for all sources.
 
@@ -407,8 +415,10 @@ class CWInjectorStack(SignalInjector):
     n_sources : int
         Number of CW sources.
     dist_param_name : str
-        Name of the distance parameter in each pulsar's
-        :class:`~jaxpint.types.ParameterVector` (default ``'PX'``).
+        Name of the parallax parameter in each pulsar's
+        :class:`~jaxpint.types.ParameterVector` (default ``'PX'``, in mas).
+        The pulsar-term phase is computed from distance
+        ``L_kpc = 1 / PX_mas`` internally (Ellis+2012).
     initial_values : dict, optional
         Override default initial values (applied to all sources).
         Keys must be in :data:`CW_PARAM_DEFAULTS`.
