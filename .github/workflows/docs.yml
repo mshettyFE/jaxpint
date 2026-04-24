@@ -1,0 +1,103 @@
+# Build the Sphinx documentation and publish it to GitHub Pages.
+# Site URL after first successful run: https://mshettyfe.github.io/jaxpint/
+#
+# One-time GitHub UI setup required: Settings -> Pages -> Source = "GitHub Actions".
+# Without that, the deploy job fails with "Pages site not yet created".
+
+name: Docs
+
+# When this workflow runs.
+#   push to main      -> rebuild + deploy whenever docs/code on main change
+#   workflow_dispatch -> "Run workflow" button in the Actions tab (manual rerun)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Permissions granted to the GITHUB_TOKEN for this run.
+# GitHub Pages' modern deploy action (actions/deploy-pages) uses short-lived
+# OIDC tokens instead of a PAT, which is why we need id-token: write.
+#   contents: read  -> checkout the repo
+#   pages: write    -> publish to the Pages environment
+#   id-token: write -> mint the OIDC token deploy-pages verifies
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time. If you push twice in quick succession,
+# the second run waits instead of cancelling the first -- otherwise a
+# fast follow-up commit could lose its deploy mid-flight.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # -------------------------------------------------------------------
+  # build: produce the HTML bundle as a Pages artifact.
+  # -------------------------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Clone the repo at the commit that triggered the workflow.
+      - uses: actions/checkout@v4
+
+      # Install uv (our package manager). enable-cache + cache-dependency-glob
+      # tells the action to cache uv's download cache keyed on uv.lock, so
+      # repeat runs skip re-downloading wheels.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # Pin the Python version. Must match requires-python in pyproject.toml.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Install only what's needed to import jaxpint and run Sphinx.
+      # The `docs` extra pulls: jax[cpu], sphinx, sphinx-copybutton, pydata-sphinx-theme.
+      # Base deps (equinox, jaxtyping, pint-pulsar, blackjax) come along automatically.
+      # We deliberately skip `cuda` / `dev` extras -- no CUDA wheels, no pytest, no notebook stack.
+      - name: Install docs dependencies
+        run: uv sync --extra docs
+
+      # Build the HTML site.
+      #   -W              -> treat warnings as errors (catches broken cross-refs,
+      #                      missing docstrings, malformed RST, etc.)
+      #   --keep-going    -> still collect ALL warnings before failing, so the
+      #                      first-time cleanup isn't whack-a-mole
+      #   -b html         -> HTML builder (vs. latex, man, etc.)
+      #   JAX_PLATFORMS=cpu keeps JAX from probing for GPUs on the runner
+      #   (belt-and-suspenders; the docs extra is CPU-only anyway).
+      - name: Build HTML docs
+        env:
+          JAX_PLATFORMS: cpu
+        run: uv run sphinx-build -W --keep-going -b html docs docs/_build/html
+
+      # Package the HTML as the tar format Pages expects. Must use
+      # upload-pages-artifact (NOT the generic upload-artifact) -- deploy-pages
+      # rejects anything else.
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_build/html
+
+  # -------------------------------------------------------------------
+  # deploy: publish the artifact produced above to the Pages environment.
+  # Split from `build` so deploy runs with the minimum permissions it needs
+  # and so a broken build never half-deploys.
+  # -------------------------------------------------------------------
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # The `github-pages` environment is auto-created by GitHub the first
+    # time you configure Pages. The `url` line makes the deploy's landing
+    # page show up in the run summary.
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

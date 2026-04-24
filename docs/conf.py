@@ -56,6 +56,6 @@ intersphinx_mapping = {
 html_theme = "pydata_sphinx_theme"
 html_title = "JaxPINT"
 html_theme_options = {
-    "github_url": "",
+    "github_url": "https://github.com/mshettyFE/jaxpint",
     "show_toc_level": 2,
 }
