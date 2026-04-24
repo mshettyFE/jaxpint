@@ -162,6 +162,13 @@ JAX_PLATFORMS=cpu .venv/bin/sphinx-autobuild docs docs/_build/html --watch jaxpi
 Serves on `http://127.0.0.1:8000`. Saves to `.rst` files or docstrings in `jaxpint/` trigger a rebuild and the browser reloads automatically.
 
 Docs are also built and deployed to GitHub Pages on every push to `main` via `.github/workflows/docs.yml`.
+Before pushing to main, run the following command at the root of JaxPINT: 
+
+```
+run: uv run sphinx-build -W --keep-going -b html docs docs/_build/html
+```
+
+This converts sphinx warnings to errors, which forces you to fix them.
 
 ## Disclosure
 
