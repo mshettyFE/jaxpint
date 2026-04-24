@@ -32,9 +32,18 @@ JaxPINT is not a replacement for PINT. The two libraries serve complementary rol
 
 Requires Python >= 3.12 and the package manager uv.
 
-Just run ```uv sync``` to set up a virtual enviornment with all the dependencies. The virtual enviornment can be activated via      ```source .venv/bin/activate``` in the repository base.
+For GPU support:
+```
+  uv sync --extra cuda 
+```
 
-By default, uv will try and install the GPU version of JAX. For GPU support, install JAX with CUDA following the [JAX installation guide](https://jax.readthedocs.io/en/latest/installation.html).
+For CPU support 
+
+```
+ uv sync --extra cuda 
+```
+
+If you want to make changes to the code, please tack on ```--extra dev``` to one of the above
 
 ## Quick Start
 
