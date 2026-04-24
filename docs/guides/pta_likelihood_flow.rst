@@ -1,7 +1,15 @@
 High Level Overview of the Signal Processing Pipeline of JAXPint (WIP)
 ######################################################################
 
-The PTA signal processing pipeline from raw TOA data to log likelihood evaluation is a bit confusing to an outsider. This is my best attempt at explaining this from end to end; this is also my mental model that I had in mind when building JAXPint. 
+The PTA signal processing pipeline from raw TOA data to log likelihood evaluation is a bit confusing to an outsider. This is my best attempt at explaining this from end to end; this is also my mental model that I had in mind when building JAXPint.
+
+For a visual summary of all of this:
+
+.. figure:: ../../diagrams/explanatory_signal_pipeline.png
+   :alt: JaxPINT PTA log-likelihood signal processing pipeline
+   :align: center
+
+   End-to-end flow: raw ``.par``/``.tim`` files → PINT parsing and JaxPINT bridge → per-pulsar forward model (residuals + covariance) → signal injector contributions → per-pulsar Gaussian log-likelihood → PTA log-likelihood (uncorrelated sum, or Hellings-Downs correlated).
 
 Input Data 
 **********
