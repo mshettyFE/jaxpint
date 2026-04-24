@@ -1,0 +1,143 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.5 Chrome/138.0.7204.251 Electron/37.6.1 Safari/537.36" version="28.2.5">
+  <diagram name="PTA Log-Likelihood Pipeline" id="pta_logL_pipeline">
+    <mxGraphModel dx="800" dy="559" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="lane_bridge" value="Input &amp; bridge  (once per pulsar, then reused for every likelihood evaluation)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;fontSize=14;" parent="1" vertex="1">
+          <mxGeometry x="40" y="40" width="1320" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="n_files" value="Raw files (per pulsar)&#xa;&#xa;• .par   (timing-model parameters)&#xa;• .tim  (TOAs + flags)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="80" y="90" width="240" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="n_pint" value="PINT parsing&lt;br&gt;&lt;br&gt;pint.models.get_model (.par) → pint.models.TimingModel&lt;br&gt;&lt;br&gt;pint.toa.get_TOAs (.tim)&lt;br&gt;→ pint.toa.TOAs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;" parent="1" vertex="1">
+          <mxGeometry x="360" y="90" width="260" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="n_bridge" value="jaxpint.bridge&#xa;&#xa;pint_model_to_params&#xa;pint_toas_to_jax&#xa;build_timing_model&#xa;&#xa;(strips Astropy units, converts to float64)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;" parent="1" vertex="1">
+          <mxGeometry x="660" y="90" width="280" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="n_jax_types" value="JAX-native inputs&#xa;&#xa;• ParameterVector&#xa;• TOAData&#xa;• TimingModel&#xa;• NoiseModel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="980" y="90" width="280" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="e_files_pint" style="endArrow=classic;html=1;rounded=0;" parent="1" source="n_files" target="n_pint" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pint_bridge" style="endArrow=classic;html=1;rounded=0;" parent="1" source="n_pint" target="n_bridge" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bridge_jax" style="endArrow=classic;html=1;rounded=0;" parent="1" source="n_bridge" target="n_jax_types" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_fwd" value="Per-pulsar forward model  (one evaluation per pulsar i)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;fontSize=14;" parent="1" vertex="1">
+          <mxGeometry x="40" y="280" width="1320" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="n_inputs" value="Pulsar inputs&#xa;&#xa;ParameterVector&#xa;TOAData" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="80" y="340" width="200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n_timing" value="TimingModel.compute_phase&#xa;&#xa;Chains delays, sums phases:&#xa;φ(t) = Σₖ PhaseCompₖ(t − Δtₖ)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="340" y="330" width="280" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="n_residuals" value="compute_time_residuals&#xa;&#xa;Δtᵢ = frac(φ) / F₀&#xa;(seconds, shape n_toas)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="680" y="330" width="260" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="n_noise" value="NoiseModel.covariance&#xa;&#xa;Cᵢ = diag(Nᵢ) + Uᵢ · diag(Φᵢ) · Uᵢᵀ&#xa;(Woodbury decomposition)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1000" y="330" width="320" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="n_fwd_summary" value="Δtᵢ   (residuals vector)       |       Cᵢ   (pulsar-level covariance)" style="text;html=1;align=center;fontSize=12;fontStyle=2;fillColor=none;strokeColor=none;" parent="1" vertex="1">
+          <mxGeometry x="80" y="301" width="1240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="e_jax_inputs" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;entryX=0.382;entryY=0.014;entryDx=0;entryDy=0;entryPerimeter=0;exitX=0.414;exitY=1;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" source="n_jax_types" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="980" y="218.60198581560292" as="sourcePoint" />
+            <mxPoint x="156.39999999999986" y="340.0000000000001" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="160" y="298.6" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_in_tm" style="endArrow=classic;html=1;rounded=0;" parent="1" source="n_inputs" target="n_timing" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tm_res" style="endArrow=classic;html=1;rounded=0;" parent="1" source="n_timing" target="n_residuals" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_in_noise" style="endArrow=classic;html=1;rounded=0;curved=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" parent="1" source="n_inputs" target="n_noise" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="330" y="460" />
+              <mxPoint x="410" y="490" />
+              <mxPoint x="700" y="450" />
+              <mxPoint x="980" y="460" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lane_inj" value="Signal injectors  (PTA-wide signals applied per pulsar i, looping over every injector α)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;verticalAlign=top;fontStyle=1;fontSize=14;" parent="1" vertex="1">
+          <mxGeometry x="40" y="560" width="1320" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="n_inj_delay" value="SignalInjector.delay(p, ...)&#xa;&#xa;δt_{i,α}  (deterministic)&#xa;e.g. CWInjector" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="80" y="600" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n_residuals_update" value="Residuals update&#xa;&#xa;Δtᵢ ← Δtᵢ − Σ_α δt_{i,α}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="420" y="600" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n_inj_cov" value="SignalInjector.covariance(p, ...)&#xa;&#xa;(U_α, Φ_α)  (stochastic)&#xa;e.g. CURNInjector" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="760" y="600" width="280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n_cov_update" value="Covariance update&#xa;&#xa;Cᵢ ← diag(Nᵢ) +&#xa;  [ Uᵢ | U_{i,1} | … ] · diag([ Φᵢ ; Φ_{i,1} ; … ]) · [ … ]ᵀ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d79b00;fontSize=11;" parent="1" vertex="1">
+          <mxGeometry x="1080" y="600" width="260" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="e_inj_delay_upd" style="endArrow=classic;html=1;rounded=0;" parent="1" source="n_inj_delay" target="n_residuals_update" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_inj_cov_upd" style="endArrow=classic;html=1;rounded=0;" parent="1" source="n_inj_cov" target="n_cov_update" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_res_update" style="endArrow=classic;html=1;rounded=0;dashed=1;" parent="1" source="n_residuals" target="n_residuals_update" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cov_update" style="endArrow=classic;html=1;rounded=0;dashed=1;" parent="1" source="n_noise" target="n_cov_update" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_logLi" value="Per-pulsar log-likelihood  (single_pulsar_logL, Woodbury-accelerated)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=14;" parent="1" vertex="1">
+          <mxGeometry x="40" y="780" width="1320" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="n_logLi" value="single_pulsar_logL(Δtᵢ, Cᵢ)&#xa;&#xa;ln ℒᵢ  =  −½ · Δtᵢᵀ Cᵢ⁻¹ Δtᵢ   −   ½ · ln det Cᵢ   −   Nᵢ/2 · ln(2π)&#xa;&#xa;Quadratic form and log-det both evaluated via Woodbury identity,&#xa;never materialising the dense n_toas × n_toas matrix." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=13;" parent="1" vertex="1">
+          <mxGeometry x="140" y="820" width="1120" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e_upd_logLi_res" style="endArrow=classic;html=1;rounded=0;entryX=0.201;entryY=-0.002;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="n_residuals_update" target="n_logLi" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_upd_logLi_cov" style="endArrow=classic;html=1;rounded=0;entryX=0.853;entryY=0.028;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="n_cov_update" target="n_logLi" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_pta" value="PTA log-likelihood  (aggregate per-pulsar log-likelihoods across all N pulsars)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;verticalAlign=top;fontStyle=1;fontSize=14;" parent="1" vertex="1">
+          <mxGeometry x="40" y="980" width="1320" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="n_pta_uncorr" value="pta_logL  (uncorrelated)&#xa;&#xa;ln ℒ_PTA  =  Σᵢ ln ℒᵢ&#xa;&#xa;PTAConfig + SignalInjector tuple&#xa;Each pulsar treated as independent." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="80" y="1030" width="560" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="n_pta_corr" value="pta_logL_correlated  (Hellings–Downs)&#xa;&#xa;C  =  D  +  V · Φ_GWB · Vᵀ&#xa;Φ_GWB  =  Γ ⊗ diag(S)&#xa;&#xa;CorrelatedPTAConfig + CorrelatedSignalInjector&#xa;Two-tier Woodbury: inner per-pulsar solve + outer&#xa;dense Cholesky on compressed Fourier basis." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="720" y="1030" width="600" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="n_output" value="ln ℒ_PTA   :   scalar jax.Array&#xa;(differentiable, JIT-compatible)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="420" y="1230" width="560" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="e_logLi_uncorr" style="endArrow=classic;html=1;rounded=0;curved=1;entryX=0.339;entryY=0.013;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="n_logLi" target="n_pta_uncorr" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_logLi_corr" style="endArrow=classic;html=1;rounded=0;curved=1;entryX=0.676;entryY=0.015;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="n_logLi" target="n_pta_corr" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_uncorr_out" style="endArrow=classic;html=1;rounded=0;" parent="1" source="n_pta_uncorr" target="n_output" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_corr_out" style="endArrow=classic;html=1;rounded=0;" parent="1" source="n_pta_corr" target="n_output" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="Legend:   solid arrow = data flow within lane   |   dashed arrow = pre-injector values feeding into updates   |   i indexes pulsars   |   α indexes signal injectors" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;fontSize=10;align=left;verticalAlign=top;" parent="1" vertex="1">
+          <mxGeometry x="40" y="1320" width="1320" height="20" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
