@@ -57,11 +57,12 @@ jobs:
           python-version: "3.12"
 
       # Install only what's needed to import jaxpint and run Sphinx.
-      # The `docs` extra pulls: jax[cpu], sphinx, sphinx-copybutton, pydata-sphinx-theme.
+      #   --extra cpu   -> jax[cpu] (no CUDA wheels on the runner)
+      #   --extra docs  -> sphinx, sphinx-copybutton, pydata-sphinx-theme
       # Base deps (equinox, jaxtyping, pint-pulsar, blackjax) come along automatically.
       # We deliberately skip `cuda` / `dev` extras -- no CUDA wheels, no pytest, no notebook stack.
       - name: Install docs dependencies
-        run: uv sync --extra docs
+        run: uv sync --extra cpu --extra docs
 
       # Build the HTML site.
       #   -W              -> treat warnings as errors (catches broken cross-refs,
