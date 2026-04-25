@@ -62,6 +62,7 @@ from .bridge import (
     pint_toas_to_jax,
 )
 from .likelihood import single_pulsar_logL
+from .loaders import NanogravPTA, load_nanograv_pta
 from .simulation import apply_delay_to_toas, make_fake_toas, simulate_noise, zero_residuals
 from .utils import (
     fourier_sum,
@@ -100,6 +101,7 @@ __all__ = [
     "GLSFitter",
     "Glitch",
     "IFunc",
+    "NanogravPTA",
     "NoiseComponent",
     "NoiseModel",
     "PLChromNoise",
@@ -131,6 +133,7 @@ __all__ = [
     "compute_time_residuals",
     "extract_tzr_toa",
     "fourier_sum",
+    "load_nanograv_pta",
     "make_fake_toas",
     "normalize_designmatrix",
     "params_to_pint_model",
