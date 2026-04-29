@@ -22,10 +22,15 @@ from pint.models.parameter import (
     prefixParameter,
     strParameter,
 )
+
 from pint.models.timing_model import TimingModel as PINTTimingModel
 from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
 
 from jaxpint.bridge.toa_conversion import _split_mjd_time
+from jaxpint.bridge._aliases import (
+    synthesize_pb_from_fb,
+    synthesize_tnredamp_from_rnamp,
+)
 from jaxpint.bridge._param_builder import ParResult, MaskInfo
 from jaxpint.bridge._registry import BinaryModel, Component
 from jaxpint.types import ParameterVector
@@ -266,6 +271,11 @@ def pint_model_to_params(model: PINTTimingModel) -> ParResult:
             p = getattr(model, ivname)
             if p.value is not None:
                 int_params[ivname] = int(p.value)
+
+    # Synthesize canonical parameter names from alternate par-file conventions.
+    # Each alias mutates the in-progress lists in place; see jaxpint.bridge._aliases.
+    synthesize_tnredamp_from_rnamp(model, names, values, units, frozen_mask)
+    synthesize_pb_from_fb(model, names, values, units, frozen_mask)
 
     # Build component_set from PINT model's component registry
     component_set: set[Component] = set()

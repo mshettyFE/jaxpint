@@ -127,6 +127,17 @@ def extract_tzr_toa(
 
     abs_phase = model.components["AbsPhase"]
     tz_toas = abs_phase.get_TZR_toa(toas)
+
+    # Force planet position columns on the TZR TOA whenever the model needs them. 
+    need_planets = (
+        "PLANET_SHAPIRO" in model.params
+        and bool(getattr(model.PLANET_SHAPIRO, "value", False))
+    )
+    if need_planets and not any(
+        f"obs_{p}_pos" in tz_toas.table.colnames for p in PLANETS
+    ):
+        tz_toas.compute_posvels(planets=True)
+
     tz_tbl = tz_toas.table
 
     tdb_int, tdb_frac = _split_mjd_longdouble(
@@ -150,12 +161,23 @@ def extract_tzr_toa(
     else:
         obs_sun_pos = np.asarray(tz_tbl["obs_sun_pos"], dtype=np.float64)[0]
 
+    # Copy over planet positions from PINT TOA if present
+    tz_planet_positions: Optional[dict[str, np.ndarray]] = None
+    for planet in PLANETS:
+        col_name = f"obs_{planet}_pos"
+        if col_name in tz_tbl.colnames:
+            if tz_planet_positions is None:
+                tz_planet_positions = {}
+            _check_column_unit(tz_tbl, col_name, u.km)
+            tz_planet_positions[col_name] = np.asarray(tz_tbl[col_name], dtype=np.float64)[0]
+
     return {
         "tdb_int": float(tdb_int[0]),
         "tdb_frac": float(tdb_frac[0]),
         "freq": freq,
         "ssb_obs_pos": ssb_obs_pos,
         "obs_sun_pos": obs_sun_pos,
+        "planet_positions": tz_planet_positions,
     }
 
 
@@ -189,13 +211,26 @@ def pint_toas_to_jax(
     """
     n_toas = toas.ntoas
 
+    # PINT's get_TOAs doesn't always populate planet positions  even when planets=True is passed
+    # Force compute_posvels(planets=True) whenever the model needs it.
+    need_planets = (
+        model is not None
+        and "PLANET_SHAPIRO" in model.params
+        and bool(getattr(model.PLANET_SHAPIRO, "value", False))
+    )
+
     # -- Ensure computed columns exist -----------------------------------
     if "tdbld" not in toas.table.colnames:
         log.info("Computing TDBs (not yet present on TOAs)")
         toas.compute_TDBs()
     if "ssb_obs_pos" not in toas.table.colnames:
         log.info("Computing posvels (not yet present on TOAs)")
-        toas.compute_posvels()
+        toas.compute_posvels(planets=need_planets)
+    elif need_planets and not any(
+        f"obs_{p}_pos" in toas.table.colnames for p in PLANETS
+    ):
+        log.info("Recomputing posvels with planets=True (model has PLANET_SHAPIRO Y)")
+        toas.compute_posvels(planets=True)
 
     tbl = toas.table
 
@@ -316,6 +351,7 @@ def pint_toas_to_jax(
     tzr_freq = None
     tzr_ssb_obs_pos = None
     tzr_obs_sun_pos = None
+    tzr_planet_positions = None
     if model is not None:
         tzr_info = extract_tzr_toa(model, toas)
         tzr_tdb_int = tzr_info["tdb_int"]
@@ -323,6 +359,11 @@ def pint_toas_to_jax(
         tzr_freq = tzr_info["freq"]
         tzr_ssb_obs_pos = jnp.asarray(tzr_info["ssb_obs_pos"], dtype=jnp.float64)
         tzr_obs_sun_pos = jnp.asarray(tzr_info["obs_sun_pos"], dtype=jnp.float64)
+        if tzr_info["planet_positions"] is not None:
+            tzr_planet_positions = {
+                k: jnp.asarray(v, dtype=jnp.float64)
+                for k, v in tzr_info["planet_positions"].items()
+            }
 
     # -- Assemble TOAData ------------------------------------------------
     to_jnp = lambda arr: jnp.asarray(arr, dtype=jnp.float64)
@@ -358,6 +399,7 @@ def pint_toas_to_jax(
         tzr_freq=tzr_freq,
         tzr_ssb_obs_pos=tzr_ssb_obs_pos,
         tzr_obs_sun_pos=tzr_obs_sun_pos,
+        tzr_planet_positions=tzr_planet_positions,
         n_toas=n_toas,
         obs_names=obs_names,
     )

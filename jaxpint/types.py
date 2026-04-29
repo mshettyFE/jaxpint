@@ -115,6 +115,8 @@ class TOAData(eqx.Module):
     tzr_freq: Optional[float] = eqx.field(static=True, default=None)
     tzr_ssb_obs_pos: Optional[Float[Array, " 3"]] = eqx.field(default=None)
     tzr_obs_sun_pos: Optional[Float[Array, " 3"]] = eqx.field(default=None)
+    # Populated when the model enables PLANET_SHAPIRO; None otherwise.
+    tzr_planet_positions: Optional[dict[str, Float[Array, " 3"]]] = eqx.field(default=None)
 
 
 # ---------------------------------------------------------------------------

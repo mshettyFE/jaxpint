@@ -466,6 +466,47 @@ def dd_aberration_delay(
 # Shapiro delay parameterization dispatch
 # ---------------------------------------------------------------------------
 
+def ell1h_fourier_shapiro(h3, stigma, phi, nharms: int):
+    """Freire & Wex (2010) Eq. 19 — approximate Shapiro delay for ELL1H.
+
+    Sums Fourier harmonics k = 3..nharms of the orbital phase. The first
+    two harmonics are absorbed into the ELL1 Roemer delay, so the series
+    starts at k=3. Used by ``BinaryELL1`` when the par file specifies H3
+    (and optionally NHARMS) but no STIGMA or H4.
+
+    PINT reference: ``delayS3p_H3_STIGMA_approximate`` and
+    ``fourier_component`` in
+    ``pint.models.stand_alone_psr_binaries.ELL1H_model``.
+
+    Parameters
+    ----------
+    h3 : scalar or array
+        Shapiro amplitude (seconds).
+    stigma : scalar or array
+        Orthometric ratio. 0 for the H3-only case.
+    phi : array
+        Orbital phase (radians).
+    nharms : int
+        Maximum harmonic index (static). PINT's default is 7.
+
+    Returns
+    -------
+    array
+        Shapiro delay in seconds.
+    """
+    total = jnp.zeros_like(phi)
+    for k in range(3, nharms + 1):
+        if k % 2 == 0:
+            pwr = (k + 2) // 2
+            basis = jnp.cos(k * phi)
+        else:
+            pwr = (k + 1) // 2
+            basis = jnp.sin(k * phi)
+        coeff = ((-1) ** pwr) * (2.0 / k) * stigma ** (k - 3)
+        total = total + coeff * basis
+    return -2.0 * h3 * total
+
+
 def get_sini_m2(
     params: ParameterVector,
     shapiro_mode: str,

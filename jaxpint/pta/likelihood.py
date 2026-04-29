@@ -17,8 +17,10 @@ References
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from functools import partial
 from typing import Optional
 
+import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Array, Float
@@ -141,18 +143,18 @@ class SignalInjector(ABC):
 
 
 class PTAConfig(eqx.Module):
-    """Static (non-differentiated) configuration for PTA likelihood evaluation.
+    """Non-differentiated configuration for PTA likelihood evaluation.
 
-    All fields are marked ``static=True`` so that JAX treats the entire
-    config as a compile-time constant.
-
-    Raises :class:`ValueError` at construction if the per-pulsar tuples
+   Raises :class:`ValueError` at construction if the per-pulsar tuples
     have mismatched lengths.
+     """
     """
-
-    toa_data_list: tuple[TOAData, ...] = eqx.field(static=True)
+        ``toa_data_list`` and ``noise_models`` are *dynamic* (traced) fields.
+        Marking as static blows up jit memory usage.
+    """
+    toa_data_list: tuple[TOAData, ...]
+    noise_models: tuple[NoiseModel, ...]
     timing_models: tuple[TimingModel, ...] = eqx.field(static=True)
-    noise_models: tuple[NoiseModel, ...] = eqx.field(static=True)
     signal_injectors: tuple[SignalInjector, ...] = eqx.field(static=True)
 
     def __post_init__(self):
@@ -254,4 +256,150 @@ def pta_logL(
             external_cov=ext_cov,
         )
 
+    return total
+
+
+# ---------------------------------------------------------------------------
+# Chunked PTA log-likelihood
+# ---------------------------------------------------------------------------
+
+
+@partial(
+    jax.jit,
+    static_argnames=("timing_models", "signal_injectors", "p_offset"),
+)
+def _chunk_logL(
+    global_params: GlobalParams,
+    pulsar_params_chunk: tuple[ParameterVector, ...],
+    toa_data_chunk: tuple[TOAData, ...],
+    noise_models_chunk: tuple[NoiseModel, ...],
+    timing_models: tuple[TimingModel, ...],
+    signal_injectors: tuple[SignalInjector, ...],
+    p_offset: int,
+) -> Float[Array, ""]:
+    """JIT-compiled per-chunk log-likelihood.
+
+    Mirrors :func:`pta_logL`'s body, restricted to a contiguous chunk of
+    pulsars ``[p_offset, p_offset + len(pulsar_params_chunk))``.  Injectors
+    and ``timing_models`` are indexed by the *global* pulsar index
+    (``p_offset + p_local``) so each injector's per-pulsar dispatch is
+    unchanged.
+
+    Internal helper — callers should use :func:`pta_logL_chunked`.
+    """
+    total = jnp.float64(0.0)
+
+    for p_local in range(len(pulsar_params_chunk)):
+        p_global = p_offset + p_local
+
+        delays = [
+            inj.delay(
+                p_global,
+                toa_data_chunk[p_local],
+                pulsar_params_chunk[p_local],
+                global_params,
+            )
+            for inj in signal_injectors
+        ]
+        delays = [d for d in delays if d is not None]
+        ext_delay = sum(delays) if delays else None
+
+        covs = [
+            inj.covariance(
+                p_global,
+                toa_data_chunk[p_local],
+                pulsar_params_chunk[p_local],
+                global_params,
+            )
+            for inj in signal_injectors
+        ]
+        covs = [c for c in covs if c is not None]
+        if covs:
+            ext_cov = (
+                jnp.concatenate([U for U, _ in covs], axis=1),
+                jnp.concatenate([Phi for _, Phi in covs]),
+            )
+        else:
+            ext_cov = None
+
+        total += single_pulsar_logL(
+            toa_data_chunk[p_local],
+            timing_models[p_global],
+            noise_models_chunk[p_local],
+            pulsar_params_chunk[p_local],
+            external_delay=ext_delay,
+            external_cov=ext_cov,
+        )
+
+    return total
+
+
+def pta_logL_chunked(
+    global_params: GlobalParams,
+    pulsar_params: tuple[ParameterVector, ...],
+    config: PTAConfig,
+    *,
+    chunk_size: int,
+) -> float:
+    """Memory-bounded multi-pulsar log-likelihood.
+
+    Equivalent to :func:`pta_logL` but evaluates pulsars in
+    ``chunk_size``-sized batches, with the JIT boundary placed *inside*
+    each chunk.  Peak working memory is bounded by the largest chunk
+    instead of growing with the total number of pulsars, which lets the
+    full NANOGrav 15-yr PTA fit on hardware where wrapping
+    :func:`pta_logL` in :func:`jax.jit` (or :func:`jax.hessian`, or the
+    nested ``jit(vmap(...))`` inside the sweep helpers) would exceed
+    available device memory.
+
+    .. warning::
+
+       Do **not** wrap this function in :func:`jax.jit`,
+       :func:`jax.vmap`, :func:`jax.grad`, or :func:`jax.hessian`.
+       Doing so reintroduces the single-trace-over-all-pulsars failure
+       this function exists to avoid: the outer transformation traces
+       through the Python chunk loop and unrolls every chunk into one
+       HLO graph.  Returns a Python ``float`` (not a traceable
+       ``jax.Array``) to make this contract concrete — differentiable
+       callers (Fisher, MCMC) keep using :func:`pta_logL`.
+
+    Parameters
+    ----------
+    global_params : GlobalParams
+        Shared parameters (CW source properties, GWB spectrum, etc.).
+    pulsar_params : tuple of ParameterVector
+        Per-pulsar timing and noise parameters.
+    config : PTAConfig
+        Static configuration (TOA data, models, injectors).
+    chunk_size : int
+        Number of pulsars per JIT-compiled chunk.  Smaller values bound
+        memory more tightly at the cost of more per-chunk compiles
+        (each distinct ``(n_toas,)`` signature warms its own cache
+        entry).  Must be positive.
+
+    Returns
+    -------
+    logL : float
+        Sum of per-pulsar log-likelihoods.
+    """
+    if chunk_size <= 0:
+        raise ValueError(f"chunk_size must be positive, got {chunk_size}")
+
+    n = len(pulsar_params)
+    total = 0.0
+    for start in range(0, n, chunk_size):
+        end = min(start + chunk_size, n)
+        chunk_total = _chunk_logL(
+            global_params,
+            pulsar_params[start:end],
+            config.toa_data_list[start:end],
+            config.noise_models[start:end],
+            config.timing_models,
+            config.signal_injectors,
+            start,
+        )
+        # `float(...)` forces device->host transfer and blocks until the
+        # chunk's compute finishes; without it JAX's async dispatch may
+        # pipeline two chunks together and double the peak memory.
+        total += float(chunk_total)
     return total

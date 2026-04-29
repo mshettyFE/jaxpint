@@ -25,6 +25,7 @@ References
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from functools import partial
 from typing import Optional
 
 import jax
@@ -388,5 +389,239 @@ def pta_logL_correlated(
     # Constant term
     n_total = sum(td.n_toas for td in config.toa_data_list)
     total_logL = total_logL - 0.5 * n_total * jnp.log(2.0 * jnp.pi)
+
+    return total_logL
+
+
+# ---------------------------------------------------------------------------
+# Chunked correlated PTA log-likelihood
+# ---------------------------------------------------------------------------
+
+
+@partial(
+    jax.jit,
+    static_argnames=(
+        "timing_models",
+        "signal_injectors",
+        "correlated_injector",
+        "p_offset",
+    ),
+)
+def _chunk_correlated(
+    global_params: GlobalParams,
+    pulsar_params_chunk: tuple[ParameterVector, ...],
+    toa_data_chunk: tuple[TOAData, ...],
+    noise_models_chunk: tuple[NoiseModel, ...],
+    timing_models: tuple[TimingModel, ...],
+    signal_injectors: tuple,
+    correlated_injector: CorrelatedSignalInjector,
+    p_offset: int,
+) -> tuple[
+    Float[Array, ""],
+    Float[Array, ""],
+    Float[Array, " n_chunk_pulsars_x_n_basis"],
+    Float[Array, "n_chunk_pulsars_x_n_basis n_chunk_pulsars_x_n_basis"],
+]:
+    """JIT-compiled per-chunk Woodbury intermediates for the outer tier.
+
+    For a contiguous chunk of pulsars
+    ``[p_offset, p_offset + len(pulsar_params_chunk))`` and a single
+    ``correlated_injector``, computes:
+
+    - per-pulsar ``SignalInjector`` delays / covariances (CW, CURN, …),
+    - per-pulsar Woodbury intermediates ``(rCr_p, logdetC_p, z_p, D_p)``
+      via :func:`_per_pulsar_intermediates`,
+    - the within-chunk concatenation ``z_chunk = concat(z_p_for_p_in_chunk)``
+      and within-chunk block-diagonal
+      ``D_chunk = blockdiag(D_p_for_p_in_chunk)``.
+
+    The big ``(n_toas, n_basis)`` Fourier-basis matrices and inner-tier
+    Woodbury working memory live only inside this JIT; they are freed
+    when the function returns, leaving only the small chunk-sized
+    outputs in device memory.
+
+    Internal helper — callers should use :func:`pta_logL_correlated_chunked`.
+    """
+    chunk_sum_rCr = jnp.float64(0.0)
+    chunk_sum_logdetC = jnp.float64(0.0)
+    z_list: list[Float[Array, " n_basis"]] = []
+    D_list: list[Float[Array, "n_basis n_basis"]] = []
+
+    for p_local in range(len(pulsar_params_chunk)):
+        p_global = p_offset + p_local
+
+        delays = [
+            inj.delay(
+                p_global,
+                toa_data_chunk[p_local],
+                pulsar_params_chunk[p_local],
+                global_params,
+            )
+            for inj in signal_injectors
+        ]
+        delays = [d for d in delays if d is not None]
+        ext_delay = sum(delays) if delays else None
+
+        covs = [
+            inj.covariance(
+                p_global,
+                toa_data_chunk[p_local],
+                pulsar_params_chunk[p_local],
+                global_params,
+            )
+            for inj in signal_injectors
+        ]
+        covs = [c for c in covs if c is not None]
+        if covs:
+            ext_cov = (
+                jnp.concatenate([U for U, _ in covs], axis=1),
+                jnp.concatenate([Phi for _, Phi in covs]),
+            )
+        else:
+            ext_cov = None
+
+        F_p = correlated_injector.get_fourier_basis(toa_data_chunk[p_local])
+        rCr_p, logdetC_p, z_p, D_p = _per_pulsar_intermediates(
+            toa_data_chunk[p_local],
+            timing_models[p_global],
+            noise_models_chunk[p_local],
+            pulsar_params_chunk[p_local],
+            F_p,
+            external_delay=ext_delay,
+            external_cov=ext_cov,
+        )
+        chunk_sum_rCr = chunk_sum_rCr + rCr_p
+        chunk_sum_logdetC = chunk_sum_logdetC + logdetC_p
+        z_list.append(z_p)
+        D_list.append(D_p)
+
+    z_chunk = jnp.concatenate(z_list)
+    D_chunk = jax.scipy.linalg.block_diag(*D_list)
+    return chunk_sum_rCr, chunk_sum_logdetC, z_chunk, D_chunk
+
+
+@partial(jax.jit, static_argnames=("correlated_injector",))
+def _finalize_correlated_chunked(
+    global_params: GlobalParams,
+    correlated_injector: CorrelatedSignalInjector,
+    sum_rCr: Float[Array, ""],
+    sum_logdetC: Float[Array, ""],
+    z_chunks: tuple,
+    D_chunks: tuple,
+) -> Float[Array, ""]:
+    """Cross-pulsar Cholesky reduction over chunk-level intermediates.
+
+    Assembles the full ``(n_psr * n_basis,)`` ``z`` and the full
+    ``(n_psr * n_basis, n_psr * n_basis)`` block-diagonal ``D`` from
+    chunk-level pieces, builds ``Sigma_gwb = Phi_gwb_inv + D``, and
+    returns this injector's contribution to ``logL``.
+
+    The final dense matrices are small (``n_psr * n_basis`` is typically
+    a few thousand) so this step runs once per call as a single JIT.
+    """
+    S = correlated_injector.get_psd(global_params)
+    Gamma = correlated_injector.get_orf_matrix()
+    Phi_gwb = jnp.kron(Gamma, jnp.diag(S))
+    Phi_gwb_inv = jnp.kron(jnp.linalg.inv(Gamma), jnp.diag(1.0 / S))
+
+    z = jnp.concatenate(list(z_chunks))
+    D_block = jax.scipy.linalg.block_diag(*D_chunks)
+    Sigma_gwb = Phi_gwb_inv + D_block
+
+    Sigma_cf = jax.scipy.linalg.cho_factor(Sigma_gwb)
+    Sigma_inv_z = jax.scipy.linalg.cho_solve(Sigma_cf, z)
+    correction = jnp.dot(z, Sigma_inv_z)
+
+    _, logdet_Phi_gwb = jnp.linalg.slogdet(Phi_gwb)
+    logdet_Sigma_gwb = 2.0 * jnp.sum(jnp.log(jnp.diag(Sigma_cf[0])))
+
+    contribution = -0.5 * (sum_rCr - correction)
+    contribution = contribution - 0.5 * (
+        sum_logdetC + logdet_Phi_gwb + logdet_Sigma_gwb
+    )
+    return contribution
+
+
+def pta_logL_correlated_chunked(
+    global_params: GlobalParams,
+    pulsar_params: tuple[ParameterVector, ...],
+    config: CorrelatedPTAConfig,
+    *,
+    chunk_size: int,
+) -> float:
+    """Memory-bounded multi-pulsar correlated log-likelihood.
+
+    Chunked counterpart to :func:`pta_logL_correlated`.  The per-pulsar
+    Woodbury intermediates are evaluated in ``chunk_size``-sized batches
+    inside :func:`_chunk_correlated`; the cross-pulsar Cholesky reduction
+    runs once at the end on the assembled ``(n_psr * n_basis)`` system.
+
+    Peak working memory is bounded by the largest chunk's per-pulsar
+    Fourier basis ``(n_toas, n_basis)`` plus the inner-tier Woodbury
+    workspace, instead of growing with the total number of pulsars.
+
+    .. warning::
+
+       Do **not** wrap this function in :func:`jax.jit`,
+       :func:`jax.vmap`, :func:`jax.grad`, or :func:`jax.hessian` — see
+       :func:`pta_logL_chunked` for details.  Returns a Python ``float``.
+
+    Parameters
+    ----------
+    global_params : GlobalParams
+    pulsar_params : tuple of ParameterVector
+    config : CorrelatedPTAConfig
+    chunk_size : int
+        Pulsars per JIT-compiled chunk.  Must be positive.
+
+    Returns
+    -------
+    logL : float
+    """
+    if chunk_size <= 0:
+        raise ValueError(f"chunk_size must be positive, got {chunk_size}")
+
+    n_psr = config.n_pulsars
+    total_logL = 0.0
+
+    for cinj in config.correlated_injectors:
+        sum_rCr = 0.0
+        sum_logdetC = 0.0
+        z_chunks: list = []
+        D_chunks: list = []
+
+        for start in range(0, n_psr, chunk_size):
+            end = min(start + chunk_size, n_psr)
+            chunk_rCr, chunk_logdetC, z_chunk, D_chunk = _chunk_correlated(
+                global_params,
+                pulsar_params[start:end],
+                config.toa_data_list[start:end],
+                config.noise_models[start:end],
+                config.timing_models,
+                config.signal_injectors,
+                cinj,
+                start,
+            )
+            # Block before the next chunk starts so the previous chunk's
+            # transient (n_toas, n_basis) Fourier-basis matrices and
+            # Woodbury workspace are freed before the next chunk allocates.
+            jax.block_until_ready((chunk_rCr, chunk_logdetC, z_chunk, D_chunk))
+            sum_rCr += float(chunk_rCr)
+            sum_logdetC += float(chunk_logdetC)
+            z_chunks.append(z_chunk)
+            D_chunks.append(D_chunk)
+
+        injector_contribution = _finalize_correlated_chunked(
+            global_params,
+            cinj,
+            jnp.float64(sum_rCr),
+            jnp.float64(sum_logdetC),
+            tuple(z_chunks),
+            tuple(D_chunks),
+        )
+        total_logL += float(injector_contribution)
+
+    n_total = sum(td.n_toas for td in config.toa_data_list)
+    total_logL -= 0.5 * n_total * float(jnp.log(2.0 * jnp.pi))
 
     return total_logL
