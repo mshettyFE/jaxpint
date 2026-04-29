@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from jaxpint.types import TOAData, ParameterVector
+from jaxpint.utils import build_fourier_basis as _build_fourier_basis
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +233,94 @@ def make_toa_data(
         tzr_ssb_obs_pos=tzr_ssb_obs_pos,
         tzr_obs_sun_pos=tzr_obs_sun_pos,
     )
+
+
+def make_simple_pulsar(
+    n_toas,
+    f0,
+    f1,
+    *,
+    pepoch_int=59000.0,
+    tdb_int=None,
+    error=1e-6,
+    seed=0,
+):
+    """Build a simple spindown pulsar with white noise (for PTA tests).
+
+    Returns ``(toa_data, timing_model, noise_model, params)``.
+
+    Parameters
+    ----------
+    n_toas : int
+    f0, f1 : float
+        Spin frequency and spin-down rate.
+    pepoch_int : float
+        Integer MJD of PEPOCH (defaults to 59000).
+    tdb_int : float, optional
+        Integer MJD for TOA TDB times. Defaults to ``pepoch_int``.
+    error : float
+        Per-TOA error in seconds.
+    seed : int
+        RNG seed for the random TOA fractional spacings.
+    """
+    # Deferred imports keep this helper usable from tests that don't
+    # otherwise pull in the model/noise/phase machinery.
+    from jaxpint.model import TimingModel
+    from jaxpint.noise import NoiseModel
+    from jaxpint.noise.white import ScaleToaError
+    from jaxpint.phase.spin import Spindown
+
+    rng = np.random.default_rng(seed)
+    if tdb_int is None:
+        tdb_int = pepoch_int
+
+    tdb_frac = jnp.array(np.sort(rng.uniform(0.0, 1.0, n_toas)))
+    efac_mask = jnp.ones(n_toas, dtype=jnp.bool_)
+    equad_mask = jnp.ones(n_toas, dtype=jnp.bool_)
+
+    toa_data = make_toa_data(
+        n_toas,
+        tdb_int=tdb_int,
+        tdb_frac=tdb_frac,
+        error=error,
+        flag_masks={"EFAC1": efac_mask, "EQUAD1": equad_mask},
+        tzr_tdb_int=pepoch_int,
+        tzr_tdb_frac=0.5,
+        tzr_freq=jnp.inf,
+        tzr_ssb_obs_pos=jnp.zeros(3),
+        tzr_obs_sun_pos=jnp.zeros(3),
+    )
+
+    spindown = Spindown(spin_param_names=("F0", "F1"), pepoch_name="PEPOCH")
+    timing_model = TimingModel(
+        delay_components=(),
+        phase_components=(spindown,),
+        phoff_name=None,
+    )
+
+    white_noise = ScaleToaError(efac_names=("EFAC1",), equad_names=("EQUAD1",))
+    noise_model = NoiseModel(white_noise=white_noise, correlated=())
+
+    params = make_params(
+        names=("F0", "F1", "PEPOCH", "EFAC1", "EQUAD1"),
+        values=(f0, f1, 0.0, 1.0, 0.0),
+        frozen_mask=(False, False, True, True, True),
+        epoch_int_values={"PEPOCH": pepoch_int},
+    )
+
+    return toa_data, timing_model, noise_model, params
+
+
+def make_fourier_basis(n_toas, n_freqs, T):
+    """Build a Fourier basis on a uniform time grid.
+
+    Thin wrapper around :func:`jaxpint.utils.build_fourier_basis` that
+    returns ``(F, freqs, df, t)`` with ``F``, ``freqs``, ``df`` as JAX
+    arrays and ``t`` as a numpy time vector.
+    """
+    t = np.linspace(0.0, T, n_toas)
+    F, freqs, df = _build_fourier_basis(t, n_freqs, T)
+    return jnp.asarray(F), jnp.asarray(freqs), jnp.asarray(df), t
 
 
 def make_params(

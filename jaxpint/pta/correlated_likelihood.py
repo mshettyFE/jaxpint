@@ -136,17 +136,20 @@ class CorrelatedSignalInjector(ABC):
 
 
 class CorrelatedPTAConfig(eqx.Module):
-    """Static configuration for the correlated PTA likelihood.
+    """Configuration for the correlated PTA likelihood.
 
     Extends :class:`~jaxpint.pta.likelihood.PTAConfig` with a
     ``correlated_injectors`` field for cross-pulsar signals.
 
-    All fields are ``static=True`` (compile-time constants for JAX).
+    ``toa_data_list`` and ``noise_models`` are *dynamic* (traced) fields;
+    marking them static balloons jit memory because the per-pulsar arrays
+    get baked into the compiled HLO. The remaining structural fields are
+    compile-time constants.
     """
 
-    toa_data_list: tuple[TOAData, ...] = eqx.field(static=True)
+    toa_data_list: tuple[TOAData, ...]
+    noise_models: tuple[NoiseModel, ...]
     timing_models: tuple[TimingModel, ...] = eqx.field(static=True)
-    noise_models: tuple[NoiseModel, ...] = eqx.field(static=True)
     signal_injectors: tuple[SignalInjector, ...] = eqx.field(static=True)
     correlated_injectors: tuple[CorrelatedSignalInjector, ...] = eqx.field(
         static=True

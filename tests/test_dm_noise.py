@@ -14,8 +14,7 @@ from jaxpint.constants import FYR
 from jaxpint.noise import NoiseModel, ScaleToaError
 from jaxpint.noise.dm_noise import PLDMNoise
 from jaxpint.simulation import simulate_noise
-from jaxpint.utils import build_fourier_basis
-from tests.helpers import make_params, make_toa_data
+from tests.helpers import make_fourier_basis, make_params, make_toa_data
 
 
 # ---------------------------------------------------------------------------
@@ -25,20 +24,13 @@ from tests.helpers import make_params, make_toa_data
 FREF = 1400.0  # MHz
 
 
-def _make_fourier_basis(n_toas, n_freqs, T):
-    """Build a raw Fourier basis for tests."""
-    t = np.linspace(0.0, T, n_toas)
-    F, freqs, df = build_fourier_basis(t, n_freqs, T)
-    return jnp.asarray(F), jnp.asarray(freqs), jnp.asarray(df), t
-
-
 def _make_pldm(n_toas=100, n_freqs=5, T=3.0 * 365.25 * 86400.0):
     """Build a PLDMNoise component with multi-frequency TOAs.
 
     Uses alternating 800 MHz and 1400 MHz TOAs to exercise the
     ``(1400/f)^2`` DM scaling.
     """
-    F_raw, freqs, df, t = _make_fourier_basis(n_toas, n_freqs, T)
+    F_raw, freqs, df, t = make_fourier_basis(n_toas, n_freqs, T)
 
     # Alternate between 800 MHz and 1400 MHz
     obs_freqs = np.where(np.arange(n_toas) % 2 == 0, 800.0, 1400.0)
@@ -86,6 +78,7 @@ class TestPLDMNoiseBasic:
         pldm, params, _, _, _, _, _, _ = _make_pldm()
         weights = pldm.psd_weights(params)
         assert jnp.all(weights > 0)
+        assert jnp.all(jnp.isfinite(weights))
 
     def test_psd_weights_values(self):
         """Verify PSD formula against manual computation."""
@@ -263,7 +256,7 @@ class TestGLSWithDMNoise:
         n_freqs = 10
         T = 3.0 * 365.25 * 86400.0
 
-        F_raw, freqs, df, t = _make_fourier_basis(n_toas, n_freqs, T)
+        F_raw, freqs, df, t = make_fourier_basis(n_toas, n_freqs, T)
 
         # Multi-frequency TOAs
         obs_freqs = np.where(np.arange(n_toas) % 2 == 0, 800.0, 1400.0)

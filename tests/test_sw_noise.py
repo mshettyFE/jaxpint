@@ -16,8 +16,8 @@ from jaxpint.delay.solar_wind import _solar_wind_geometry_swm0, _sun_angle_and_d
 from jaxpint.noise import NoiseModel, ScaleToaError
 from jaxpint.noise.sw_noise import PLSWNoise
 from jaxpint.simulation import simulate_noise
-from jaxpint.utils import build_fourier_basis, compute_pulsar_direction
-from tests.helpers import make_params, make_toa_data
+from jaxpint.utils import compute_pulsar_direction
+from tests.helpers import make_fourier_basis, make_params, make_toa_data
 
 
 # ---------------------------------------------------------------------------
@@ -27,13 +27,6 @@ from tests.helpers import make_params, make_toa_data
 # Pulsar at RA=0h, DEC=+45deg (well away from the ecliptic plane)
 PSR_RAJ = 0.0  # radians
 PSR_DECJ = np.pi / 4.0  # radians
-
-
-def _make_fourier_basis(n_toas, n_freqs, T):
-    """Build a raw Fourier basis for tests."""
-    t = np.linspace(0.0, T, n_toas)
-    F, freqs, df = build_fourier_basis(t, n_freqs, T)
-    return jnp.asarray(F), jnp.asarray(freqs), jnp.asarray(df), t
 
 
 def _make_obs_sun_pos(n_toas):
@@ -57,7 +50,7 @@ def _make_plsw(n_toas=100, n_freqs=5, T=3.0 * 365.25 * 86400.0):
     Uses alternating 800 MHz and 1400 MHz TOAs with synthetic
     observer-Sun positions for a pulsar at RA=0, DEC=+45deg.
     """
-    F_raw, freqs, df, t = _make_fourier_basis(n_toas, n_freqs, T)
+    F_raw, freqs, df, t = make_fourier_basis(n_toas, n_freqs, T)
 
     obs_freqs = np.where(np.arange(n_toas) % 2 == 0, 800.0, 1400.0)
     obs_sun_pos = _make_obs_sun_pos(n_toas)
@@ -119,6 +112,7 @@ class TestPLSWNoiseBasic:
         plsw, params, _, _, _, _, _, _ = _make_plsw()
         weights = plsw.psd_weights(params)
         assert jnp.all(weights > 0)
+        assert jnp.all(jnp.isfinite(weights))
 
     def test_psd_weights_values(self):
         """Verify PSD formula against manual computation."""
@@ -294,7 +288,7 @@ class TestGLSWithSWNoise:
         n_freqs = 10
         T = 3.0 * 365.25 * 86400.0
 
-        F_raw, freqs, df, t = _make_fourier_basis(n_toas, n_freqs, T)
+        F_raw, freqs, df, t = make_fourier_basis(n_toas, n_freqs, T)
         obs_freqs = np.where(np.arange(n_toas) % 2 == 0, 800.0, 1400.0)
         obs_sun_pos = _make_obs_sun_pos(n_toas)
 
