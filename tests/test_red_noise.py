@@ -14,8 +14,7 @@ from jaxpint.constants import FYR
 from jaxpint.noise import NoiseModel, ScaleToaError
 from jaxpint.noise.red_noise import PLRedNoise
 from jaxpint.simulation import simulate_noise
-from jaxpint.utils import build_fourier_basis
-from tests.helpers import make_params, make_toa_data
+from tests.helpers import make_fourier_basis, make_params, make_toa_data
 
 
 # ---------------------------------------------------------------------------
@@ -23,16 +22,9 @@ from tests.helpers import make_params, make_toa_data
 # ---------------------------------------------------------------------------
 
 
-def _make_fourier_basis(n_toas, n_freqs, T):
-    """Build a Fourier basis for tests (thin wrapper around build_fourier_basis)."""
-    t = np.linspace(0.0, T, n_toas)
-    F, freqs, df = build_fourier_basis(t, n_freqs, T)
-    return jnp.asarray(F), jnp.asarray(freqs), jnp.asarray(df), t
-
-
 def _make_plred(n_toas=100, n_freqs=5, T=3.0 * 365.25 * 86400.0):
     """Build a PLRedNoise component and matching params for tests."""
-    F, freqs, df, t = _make_fourier_basis(n_toas, n_freqs, T)
+    F, freqs, df, t = make_fourier_basis(n_toas, n_freqs, T)
 
     plred = PLRedNoise(
         fourier_basis=F,
@@ -73,10 +65,11 @@ class TestPLRedNoiseBasic:
         npt.assert_array_equal(Ndiag, jnp.zeros(50))
 
     def test_psd_weights_positive(self):
-        """PSD weights should be positive for typical parameters."""
+        """PSD weights should be positive and finite for typical parameters."""
         plred, params, _, _, _, _ = _make_plred()
         weights = plred.psd_weights(params)
         assert jnp.all(weights > 0)
+        assert jnp.all(jnp.isfinite(weights))
 
     def test_psd_weights_values(self):
         """Verify PSD formula against manual computation."""
@@ -324,7 +317,7 @@ class TestGLSWithRedNoise:
         T = 3.0 * 365.25 * 86400.0  # 3 years in seconds
 
         # Build Fourier basis
-        F, freqs, df, t = _make_fourier_basis(n_toas, n_freqs, T)
+        F, freqs, df, t = make_fourier_basis(n_toas, n_freqs, T)
 
         plred = PLRedNoise(
             fourier_basis=F,

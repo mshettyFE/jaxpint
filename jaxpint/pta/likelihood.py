@@ -143,15 +143,24 @@ class SignalInjector(ABC):
 
 
 class PTAConfig(eqx.Module):
-    """Non-differentiated configuration for PTA likelihood evaluation.
+    """Configuration for per-pulsar PTA likelihood evaluation.
 
-   Raises :class:`ValueError` at construction if the per-pulsar tuples
-    have mismatched lengths.
-     """
+    Holds the per-pulsar TOA data, timing/noise models, and any
+    :class:`SignalInjector` instances that contribute additional
+    covariance terms (e.g. red, DM, or chromatic noise).
+
+    ``toa_data_list`` and ``noise_models`` are *dynamic* (traced) fields;
+    marking them static balloons jit memory because the per-pulsar arrays
+    get baked into the compiled HLO. ``timing_models`` and
+    ``signal_injectors`` are static structural metadata.
+
+    Raises
+    ------
+    ValueError
+        If ``toa_data_list``, ``timing_models``, and ``noise_models`` do
+        not all have the same length.
     """
-        ``toa_data_list`` and ``noise_models`` are *dynamic* (traced) fields.
-        Marking as static blows up jit memory usage.
-    """
+
     toa_data_list: tuple[TOAData, ...]
     noise_models: tuple[NoiseModel, ...]
     timing_models: tuple[TimingModel, ...] = eqx.field(static=True)

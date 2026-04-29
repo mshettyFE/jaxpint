@@ -22,6 +22,7 @@ from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.binary.common import (
+    _bt_delay_formula,
     compute_tt0,
     compute_orbital_phase,
     compute_eccentric_anomaly,
@@ -154,22 +155,7 @@ class BinaryBTPiecewise(DelayComponent):
         )
         E = compute_eccentric_anomaly(ecc, M)
 
-        sinE = jnp.sin(E)
-        cosE = jnp.cos(E)
-        sin_omega = jnp.sin(omega)
-        cos_omega = jnp.cos(omega)
-        sqrt_1me2 = jnp.sqrt(1.0 - ecc ** 2)
-
-        # --- BT delay formula ---
-        L1 = a1 * sin_omega * (cosE - ecc)
-        L2 = (a1 * cos_omega * sqrt_1me2 + gamma) * sinE
-
-        pb_s = (pb_d + pbdot * tt0_s / SECS_PER_DAY) * SECS_PER_DAY
-        num = a1 * cos_omega * sqrt_1me2 * cosE - a1 * sin_omega * sinE
-        den = 1.0 - ecc * cosE
-        R = 1.0 - 2.0 * jnp.pi * num / (den * pb_s)
-
-        return (L1 + L2) * R
+        return _bt_delay_formula(a1, ecc, omega, gamma, pb_d, pbdot, tt0_s, E)
 
 
 def _compute_orbital_phase_piecewise(

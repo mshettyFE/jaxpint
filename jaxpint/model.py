@@ -102,6 +102,11 @@ class TimingModel(eqx.Module):
             Pulse time-of-arrival data.
         params : ParameterVector
             Timing model parameters.
+
+        Returns
+        -------
+        Float[Array, " n_toas"]
+            Total dispersion measure at each TOA, in pc/cm³.
         """
         delay = self.compute_delay(toa_data, params)
         dm = jnp.zeros(toa_data.n_toas)

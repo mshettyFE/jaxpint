@@ -11,18 +11,13 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from jaxpint.model import TimingModel
-from jaxpint.noise import NoiseModel
-from jaxpint.noise.white import ScaleToaError
-from jaxpint.noise.red_noise import PLRedNoise
-from jaxpint.phase.spin import Spindown
 from jaxpint.pta.params import GlobalParams
 from jaxpint.pta.likelihood import PTAConfig, pta_logL
 from jaxpint.pta.batching import BatchedPTAConfig, pta_logL_batched
 from jaxpint.pta.signals.cw import CWInjectorStack
 from jaxpint.types import ParameterVector
 
-from tests.helpers import make_toa_data, make_params
+from tests.helpers import make_simple_pulsar, make_toa_data, make_params
 
 
 jax.config.update("jax_enable_x64", True)
@@ -31,63 +26,6 @@ jax.config.update("jax_enable_x64", True)
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-def _make_simple_pulsar(
-    n_toas: int,
-    f0: float,
-    f1: float,
-    dm: float,
-    pepoch_int: float = 59000.0,
-    tdb_int: float = 59000.0,
-    error: float = 1e-6,
-    seed: int = 0,
-):
-    """Create a simple spindown pulsar with white noise.
-
-    Returns (toa_data, timing_model, noise_model, params).
-    """
-    rng = np.random.default_rng(seed)
-
-    # TOA data
-    tdb_frac = jnp.array(np.sort(rng.uniform(0.0, 1.0, n_toas)))
-    efac_mask = jnp.ones(n_toas, dtype=jnp.bool_)
-    equad_mask = jnp.ones(n_toas, dtype=jnp.bool_)
-
-    toa_data = make_toa_data(
-        n_toas,
-        tdb_int=tdb_int,
-        tdb_frac=tdb_frac,
-        error=error,
-        flag_masks={"EFAC1": efac_mask, "EQUAD1": equad_mask},
-        tzr_tdb_int=pepoch_int,
-        tzr_tdb_frac=0.5,
-        tzr_freq=jnp.inf,
-        tzr_ssb_obs_pos=jnp.zeros(3),
-        tzr_obs_sun_pos=jnp.zeros(3),
-    )
-
-    # Timing model: simple spindown
-    spindown = Spindown(spin_param_names=("F0", "F1"), pepoch_name="PEPOCH")
-    timing_model = TimingModel(
-        delay_components=(),
-        phase_components=(spindown,),
-        phoff_name=None,
-    )
-
-    # Noise model: white noise only
-    white_noise = ScaleToaError(efac_names=("EFAC1",), equad_names=("EQUAD1",))
-    noise_model = NoiseModel(white_noise=white_noise, correlated=())
-
-    # Parameters
-    params = make_params(
-        names=("F0", "F1", "PEPOCH", "EFAC1", "EQUAD1"),
-        values=(f0, f1, 0.0, 1.0, 0.0),
-        frozen_mask=(False, False, True, True, True),
-        epoch_int_values={"PEPOCH": pepoch_int},
-    )
-
-    return toa_data, timing_model, noise_model, params
 
 
 def _make_multi_pulsar_setup(n_pulsars=3, n_toas_list=None):
@@ -107,13 +45,11 @@ def _make_multi_pulsar_setup(n_pulsars=3, n_toas_list=None):
     for i in range(n_pulsars):
         f0 = 200.0 + i * 10.0
         f1 = -1e-15 * (1 + i * 0.5)
-        dm = 15.0 + i * 2.0
 
-        td, tm, nm, pp = _make_simple_pulsar(
+        td, tm, nm, pp = make_simple_pulsar(
             n_toas=n_toas_list[i],
             f0=f0,
             f1=f1,
-            dm=dm,
             seed=42 + i,
         )
         toa_data_list.append(td)
@@ -387,9 +323,13 @@ class TestBatchedGradients:
         grad_loop = jax.grad(loop_fn)(pulsar_params[0].values)
         grad_batched = jax.grad(batched_fn)(pulsar_params[0].values)
 
+        # Compare only at free-parameter indices: gradients of frozen
+        # parameters are unspecified (loop and vmap traces produce
+        # equally-valid but slightly different floating-point results).
+        free = ~np.array(pulsar_params[0].frozen_mask)
         np.testing.assert_allclose(
-            np.array(grad_batched), np.array(grad_loop), rtol=1e-8,
-            err_msg="Pulsar param gradients do not match",
+            np.array(grad_batched)[free], np.array(grad_loop)[free], rtol=1e-8,
+            err_msg="Pulsar param gradients (free indices) do not match",
         )
 
 

@@ -14,13 +14,12 @@ from __future__ import annotations
 from typing import Optional
 
 import equinox as eqx
-import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.constants import SECS_PER_DAY
 from jaxpint.binary.common import (
+    _bt_delay_formula,
     compute_tt0,
     compute_orbital_phase,
     compute_eccentric_anomaly,
@@ -118,26 +117,4 @@ class BinaryBT(DelayComponent):
         )
         E = compute_eccentric_anomaly(ecc, M)
 
-        sinE = jnp.sin(E)
-        cosE = jnp.cos(E)
-        sin_omega = jnp.sin(omega)
-        cos_omega = jnp.cos(omega)
-        sqrt_1me2 = jnp.sqrt(1.0 - ecc ** 2)
-
-        # --- BT delay formula ---
-        # L1 = a1 * sin(omega) * (cos(E) - ecc)
-        L1 = a1 * sin_omega * (cosE - ecc)
-
-        # L2 = (a1 * cos(omega) * sqrt(1-ecc^2) + GAMMA) * sin(E)
-        L2 = (a1 * cos_omega * sqrt_1me2 + gamma) * sinE
-
-        # Relativistic correction factor R
-        # R = 1 - 2*pi * (a1*cos(omega)*sqrt(1-ecc^2)*cos(E) - a1*sin(omega)*sin(E))
-        #         / ((1 - ecc*cos(E)) * PB_s)
-        # BT uses instantaneous period pb() = PB + PBDOT*tt0
-        pb_s = (pb_d + pbdot * tt0_s / SECS_PER_DAY) * SECS_PER_DAY
-        num = a1 * cos_omega * sqrt_1me2 * cosE - a1 * sin_omega * sinE
-        den = 1.0 - ecc * cosE
-        R = 1.0 - 2.0 * jnp.pi * num / (den * pb_s)
-
-        return (L1 + L2) * R
+        return _bt_delay_formula(a1, ecc, omega, gamma, pb_d, pbdot, tt0_s, E)

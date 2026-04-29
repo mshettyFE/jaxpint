@@ -15,11 +15,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.noise.white import ScaleToaError
 from jaxpint.noise.red_noise import PLRedNoise
-from jaxpint.phase.spin import Spindown
 from jaxpint.pta.params import GlobalParams
 from jaxpint.pta.likelihood import PTAConfig, pta_logL
 from jaxpint.pta.correlated_likelihood import (
@@ -37,7 +35,7 @@ from jaxpint.pta.signals.orf import hd_orf, dipole_orf
 from jaxpint.types import ParameterVector
 from jaxpint.fitters import compute_time_residuals
 
-from tests.helpers import make_toa_data, make_params
+from tests.helpers import make_simple_pulsar, make_toa_data, make_params
 
 
 jax.config.update("jax_enable_x64", True)
@@ -46,46 +44,6 @@ jax.config.update("jax_enable_x64", True)
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-def _make_simple_pulsar(n_toas, f0, f1, seed=0, pepoch_int=59000.0):
-    """Create a spindown pulsar with white noise."""
-    rng = np.random.default_rng(seed)
-    tdb_frac = jnp.array(np.sort(rng.uniform(0.0, 1.0, n_toas)))
-    efac_mask = jnp.ones(n_toas, dtype=jnp.bool_)
-    equad_mask = jnp.ones(n_toas, dtype=jnp.bool_)
-
-    toa_data = make_toa_data(
-        n_toas,
-        tdb_int=pepoch_int,
-        tdb_frac=tdb_frac,
-        error=1e-6,
-        flag_masks={"EFAC1": efac_mask, "EQUAD1": equad_mask},
-        tzr_tdb_int=pepoch_int,
-        tzr_tdb_frac=0.5,
-        tzr_freq=jnp.inf,
-        tzr_ssb_obs_pos=jnp.zeros(3),
-        tzr_obs_sun_pos=jnp.zeros(3),
-    )
-
-    spindown = Spindown(spin_param_names=("F0", "F1"), pepoch_name="PEPOCH")
-    timing_model = TimingModel(
-        delay_components=(),
-        phase_components=(spindown,),
-        phoff_name=None,
-    )
-
-    white_noise = ScaleToaError(efac_names=("EFAC1",), equad_names=("EQUAD1",))
-    noise_model = NoiseModel(white_noise=white_noise, correlated=())
-
-    params = make_params(
-        names=("F0", "F1", "PEPOCH", "EFAC1", "EQUAD1"),
-        values=(f0, f1, 0.0, 1.0, 0.0),
-        frozen_mask=(False, False, True, True, True),
-        epoch_int_values={"PEPOCH": pepoch_int},
-    )
-
-    return toa_data, timing_model, noise_model, params
 
 
 def _make_multi_pulsar_setup(n_pulsars=3, n_toas_list=None):
@@ -104,7 +62,7 @@ def _make_multi_pulsar_setup(n_pulsars=3, n_toas_list=None):
     pulsar_params = []
 
     for i in range(n_pulsars):
-        td, tm, nm, pp = _make_simple_pulsar(
+        td, tm, nm, pp = make_simple_pulsar(
             n_toas=n_toas_list[i],
             f0=200.0 + i * 10.0,
             f1=-1e-15 * (1 + i * 0.5),
@@ -472,7 +430,7 @@ class TestWithRedNoise:
         pulsar_params = []
 
         for i in range(n_pulsars):
-            td, tm, _, pp = _make_simple_pulsar(
+            td, tm, _, pp = make_simple_pulsar(
                 n_toas=n_toas_list[i],
                 f0=200.0 + i * 10.0,
                 f1=-1e-15,

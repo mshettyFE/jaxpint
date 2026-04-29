@@ -193,6 +193,11 @@ def compute_ecc(ecc0: float, edot: float, tt0_s: Float[Array, " n_toas"]) -> Flo
         Time derivative EDOT (1/s).
     tt0_s : array
         Time since reference epoch in seconds.
+
+    Returns
+    -------
+    Float[Array, " n_toas"]
+        Eccentricity at each TOA (dimensionless).
     """
     return ecc0 + edot * tt0_s
 
@@ -208,6 +213,11 @@ def compute_a1(a1_0: float, a1dot: float, tt0_s: Float[Array, " n_toas"]) -> Flo
         Time derivative A1DOT (ls/s).
     tt0_s : array
         Time since reference epoch in seconds.
+
+    Returns
+    -------
+    Float[Array, " n_toas"]
+        Projected semi-major axis at each TOA, in light-seconds.
     """
     return a1_0 + a1dot * tt0_s
 
@@ -236,6 +246,62 @@ def compute_omega_bt(
     return om_rad + omdot_rad_per_s * tt0_s
 
 
+def _bt_delay_formula(
+    a1: Float[Array, " n_toas"],
+    ecc: Float[Array, " n_toas"],
+    omega: Float[Array, " n_toas"],
+    gamma: float,
+    pb_d: float,
+    pbdot: float,
+    tt0_s: Float[Array, " n_toas"],
+    E: Float[Array, " n_toas"],
+) -> Float[Array, " n_toas"]:
+    """Core Blandford-Teukolsky binary delay formula.
+
+    Shared by :class:`~jaxpint.binary.bt.BinaryBT` and
+    :class:`~jaxpint.binary.bt_piecewise.BinaryBTPiecewise`. Inputs may be
+    scalar or per-TOA; broadcasting handles both.
+
+    Parameters
+    ----------
+    a1, ecc, omega : array
+        Time-dependent (or constant, broadcast) projected semi-major axis
+        in light-seconds, eccentricity, and longitude of periastron in
+        radians.
+    gamma : float
+        GAMMA parameter (s); 0 disables the relativistic Einstein delay
+        term.
+    pb_d : float
+        Orbital period in days.
+    pbdot : float
+        First time derivative of PB (s/s).
+    tt0_s : array
+        Time from periastron in seconds (per TOA).
+    E : array
+        Eccentric anomaly in radians (per TOA).
+
+    Returns
+    -------
+    Float[Array, " n_toas"]
+        Binary delay in seconds.
+    """
+    sinE = jnp.sin(E)
+    cosE = jnp.cos(E)
+    sin_omega = jnp.sin(omega)
+    cos_omega = jnp.cos(omega)
+    sqrt_1me2 = jnp.sqrt(1.0 - ecc ** 2)
+
+    L1 = a1 * sin_omega * (cosE - ecc)
+    L2 = (a1 * cos_omega * sqrt_1me2 + gamma) * sinE
+
+    pb_s = (pb_d + pbdot * tt0_s / SECS_PER_DAY) * SECS_PER_DAY
+    num = a1 * cos_omega * sqrt_1me2 * cosE - a1 * sin_omega * sinE
+    den = 1.0 - ecc * cosE
+    R = 1.0 - 2.0 * jnp.pi * num / (den * pb_s)
+
+    return (L1 + L2) * R
+
+
 # ---------------------------------------------------------------------------
 # Eccentric and true anomaly
 # ---------------------------------------------------------------------------
@@ -247,6 +313,18 @@ def compute_eccentric_anomaly(
     """Solve Kepler's equation for eccentric anomaly.
 
     Thin wrapper around :func:`solve_kepler`.
+
+    Parameters
+    ----------
+    ecc : Float[Array, " n_toas"]
+        Per-TOA eccentricity (dimensionless).
+    mean_anomaly : Float[Array, " n_toas"]
+        Per-TOA mean anomaly in radians.
+
+    Returns
+    -------
+    Float[Array, " n_toas"]
+        Eccentric anomaly at each TOA, in radians.
     """
     return solve_kepler(mean_anomaly, ecc)
 

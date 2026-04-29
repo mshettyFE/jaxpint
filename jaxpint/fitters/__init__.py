@@ -43,8 +43,4 @@ __all__ = [
     "compute_time_residuals",
     "compute_wideband_design_matrix",
     "compute_wideband_residuals",
-    "gls_step_augmented",
-    "gls_step_fullcov",
-    "wls_step",
-    "_subtract_weighted_mean",
 ]
