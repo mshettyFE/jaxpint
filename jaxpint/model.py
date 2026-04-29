@@ -356,11 +356,8 @@ def _build_tzr_toa_data(toa_data: TOAData) -> TOAData:
 
     Uses the TZR fields stored on *toa_data*.  Fields not relevant to
     the TZR evaluation (e.g. observatory indices) are set to zeros.
+    Note: ``flag_masks`` is empty (TZR should have no jumps applied).
 
-    Note: ``flag_masks`` is empty and ``planet_positions`` is None.
-    This is correct for PhaseJump (TZR should have no jumps applied),
-    but means SolarSystemShapiroDelay with per-planet positions will
-    not contribute to the TZR phase.
     """
     one = jnp.ones(1)
     zero = jnp.zeros(1)
@@ -382,6 +379,14 @@ def _build_tzr_toa_data(toa_data: TOAData) -> TOAData:
         if toa_data.tzr_obs_sun_pos is not None
         else zero3
     )
+    # ``planet_positions`` is forwarded from ``toa_data.tzr_planet_positions``
+    # when populated by the bridge — required for SolarSystemShapiroDelay
+    # with PLANET_SHAPIRO Y to evaluate against the TZR.
+    planet_positions = (
+        {k: v[None, :] for k, v in toa_data.tzr_planet_positions.items()}
+        if toa_data.tzr_planet_positions is not None
+        else None
+    )
 
     return TOAData(
         mjd_int=tdb_int,
@@ -396,7 +401,7 @@ def _build_tzr_toa_data(toa_data: TOAData) -> TOAData:
         obs_sun_pos=obs_sun_pos,
         obs_indices=jnp.zeros(1, dtype=jnp.int32),
         flag_masks={},
-        planet_positions=None,
+        planet_positions=planet_positions,
         dm_values=None,
         dm_errors=None,
         tropo_alt=None,
@@ -410,4 +415,5 @@ def _build_tzr_toa_data(toa_data: TOAData) -> TOAData:
         tzr_freq=None,
         tzr_ssb_obs_pos=None,
         tzr_obs_sun_pos=None,
+        tzr_planet_positions=None,
     )

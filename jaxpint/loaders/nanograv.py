@@ -150,8 +150,16 @@ def load_nanograv_pta(
     bipm_version
         BIPM clock realisation passed to :func:`pint.toa.get_TOAs`.
     planets
-        If True, compute per-planet positions for Shapiro delay (required by
-        any model containing ``PLANET_SHAPIRO``).
+        Whether :func:`pint.toa.get_TOAs` should compute and cache
+        SSB-to-planet position vectors on the TOA table. These are
+        consumed by the ``PLANET_SHAPIRO`` delay component (Shapiro
+        delay through the gas giants). The bridge re-runs
+        :meth:`pint.toa.TOAs.compute_posvels` with ``planets=True`` for
+        any pulsar whose model has ``PLANET_SHAPIRO Y`` but is missing
+        the planet columns (see
+        :func:`jaxpint.bridge.pint_toas_to_jax`), so the default of
+        ``True`` is safe — passing ``False`` only defers the work into
+        the bridge, it cannot break PLANET_SHAPIRO evaluation.
 
     Returns
     -------

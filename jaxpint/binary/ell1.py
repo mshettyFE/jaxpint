@@ -26,6 +26,7 @@ from jaxpint.constants import SECS_PER_DAY, TSUN
 from jaxpint.binary.common import (
     compute_tt0,
     compute_orbital_phase,
+    ell1h_fourier_shapiro,
     get_sini_m2,
 )
 
@@ -94,6 +95,9 @@ class BinaryELL1(DelayComponent):
     Shapiro delay parameterization controlled by ``shapiro_mode``:
 
     - ``"standard"``: Uses ``SINI`` and ``M2`` directly.
+    - ``"h3stigma"``: Uses ``H3`` and ``STIGMA`` (derives sini, m2).
+    - ``"h3h4"``: Uses ``H3`` and ``H4`` (derives ``STIGMA = H4/H3``).
+    - ``"h3nharms"``: ELL1H with ``H3`` only — Freire-Wex 2010 Eq. 19
     - ``"none"``: No Shapiro delay.
     """
 
@@ -223,6 +227,9 @@ class BinaryELL1(DelayComponent):
         # --- Shapiro delay ---
         if self.shapiro_mode == "none":
             delay_shapiro = 0.0
+        elif self.shapiro_mode == "h3nharms":
+            h3 = params.param_value(self.h3_name)
+            delay_shapiro = ell1h_fourier_shapiro(h3, 0.0, Phi, self.nharms)
         else:
             TM2 = m2 * TSUN
             delay_shapiro = -2.0 * TM2 * jnp.log(1.0 - sini * jnp.sin(Phi))

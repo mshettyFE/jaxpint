@@ -427,13 +427,17 @@ def inject_and_build_config(
 def sweep_1d_logL(
     eval_fn: Callable[[Float[Array, ""]], Float[Array, ""]],
     grid: np.ndarray,
+    *,
+    jit_eval_fn: bool = True,
 ) -> np.ndarray:
     """Evaluate ``eval_fn`` on a 1D grid with JIT + vmap + warmup.
 
     The caller supplies ``eval_fn(x) -> scalar`` as a closure over the PTA
     state (global params, per-pulsar params, config, which param to vary).
     This helper just removes the JIT/vmap/warmup/``block_until_ready``
-    boilerplate.
+    boilerplate. NOTE: ensure that large constant blocks of data are passed as 
+    inputs to eval_fn and not by closure; This prevents the memory footprint from 
+    blowing up!
 
     Parameters
     ----------
@@ -441,30 +445,44 @@ def sweep_1d_logL(
         Scalar-in, scalar-out function suitable for ``jax.vmap``.
     grid : (N,) array
         Parameter values at which to evaluate ``eval_fn``.
+    jit_eval_fn : bool, default True
+        When ``True`` (default), wrap ``eval_fn`` in ``jax.jit(jax.vmap(...))``
+        for the standard fast path.  Set to ``False`` when ``eval_fn``
+        already handles its own JIT internally — e.g. it calls
+        :func:`jaxpint.pta.pta_logL_chunked`, which must not be wrapped
+        in an outer JIT.  In that case the grid is iterated in plain
+        Python and each cell is a single ``eval_fn(x)`` call.
 
     Returns
     -------
     (N,) numpy array of log-likelihood values.
     """
     grid_jax = jnp.asarray(grid)
+
+    if not jit_eval_fn:
+        return np.asarray([float(eval_fn(x)) for x in grid_jax])
+
     eval_vmap = jax.jit(jax.vmap(eval_fn))
     _ = eval_vmap(grid_jax[:2]).block_until_ready()
     return np.asarray(eval_vmap(grid_jax))
 
 
 def sweep_2d_logL(
-    eval_fn: Callable[[Float[Array, ""], Float[Array, ""]], Float[Array, ""]],
+    eval_fn: Callable[..., Float[Array, ""]],
     grid_x: np.ndarray,
     grid_y: np.ndarray,
     *,
     chunk_rows: Optional[int] = None,
+    extra_args: tuple = (),
+    jit_eval_fn: bool = True,
 ) -> np.ndarray:
-    """Evaluate ``eval_fn(x, y)`` on a 2D grid, returned with shape ``(n_y, n_x)``.
+    """Evaluate ``eval_fn(x, y, *extra_args)`` on a 2D grid, returned with shape ``(n_y, n_x)``.
 
     Parameters
     ----------
     eval_fn : callable
-        Takes two scalar JAX arguments and returns a scalar.
+        Takes two scalar JAX arguments plus zero or more extras and
+        returns a scalar.
     grid_x, grid_y : arrays
         Grid values along each axis.
     chunk_rows : int or None
@@ -473,6 +491,24 @@ def sweep_2d_logL(
         ``grid_y`` at a time to bound peak memory. Set to ``1`` for the
         most memory-conservative sweep (equivalent to the inner-loop pattern
         used by the pulsar0-vs-pulsar1 contour notebook).
+        Ignored when ``jit_eval_fn=False`` (the plain-Python path always
+        evaluates one ``(x, y)`` cell at a time).
+    extra_args : tuple, optional
+        Additional positional arguments threaded through to ``eval_fn``
+        after the two scalar grid coordinates, broadcast (not mapped) by
+        the inner/outer ``vmap``. Use this to pass containers like
+        ``PTAConfig`` that hold large JAX arrays — passing them here
+        means equinox flattens their dynamic fields into traced JIT
+        leaves rather than letting closure capture bake them into the
+        HLO as compile-time constants.
+    jit_eval_fn : bool, default True
+        When ``True`` (default), wrap ``eval_fn`` in
+        ``jax.jit(jax.vmap(jax.vmap(...)))`` for the standard fast path.
+        Set to ``False`` when ``eval_fn`` already handles its own JIT
+        internally — e.g. it calls :func:`jaxpint.pta.pta_logL_chunked`,
+        which must not be wrapped in an outer JIT.  In that case the
+        grid is iterated cell-by-cell in plain Python; per-cell cost is
+        higher but peak memory is bounded by ``eval_fn``'s own chunking.
 
     Returns
     -------
@@ -482,40 +518,51 @@ def sweep_2d_logL(
     grid_y_jax = jnp.asarray(grid_y)
     n_x = grid_x_jax.shape[0]
     n_y = grid_y_jax.shape[0]
+    extra_in_axes = (None,) * len(extra_args)
+
+    if not jit_eval_fn:
+        out = np.empty((n_y, n_x), dtype=np.float64)
+        for j in range(n_y):
+            y = grid_y_jax[j]
+            for i in range(n_x):
+                out[j, i] = float(eval_fn(grid_x_jax[i], y, *extra_args))
+        return out
 
     if chunk_rows is None:
         eval_grid = jax.jit(
             jax.vmap(
-                jax.vmap(eval_fn, in_axes=(0, None)),
-                in_axes=(None, 0),
+                jax.vmap(eval_fn, in_axes=(0, None) + extra_in_axes),
+                in_axes=(None, 0) + extra_in_axes,
             )
         )
-        _ = eval_grid(grid_x_jax[:2], grid_y_jax[:2]).block_until_ready()
-        return np.asarray(eval_grid(grid_x_jax, grid_y_jax))
+        _ = eval_grid(grid_x_jax[:2], grid_y_jax[:2], *extra_args).block_until_ready()
+        return np.asarray(eval_grid(grid_x_jax, grid_y_jax, *extra_args))
 
     if chunk_rows <= 0:
         raise ValueError(f"chunk_rows must be positive, got {chunk_rows}")
 
     if chunk_rows == 1:
-        eval_row = jax.jit(jax.vmap(eval_fn, in_axes=(0, None)))
-        _ = eval_row(grid_x_jax[:2], grid_y_jax[0]).block_until_ready()
+        eval_row = jax.jit(jax.vmap(eval_fn, in_axes=(0, None) + extra_in_axes))
+        _ = eval_row(grid_x_jax[:2], grid_y_jax[0], *extra_args).block_until_ready()
         out = np.empty((n_y, n_x), dtype=np.float64)
         for j in range(n_y):
-            out[j, :] = np.asarray(eval_row(grid_x_jax, grid_y_jax[j]).block_until_ready())
+            out[j, :] = np.asarray(
+                eval_row(grid_x_jax, grid_y_jax[j], *extra_args).block_until_ready()
+            )
         return out
 
     eval_chunk = jax.jit(
         jax.vmap(
-            jax.vmap(eval_fn, in_axes=(0, None)),
-            in_axes=(None, 0),
+            jax.vmap(eval_fn, in_axes=(0, None) + extra_in_axes),
+            in_axes=(None, 0) + extra_in_axes,
         )
     )
-    _ = eval_chunk(grid_x_jax[:2], grid_y_jax[:2]).block_until_ready()
+    _ = eval_chunk(grid_x_jax[:2], grid_y_jax[:2], *extra_args).block_until_ready()
     out = np.empty((n_y, n_x), dtype=np.float64)
     for start in range(0, n_y, chunk_rows):
         stop = min(start + chunk_rows, n_y)
         out[start:stop, :] = np.asarray(
-            eval_chunk(grid_x_jax, grid_y_jax[start:stop]).block_until_ready()
+            eval_chunk(grid_x_jax, grid_y_jax[start:stop], *extra_args).block_until_ready()
         )
     return out
 

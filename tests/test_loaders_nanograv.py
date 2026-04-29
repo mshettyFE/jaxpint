@@ -91,6 +91,325 @@ def test_load_nanograv_pta_pulsar_names_and_exclude(tmp_path):
         load_nanograv_pta(tmp_path, exclude=["B1855+09"], planets=False)
 
 
+def test_load_nanograv_pta_planet_shapiro(tmp_path):
+    """Real par files often set PLANET_SHAPIRO Y; the bridge must populate
+    planet positions so SolarSystemShapiroDelay's runtime check doesn't trip."""
+    import jax.numpy as jnp
+    from jaxpint import single_pulsar_logL
+
+    par_src, tim_src = _example_par_tim()
+    psr_dir = tmp_path / "B1855+09"
+    psr_dir.mkdir(parents=True)
+    par_dst = psr_dir / par_src.name
+    shutil.copy2(tim_src, psr_dir / tim_src.name)
+
+    # Force PLANET_SHAPIRO Y. The bundled par file has "PLANET_SHAPIRO N";
+    # rewrite that line, or append the directive if absent.
+    par_text = par_src.read_text()
+    if "PLANET_SHAPIRO" in par_text:
+        par_text = "\n".join(
+            "PLANET_SHAPIRO Y" if line.strip().startswith("PLANET_SHAPIRO") else line
+            for line in par_text.splitlines()
+        ) + "\n"
+    else:
+        par_text += "PLANET_SHAPIRO Y\n"
+    par_dst.write_text(par_text)
+
+    psrs = load_nanograv_pta(tmp_path)
+
+    assert psrs.toa_data_list[0].planet_positions is not None
+    # Likelihood evaluation should now succeed instead of raising
+    # "planet_shapiro=True but toa_data.planet_positions is None".
+    logL = single_pulsar_logL(
+        psrs.toa_data_list[0],
+        psrs.timing_models[0],
+        psrs.noise_models[0],
+        psrs.pulsar_params_list[0],
+    )
+    assert jnp.isfinite(logL)
+
+
+def test_load_nanograv_pta_synthesizes_tnredamp_from_rnamp(tmp_path):
+    """NANOGrav 15-yr par files specify red noise via tempo2-style RNAMP/RNIDX
+    only; the bridge must synthesize TNREDAMP/TNREDGAM (the names PLRedNoise
+    reads) using PINT's conversion. Mirror that situation by stripping the
+    bundled par file's TNRedAmp/TNRedGam/TNRedC lines."""
+    import math
+    import jax.numpy as jnp
+    from jaxpint import single_pulsar_logL
+
+    par_src, tim_src = _example_par_tim()
+    psr_dir = tmp_path / "B1855+09"
+    psr_dir.mkdir(parents=True)
+    shutil.copy2(tim_src, psr_dir / tim_src.name)
+
+    par_text = par_src.read_text()
+    stripped = "\n".join(
+        line for line in par_text.splitlines()
+        if not line.strip().startswith(("TNRedAmp", "TNRedGam", "TNRedC"))
+    ) + "\n"
+    assert "RNAMP" in stripped and "RNIDX" in stripped
+    assert "TNRedAmp" not in stripped
+    (psr_dir / par_src.name).write_text(stripped)
+
+    psrs = load_nanograv_pta(tmp_path, planets=False)
+    params = psrs.pulsar_params_list[0]
+
+    assert "TNREDAMP" in params.names
+    assert "TNREDGAM" in params.names
+    assert params.names.count("TNREDAMP") == 1
+    assert params.names.count("TNREDGAM") == 1
+
+    # Bundled par values: RNAMP=0.017173, RNIDX=-4.91353.
+    fac = (86400.0 * 365.24 * 1e6) / (2.0 * math.pi * math.sqrt(3.0))
+    expected_tnredamp = math.log10(0.017173 / fac)
+    expected_tnredgam = 4.91353
+    got_tnredamp = float(params.values[params.names.index("TNREDAMP")])
+    got_tnredgam = float(params.values[params.names.index("TNREDGAM")])
+    assert abs(got_tnredamp - expected_tnredamp) < 1e-5
+    assert abs(got_tnredgam - expected_tnredgam) < 1e-10
+
+    # Smoke test: prior bug raised KeyError("TNREDAMP") here.
+    logL = single_pulsar_logL(
+        psrs.toa_data_list[0],
+        psrs.timing_models[0],
+        psrs.noise_models[0],
+        params,
+    )
+    assert jnp.isfinite(logL)
+
+
+def test_load_nanograv_pta_does_not_synthesize_when_tnredamp_set(tmp_path):
+    """The unmodified bundled par file has TNRedAmp populated. Synthesis must
+    not fire — TNREDAMP appears once (from the normal extraction path), not
+    twice."""
+    _stage_per_pulsar_layout(tmp_path)
+
+    psrs = load_nanograv_pta(tmp_path, planets=False)
+    params = psrs.pulsar_params_list[0]
+
+    assert params.names.count("TNREDAMP") == 1
+    assert params.names.count("TNREDGAM") == 1
+
+
+class _FakeParam:
+    """Minimal stand-in for a PINT parameter object — only ``value`` and
+    ``frozen`` are read by the alias synthesis functions."""
+
+    def __init__(self, value, frozen=True):
+        self.value = value
+        self.frozen = frozen
+
+
+class _FakeModel:
+    """Bag of attributes; ``getattr(model, name, None)`` returns the param
+    or ``None``. Mirrors how ``synthesize_*`` reads PINT models."""
+
+    def __init__(self, **params):
+        for k, v in params.items():
+            setattr(self, k, v)
+
+
+def test_synthesize_pb_from_fb0():
+    """FB0 only → PB synthesized as 1 / (FB0 * 86400) days."""
+    from jaxpint.bridge._aliases import synthesize_pb_from_fb
+
+    fb0_hz = 8.3387216e-5  # J0023+0923 value
+    model = _FakeModel(FB0=_FakeParam(fb0_hz, frozen=False))
+    names, values, units, frozen = [], [], [], []
+    synthesize_pb_from_fb(model, names, values, units, frozen)
+
+    assert names == ["PB"]
+    assert abs(values[0] - 1.0 / (fb0_hz * 86400.0)) < 1e-15
+    assert units == ["d"]
+    assert frozen == [False]
+
+
+def test_synthesize_pbdot_from_fb1():
+    """FB0 and FB1 set → both PB and PBDOT synthesized."""
+    from jaxpint.bridge._aliases import synthesize_pb_from_fb
+
+    fb0_hz = 8.3387216e-5
+    fb1 = 3.6553667e-20
+    model = _FakeModel(
+        FB0=_FakeParam(fb0_hz, frozen=False),
+        FB1=_FakeParam(fb1, frozen=True),
+    )
+    names, values, units, frozen = [], [], [], []
+    synthesize_pb_from_fb(model, names, values, units, frozen)
+
+    assert names == ["PB", "PBDOT"]
+    assert abs(values[0] - 1.0 / (fb0_hz * 86400.0)) < 1e-15
+    assert abs(values[1] - (-fb1 / (fb0_hz * fb0_hz))) < 1e-25
+    assert units == ["d", "s / s"]
+    assert frozen == [False, True]
+
+
+def test_synthesize_pb_skips_when_pb_set():
+    """If PB is already set, synthesis must not fire (would otherwise
+    duplicate PB in the parameter vector)."""
+    from jaxpint.bridge._aliases import synthesize_pb_from_fb
+
+    model = _FakeModel(
+        FB0=_FakeParam(8.3387216e-5),
+        PB=_FakeParam(0.139),  # days
+    )
+    names, values, units, frozen = [], [], [], []
+    synthesize_pb_from_fb(model, names, values, units, frozen)
+
+    assert names == []
+    assert values == []
+
+
+def test_synthesize_pbdot_skips_when_pbdot_set():
+    """PB synthesized, but PBDOT already set → don't overwrite."""
+    from jaxpint.bridge._aliases import synthesize_pb_from_fb
+
+    model = _FakeModel(
+        FB0=_FakeParam(8.3387216e-5),
+        FB1=_FakeParam(3.6553667e-20),
+        PBDOT=_FakeParam(1e-12),
+    )
+    names, values, units, frozen = [], [], [], []
+    synthesize_pb_from_fb(model, names, values, units, frozen)
+
+    assert names == ["PB"]
+
+
+def test_synthesize_pb_noop_without_fb0():
+    """No FB0 → no synthesis, regardless of other state."""
+    from jaxpint.bridge._aliases import synthesize_pb_from_fb
+
+    model = _FakeModel()
+    names, values, units, frozen = [], [], [], []
+    synthesize_pb_from_fb(model, names, values, units, frozen)
+
+    assert names == []
+
+
+def _ell1h_par_result(*, h3=False, h4=False, stigma=False, nharms=None):
+    """Minimal ParResult for the ELL1H branch of ``_build_binary``. Includes
+    only the orbital params the ELL1H builder reads — H3/H4/STIGMA are
+    appended only when the matching kwarg is set."""
+    import jax.numpy as jnp
+    from jaxpint.bridge._param_builder import ParResult
+    from jaxpint.bridge._registry import BinaryModel
+    from jaxpint.types import ParameterVector
+
+    names = ["PB", "TASC", "A1", "EPS1", "EPS2"]
+    values = [0.7, 58314.0, 3.7, 2.6e-6, 2.1e-6]
+    if h3:
+        names.append("H3"); values.append(1.0e-7)
+    if h4:
+        names.append("H4"); values.append(0.5e-7)
+    if stigma:
+        names.append("STIGMA"); values.append(0.3)
+    int_params = {"NHARMS": nharms} if nharms is not None else {}
+    return ParResult(
+        params=ParameterVector(
+            values=jnp.asarray(values),
+            frozen_mask=tuple(False for _ in names),
+            names=tuple(names),
+            units=tuple("" for _ in names),
+            epoch_int_values={},
+        ),
+        binary_model=BinaryModel.ELL1H,
+        int_params=int_params,
+    )
+
+
+def test_ell1h_no_shapiro_params_uses_none_mode():
+    """ELL1H par with no H3/H4/STIGMA must produce shapiro_mode='none' so
+    the binary model never tries to read an absent H3 at logL time. Mirrors
+    NANOGrav 15-yr J1802-2124 (BINARY ELL1H, NHARMS only)."""
+    from jaxpint.bridge._model_builder import _build_binary
+
+    binary = _build_binary(_ell1h_par_result(), astro_info={})
+    assert binary.shapiro_mode == "none"
+    assert binary.h3_name is None
+    assert binary.stigma_name is None
+    assert binary.h4_name is None
+
+
+def test_ell1h_with_h3_only_uses_h3nharms():
+    """H3 set but H4/STIGMA absent → Freire-Wex 2010 H3-only Fourier mode.
+    Mirrors NANOGrav 15-yr J2145-0750 and J2317+1439 (BINARY ELL1H, H3 set,
+    no STIGMA/H4)."""
+    from jaxpint.bridge._model_builder import _build_binary
+
+    binary = _build_binary(_ell1h_par_result(h3=True, nharms=3), astro_info={})
+    assert binary.shapiro_mode == "h3nharms"
+    assert binary.h3_name == "H3"
+    assert binary.nharms == 3
+
+
+def test_ell1h_h3_only_default_nharms_is_seven():
+    """Without NHARMS in int_params, the bridge falls back to 7 (PINT default)."""
+    from jaxpint.bridge._model_builder import _build_binary
+
+    binary = _build_binary(_ell1h_par_result(h3=True), astro_info={})
+    assert binary.nharms == 7
+
+
+def test_ell1h_with_h3_h4_uses_h3h4():
+    from jaxpint.bridge._model_builder import _build_binary
+
+    binary = _build_binary(_ell1h_par_result(h3=True, h4=True), astro_info={})
+    assert binary.shapiro_mode == "h3h4"
+    assert binary.h4_name == "H4"
+
+
+def test_ell1h_with_stigma_uses_h3stigma():
+    from jaxpint.bridge._model_builder import _build_binary
+
+    binary = _build_binary(_ell1h_par_result(h3=True, stigma=True), astro_info={})
+    assert binary.shapiro_mode == "h3stigma"
+    assert binary.stigma_name == "STIGMA"
+
+
+@pytest.mark.parametrize("stigma", [0.0, 0.3])
+@pytest.mark.parametrize("nharms", [3, 7])
+def test_ell1h_fourier_shapiro_matches_pint(stigma, nharms):
+    """JaxPINT's ``ell1h_fourier_shapiro`` must agree with PINT's
+    ``ELL1H_shapiro_delay_fourier_harms`` (Freire & Wex 2010 Eq. 19) at
+    machine precision. stigma=0 collapses the series to a single k=3
+    term; stigma=0.3 exercises every harmonic up through ``nharms``."""
+    import numpy as np
+    import jax.numpy as jnp
+    from pint.models.stand_alone_psr_binaries.ELL1H_model import ELL1Hmodel
+
+    from jaxpint.binary.common import ell1h_fourier_shapiro
+
+    h3 = 1.0e-7
+    phi = np.linspace(0.0, 2.0 * np.pi, 50, endpoint=False)
+
+    pint_model = ELL1Hmodel()
+    selected_harms = np.arange(3, nharms + 1)
+    pint_sum = pint_model.ELL1H_shapiro_delay_fourier_harms(
+        selected_harms, phi, stigma, factor_out_power=3
+    )
+    pint_delay = -2.0 * h3 * pint_sum
+
+    jax_delay = ell1h_fourier_shapiro(h3, stigma, jnp.asarray(phi), nharms)
+    np.testing.assert_allclose(np.asarray(jax_delay), pint_delay, atol=1e-20, rtol=1e-12)
+
+
+def test_ell1h_fourier_shapiro_h3_only_collapses_to_k3_term():
+    """For stigma=0 every k>3 term carries stigma**(k-3) = 0, so the sum
+    must reduce to ``-(4/3) * H3 * sin(3*Φ)`` regardless of NHARMS."""
+    import numpy as np
+    import jax.numpy as jnp
+
+    from jaxpint.binary.common import ell1h_fourier_shapiro
+
+    h3 = 1.0e-7
+    phi = jnp.linspace(0.0, 2.0 * np.pi, 25, endpoint=False)
+    expected = -(4.0 / 3.0) * h3 * jnp.sin(3.0 * phi)
+    for nharms in (3, 5, 7, 12):
+        got = ell1h_fourier_shapiro(h3, 0.0, phi, nharms)
+        np.testing.assert_allclose(np.asarray(got), np.asarray(expected), atol=1e-20, rtol=1e-12)
+
+
 def test_load_nanograv_pta_missing_dir(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_nanograv_pta(tmp_path / "does-not-exist")

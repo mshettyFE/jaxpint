@@ -154,16 +154,20 @@ def _build_binary(par: ParResult, astro_info: dict) -> object:
             shapiro_mode = "h3stigma"
         elif _param_is_set(par, "H4"):
             shapiro_mode = "h3h4"
+        elif _param_is_set(par, "H3"):
+            shapiro_mode = "h3nharms"
         else:
-            shapiro_mode = "h3stigma"
+            shapiro_mode = "none"
+        nharms = par.int_params.get("NHARMS", 7)
         return BinaryELL1(
             **_ell1_common_kwargs(par),
             eps1dot_name=_opt_name(par, "EPS1DOT"),
             eps2dot_name=_opt_name(par, "EPS2DOT"),
-            h3_name="H3",
+            h3_name=_opt_name(par, "H3"),
             stigma_name=_opt_name(par, "STIGMA"),
             h4_name=_opt_name(par, "H4"),
             shapiro_mode=shapiro_mode,
+            nharms=nharms,
         )
 
     elif bname is BinaryModel.ELL1k:
