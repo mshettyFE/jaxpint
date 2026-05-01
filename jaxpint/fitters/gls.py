@@ -262,7 +262,8 @@ def _gls_iteration_core(
     """JIT-compiled core of one GLS Gauss-Newton iteration.
 
     Returns updated parameter values, covariance, and noise realizations.
-    """
+
+   """
     free_indices = params.free_indices_array()
 
     if noise_model is not None:
@@ -277,12 +278,6 @@ def _gls_iteration_core(
     n_basis = U.shape[1]
 
     time_resid = compute_time_residuals(model, toa_data, params)
-    if n_basis > 0:
-        time_resid = _subtract_gls_weighted_mean(
-            time_resid, Ndiag, U, Phidiag
-        )
-    else:
-        time_resid = _subtract_weighted_mean(time_resid, sigma)
 
     def time_resid_fn(all_values: Float[Array, " n_params"]):
         p = eqx.tree_at(lambda pv: pv.values, params, all_values)
@@ -290,6 +285,12 @@ def _gls_iteration_core(
 
     J = jax.jacobian(time_resid_fn)(params.values)
     M = -J[:, free_indices]
+
+    # Force constant column if not included. Same as PINT
+    include_offset = model.phoff_name is None
+    if include_offset:
+        offset_col = jnp.ones((M.shape[0], 1), dtype=M.dtype)
+        M = jnp.concatenate([offset_col, M], axis=1)
 
     noise_realizations = jnp.zeros(0)
     if full_cov:
@@ -307,8 +308,14 @@ def _gls_iteration_core(
             time_resid, sigma, M, threshold
         )
 
+    if include_offset:
+        param_updates = dpars[1:]
+        covariance = covariance[1:, 1:]
+    else:
+        param_updates = dpars
+
     new_values = params.values.at[free_indices].set(
-        params.values[free_indices] + dpars
+        params.values[free_indices] + param_updates
     )
     return new_values, covariance, noise_realizations
 
@@ -396,7 +403,12 @@ class GLSFitter(BaseFitter):
         covariance: Float[Array, "n_free n_free"],
         noise_realizations: Optional[Float[Array, " n_basis"]],
     ) -> GLSFitResult:
-        """Compute final residuals/chi2 and return a result object."""
+        """Compute final residuals/chi2 and return a result object.
+
+        Final residuals are still mean-subtracted (matches PINT's
+        ``Residuals(subtract_mean=True)`` default).  The dof count
+        subtracts one for the implicit Offset column when applicable.
+        """
         sigma, Ndiag, U, Phidiag = self._get_noise(params)
         n_basis = U.shape[1]
 
@@ -415,7 +427,8 @@ class GLSFitter(BaseFitter):
         else:
             chi2_val = float(compute_chi2(final_resid, sigma))
 
-        dof = self.toa_data.n_toas - params.n_free
+        n_offset = 0 if self.model.phoff_name is not None else 1
+        dof = self.toa_data.n_toas - params.n_free - n_offset
 
         errors, correlation = self._covariance_to_correlation(covariance)
         reduced_chi2 = self._reduced_chi2(chi2_val, dof)

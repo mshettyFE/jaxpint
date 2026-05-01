@@ -62,14 +62,38 @@ def compute_wideband_design_matrix(
     model: TimingModel,
     toa_data: TOAData,
     params: ParameterVector,
-) -> Float[Array, "n2_toas n_free"]:
-    """Build the wideband design matrix via autodiff, shape ``(2N, n_free)``.
+    include_offset: bool = True,
+) -> Float[Array, "n2_toas n_cols"]:
+    """Build the wideband design matrix via autodiff.
 
     Uses ``jax.jacobian`` of the combined ``[time_resid; dm_resid]``
     vector w.r.t. all parameters, then extracts free columns.
     Negated per PINT convention.
+
+    Parameters
+    ----------
+    include_offset : bool, optional
+        If True (default, matches PINT's ``incoffset=True``), prepend an
+        Offset column whose entries are 1 in the time-residual half
+        (rows ``[0, n_toas)``) and 0 in the DM-residual half (rows
+        ``[n_toas, 2*n_toas)``).  This mirrors PINT's
+        ``wideband_designmatrix``.
+
+    Returns
+    -------
+    M : jax.Array
+        Negated Jacobian, shape ``(2*n_toas, n_free + 1)`` when offset is
+        included (Offset column first), else ``(2*n_toas, n_free)``.
     """
+    if model.phoff_name is not None:
+        include_offset = False
     J, M = _compute_wideband_jacobian_and_design(model, toa_data, params)
+    if include_offset:
+        n = toa_data.n_toas
+        offset_col = jnp.concatenate(
+            [jnp.ones(n, dtype=M.dtype), jnp.zeros(n, dtype=M.dtype)]
+        )[:, None]
+        M = jnp.concatenate([offset_col, M], axis=1)
     return M
 
 
@@ -131,17 +155,9 @@ def _wideband_iteration_core(
     Phidiag = Phi_toa
     n_basis = U.shape[1]
 
-    # Residuals
+    # Residuals 
     time_resid = compute_time_residuals(model, toa_data, params)
     dm_resid = compute_dm_residuals(model, toa_data, params)
-
-    if n_basis > 0:
-        time_resid = _subtract_gls_weighted_mean(
-            time_resid, Ndiag_toa, U_toa, Phidiag
-        )
-    else:
-        time_resid = _subtract_weighted_mean(time_resid, sigma_toa)
-
     residuals = jnp.concatenate([time_resid, dm_resid])
 
     # Design matrix
@@ -151,6 +167,16 @@ def _wideband_iteration_core(
 
     J = jax.jacobian(combined_resid_fn)(params.values)
     M = -J[:, free_indices]
+
+    include_offset = model.phoff_name is None
+    if include_offset:
+        # Offset column: 1 for time rows, 0 for DM rows.  Mirrors PINT's
+        # wideband_designmatrix: dm_designmatrix sets the Offset column to
+        # zero, while designmatrix sets it to one.
+        offset_col = jnp.concatenate(
+            [jnp.ones(n, dtype=M.dtype), jnp.zeros(n, dtype=M.dtype)]
+        )[:, None]
+        M = jnp.concatenate([offset_col, M], axis=1)
 
     # Solve
     noise_realizations = jnp.zeros(0)
@@ -170,8 +196,14 @@ def _wideband_iteration_core(
             residuals, sigma_combined, M, threshold
         )
 
+    if include_offset:
+        param_updates = dpars[1:]
+        covariance = covariance[1:, 1:]
+    else:
+        param_updates = dpars
+
     new_values = params.values.at[free_indices].set(
-        params.values[free_indices] + dpars
+        params.values[free_indices] + param_updates
     )
     return new_values, covariance, noise_realizations
 
@@ -290,7 +322,8 @@ class WidebandGLSFitter(BaseFitter):
             sigma_combined = jnp.sqrt(Ndiag)
             chi2_val = float(compute_chi2(residuals, sigma_combined))
 
-        dof = 2 * n - params.n_free
+        n_offset = 0 if self.model.phoff_name is not None else 1
+        dof = 2 * n - params.n_free - n_offset
 
         errors, correlation = self._covariance_to_correlation(covariance)
         reduced_chi2 = self._reduced_chi2(chi2_val, dof)
