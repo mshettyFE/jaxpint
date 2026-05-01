@@ -180,7 +180,8 @@ def compute_design_matrix(
     model: TimingModel,
     toa_data: TOAData,
     params: ParameterVector,
-) -> Float[Array, "n_toas n_free"]:
+    include_offset: bool = True,
+) -> Float[Array, "n_toas n_cols"]:
     """Build the design matrix via autodiff.
 
     Computes ``jax.jacobian`` of time residuals w.r.t. all parameter
@@ -199,13 +200,29 @@ def compute_design_matrix(
     params : ParameterVector
         Current parameter values. The ``frozen_mask`` attribute determines
         which columns (free parameters) appear in the output.
+    include_offset : bool, optional
+        If True (default, matches PINT's ``incoffset=True``), prepend a
+        column of ones representing the constant-residual degree of
+        freedom that absolute-phase ambiguity always introduces.  This
+        column is mathematically necessary for any WLS-style downstream
+        use (fitting, sensitivity-curve construction, marginalization).
+        Auto-suppressed to False if the model already contains an
+        explicit ``PhaseOffset`` component (``model.phoff_name is not
+        None``); see ``PINT/src/pint/models/timing_model.py:2404``.
 
     Returns
     -------
-    M : jax.Array, shape (n_toas, n_free)
-        Negated Jacobian of time residuals with respect to free parameters.
+    M : jax.Array
+        Negated Jacobian of time residuals with respect to free parameters,
+        with shape ``(n_toas, n_free + 1)`` if the offset column is included
+        (Offset column first), else ``(n_toas, n_free)``.
     """
+    if model.phoff_name is not None:
+        include_offset = False
     J, M = _compute_jacobian_and_design(model, toa_data, params)
+    if include_offset:
+        offset_col = jnp.ones((M.shape[0], 1), dtype=M.dtype)
+        M = jnp.concatenate([offset_col, M], axis=1)
     return M
 
 

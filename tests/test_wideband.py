@@ -294,10 +294,25 @@ class TestWidebandDesignMatrix:
 
     @pytest.mark.slow
     def test_shape(self, jax_wb, pint_wb):
+        """Default ``include_offset=True`` adds one Offset column.
+
+        Offset column is ``[1, ..., 1, 0, ..., 0]`` — ones for the
+        time-residual block, zeros for the DM-residual block, mirroring
+        PINT's wideband design-matrix convention.
+        """
         jax_model, toa_data, params, _ = jax_wb
         _, toas = pint_wb
+        n = toas.ntoas
         M = compute_wideband_design_matrix(jax_model, toa_data, params)
-        assert M.shape == (2 * toas.ntoas, params.n_free)
+        assert M.shape == (2 * n, params.n_free + 1)
+        # Offset column structure
+        np.testing.assert_array_equal(np.array(M[:n, 0]), 1.0)
+        np.testing.assert_array_equal(np.array(M[n:, 0]), 0.0)
+        # Without offset
+        M_no = compute_wideband_design_matrix(
+            jax_model, toa_data, params, include_offset=False
+        )
+        assert M_no.shape == (2 * n, params.n_free)
 
     @pytest.mark.slow
     def test_no_nan(self, jax_wb):
@@ -482,12 +497,17 @@ class TestWidebandGLSFitter:
 
     @pytest.mark.slow
     def test_dof_correct(self, jax_wb):
+        """``dof`` accounts for the implicit Offset column.
+
+        Same off-by-one as the narrowband case: ``2N - n_free - 1`` when
+        the model has no explicit ``PhaseOffset`` component.
+        """
         jax_model, toa_data, params, noise_model = jax_wb
         fitter = WidebandGLSFitter(
             jax_model, toa_data, params, noise_model=noise_model
         )
         result = fitter.fit_toas(maxiter=1)
-        expected_dof = 2 * toa_data.n_toas - params.n_free
+        expected_dof = 2 * toa_data.n_toas - params.n_free - 1
         assert result.dof == expected_dof
 
     @pytest.mark.slow

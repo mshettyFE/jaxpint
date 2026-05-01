@@ -124,9 +124,23 @@ class TestDesignMatrix:
     """Design matrix shape and properties."""
 
     def test_shape(self, jax_objects):
+        """Default ``include_offset=True`` adds one Offset column (matches PINT).
+
+        Test both shapes to lock in the API.
+        """
         jax_model, toa_data, params = jax_objects
         M = compute_design_matrix(jax_model, toa_data, params)
-        assert M.shape == (toa_data.n_toas, params.n_free)
+        assert M.shape == (toa_data.n_toas, params.n_free + 1)
+        M_no_offset = compute_design_matrix(
+            jax_model, toa_data, params, include_offset=False
+        )
+        assert M_no_offset.shape == (toa_data.n_toas, params.n_free)
+        # Offset column is the first column and must be ones.
+        np.testing.assert_array_equal(np.array(M[:, 0]), 1.0)
+        # The remaining columns equal the no-offset matrix.
+        np.testing.assert_allclose(
+            np.array(M[:, 1:]), np.array(M_no_offset), rtol=0, atol=0
+        )
 
     def test_no_nan(self, jax_objects):
         jax_model, toa_data, params = jax_objects
@@ -148,10 +162,7 @@ class TestSyntheticFit:
     def test_chi2_matches(self, pint_fit, jax_fit):
         pint_chi2 = pint_fit.resids.chi2
         jax_chi2 = jax_fit.chi2
-        # rtol=0.03: JaxPINT's int/frac Horner uses a different (more precise)
-        # numerical path than PINT's longdouble taylor_horner, producing
-        # small residual differences that accumulate into chi2.
-        np.testing.assert_allclose(jax_chi2, pint_chi2, rtol=0.03)
+        np.testing.assert_allclose(jax_chi2, pint_chi2, rtol=1e-3)
 
     @pytest.mark.slow
     def test_f0_matches(self, pint_fit, jax_fit):
@@ -194,10 +205,16 @@ class TestSyntheticFit:
 
     @pytest.mark.slow
     def test_dof(self, synthetic_data, jax_fit):
+        """``dof`` accounts for the implicit Offset column.
+
+        When the model has no explicit ``PhaseOffset`` component, the
+        constant-residual DOF is absorbed by the Offset column added to M,
+        so ``dof = n_toas - n_free - 1`` (matches PINT's accounting).
+        """
         _, toas = synthetic_data
         n_toas = len(toas)
         n_free = jax_fit.params.n_free
-        assert jax_fit.dof == n_toas - n_free
+        assert jax_fit.dof == n_toas - n_free - 1
 
     @pytest.mark.slow
     def test_reduced_chi2_reasonable(self, jax_fit):
@@ -252,7 +269,7 @@ class TestNGC6440E:
         jax_model, _noise = build_timing_model(pint_model)
 
         M = compute_design_matrix(jax_model, toa_data, params)
-        assert M.shape == (toa_data.n_toas, params.n_free)
+        assert M.shape == (toa_data.n_toas, params.n_free + 1)
         assert not jnp.any(jnp.isnan(M))
 
 

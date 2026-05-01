@@ -38,7 +38,8 @@ def _wls_iteration_core(
 ) -> tuple[Float[Array, " n_params"], Float[Array, "n_free n_free"]]:
     """JIT-compiled core of one WLS Gauss-Newton iteration.
 
-    Returns updated parameter values and covariance matrix.
+    Returns updated parameter values and the covariance matrix for the
+    timing parameters (offset row/column stripped).
     """
     free_indices = params.free_indices_array()
 
@@ -48,7 +49,6 @@ def _wls_iteration_core(
         sigma = toa_data.error
 
     time_resid = compute_time_residuals(model, toa_data, params)
-    time_resid = _subtract_weighted_mean(time_resid, sigma)
 
     def time_resid_fn(all_values: Float[Array, " n_params"]):
         p = eqx.tree_at(lambda pv: pv.values, params, all_values)
@@ -57,10 +57,22 @@ def _wls_iteration_core(
     J = jax.jacobian(time_resid_fn)(params.values)
     M = -J[:, free_indices]
 
+    include_offset = model.phoff_name is None
+    if include_offset:
+        offset_col = jnp.ones((M.shape[0], 1), dtype=M.dtype)
+        M = jnp.concatenate([offset_col, M], axis=1)
+
     dpars, covariance, _norms = wls_step(time_resid, sigma, M, threshold)
 
+    if include_offset:
+        # First column is the synthetic Offset; discard its solve.
+        param_updates = dpars[1:]
+        covariance = covariance[1:, 1:]
+    else:
+        param_updates = dpars
+
     new_values = params.values.at[free_indices].set(
-        params.values[free_indices] + dpars
+        params.values[free_indices] + param_updates
     )
     return new_values, covariance
 
@@ -120,7 +132,13 @@ class WLSFitter(BaseFitter):
         params: ParameterVector,
         covariance: Float[Array, "n_free n_free"],
     ) -> WLSFitResult:
-        """Compute final residuals/chi2 and return a result object."""
+        """Compute final residuals/chi2 and return a result object.
+
+        Final residuals are still mean-subtracted (matches PINT's
+        ``Residuals(subtract_mean=True)`` default) so that reported chi^2
+        is invariant to the implicit constant DOF.  The dof count subtracts
+        one for the Offset column when applicable (matches PINT).
+        """
         sigma = self._get_sigma(params)
 
         final_resid = compute_time_residuals(
@@ -128,7 +146,9 @@ class WLSFitter(BaseFitter):
         )
         final_resid = _subtract_weighted_mean(final_resid, sigma)
         chi2_val = float(compute_chi2(final_resid, sigma))
-        dof = self.toa_data.n_toas - params.n_free
+
+        n_offset = 0 if self.model.phoff_name is not None else 1
+        dof = self.toa_data.n_toas - params.n_free - n_offset
 
         errors, correlation = self._covariance_to_correlation(covariance)
         reduced_chi2 = self._reduced_chi2(chi2_val, dof)
