@@ -448,10 +448,9 @@ def sweep_1d_logL(
     jit_eval_fn : bool, default True
         When ``True`` (default), wrap ``eval_fn`` in ``jax.jit(jax.vmap(...))``
         for the standard fast path.  Set to ``False`` when ``eval_fn``
-        already handles its own JIT internally — e.g. it calls
-        :func:`jaxpint.pta.pta_logL_chunked`, which must not be wrapped
-        in an outer JIT.  In that case the grid is iterated in plain
-        Python and each cell is a single ``eval_fn(x)`` call.
+        already handles its own JIT internally and must not be wrapped in
+        an outer JIT.  In that case the grid is iterated in plain Python
+        and each cell is a single ``eval_fn(x)`` call.
 
     Returns
     -------
@@ -505,10 +504,10 @@ def sweep_2d_logL(
         When ``True`` (default), wrap ``eval_fn`` in
         ``jax.jit(jax.vmap(jax.vmap(...)))`` for the standard fast path.
         Set to ``False`` when ``eval_fn`` already handles its own JIT
-        internally — e.g. it calls :func:`jaxpint.pta.pta_logL_chunked`,
-        which must not be wrapped in an outer JIT.  In that case the
-        grid is iterated cell-by-cell in plain Python; per-cell cost is
-        higher but peak memory is bounded by ``eval_fn``'s own chunking.
+        internally and must not be wrapped in an outer JIT.  In that
+        case the grid is iterated cell-by-cell in plain Python; per-cell
+        cost is higher but peak memory is bounded by ``eval_fn``'s own
+        bookkeeping.
 
     Returns
     -------
