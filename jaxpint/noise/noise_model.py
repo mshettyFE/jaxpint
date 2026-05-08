@@ -6,6 +6,14 @@
 
 where ``Ndiag`` comes from white noise and ``U`` / ``Phidiag`` are
 horizontally concatenated from all correlated noise components.
+
+Parameter-independent bases (red noise, DM noise, ECORR quantization) are
+pre-hstacked at construction time into ``_U_static`` so that the JIT
+graph sees a single constant basis matrix, regardless of how many
+correlated components were passed in. This mirrors the
+``CompoundGP``/``WoodburyKernel`` pre-stacking pattern in
+:mod:`discovery.matrix`, and prevents per-component basis ops from
+multiplying the HLO graph size on every likelihood call.
 """
 
 from __future__ import annotations
@@ -33,6 +41,17 @@ class NoiseModel(eqx.Module):
     uncertainties) and ``U`` / ``Phidiag`` are horizontally concatenated
     from all correlated noise components (ECORR, red noise, etc.).
 
+    At construction the correlated components are partitioned into:
+
+    - **static-basis** components (those with :meth:`NoiseComponent.static_basis`
+      returning a non-``None`` array) — their bases are hstacked once into
+      ``_U_static``.
+    - **dynamic-basis** components — their bases are recomputed per call.
+
+    The compiled likelihood thus sees a single pre-stacked constant
+    basis (plus, optionally, a few small dynamic bases) instead of one
+    constant per component.
+
     Parameters
     ----------
     white_noise : ScaleToaError or None
@@ -46,6 +65,39 @@ class NoiseModel(eqx.Module):
     white_noise: Optional[ScaleToaError]
     correlated: tuple[NoiseComponent, ...]
     dm_white_noise: Optional[ScaleDmError] = None
+
+    # ------------------------------------------------------------------
+    # Computed in __post_init__ — see module docstring.
+    # ------------------------------------------------------------------
+    _U_static: Optional[Float[Array, "n_toas n_static_basis"]] = eqx.field(
+        init=False, default=None
+    )
+    _static_indices: tuple[int, ...] = eqx.field(
+        init=False, static=True, default=()
+    )
+    _dynamic_indices: tuple[int, ...] = eqx.field(
+        init=False, static=True, default=()
+    )
+
+    def __post_init__(self):
+        static_idx: list[int] = []
+        dynamic_idx: list[int] = []
+        static_bases: list[Float[Array, "n_toas _"]] = []
+        for i, comp in enumerate(self.correlated):
+            sb = comp.static_basis()
+            if sb is not None:
+                static_idx.append(i)
+                static_bases.append(sb)
+            else:
+                dynamic_idx.append(i)
+
+        U_static = (
+            jnp.concatenate(static_bases, axis=1) if static_bases else None
+        )
+
+        object.__setattr__(self, "_U_static", U_static)
+        object.__setattr__(self, "_static_indices", tuple(static_idx))
+        object.__setattr__(self, "_dynamic_indices", tuple(dynamic_idx))
 
     def scaled_sigma(
         self,
@@ -68,32 +120,50 @@ class NoiseModel(eqx.Module):
     ]:
         """Return the combined Woodbury ``(Ndiag, U, Phidiag)`` triple.
 
+        Column layout of the returned ``U`` is: pre-stacked static-basis
+        columns first (in original ``correlated`` order, restricted to
+        static components), followed by per-call dynamic-basis blocks
+        (in original ``correlated`` order, restricted to dynamic
+        components). ``Phidiag`` follows the same layout. The ordering
+        of basis columns does not affect the value of ``C`` so long as
+        ``U`` and ``Phidiag`` agree.
+
         Returns
         -------
         Ndiag : (n_toas,)
             Diagonal variance (white noise contribution).
         U : (n_toas, n_basis)
-            Concatenated basis matrices from all correlated components.
-            Empty ``(n_toas, 0)`` when there are no correlated sources.
+            Pre-stacked + dynamic basis matrix. Empty ``(n_toas, 0)``
+            when there are no correlated sources.
         Phidiag : (n_basis,)
             Concatenated basis weights.
         """
         Ndiag = self.scaled_sigma(toa_data, params) ** 2
 
-        Us: list[Float[Array, "n_toas _"]] = []
-        Phis: list[Float[Array, " _"]] = []
-        for comp in self.correlated:
-            _, U_i, Phi_i = comp.covariance(toa_data, params)
-            if U_i is not None:
-                Us.append(U_i)
-                Phis.append(Phi_i)
+        Phi_blocks: list[Float[Array, " _"]] = []
+        for i in self._static_indices:
+            _, _, Phi_i = self.correlated[i].covariance(toa_data, params)
+            Phi_blocks.append(Phi_i)
 
-        if Us:
-            U = jnp.concatenate(Us, axis=1)
-            Phidiag = jnp.concatenate(Phis)
+        U_dyn: list[Float[Array, "n_toas _"]] = []
+        for i in self._dynamic_indices:
+            _, U_i, Phi_i = self.correlated[i].covariance(toa_data, params)
+            if U_i is not None:
+                U_dyn.append(U_i)
+                Phi_blocks.append(Phi_i)
+
+        if self._U_static is not None and U_dyn:
+            U = jnp.concatenate([self._U_static, *U_dyn], axis=1)
+        elif self._U_static is not None:
+            U = self._U_static
+        elif U_dyn:
+            U = jnp.concatenate(U_dyn, axis=1) if len(U_dyn) > 1 else U_dyn[0]
         else:
             U = jnp.zeros((toa_data.n_toas, 0))
-            Phidiag = jnp.zeros(0)
+
+        Phidiag = (
+            jnp.concatenate(Phi_blocks) if Phi_blocks else jnp.zeros(0)
+        )
 
         return Ndiag, U, Phidiag
 

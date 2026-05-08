@@ -72,6 +72,9 @@ class EcorrNoise(NoiseComponent):
             weights = weights.at[start:end].set(ecorr_val ** 2)
         return weights
 
+    def static_basis(self) -> Float[Array, "n_toas n_epochs"]:
+        return self.quantization_matrix
+
     def covariance(
         self,
         toa_data: TOAData,

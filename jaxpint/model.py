@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import Optional
 
-import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Array, Float
@@ -69,21 +68,15 @@ class TimingModel(eqx.Module):
         Float[Array, " n_toas"]
             Total signal delay in **seconds**.
         """
-        n = len(self.delay_components)
-        if n == 0:
-            return jnp.zeros(toa_data.n_toas)
-
-        branches = [
-            lambda td, p, d, comp=comp: d + comp(td, p, d)
-            for comp in self.delay_components
-        ]
-
-        def body(i, delay):
-            return jax.lax.switch(i, branches, toa_data, params, delay)
-
-        return jax.lax.fori_loop(
-            0, n, body, jnp.zeros(toa_data.n_toas)
-        )
+        # ``delay_components`` is a static eqx field, so we iterate at
+        # trace time. This produces a flat HLO graph proportional to the
+        # number of components — much smaller than ``lax.fori_loop`` +
+        # ``lax.switch``, which forces every branch into the graph as a
+        # separate subgraph.
+        delay = jnp.zeros(toa_data.n_toas)
+        for comp in self.delay_components:
+            delay = delay + comp(toa_data, params, delay)
+        return delay
 
     def compute_dm(
         self,
@@ -163,27 +156,11 @@ class TimingModel(eqx.Module):
         delay: Float[Array, " n_toas"],
     ) -> DualFloat:
         """Sum phase contributions from all phase components."""
-        n = len(self.phase_components)
-        if n == 0:
-            zeros = jnp.zeros(toa_data.n_toas)
-            return DualFloat.cycles(zeros, zeros)
-
-        branches = [
-            lambda td, p, d, comp=comp: comp(td, p, d)
-            for comp in self.phase_components
-        ]
-
-        def body(i, acc):
-            phase_int, phase_frac = acc
-            contribution = jax.lax.switch(i, branches, toa_data, params, delay)
-            summed = DualFloat.cycles(phase_int, phase_frac) + contribution
-            return (summed.int, summed.frac)
-
         zeros = jnp.zeros(toa_data.n_toas)
-        result_int, result_frac = jax.lax.fori_loop(
-            0, n, body, (zeros, zeros)
-        )
-        return DualFloat.cycles(result_int, result_frac)
+        phase = DualFloat.cycles(zeros, zeros)
+        for comp in self.phase_components:
+            phase = phase + comp(toa_data, params, delay)
+        return phase
 
     def _tzr_phase(
         self,
