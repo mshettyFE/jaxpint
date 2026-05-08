@@ -8,6 +8,8 @@ convention: end with ``_name`` for a single parameter name, or
 
 from __future__ import annotations
 
+from typing import Optional
+
 import equinox as eqx
 import jax
 from jaxtyping import Array, Float
@@ -209,6 +211,21 @@ class NoiseComponent(eqx.Module):
         fields that hold parameter names **must** follow this convention.
         """
         return _collect_param_names(self)
+
+    # ------------------------------------------------------------------
+    # Optional pre-stacking hooks
+    #
+    # Components whose basis ``U`` does not depend on any traced
+    # parameter override :meth:`static_basis` so that
+    # :class:`~jaxpint.noise.NoiseModel` can hstack the bases at
+    # construction time. This avoids tracing per-component basis
+    # operations on every likelihood call (the discovery-style
+    # ``CompoundGP`` pattern).
+    # ------------------------------------------------------------------
+
+    def static_basis(self) -> Optional[Float[Array, "n_toas n_basis"]]:
+        """Return ``U`` if it is parameter-independent, else ``None``."""
+        return None
 
 
 class DelayComponent(eqx.Module):

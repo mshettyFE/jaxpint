@@ -471,7 +471,6 @@ def sweep_2d_logL(
     grid_x: np.ndarray,
     grid_y: np.ndarray,
     *,
-    chunk_rows: Optional[int] = None,
     extra_args: tuple = (),
     jit_eval_fn: bool = True,
 ) -> np.ndarray:
@@ -484,14 +483,6 @@ def sweep_2d_logL(
         returns a scalar.
     grid_x, grid_y : arrays
         Grid values along each axis.
-    chunk_rows : int or None
-        When ``None``, evaluates the full grid with nested ``vmap`` inside a
-        single JIT. When an integer, iterates over ``chunk_rows`` rows of
-        ``grid_y`` at a time to bound peak memory. Set to ``1`` for the
-        most memory-conservative sweep (equivalent to the inner-loop pattern
-        used by the pulsar0-vs-pulsar1 contour notebook).
-        Ignored when ``jit_eval_fn=False`` (the plain-Python path always
-        evaluates one ``(x, y)`` cell at a time).
     extra_args : tuple, optional
         Additional positional arguments threaded through to ``eval_fn``
         after the two scalar grid coordinates, broadcast (not mapped) by
@@ -527,43 +518,14 @@ def sweep_2d_logL(
                 out[j, i] = float(eval_fn(grid_x_jax[i], y, *extra_args))
         return out
 
-    if chunk_rows is None:
-        eval_grid = jax.jit(
-            jax.vmap(
-                jax.vmap(eval_fn, in_axes=(0, None) + extra_in_axes),
-                in_axes=(None, 0) + extra_in_axes,
-            )
-        )
-        _ = eval_grid(grid_x_jax[:2], grid_y_jax[:2], *extra_args).block_until_ready()
-        return np.asarray(eval_grid(grid_x_jax, grid_y_jax, *extra_args))
-
-    if chunk_rows <= 0:
-        raise ValueError(f"chunk_rows must be positive, got {chunk_rows}")
-
-    if chunk_rows == 1:
-        eval_row = jax.jit(jax.vmap(eval_fn, in_axes=(0, None) + extra_in_axes))
-        _ = eval_row(grid_x_jax[:2], grid_y_jax[0], *extra_args).block_until_ready()
-        out = np.empty((n_y, n_x), dtype=np.float64)
-        for j in range(n_y):
-            out[j, :] = np.asarray(
-                eval_row(grid_x_jax, grid_y_jax[j], *extra_args).block_until_ready()
-            )
-        return out
-
-    eval_chunk = jax.jit(
+    eval_grid = jax.jit(
         jax.vmap(
             jax.vmap(eval_fn, in_axes=(0, None) + extra_in_axes),
             in_axes=(None, 0) + extra_in_axes,
         )
     )
-    _ = eval_chunk(grid_x_jax[:2], grid_y_jax[:2], *extra_args).block_until_ready()
-    out = np.empty((n_y, n_x), dtype=np.float64)
-    for start in range(0, n_y, chunk_rows):
-        stop = min(start + chunk_rows, n_y)
-        out[start:stop, :] = np.asarray(
-            eval_chunk(grid_x_jax, grid_y_jax[start:stop], *extra_args).block_until_ready()
-        )
-    return out
+    _ = eval_grid(grid_x_jax[:2], grid_y_jax[:2], *extra_args).block_until_ready()
+    return np.asarray(eval_grid(grid_x_jax, grid_y_jax, *extra_args))
 
 
 # ---------------------------------------------------------------------------

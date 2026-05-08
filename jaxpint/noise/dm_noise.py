@@ -91,6 +91,9 @@ class PLDMNoise(NoiseComponent):
         )
         return jnp.repeat(psd * self.freq_bin_widths, 2)
 
+    def static_basis(self) -> Float[Array, "n_toas n_basis"]:
+        return self.fourier_basis
+
     def covariance(
         self,
         toa_data: TOAData,
