@@ -8,7 +8,15 @@ from jaxpint.pta.params import GlobalParams
 from jaxpint.pta.likelihood import (
     PTAConfig,
     SignalInjector,
+    precompute_single_pulsar_pta_factor,
     pta_logL,
+    single_pulsar_pta_logL,
+    single_pulsar_pta_logL_with_factor,
+)
+from jaxpint.pta.scan import (
+    PerPulsarScanAxis,
+    GlobalScanAxis,
+    scan_logL,
 )
 from jaxpint.pta.correlated_likelihood import (
     CorrelatedPTAConfig,
@@ -38,6 +46,13 @@ __all__ = [
     "PTAConfig",
     "SignalInjector",
     "pta_logL",
+    "single_pulsar_pta_logL",
+    "single_pulsar_pta_logL_with_factor",
+    "precompute_single_pulsar_pta_factor",
+    # Scans
+    "PerPulsarScanAxis",
+    "GlobalScanAxis",
+    "scan_logL",
     # Correlated
     "CorrelatedPTAConfig",
     "CorrelatedSignalInjector",

@@ -23,10 +23,15 @@ import jax.numpy as jnp
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from jaxpint.likelihood import single_pulsar_logL
+from jaxpint.likelihood import (
+    precompute_single_pulsar_factor,
+    single_pulsar_logL,
+    single_pulsar_logL_with_factor,
+)
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
+from jaxpint.utils import WoodburyFactor
 
 from jaxpint.pta.params import GlobalParams
 
@@ -192,6 +197,205 @@ class PTAConfig(eqx.Module):
 # ---------------------------------------------------------------------------
 
 
+def single_pulsar_pta_logL(
+    p: int,
+    global_params: GlobalParams,
+    pulsar_params_p: ParameterVector,
+    config: PTAConfig,
+) -> Float[Array, ""]:
+    """Per-pulsar log-likelihood with signal injections.
+
+    Collects delay and covariance contributions from every
+    :class:`SignalInjector` in *config* for pulsar ``p``, then delegates to
+    :func:`jaxpint.likelihood.single_pulsar_logL`. Returns the scalar
+    contribution of pulsar ``p`` to ``pta_logL``; summing over ``p``
+    reproduces ``pta_logL`` exactly (the uncorrelated case).
+
+    Used as the per-pulsar primitive by :func:`jaxpint.pta.scan.scan_logL`,
+    which exploits the per-pulsar decomposition to avoid recomputing
+    contributions whose params don't vary along any scan axis.
+
+    Parameters
+    ----------
+    p : int
+        Pulsar index within the PTA. Passed to each
+        :class:`SignalInjector`'s ``delay`` / ``covariance`` methods so
+        per-pulsar dispatch is consistent with :func:`pta_logL`.
+    global_params : GlobalParams
+        Shared parameters.
+    pulsar_params_p : ParameterVector
+        Pulsar ``p``'s timing/noise parameters (i.e. ``pulsar_params[p]``).
+    config : PTAConfig
+        Static configuration; only the ``p``-th element of
+        ``toa_data_list``, ``timing_models``, ``noise_models`` and the
+        ``signal_injectors`` tuple are read.
+
+    Returns
+    -------
+    logL_p : scalar
+        Pulsar ``p``'s contribution to the PTA log-likelihood.
+    """
+    toa_data_p = config.toa_data_list[p]
+    timing_model_p = config.timing_models[p]
+    noise_model_p = config.noise_models[p]
+
+    # -- Collect delays from all injectors --
+    delays = [
+        inj.delay(p, toa_data_p, pulsar_params_p, global_params)
+        for inj in config.signal_injectors
+    ]
+    delays = [d for d in delays if d is not None]
+    ext_delay = sum(delays) if delays else None
+
+    # -- Collect covariances from all injectors --
+    covs = [
+        inj.covariance(p, toa_data_p, pulsar_params_p, global_params)
+        for inj in config.signal_injectors
+    ]
+    covs = [c for c in covs if c is not None]
+    if covs:
+        ext_cov = (
+            jnp.concatenate([U for U, _ in covs], axis=1),
+            jnp.concatenate([Phi for _, Phi in covs]),
+        )
+    else:
+        ext_cov = None
+
+    return single_pulsar_logL(
+        toa_data_p,
+        timing_model_p,
+        noise_model_p,
+        pulsar_params_p,
+        external_delay=ext_delay,
+        external_cov=ext_cov,
+    )
+
+
+def _collect_injector_ext_cov(
+    p: int,
+    toa_data_p: TOAData,
+    pulsar_params_p: ParameterVector,
+    global_params: GlobalParams,
+    signal_injectors,
+):
+    """Concatenate per-pulsar covariance contributions from injectors.
+
+    Returns ``(U_ext, Phi_ext)`` or ``None`` (if no injector contributes).
+    """
+    covs = [
+        inj.covariance(p, toa_data_p, pulsar_params_p, global_params)
+        for inj in signal_injectors
+    ]
+    covs = [c for c in covs if c is not None]
+    if not covs:
+        return None
+    return (
+        jnp.concatenate([U for U, _ in covs], axis=1),
+        jnp.concatenate([Phi for _, Phi in covs]),
+    )
+
+
+def _collect_injector_ext_delay(
+    p: int,
+    toa_data_p: TOAData,
+    pulsar_params_p: ParameterVector,
+    global_params: GlobalParams,
+    signal_injectors,
+):
+    """Sum per-pulsar deterministic-delay contributions from injectors.
+
+    Returns the summed delay or ``None`` (if no injector contributes).
+    """
+    delays = [
+        inj.delay(p, toa_data_p, pulsar_params_p, global_params)
+        for inj in signal_injectors
+    ]
+    delays = [d for d in delays if d is not None]
+    return sum(delays) if delays else None
+
+
+def precompute_single_pulsar_pta_factor(
+    p: int,
+    global_params: GlobalParams,
+    pulsar_params_p: ParameterVector,
+    config: PTAConfig,
+) -> WoodburyFactor:
+    """Precompute pulsar ``p``'s Woodbury factor for the PTA likelihood.
+
+    Captures the noise-side computation (Cholesky of ``Σ`` and the
+    constant ``log det C``) including any per-pulsar covariance
+    contributions from stochastic signal injectors. Pair with
+    :func:`single_pulsar_pta_logL_with_factor` to evaluate the
+    likelihood at varying timing-domain parameters without redoing the
+    factorization.
+
+    The factor is valid as long as ``noise_model.covariance(toa_data,
+    params)`` and every injector's ``covariance(p, ...)`` return the
+    same arrays for the values of ``params`` and ``global_params`` that
+    the apply call uses. In practice this means: do not vary
+    noise-model params (``EFAC``, ``EQUAD``, ``ECORR``, ``TNREDAMP``,
+    ``TNREDGAM``, etc.) or any global parameter that a stochastic
+    injector reads, between precompute and apply. Timing-domain
+    parameters (``F0``, ``RAJ``, ``DECJ``, ``PX``, ``DM``, ...) and
+    deterministic-injector globals (``cw_log10_h``, etc.) are safe to
+    vary.
+
+    Parameters
+    ----------
+    p
+        Pulsar index. Used for static dispatch into ``config``'s
+        per-pulsar lists and as the ``p`` argument to each injector's
+        ``covariance(p, ...)`` call.
+    global_params, pulsar_params_p, config
+        Same semantics as :func:`single_pulsar_pta_logL`.
+    """
+    toa_data_p = config.toa_data_list[p]
+    noise_model_p = config.noise_models[p]
+    ext_cov = _collect_injector_ext_cov(
+        p, toa_data_p, pulsar_params_p, global_params, config.signal_injectors,
+    )
+    return precompute_single_pulsar_factor(
+        toa_data_p, noise_model_p, pulsar_params_p, external_cov=ext_cov,
+    )
+
+
+def single_pulsar_pta_logL_with_factor(
+    p: int,
+    global_params: GlobalParams,
+    pulsar_params_p: ParameterVector,
+    factor: WoodburyFactor,
+    config: PTAConfig,
+) -> Float[Array, ""]:
+    """Per-pulsar PTA log-likelihood using a precomputed Woodbury factor.
+
+    Functionally equivalent to :func:`single_pulsar_pta_logL` for the
+    same configuration, but skips the per-call Cholesky factorization
+    of the noise covariance — that work is replaced by a single
+    ``cho_solve`` against the precomputed factor.
+
+    The deterministic-delay path (``inj.delay(p, ...)``) is still run
+    each call, so signals like CW that perturb the residuals are
+    handled correctly. Stochastic-covariance contributions
+    (``inj.covariance(p, ...)``) are baked into the factor and assumed
+    unchanged.
+
+    See :func:`precompute_single_pulsar_pta_factor` for the contract on
+    when the factor is valid.
+    """
+    toa_data_p = config.toa_data_list[p]
+    timing_model_p = config.timing_models[p]
+    ext_delay = _collect_injector_ext_delay(
+        p, toa_data_p, pulsar_params_p, global_params, config.signal_injectors,
+    )
+    return single_pulsar_logL_with_factor(
+        toa_data_p,
+        timing_model_p,
+        factor,
+        pulsar_params_p,
+        external_delay=ext_delay,
+    )
+
+
 def pta_logL(
     global_params: GlobalParams,
     pulsar_params: tuple[ParameterVector, ...],
@@ -201,7 +405,8 @@ def pta_logL(
 
     For each pulsar, collects delay and covariance contributions from every
     :class:`SignalInjector` in *config*, then delegates to
-    :func:`jaxpint.likelihood.single_pulsar_logL`.
+    :func:`jaxpint.likelihood.single_pulsar_logL`. Implemented as a sum of
+    :func:`single_pulsar_pta_logL` over all pulsars.
 
     Parameters
     ----------
@@ -220,47 +425,8 @@ def pta_logL(
         Sum of per-pulsar log-likelihoods.
     """
     total = jnp.float64(0.0)
-
     for p in range(len(pulsar_params)):
-        # -- Collect delays from all injectors --
-        delays = [
-            inj.delay(
-                p,
-                config.toa_data_list[p],
-                pulsar_params[p],
-                global_params,
-            )
-            for inj in config.signal_injectors
-        ]
-        delays = [d for d in delays if d is not None]
-        ext_delay = sum(delays) if delays else None
-
-        # -- Collect covariances from all injectors --
-        covs = [
-            inj.covariance(
-                p,
-                config.toa_data_list[p],
-                pulsar_params[p],
-                global_params,
-            )
-            for inj in config.signal_injectors
-        ]
-        covs = [c for c in covs if c is not None]
-        if covs:
-            ext_cov = (
-                jnp.concatenate([U for U, _ in covs], axis=1),
-                jnp.concatenate([Phi for _, Phi in covs]),
-            )
-        else:
-            ext_cov = None
-
-        total += single_pulsar_logL(
-            config.toa_data_list[p],
-            config.timing_models[p],
-            config.noise_models[p],
-            pulsar_params[p],
-            external_delay=ext_delay,
-            external_cov=ext_cov,
+        total = total + single_pulsar_pta_logL(
+            p, global_params, pulsar_params[p], config,
         )
-
     return total

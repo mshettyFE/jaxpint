@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Optional, TYPE_CHECKING
 
+import equinox as eqx
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -415,6 +416,137 @@ def woodbury_solve(
     Sigma_inv_UtNinvB = jax.scipy.linalg.cho_solve(Sigma_cf, UtNinvB)  # (k, m)
 
     return Ninv_B - Ninv_U @ Sigma_inv_UtNinvB
+
+
+# ---------------------------------------------------------------------------
+# Woodbury precompute / apply split
+# ---------------------------------------------------------------------------
+
+
+class WoodburyFactor(eqx.Module):
+    r"""Precomputed Woodbury factorization for repeated solves.
+
+    Splits :func:`woodbury_dot` into a parameter-independent setup
+    (``Σ`` Cholesky and the two log-determinant constants) and a
+    residual-dependent application :func:`apply_woodbury_dot_factor`.
+    Useful for grid scans or MCMC where many evaluations share the same
+    noise covariance ``C = diag(N) + U diag(Φ) U^T`` and only the
+    residuals ``r`` change — the Cholesky runs once instead of per-cell.
+
+    The factor is a JAX pytree (Equinox module), so it can be passed
+    through :func:`jax.jit`, :func:`jax.vmap`, and :func:`jax.grad`. To
+    vmap the *application* over a batch of residuals while keeping the
+    factor scalar, use ``in_axes=(None, 0)`` for ``(factor, r)``.
+
+    Fields
+    ------
+    Ndiag : (n,)
+        Diagonal of ``N``.
+    U : (n, k)
+        Low-rank update basis.
+    Sigma_cf_factor : (k, k)
+        Cholesky factor of ``Σ = Φ⁻¹ + U^T N⁻¹ U`` (the array half of
+        :func:`jax.scipy.linalg.cho_factor`'s output).
+    Sigma_cf_lower : bool
+        ``lower`` flag from :func:`cho_factor`. Static metadata.
+    logdet_C : scalar
+        ``log det(C) = sum log N + sum log Φ + log det Σ``, precomputed.
+    """
+
+    Ndiag: Float[Array, " n"]
+    U: Float[Array, "n k"]
+    Sigma_cf_factor: Float[Array, "k k"]
+    Sigma_cf_lower: bool = eqx.field(static=True)
+    logdet_C: Float[Array, ""]
+
+    @property
+    def Sigma_cf(self):
+        """Reconstruct the ``(factor, lower)`` tuple expected by ``cho_solve``."""
+        return (self.Sigma_cf_factor, self.Sigma_cf_lower)
+
+
+def precompute_woodbury_factor(
+    Ndiag: Float[Array, " n"],
+    U: Float[Array, "n k"],
+    Phidiag: Float[Array, " k"],
+) -> WoodburyFactor:
+    r"""Precompute the parameter-independent half of :func:`woodbury_dot`.
+
+    Computes the Cholesky of :math:`\Sigma = \Phi^{-1} + U^T N^{-1} U`
+    and the constant :math:`\log\det C` once, so that subsequent calls
+    to :func:`apply_woodbury_dot_factor` only do residual-dependent
+    matrix-vector work.
+
+    Parameters
+    ----------
+    Ndiag : 1-D array, shape (n,)
+        Diagonal of ``N`` (positive).
+    U : 2-D array, shape (n, k)
+        Low-rank update basis.
+    Phidiag : 1-D array, shape (k,)
+        Diagonal of ``Φ`` (positive).
+
+    Returns
+    -------
+    factor : WoodburyFactor
+        Precomputed factor; pass to :func:`apply_woodbury_dot_factor`.
+    """
+    Ninv = 1.0 / Ndiag
+    Sigma = jnp.diag(1.0 / Phidiag) + (U.T * Ninv) @ U  # (k, k)
+    Sigma_cf_factor, Sigma_cf_lower = jax.scipy.linalg.cho_factor(Sigma)
+
+    logdet_N = jnp.sum(jnp.log(Ndiag))
+    logdet_Phi = jnp.sum(jnp.log(Phidiag))
+    _, logdet_Sigma = jnp.linalg.slogdet(Sigma)
+    logdet_C = logdet_N + logdet_Phi + logdet_Sigma
+
+    return WoodburyFactor(
+        Ndiag=Ndiag,
+        U=U,
+        Sigma_cf_factor=Sigma_cf_factor,
+        Sigma_cf_lower=bool(Sigma_cf_lower),
+        logdet_C=logdet_C,
+    )
+
+
+def apply_woodbury_dot_factor(
+    factor: WoodburyFactor,
+    x: Float[Array, " n"],
+    y: Float[Array, " n"],
+) -> tuple[Float[Array, ""], Float[Array, ""]]:
+    r"""Compute :math:`(x^T C^{-1} y, \log\det C)` from a precomputed factor.
+
+    Numerically equivalent to :func:`woodbury_dot` but uses the
+    Cholesky factor and ``log det C`` cached in ``factor`` instead of
+    recomputing them. Bit-for-bit identical when called with the same
+    inputs that produced the factor.
+
+    Vmap-friendly: the factor (containing ``(n, k)`` and ``(k, k)``
+    arrays) is shared across vmapped lanes, while only the residual-
+    sized vectors ``x``, ``y`` get the leading vmap axis. This is the
+    cost-saving path for grid scans where ``N``, ``U``, ``Φ`` don't
+    depend on the swept parameters.
+
+    Parameters
+    ----------
+    factor : WoodburyFactor
+        Precomputed factor from :func:`precompute_woodbury_factor`.
+    x, y : 1-D arrays, shape (n,)
+        Vectors for the inner product.
+
+    Returns
+    -------
+    (x_Cinv_y, logdet_C)
+        Same return contract as :func:`woodbury_dot`.
+    """
+    Ninv = 1.0 / factor.Ndiag
+    x_Ninv_y = jnp.sum(x * y * Ninv)
+    x_Ninv_U = (x * Ninv) @ factor.U          # (k,)
+    y_Ninv_U = (y * Ninv) @ factor.U          # (k,)
+    x_Cinv_y = x_Ninv_y - x_Ninv_U @ jax.scipy.linalg.cho_solve(
+        factor.Sigma_cf, y_Ninv_U,
+    )
+    return x_Cinv_y, factor.logdet_C
 
 
 # ---------------------------------------------------------------------------
