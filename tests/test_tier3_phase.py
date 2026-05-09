@@ -150,8 +150,15 @@ PWF2_1        0.0
         jax_model, toa_data, params, _, _ = pint_setup
         eager = jax_model.compute_phase(toa_data, params)
         jitted = jax.jit(jax_model.compute_phase)(toa_data, params)
+        # Compare the total phase (int + frac), not the .frac component
+        # alone: JIT and eager can pick different integer cycle
+        # boundaries (one shifts ±1 into .int and ∓1 into .frac),
+        # leaving the observable total unchanged. atol absorbs ULP-level
+        # FP-ordering differences (FMA fusion, reordered reductions).
         np.testing.assert_allclose(
-            np.array(jitted.frac), np.array(eager.frac), rtol=1e-14,
+            np.array(jitted.int) + np.array(jitted.frac),
+            np.array(eager.int) + np.array(eager.frac),
+            rtol=1e-14, atol=1e-11,
         )
 
     @pytest.mark.slow
@@ -213,8 +220,17 @@ WAVE2         0.3e-6 0.8e-6
         jax_model, toa_data, params, _, _ = pint_setup
         eager = jax_model.compute_phase(toa_data, params)
         jitted = jax.jit(jax_model.compute_phase)(toa_data, params)
+        # Compare the total phase (int + frac), not the .frac component
+        # alone: JIT and eager can pick different integer cycle
+        # boundaries (one shifts ±1 into .int and ∓1 into .frac),
+        # leaving the observable total unchanged. atol absorbs ULP-level
+        # FP-ordering differences (Wave's sin/cos accumulation amplifies
+        # FMA fusion / reordered-reduction effects to ~few ULPs of the
+        # phase scale).
         np.testing.assert_allclose(
-            np.array(jitted.frac), np.array(eager.frac), rtol=1e-14,
+            np.array(jitted.int) + np.array(jitted.frac),
+            np.array(eager.int) + np.array(eager.frac),
+            rtol=1e-14, atol=1e-11,
         )
 
     @pytest.mark.slow

@@ -14,14 +14,26 @@ correlated components were passed in. This mirrors the
 ``CompoundGP``/``WoodburyKernel`` pre-stacking pattern in
 :mod:`discovery.matrix`, and prevents per-component basis ops from
 multiplying the HLO graph size on every likelihood call.
+
+``_U_static`` is stored as a *numpy* array (host RAM), not a
+``jax.Array`` on device — that's the source of truth, used only at
+construction time to derive the host-resident stacked basis. The hot
+path uses a lazily-built JAX-converted view exposed via
+:attr:`NoiseModel._U_static_jax`, a ``functools.cached_property`` that
+mirrors :mod:`discovery.matrix.WoodburyKernel`'s ``jnparray()``-in-closure
+pattern: the device buffer is created on first access and cached for
+the lifetime of the ``NoiseModel`` instance, so MCMC-style repeated
+calls amortize the host→device transfer to a one-time cost.
 """
 
 from __future__ import annotations
 
+import functools
 from typing import Optional
 
 import equinox as eqx
 import jax.numpy as jnp
+import numpy as np
 from jaxtyping import Array, Float
 
 from jaxpint.components import NoiseComponent, _make_component_names
@@ -82,22 +94,51 @@ class NoiseModel(eqx.Module):
     def __post_init__(self):
         static_idx: list[int] = []
         dynamic_idx: list[int] = []
-        static_bases: list[Float[Array, "n_toas _"]] = []
+        # Bring each component's static basis to host RAM (numpy) before
+        # stacking, so the concatenated U_static lives on the host. JAX
+        # treats it as a pytree leaf and transfers to the JIT's device
+        # on demand — meaning at full-PTA scale only one pulsar's
+        # U_static is on GPU at a time, instead of all ``n_pulsars`` of
+        # them sitting in device RAM forever.
+        static_bases_np: list[np.ndarray] = []
         for i, comp in enumerate(self.correlated):
             sb = comp.static_basis()
             if sb is not None:
                 static_idx.append(i)
-                static_bases.append(sb)
+                static_bases_np.append(np.asarray(sb))
             else:
                 dynamic_idx.append(i)
 
         U_static = (
-            jnp.concatenate(static_bases, axis=1) if static_bases else None
+            np.concatenate(static_bases_np, axis=1)
+            if static_bases_np else None
         )
 
         object.__setattr__(self, "_U_static", U_static)
         object.__setattr__(self, "_static_indices", tuple(static_idx))
         object.__setattr__(self, "_dynamic_indices", tuple(dynamic_idx))
+
+    @functools.cached_property
+    def _U_static_jax(self) -> Optional[Float[Array, "n_toas n_static_basis"]]:
+        """Lazy device-converted view of ``_U_static``.
+
+        Returns ``None`` if there are no static-basis components.
+        Otherwise returns ``jnp.asarray(self._U_static)``, cached on
+        ``self.__dict__`` for the lifetime of this ``NoiseModel``. The
+        device buffer is created at first access (one host→device
+        transfer per pulsar per session) and reused on every subsequent
+        ``covariance(...)`` call — see module docstring.
+
+        Note: the cached value lives in ``__dict__`` and is therefore
+        invisible to JAX's pytree machinery. Operations that round-trip
+        the module through :func:`jax.tree_util.tree_map` /
+        :func:`equinox.tree_at` produce a new instance with an empty
+        cache; the device buffer is rebuilt on first access of the new
+        instance.
+        """
+        if self._U_static is None:
+            return None
+        return jnp.asarray(self._U_static)
 
     def scaled_sigma(
         self,
@@ -152,10 +193,12 @@ class NoiseModel(eqx.Module):
                 U_dyn.append(U_i)
                 Phi_blocks.append(Phi_i)
 
+        # Hot path: use the cached jax.Array view so the device buffer
+        # is reused across calls instead of re-transferred per call.
         if self._U_static is not None and U_dyn:
-            U = jnp.concatenate([self._U_static, *U_dyn], axis=1)
+            U = jnp.concatenate([self._U_static_jax, *U_dyn], axis=1)
         elif self._U_static is not None:
-            U = self._U_static
+            U = self._U_static_jax
         elif U_dyn:
             U = jnp.concatenate(U_dyn, axis=1) if len(U_dyn) > 1 else U_dyn[0]
         else:

@@ -8,6 +8,7 @@ fitted values back.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Optional
 
 import astropy.units as u
@@ -75,6 +76,14 @@ _PINT_COMPONENT_MAP: dict[str, Component] = {
     "IFunc": Component.IFUNC,
     "Glitch": Component.GLITCH,
 }
+
+
+# PINT float parameters that are metadata, not fitted quantities, and
+# whose values may legitimately be non-finite (e.g. `TZRFRQ=inf` for an
+# asymptotic-frequency reference TOA). They're stashed in `metadata` and
+# kept out of the JAX-backed values vector, where `inf` would trip
+# `JAX_DEBUG_INFS` at array construction.
+_METADATA_ONLY_FLOAT_PARAMS: frozenset[str] = frozenset({"TZRFRQ"})
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +176,16 @@ def pint_model_to_params(model: PINTTimingModel) -> ParResult:
         if isinstance(param, intParameter):
             if param.value is not None:
                 int_params[pname] = int(param.value)
+            continue
+
+        # Metadata-only floats (e.g. TZRFRQ=inf is a valid PINT idiom for
+        # "asymptotic-frequency reference TOA"; the live consumer reads it
+        # via PINT's get_TZR_toa → TOAData.tzr_freq, not from this vector).
+        # Stash as a string so params_to_pint_model can still round-trip
+        # if needed, and keep `inf` out of the JAX values array.
+        if pname in _METADATA_ONLY_FLOAT_PARAMS:
+            if getattr(param, "value", None) is not None:
+                metadata[pname] = str(param.value)
             continue
 
         # funcParameter has no .value — skip anything without it
@@ -309,6 +328,17 @@ def pint_model_to_params(model: PINTTimingModel) -> ParResult:
                 "Unknown PINT component %r (%s) — skipping for component_set",
                 comp_name, type(comp).__name__,
             )
+
+    non_finite = [(n, v, u_) for n, v, u_ in zip(names, values, units)
+                  if not math.isfinite(float(v))]
+    if non_finite:
+        items = ", ".join(f"{n}={v} [{u_}]" for n, v, u_ in non_finite[:10])
+        more = f" (+{len(non_finite) - 10} more)" if len(non_finite) > 10 else ""
+        raise ValueError(
+            f"Non-finite PINT parameter value(s): {items}{more}. "
+            "Check the par file for missing or unset parameters that "
+            "synthesize aliases (e.g. PB from FB0=0, TNREDAMP from RNAMP=0)."
+        )
 
     param_vector = ParameterVector(
         values=jnp.asarray(values, dtype=jnp.float64),
