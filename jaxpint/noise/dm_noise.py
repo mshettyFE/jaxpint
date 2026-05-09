@@ -15,9 +15,12 @@ computed from the amplitude and spectral index parameters.
 
 from __future__ import annotations
 
+import functools
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jaxtyping import Array, Float
 
 from jaxpint.components import NoiseComponent
@@ -54,6 +57,19 @@ class PLDMNoise(NoiseComponent):
     freq_bin_widths: Float[Array, " n_freqs"]
     tndmamp_name: str = eqx.field(static=True)
     tndmgam_name: str = eqx.field(static=True)
+
+    def __post_init__(self):
+        # Store the Fourier basis as numpy on host RAM (source of
+        # truth). See PLRedNoise for the rationale.
+        if not isinstance(self.fourier_basis, np.ndarray):
+            object.__setattr__(
+                self, "fourier_basis", np.asarray(self.fourier_basis),
+            )
+
+    @functools.cached_property
+    def _fourier_basis_jax(self) -> Float[Array, "n_toas n_basis"]:
+        """Lazy device-converted view of ``fourier_basis``; see PLRedNoise."""
+        return jnp.asarray(self.fourier_basis)
 
     def psd_weights(
         self,
@@ -124,7 +140,7 @@ class PLDMNoise(NoiseComponent):
             Power-law PSD weights.
         """
         Ndiag = jnp.zeros(toa_data.n_toas)
-        return Ndiag, self.fourier_basis, self.psd_weights(params)
+        return Ndiag, self._fourier_basis_jax, self.psd_weights(params)
 
     def generate(
         self,
@@ -154,4 +170,4 @@ class PLDMNoise(NoiseComponent):
         weights = self.psd_weights(params)
         n_basis = self.fourier_basis.shape[1]
         a = jax.random.normal(key, shape=(n_basis,))
-        return self.fourier_basis @ (jnp.sqrt(weights) * a)
+        return self._fourier_basis_jax @ (jnp.sqrt(weights) * a)

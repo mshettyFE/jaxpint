@@ -9,9 +9,12 @@ where *U* is a quantization matrix mapping TOAs to observing epochs.
 
 from __future__ import annotations
 
+import functools
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jaxtyping import Array, Float
 
 from jaxpint.components import NoiseComponent
@@ -46,6 +49,22 @@ class EcorrNoise(NoiseComponent):
     ecorr_names: tuple[str, ...] = eqx.field(static=True)
     quantization_matrix: Float[Array, "n_toas n_epochs"]
     ecorr_epoch_slices: tuple[tuple[int, int], ...] = eqx.field(static=True)
+
+    def __post_init__(self):
+        # Store the quantization matrix as numpy on host RAM (source of
+        # truth). See PLRedNoise for the rationale.
+        if not isinstance(self.quantization_matrix, np.ndarray):
+            object.__setattr__(
+                self, "quantization_matrix",
+                np.asarray(self.quantization_matrix),
+            )
+
+    @functools.cached_property
+    def _quantization_matrix_jax(self) -> Float[Array, "n_toas n_epochs"]:
+        """Lazy device-converted view of ``quantization_matrix``;
+        see PLRedNoise.
+        """
+        return jnp.asarray(self.quantization_matrix)
 
     def ecorr_weights(
         self,
@@ -105,7 +124,7 @@ class EcorrNoise(NoiseComponent):
         Phidiag : (n_epochs,)
             Squared ECORR values (seconds squared) per epoch.
         """
-        U = self.quantization_matrix
+        U = self._quantization_matrix_jax
         Phidiag = self.ecorr_weights(params)
         Ndiag = jnp.zeros(toa_data.n_toas)
         return Ndiag, U, Phidiag
@@ -135,7 +154,7 @@ class EcorrNoise(NoiseComponent):
         noise : (n_toas,)
             ECORR noise realization in seconds.
         """
-        U = self.quantization_matrix
+        U = self._quantization_matrix_jax
         weights = self.ecorr_weights(params)
         n_epochs = U.shape[1]
         a = jax.random.normal(key, shape=(n_epochs,))
