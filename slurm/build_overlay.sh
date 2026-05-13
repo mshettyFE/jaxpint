@@ -77,6 +77,21 @@ cd "'"${PROJECT_DIR}"'"
 echo "[inner] uv sync --extra cuda (slow step; downloads JAX + CUDA wheels)"
 uv sync --extra cuda
 
+# Explicitly install the jaxpint project itself as editable. `uv sync`
+# is supposed to handle this, but it silently skips the project under
+# some pyproject layouts. Reinstalling is cheap and idempotent.
+echo "[inner] Installing jaxpint (editable) into /ext3/venv"
+uv pip install --python /ext3/venv/bin/python -e .
+
+# Verify jaxpint is registered in the venv without importing it.
+# Importing jaxpint pulls in jax, whose cuda13 plugin probes for GPU
+# libs on load and hangs in this build session (no --nv, no GPU). The
+# real "can jax see a GPU?" check belongs at sbatch time.
+echo "[inner] Verifying jaxpint is registered in /ext3/venv"
+/ext3/uv/uv pip list --python /ext3/venv/bin/python \
+    | grep -q "^jaxpint " \
+    || { echo "[inner] ERROR: jaxpint not installed in /ext3/venv" >&2; exit 1; }
+
 # Activation helper sourced by sbatch scripts when the overlay is :ro.
 cat > /ext3/env.sh <<EOF
 #!/bin/bash
@@ -86,8 +101,6 @@ export PATH="/ext3/venv/bin:/ext3/uv:\${PATH}"
 EOF
 chmod +x /ext3/env.sh
 
-echo "[inner] Smoke test (CPU-only here; --nv only set at sbatch time)"
-/ext3/venv/bin/python -c "import jax, jaxpint; print(\"jax\", jax.__version__); print(\"jaxpint OK\"); print(\"devices:\", jax.devices())"
 '
 
 echo
