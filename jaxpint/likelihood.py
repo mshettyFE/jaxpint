@@ -27,7 +27,7 @@ from jaxpint.fitters import compute_time_residuals
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.utils import woodbury_dot
+from jaxpint.utils import concat_woodbury_blocks, woodbury_dot
 
 
 def single_pulsar_logL(
@@ -71,14 +71,9 @@ def single_pulsar_logL(
     if external_delay is not None:
         r = r - external_delay
 
-    # 3. Noise covariance
-    Ndiag, U, Phi = noise_model.covariance(toa_data, params)
-
-    # 4. Augment with external covariance
-    if external_cov is not None:
-        U_ext, Phi_ext = external_cov
-        U = jnp.concatenate([U, U_ext], axis=1)
-        Phi = jnp.concatenate([Phi, Phi_ext])
+    # 3. Noise covariance, optionally augmented with external (U, Φ) blocks
+    Ndiag, U_noise, Phi_noise = noise_model.covariance(toa_data, params)
+    U, Phi = concat_woodbury_blocks((U_noise, Phi_noise), external_cov)
 
     # 5. Evaluate via Woodbury
     rCr, logdetC = woodbury_dot(Ndiag, U, Phi, r, r)

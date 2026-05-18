@@ -37,7 +37,7 @@ from jaxpint.fitters import compute_time_residuals
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.utils import woodbury_dot, woodbury_solve
+from jaxpint.utils import concat_woodbury_blocks, woodbury_dot, woodbury_solve
 
 from jaxpint.pta.params import GlobalParams
 from jaxpint.pta.likelihood import SignalInjector
@@ -229,12 +229,9 @@ def _per_pulsar_intermediates(
     if external_delay is not None:
         r = r - external_delay
 
-    # 2. Per-pulsar noise covariance
-    Ndiag, U, Phi = noise_model.covariance(toa_data, params)
-    if external_cov is not None:
-        U_ext, Phi_ext = external_cov
-        U = jnp.concatenate([U, U_ext], axis=1)
-        Phi = jnp.concatenate([Phi, Phi_ext])
+    # 2. Per-pulsar noise covariance (optionally augmented with external_cov)
+    Ndiag, U_noise, Phi_noise = noise_model.covariance(toa_data, params)
+    U, Phi = concat_woodbury_blocks((U_noise, Phi_noise), external_cov)
 
     # 3. Inner tier: per-pulsar Woodbury
     rCr_p, logdetC_p = woodbury_dot(Ndiag, U, Phi, r, r)
@@ -316,14 +313,7 @@ def pta_logL_correlated(
             )
             for inj in config.signal_injectors
         ]
-        covs = [c for c in covs if c is not None]
-        if covs:
-            per_pulsar_covs.append((
-                jnp.concatenate([U for U, _ in covs], axis=1),
-                jnp.concatenate([Phi for _, Phi in covs]),
-            ))
-        else:
-            per_pulsar_covs.append(None)
+        per_pulsar_covs.append(concat_woodbury_blocks(*covs))
 
     # ---- Process each CorrelatedSignalInjector ----
     total_logL = jnp.float64(0.0)
@@ -474,14 +464,7 @@ def _chunk_correlated(
             )
             for inj in signal_injectors
         ]
-        covs = [c for c in covs if c is not None]
-        if covs:
-            ext_cov = (
-                jnp.concatenate([U for U, _ in covs], axis=1),
-                jnp.concatenate([Phi for _, Phi in covs]),
-            )
-        else:
-            ext_cov = None
+        ext_cov = concat_woodbury_blocks(*covs)
 
         F_p = correlated_injector.get_fourier_basis(toa_data_chunk[p_local])
         rCr_p, logdetC_p, z_p, D_p = _per_pulsar_intermediates(

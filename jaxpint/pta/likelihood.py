@@ -29,6 +29,7 @@ from jaxpint.likelihood import single_pulsar_logL
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
+from jaxpint.utils import concat_woodbury_blocks
 
 from jaxpint.pta.params import GlobalParams
 
@@ -247,14 +248,7 @@ def pta_logL(
             )
             for inj in config.signal_injectors
         ]
-        covs = [c for c in covs if c is not None]
-        if covs:
-            ext_cov = (
-                jnp.concatenate([U for U, _ in covs], axis=1),
-                jnp.concatenate([Phi for _, Phi in covs]),
-            )
-        else:
-            ext_cov = None
+        ext_cov = concat_woodbury_blocks(*covs)
 
         total += single_pulsar_logL(
             config.toa_data_list[p],
@@ -322,14 +316,7 @@ def _chunk_logL(
             )
             for inj in signal_injectors
         ]
-        covs = [c for c in covs if c is not None]
-        if covs:
-            ext_cov = (
-                jnp.concatenate([U for U, _ in covs], axis=1),
-                jnp.concatenate([Phi for _, Phi in covs]),
-            )
-        else:
-            ext_cov = None
+        ext_cov = concat_woodbury_blocks(*covs)
 
         total += single_pulsar_logL(
             toa_data_chunk[p_local],
