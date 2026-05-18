@@ -38,6 +38,7 @@ from jaxpint.likelihood import single_pulsar_logL
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.types import ParameterVector, TOAData
+from jaxpint.utils import concat_woodbury_blocks
 
 if TYPE_CHECKING:
     pass
@@ -193,26 +194,6 @@ def _trust_radius_for_prior(
     if fisher_diag <= 0.0:
         return float("inf")  # degenerate — let the check fire loudly
     return 1.0 / jnp.sqrt(fisher_diag)
-
-
-# ---------------------------------------------------------------------------
-# External covariance composition
-# ---------------------------------------------------------------------------
-
-
-def _concat_external_cov(
-    user_cov: Optional[tuple[Float[Array, "n_toas n_a"], Float[Array, " n_a"]]],
-    marg_cov: tuple[Float[Array, "n_toas n_b"], Float[Array, " n_b"]],
-) -> tuple[Float[Array, "n_toas k"], Float[Array, " k"]]:
-    """Concatenate the user's external_cov with the cached marg'd block."""
-    M_marg, Phi_marg = marg_cov
-    if user_cov is None:
-        return (M_marg, Phi_marg)
-    U_user, Phi_user = user_cov
-    return (
-        jnp.concatenate([U_user, M_marg], axis=1),
-        jnp.concatenate([Phi_user, Phi_marg]),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -376,14 +357,14 @@ def marginalize(
     from jaxpint.fitters._base import compute_time_residuals
 
     over_indices = tuple(fiducial_params.param_index(n) for n in over_list)
-    n_toas = toa_data.n_toas
 
     if len(over_indices) == 0:
-        # Empty marg set: skip Jacobian entirely. The wrapper still composes
-        # cleanly because _concat_external_cov handles the empty (n_toas, 0)
-        # block as a no-op when there's no user external_cov either.
+        # Empty marg set: skip Jacobian entirely. The wrapper passes None
+        # through concat_woodbury_blocks so the user's external_cov flows
+        # through unchanged (no spurious empty column appended).
         J_full = None
-        M_marg = jnp.zeros((n_toas, 0), dtype=jnp.float64)
+        M_marg = None
+        marg_cov_cached = None
     else:
         def _resid_fn(values):
             p = eqx.tree_at(lambda pv: pv.values, fiducial_params, values)
@@ -392,9 +373,8 @@ def marginalize(
         J_full = jax.jacobian(_resid_fn)(fiducial_params.values)
         marg_idx_array = jnp.asarray(over_indices, dtype=jnp.int32)
         M_marg = -J_full[:, marg_idx_array]   # (n_toas, n_marg)
-
-    # --- 5. Phi_marg  ---------------------
-    Phi_marg = jnp.full(len(over_indices), 1e40, dtype=jnp.float64)
+        Phi_marg = jnp.full(len(over_indices), 1e40, dtype=jnp.float64)
+        marg_cov_cached = (M_marg, Phi_marg)
 
     # --- 6. Linearity check  -------------------------------
     if validate_linearity and len(over_indices) > 0:
@@ -455,8 +435,6 @@ def marginalize(
     reduced_skeleton = full_skeleton  
 
     # --- 9. Build the wrapper ---------------------------------------
-    marg_cov_cached = (M_marg, Phi_marg)
-
     def likelihood_marg(
         reduced_params: ParameterVector,
         *,
@@ -470,7 +448,7 @@ def marginalize(
         # values cached inside full_skeleton).
         full = full_skeleton.with_free_values(reduced_params.free_values())
         # Compose user's external_cov with the cached marg'd block.
-        ext_cov = _concat_external_cov(external_cov, marg_cov_cached)
+        ext_cov = concat_woodbury_blocks(external_cov, marg_cov_cached)
         return single_pulsar_logL(
             toa_data,
             timing_model,

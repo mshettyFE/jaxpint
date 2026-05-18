@@ -29,7 +29,7 @@ from jaxpint.fitters import compute_time_residuals
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.utils import woodbury_dot
+from jaxpint.utils import concat_woodbury_blocks, woodbury_dot
 
 from jaxpint.pta.likelihood import PTAConfig, SignalInjector
 from jaxpint.pta.params import GlobalParams
@@ -93,22 +93,15 @@ def _make_branch(
         r = jnp.where(mask, r, 0.0)
 
         # 4. Noise covariance
-        Ndiag, U, Phi = noise_model.covariance(toa_data, params)
+        Ndiag, U_noise, Phi_noise = noise_model.covariance(toa_data, params)
         Ndiag = jnp.where(mask, Ndiag, 1.0)
 
-        # 5. External covariance from signal injectors
-        ext_Us = []
-        ext_Phis = []
-        for inj in signal_injectors:
-            cov = inj.covariance(p, toa_data, params, global_params)
-            if cov is not None:
-                U_ext, Phi_ext = cov
-                ext_Us.append(U_ext)
-                ext_Phis.append(Phi_ext)
-
-        if ext_Us:
-            U = jnp.concatenate([U] + ext_Us, axis=1)
-            Phi = jnp.concatenate([Phi] + ext_Phis)
+        # 5. Concatenate noise (U, Φ) with all per-injector covariance blocks.
+        ext_covs = [
+            inj.covariance(p, toa_data, params, global_params)
+            for inj in signal_injectors
+        ]
+        U, Phi = concat_woodbury_blocks((U_noise, Phi_noise), *ext_covs)
 
         # 6. Woodbury log-likelihood
         rCr, logdetC = woodbury_dot(Ndiag, U, Phi, r, r)
