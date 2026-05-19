@@ -191,6 +191,43 @@ class PTAConfig(eqx.Module):
 
 
 # ---------------------------------------------------------------------------
+# Shared per-pulsar aggregation helper
+# ---------------------------------------------------------------------------
+
+
+def _collect_per_pulsar_external_inputs(
+    p: int,
+    toa_data: TOAData,
+    pulsar_params: ParameterVector,
+    global_params: GlobalParams,
+    signal_injectors: tuple[SignalInjector, ...],
+) -> tuple[
+    Optional[Float[Array, " n_toas"]],
+    Optional[tuple[Float[Array, "n_toas k"], Float[Array, " k"]]],
+]:
+    """Aggregate per-pulsar ``(ext_delay, ext_cov)`` from all signal injectors.
+
+    Shared across :func:`pta_logL`, :func:`pta_logL_chunked`, and the
+    correlated counterparts so the per-pulsar injector dispatch lives in one
+    place.
+    """
+    delays = [
+        inj.delay(p, toa_data, pulsar_params, global_params)
+        for inj in signal_injectors
+    ]
+    delays = [d for d in delays if d is not None]
+    ext_delay = sum(delays) if delays else None
+
+    covs = [
+        inj.covariance(p, toa_data, pulsar_params, global_params)
+        for inj in signal_injectors
+    ]
+    ext_cov = concat_woodbury_blocks(*covs)
+
+    return ext_delay, ext_cov
+
+
+# ---------------------------------------------------------------------------
 # PTA log-likelihood
 # ---------------------------------------------------------------------------
 
@@ -225,30 +262,13 @@ def pta_logL(
     total = jnp.float64(0.0)
 
     for p in range(len(pulsar_params)):
-        # -- Collect delays from all injectors --
-        delays = [
-            inj.delay(
-                p,
-                config.toa_data_list[p],
-                pulsar_params[p],
-                global_params,
-            )
-            for inj in config.signal_injectors
-        ]
-        delays = [d for d in delays if d is not None]
-        ext_delay = sum(delays) if delays else None
-
-        # -- Collect covariances from all injectors --
-        covs = [
-            inj.covariance(
-                p,
-                config.toa_data_list[p],
-                pulsar_params[p],
-                global_params,
-            )
-            for inj in config.signal_injectors
-        ]
-        ext_cov = concat_woodbury_blocks(*covs)
+        ext_delay, ext_cov = _collect_per_pulsar_external_inputs(
+            p,
+            config.toa_data_list[p],
+            pulsar_params[p],
+            global_params,
+            config.signal_injectors,
+        )
 
         total += single_pulsar_logL(
             config.toa_data_list[p],
@@ -295,28 +315,13 @@ def _chunk_logL(
     for p_local in range(len(pulsar_params_chunk)):
         p_global = p_offset + p_local
 
-        delays = [
-            inj.delay(
-                p_global,
-                toa_data_chunk[p_local],
-                pulsar_params_chunk[p_local],
-                global_params,
-            )
-            for inj in signal_injectors
-        ]
-        delays = [d for d in delays if d is not None]
-        ext_delay = sum(delays) if delays else None
-
-        covs = [
-            inj.covariance(
-                p_global,
-                toa_data_chunk[p_local],
-                pulsar_params_chunk[p_local],
-                global_params,
-            )
-            for inj in signal_injectors
-        ]
-        ext_cov = concat_woodbury_blocks(*covs)
+        ext_delay, ext_cov = _collect_per_pulsar_external_inputs(
+            p_global,
+            toa_data_chunk[p_local],
+            pulsar_params_chunk[p_local],
+            global_params,
+            signal_injectors,
+        )
 
         total += single_pulsar_logL(
             toa_data_chunk[p_local],
