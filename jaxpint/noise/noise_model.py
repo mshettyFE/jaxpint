@@ -20,7 +20,6 @@ from jaxpint.components import NoiseComponent, _make_component_names
 from jaxpint.noise.dm_white import ScaleDmError
 from jaxpint.noise.white import ScaleToaError
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.utils import concat_woodbury_blocks
 
 
 class NoiseModel(eqx.Module):
@@ -81,17 +80,18 @@ class NoiseModel(eqx.Module):
         """
         Ndiag = self.scaled_sigma(toa_data, params) ** 2
 
-        blocks = []
-        for comp in self.correlated:
-            _, U_i, Phi_i = comp.covariance(toa_data, params)
-            if U_i is not None:
-                blocks.append((U_i, Phi_i))
-        combined = concat_woodbury_blocks(*blocks)
-        if combined is None:
+        if self.correlated:
+            Us, Phis = zip(
+                *(
+                    comp.covariance(toa_data, params)[1:]
+                    for comp in self.correlated
+                )
+            )
+            U = jnp.concatenate(Us, axis=1)
+            Phidiag = jnp.concatenate(Phis)
+        else:
             U = jnp.zeros((toa_data.n_toas, 0))
             Phidiag = jnp.zeros(0)
-        else:
-            U, Phidiag = combined
 
         return Ndiag, U, Phidiag
 
