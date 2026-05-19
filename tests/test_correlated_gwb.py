@@ -19,10 +19,9 @@ from jaxpint.noise import NoiseModel
 from jaxpint.noise.white import ScaleToaError
 from jaxpint.noise.red_noise import PLRedNoise
 from jaxpint.pta.params import GlobalParams
-from jaxpint.pta.likelihood import PTAConfig, pta_logL
-from jaxpint.pta.correlated_likelihood import (
-    CorrelatedPTAConfig,
-    pta_logL_correlated,
+from jaxpint.pta.likelihood import (
+    PTAConfig,
+    pta_logL,
     _per_pulsar_intermediates,
 )
 from jaxpint.pta.signals.gwb import (
@@ -172,7 +171,7 @@ class TestDenseComparison:
         )
         global_params = gwb_injector.register_params(GlobalParams.empty())
 
-        config = CorrelatedPTAConfig(
+        config = PTAConfig(
             toa_data_list=toa_data_list,
             timing_models=timing_models,
             noise_models=noise_models,
@@ -180,7 +179,7 @@ class TestDenseComparison:
             correlated_injectors=(gwb_injector,),
         )
 
-        logL_corr = pta_logL_correlated(global_params, pulsar_params, config)
+        logL_corr = pta_logL(global_params, pulsar_params, config)
         logL_dense = _dense_logL(
             toa_data_list, timing_models, noise_models,
             pulsar_params, gwb_injector, global_params,
@@ -208,7 +207,7 @@ class TestDenseComparison:
         )
         global_params = gwb_injector.register_params(GlobalParams.empty())
 
-        config = CorrelatedPTAConfig(
+        config = PTAConfig(
             toa_data_list=toa_data_list,
             timing_models=timing_models,
             noise_models=noise_models,
@@ -216,7 +215,7 @@ class TestDenseComparison:
             correlated_injectors=(gwb_injector,),
         )
 
-        logL_corr = pta_logL_correlated(global_params, pulsar_params, config)
+        logL_corr = pta_logL(global_params, pulsar_params, config)
         logL_dense = _dense_logL(
             toa_data_list, timing_models, noise_models,
             pulsar_params, gwb_injector, global_params,
@@ -262,7 +261,7 @@ class TestCURNEquivalence:
 
         gp_corr = gwb_corr.register_params(GlobalParams.empty())
 
-        config_corr = CorrelatedPTAConfig(
+        config_corr = PTAConfig(
             toa_data_list=toa_data_list,
             timing_models=timing_models,
             noise_models=noise_models,
@@ -285,7 +284,7 @@ class TestCURNEquivalence:
             signal_injectors=(curn,),
         )
 
-        logL_corr = pta_logL_correlated(gp_corr, pulsar_params, config_corr)
+        logL_corr = pta_logL(gp_corr, pulsar_params, config_corr)
         logL_curn = pta_logL(gp_curn, pulsar_params, config_curn)
 
         # Gamma=I correlated == CURN uncorrelated
@@ -380,7 +379,7 @@ class TestGradients:
         )
         global_params = gwb_injector.register_params(GlobalParams.empty())
 
-        config = CorrelatedPTAConfig(
+        config = PTAConfig(
             toa_data_list=toa_data_list,
             timing_models=timing_models,
             noise_models=noise_models,
@@ -394,7 +393,7 @@ class TestGradients:
                 names=global_params.names,
                 _name_to_index=global_params._name_to_index,
             )
-            return pta_logL_correlated(gp, pulsar_params, config)
+            return pta_logL(gp, pulsar_params, config)
 
         grad = jax.grad(logL_fn)(global_params.values)
 
@@ -486,7 +485,7 @@ class TestWithRedNoise:
         )
         global_params = gwb_injector.register_params(GlobalParams.empty())
 
-        config = CorrelatedPTAConfig(
+        config = PTAConfig(
             toa_data_list=toa_data_list,
             timing_models=timing_models,
             noise_models=noise_models,
@@ -494,7 +493,7 @@ class TestWithRedNoise:
             correlated_injectors=(gwb_injector,),
         )
 
-        logL_corr = pta_logL_correlated(global_params, pulsar_params, config)
+        logL_corr = pta_logL(global_params, pulsar_params, config)
         logL_dense = _dense_logL(
             toa_data_list, timing_models, noise_models,
             pulsar_params, gwb_injector, global_params,

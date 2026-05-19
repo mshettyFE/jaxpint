@@ -1,8 +1,8 @@
 """Tests for the chunked correlated PTA likelihood.
 
-Validates that :func:`pta_logL_correlated_chunked` matches
-:func:`pta_logL_correlated` across chunk-size variants for HD-correlated
-GWB injectors.
+Validates that :func:`pta_logL_chunked` matches :func:`pta_logL` across
+chunk-size variants when ``config.correlated_injectors`` is non-empty
+(HD-correlated GWB injectors).
 """
 
 from __future__ import annotations
@@ -13,10 +13,10 @@ import numpy as np
 import pytest
 
 from jaxpint.pta.params import GlobalParams
-from jaxpint.pta.correlated_likelihood import (
-    CorrelatedPTAConfig,
-    pta_logL_correlated,
-    pta_logL_correlated_chunked,
+from jaxpint.pta.likelihood import (
+    PTAConfig,
+    pta_logL,
+    pta_logL_chunked,
 )
 from jaxpint.pta.signals.correlated_gwb import HDCorrelatedGWBInjector
 from jaxpint.pta.signals.orf import dipole_orf
@@ -88,7 +88,7 @@ def _build_config(n_pulsars, *, orf_func=None, n_toas_list=None):
 
     global_params = gwb_injector.register_params(GlobalParams.empty())
 
-    config = CorrelatedPTAConfig(
+    config = PTAConfig(
         toa_data_list=toa_data_list,
         timing_models=timing_models,
         noise_models=noise_models,
@@ -107,16 +107,16 @@ CHUNK_SIZES = (1, 2, 3)
 
 
 class TestCorrelatedChunkedMatchesLoop:
-    """pta_logL_correlated_chunked must match pta_logL_correlated."""
+    """pta_logL_chunked must match pta_logL."""
 
     @pytest.mark.parametrize("chunk_size", CHUNK_SIZES)
     def test_hd_correlated(self, chunk_size):
         global_params, pulsar_params, config = _build_config(n_pulsars=5)
 
         logL_loop = float(
-            pta_logL_correlated(global_params, pulsar_params, config)
+            pta_logL(global_params, pulsar_params, config)
         )
-        logL_chunked = pta_logL_correlated_chunked(
+        logL_chunked = pta_logL_chunked(
             global_params, pulsar_params, config, chunk_size=chunk_size,
         )
 
@@ -135,9 +135,9 @@ class TestCorrelatedChunkedMatchesLoop:
         )
 
         logL_loop = float(
-            pta_logL_correlated(global_params, pulsar_params, config)
+            pta_logL(global_params, pulsar_params, config)
         )
-        logL_chunked = pta_logL_correlated_chunked(
+        logL_chunked = pta_logL_chunked(
             global_params, pulsar_params, config, chunk_size=chunk_size,
         )
 
@@ -148,9 +148,9 @@ class TestCorrelatedChunkedMatchesLoop:
     def test_chunk_size_equals_n(self):
         global_params, pulsar_params, config = _build_config(n_pulsars=3)
         logL_loop = float(
-            pta_logL_correlated(global_params, pulsar_params, config)
+            pta_logL(global_params, pulsar_params, config)
         )
-        logL_chunked = pta_logL_correlated_chunked(
+        logL_chunked = pta_logL_chunked(
             global_params, pulsar_params, config, chunk_size=3,
         )
         np.testing.assert_allclose(logL_chunked, logL_loop, rtol=1e-10, atol=1e-13)
@@ -158,9 +158,9 @@ class TestCorrelatedChunkedMatchesLoop:
     def test_chunk_size_exceeds_n(self):
         global_params, pulsar_params, config = _build_config(n_pulsars=3)
         logL_loop = float(
-            pta_logL_correlated(global_params, pulsar_params, config)
+            pta_logL(global_params, pulsar_params, config)
         )
-        logL_chunked = pta_logL_correlated_chunked(
+        logL_chunked = pta_logL_chunked(
             global_params, pulsar_params, config, chunk_size=10,
         )
         np.testing.assert_allclose(logL_chunked, logL_loop, rtol=1e-10, atol=1e-13)
@@ -170,9 +170,9 @@ class TestCorrelatedChunkedMatchesLoop:
             n_pulsars=4, n_toas_list=[15, 35, 55, 80],
         )
         logL_loop = float(
-            pta_logL_correlated(global_params, pulsar_params, config)
+            pta_logL(global_params, pulsar_params, config)
         )
-        logL_chunked = pta_logL_correlated_chunked(
+        logL_chunked = pta_logL_chunked(
             global_params, pulsar_params, config, chunk_size=2,
         )
         np.testing.assert_allclose(logL_chunked, logL_loop, rtol=1e-10, atol=1e-13)
@@ -187,13 +187,13 @@ class TestCorrelatedChunkedValidation:
     def test_zero_chunk_size_raises(self):
         global_params, pulsar_params, config = _build_config(n_pulsars=2)
         with pytest.raises(ValueError, match="chunk_size must be positive"):
-            pta_logL_correlated_chunked(
+            pta_logL_chunked(
                 global_params, pulsar_params, config, chunk_size=0,
             )
 
     def test_negative_chunk_size_raises(self):
         global_params, pulsar_params, config = _build_config(n_pulsars=2)
         with pytest.raises(ValueError, match="chunk_size must be positive"):
-            pta_logL_correlated_chunked(
+            pta_logL_chunked(
                 global_params, pulsar_params, config, chunk_size=-1,
             )
