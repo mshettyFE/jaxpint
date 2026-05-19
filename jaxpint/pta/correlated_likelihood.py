@@ -40,7 +40,10 @@ from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import concat_woodbury_blocks, woodbury_dot, woodbury_solve
 
 from jaxpint.pta.params import GlobalParams
-from jaxpint.pta.likelihood import SignalInjector
+from jaxpint.pta.likelihood import (
+    SignalInjector,
+    _collect_per_pulsar_external_inputs,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -292,28 +295,15 @@ def pta_logL_correlated(
     ] = []
 
     for p in range(n_psr):
-        delays = [
-            inj.delay(
-                p,
-                config.toa_data_list[p],
-                pulsar_params[p],
-                global_params,
-            )
-            for inj in config.signal_injectors
-        ]
-        delays = [d for d in delays if d is not None]
-        per_pulsar_delays.append(sum(delays) if delays else None)
-
-        covs = [
-            inj.covariance(
-                p,
-                config.toa_data_list[p],
-                pulsar_params[p],
-                global_params,
-            )
-            for inj in config.signal_injectors
-        ]
-        per_pulsar_covs.append(concat_woodbury_blocks(*covs))
+        ext_delay, ext_cov = _collect_per_pulsar_external_inputs(
+            p,
+            config.toa_data_list[p],
+            pulsar_params[p],
+            global_params,
+            config.signal_injectors,
+        )
+        per_pulsar_delays.append(ext_delay)
+        per_pulsar_covs.append(ext_cov)
 
     # ---- Process each CorrelatedSignalInjector ----
     total_logL = jnp.float64(0.0)
@@ -443,28 +433,13 @@ def _chunk_correlated(
     for p_local in range(len(pulsar_params_chunk)):
         p_global = p_offset + p_local
 
-        delays = [
-            inj.delay(
-                p_global,
-                toa_data_chunk[p_local],
-                pulsar_params_chunk[p_local],
-                global_params,
-            )
-            for inj in signal_injectors
-        ]
-        delays = [d for d in delays if d is not None]
-        ext_delay = sum(delays) if delays else None
-
-        covs = [
-            inj.covariance(
-                p_global,
-                toa_data_chunk[p_local],
-                pulsar_params_chunk[p_local],
-                global_params,
-            )
-            for inj in signal_injectors
-        ]
-        ext_cov = concat_woodbury_blocks(*covs)
+        ext_delay, ext_cov = _collect_per_pulsar_external_inputs(
+            p_global,
+            toa_data_chunk[p_local],
+            pulsar_params_chunk[p_local],
+            global_params,
+            signal_injectors,
+        )
 
         F_p = correlated_injector.get_fourier_basis(toa_data_chunk[p_local])
         rCr_p, logdetC_p, z_p, D_p = _per_pulsar_intermediates(
