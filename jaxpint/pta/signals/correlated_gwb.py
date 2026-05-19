@@ -1,6 +1,6 @@
 """HD-correlated gravitational wave background injector.
 
-Implements :class:`~jaxpint.pta.correlated_likelihood.CorrelatedSignalInjector`
+Implements :class:`~jaxpint.pta.likelihood.CorrelatedSignalInjector`
 for a power-law GWB with Hellings-Downs (or other) inter-pulsar correlations.
 
 References
@@ -18,7 +18,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.types import TOAData
 from jaxpint.pta.params import GlobalParams
-from jaxpint.pta.correlated_likelihood import CorrelatedSignalInjector
+from jaxpint.pta.likelihood import CorrelatedSignalInjector
 from jaxpint.pta.signals.gwb import (
     CURN_PARAM_DEFAULTS,
     fourier_basis,
