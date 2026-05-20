@@ -13,7 +13,6 @@ from jaxpint.pta.likelihood import (
     PTAConfig,
     SignalInjector,
     pta_logL,
-    pta_logL_chunked,
 )
 from jaxpint.pta.fisher import fisher_matrix, flatten_params, unflatten_params
 from jaxpint.pta.signals import (
@@ -39,7 +38,6 @@ __all__ = [
     "SignalInjector",
     "CorrelatedSignalInjector",
     "pta_logL",
-    "pta_logL_chunked",
     # Fisher
     "fisher_matrix",
     "flatten_params",
