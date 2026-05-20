@@ -19,7 +19,7 @@ from jaxpint.pta.likelihood import (
     pta_logL_chunked,
 )
 from jaxpint.pta.signals.correlated_gwb import HDCorrelatedGWBInjector
-from jaxpint.pta.signals.orf import dipole_orf
+from jaxpint.pta.signals.orf import hd_orf, dipole_orf
 
 from tests.helpers import make_simple_pulsar
 
@@ -197,3 +197,81 @@ class TestCorrelatedChunkedValidation:
             pta_logL_chunked(
                 global_params, pulsar_params, config, chunk_size=-1,
             )
+
+
+# ---------------------------------------------------------------------------
+# Multiple correlated injectors (joint outer-tier solve, chunked)
+# ---------------------------------------------------------------------------
+
+
+def _build_config_two_injectors(n_pulsars=3):
+    """Same shape of synthetic PTA, but with two correlated injectors with
+    distinct prefixes / spectra / sizes (HD + dipole)."""
+    (toa_data_list, timing_models, noise_models, pulsar_params, positions) = (
+        _make_multi_pulsar_setup(n_pulsars=n_pulsars)
+    )
+
+    T_span = 365.25 * 86400.0
+
+    cinj_a = HDCorrelatedGWBInjector(
+        pulsar_positions=positions,
+        n_components=4,
+        T_span=T_span,
+        orf_func=hd_orf,
+        prefix="gwb_hd_",
+        initial_values={"log10_A": -14.0, "gamma": 4.33},
+    )
+    cinj_b = HDCorrelatedGWBInjector(
+        pulsar_positions=positions,
+        n_components=3,
+        T_span=T_span,
+        orf_func=dipole_orf,
+        prefix="gwb_dip_",
+        initial_values={"log10_A": -14.8, "gamma": 3.0},
+    )
+
+    global_params = cinj_a.register_params(GlobalParams.empty())
+    global_params = cinj_b.register_params(global_params)
+
+    config = PTAConfig(
+        toa_data_list=toa_data_list,
+        timing_models=timing_models,
+        noise_models=noise_models,
+        signal_injectors=(),
+        correlated_injectors=(cinj_a, cinj_b),
+    )
+    return global_params, pulsar_params, config
+
+
+class TestCorrelatedChunkedMatchesLoopK2:
+    """``pta_logL_chunked`` matches ``pta_logL`` with K=2 correlated injectors."""
+
+    @pytest.mark.parametrize("chunk_size", CHUNK_SIZES)
+    def test_two_injectors_chunked_matches_loop(self, chunk_size):
+        global_params, pulsar_params, config = _build_config_two_injectors(
+            n_pulsars=3
+        )
+        logL_loop = float(pta_logL(global_params, pulsar_params, config))
+        logL_chunked = pta_logL_chunked(
+            global_params, pulsar_params, config, chunk_size=chunk_size,
+        )
+        np.testing.assert_allclose(
+            logL_chunked, logL_loop, rtol=1e-10, atol=1e-13,
+            err_msg=(
+                f"K=2 chunked logL with chunk_size={chunk_size} does not "
+                "match the non-chunked reference"
+            ),
+        )
+
+    def test_two_injectors_full_chunk_matches_loop(self):
+        """Edge case: chunk_size = n_pulsars (single chunk, no chunking benefit)."""
+        global_params, pulsar_params, config = _build_config_two_injectors(
+            n_pulsars=3
+        )
+        logL_loop = float(pta_logL(global_params, pulsar_params, config))
+        logL_chunked = pta_logL_chunked(
+            global_params, pulsar_params, config, chunk_size=3,
+        )
+        np.testing.assert_allclose(
+            logL_chunked, logL_loop, rtol=1e-10, atol=1e-13,
+        )
