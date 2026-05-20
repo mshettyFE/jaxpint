@@ -199,13 +199,19 @@ class ParameterVector(eqx.Module):
     # Units assigned to each name
     # Purely for documentation. JAX has a preset unit system that it will assume as mentioned above
     units: tuple[str, ...] = eqx.field(static=True)
-    # Storing the integer portions of the epoch values tacitly assumes that these don't change drastically while you are fitting 
+    # Storing the integer portions of the epoch values tacitly assumes that these don't change drastically while you are fitting
     # Most of the fitting tests don't break, so I guess this is reasonable?
     epoch_int_values: dict[str, float] = eqx.field(static=True)
+    # Which parameters have been analytically marginalized out (their values become
+    # the fiducial linearization point y_fid used by jaxpint.bayes.marginal.marginalize).
+    # Mathematically distinct from frozen_mask: frozen contributes its value to
+    # residuals as-is; marginalized has its prior covariance folded into the noise
+    # covariance via Woodbury. Defaults to all-False (no marginalization).
+    marginalized_mask: tuple[bool, ...] = eqx.field(static=True, default=())
     # Maps parameter names to values location. Autopopulate in check_init
     _name_to_index: dict[str, int] = eqx.field(static=True, default_factory=dict)
-    # Integer indices of free (unfrozen) parameters. Autopopulated in check_init
-    # Needed since the jit compiler doesn't like boolean jnp masks
+    # Integer indices of free (= not frozen AND not marginalized) parameters.
+    # Autopopulated in check_init. Needed since jit doesn't like boolean jnp masks.
     _free_indices: tuple[int, ...] = eqx.field(static=True, default=())
 
     def __check_init__(self):
@@ -223,17 +229,31 @@ class ParameterVector(eqx.Module):
                 f"values.shape[0] = {self.values.shape[0]}, expected {n}"
             )
 
+        # Default marginalized_mask to all-False if not provided. Setting via
+        # object.__setattr__ is the standard equinox/dataclass pattern for
+        # auto-populating static fields after init.
+        if len(self.marginalized_mask) == 0 and n > 0:
+            object.__setattr__(self, "marginalized_mask", (False,) * n)
+        elif len(self.marginalized_mask) != n:
+            raise ValueError(
+                f"len(marginalized_mask) = {len(self.marginalized_mask)}, expected {n}"
+            )
+
         # Build _name_to_index from names
         object.__setattr__(
             self, "_name_to_index",
             {name: i for i, name in enumerate(self.names)},
         )
 
-        # Integer indices of free parameters, used by JIT-compiled fitter code.
-        # Boolean indexing is not supported inside jax.jit; integer indices are.
+        # Integer indices of free parameters (= not frozen AND not marginalized),
+        # used by JIT-compiled fitter code. Boolean indexing is not supported
+        # inside jax.jit; integer indices are.
         object.__setattr__(
             self, "_free_indices",
-            tuple(i for i, f in enumerate(self.frozen_mask) if not f),
+            tuple(
+                i for i in range(n)
+                if not self.frozen_mask[i] and not self.marginalized_mask[i]
+            ),
         )
 
         extra = set(self.epoch_int_values) - set(self.names)
@@ -340,8 +360,20 @@ class ParameterVector(eqx.Module):
         return self.values[indices]
 
     def free_names(self) -> tuple[str, ...]:
-        """Names of free parameters (Python-level, not JIT-compatible)."""
-        return tuple(n for n, f in zip(self.names, self.frozen_mask) if not f)
+        """Names of free parameters (= not frozen AND not marginalized).
+        Python-level, not JIT-compatible."""
+        return tuple(
+            self.names[i] for i in range(len(self.names))
+            if not self.frozen_mask[i] and not self.marginalized_mask[i]
+        )
+
+    def marginalized_names(self) -> tuple[str, ...]:
+        """Names of parameters that have been analytically marginalized out.
+        Python-level, not JIT-compatible."""
+        return tuple(
+            self.names[i] for i in range(len(self.names))
+            if self.marginalized_mask[i]
+        )
 
     def with_free_values(self, new_free: Float[Array, " n_free"]) -> ParameterVector:
         """Return a new ParameterVector with free parameter values replaced.
@@ -378,6 +410,50 @@ class ParameterVector(eqx.Module):
         idx = self._name_to_index[name]
         new_values = self.values.at[idx].set(val)
         return eqx.tree_at(lambda pv: pv.values, self, new_values)
+
+    def with_marginalized(self, names) -> ParameterVector:
+        """Return a copy with marginalized_mask=True for the given names.
+
+        Values for marg'd entries are left as-is — they become the y_fid that
+        :func:`jaxpint.bayes.marginal.marginalize` anchors its linearization on.
+        Marginalized parameters are dropped from ``free_values()`` /
+        ``with_free_values()`` (their values are held fixed at y_fid during
+        likelihood evaluation, but their prior covariance is folded into the
+        noise covariance via Woodbury inside ``marginalize``).
+
+        Parameters
+        ----------
+        names : iterable of str
+            Parameter names to mark as marginalized. Each name must be present
+            in ``self.names``.
+
+        Returns
+        -------
+        ParameterVector
+            Copy with updated ``marginalized_mask``. Construction re-runs
+            ``__check_init__``, which recomputes ``_free_indices`` to exclude
+            both frozen and newly-marginalized entries.
+        """
+        marked = set(names)
+        unknown = marked - set(self.names)
+        if unknown:
+            raise KeyError(
+                f"with_marginalized: unknown parameter name(s) {sorted(unknown)}; "
+                f"not in self.names."
+            )
+        new_mask = tuple(
+            self.marginalized_mask[i] or (self.names[i] in marked)
+            for i in range(len(self.names))
+        )
+        # Construct fresh so __check_init__ rebuilds _free_indices.
+        return ParameterVector(
+            values=self.values,
+            frozen_mask=self.frozen_mask,
+            names=self.names,
+            units=self.units,
+            epoch_int_values=self.epoch_int_values,
+            marginalized_mask=new_mask,
+        )
 
     @property
     def n_params(self) -> int:

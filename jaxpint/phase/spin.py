@@ -171,6 +171,7 @@ class Spindown(PhaseComponent):
             names=new_params.names,
             units=new_params.units,
             epoch_int_values=new_epoch_ints,
+            marginalized_mask=new_params.marginalized_mask,
         )
 
         return new_params

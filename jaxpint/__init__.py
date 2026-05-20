@@ -1,8 +1,8 @@
 """JaxPINT: JAX-accelerated pulsar timing (port of PINT)."""
 
-import jax
+import jax as _jax
 
-jax.config.update("jax_enable_x64", True)
+_jax.config.update("jax_enable_x64", True)
 
 from .dual_float import DualFloat
 from .types import TOAData, ParameterVector

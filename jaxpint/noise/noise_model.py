@@ -181,32 +181,18 @@ class NoiseModel(eqx.Module):
         """
         Ndiag = self.scaled_sigma(toa_data, params) ** 2
 
-        Phi_blocks: list[Float[Array, " _"]] = []
-        for i in self._static_indices:
-            _, _, Phi_i = self.correlated[i].covariance(toa_data, params)
-            Phi_blocks.append(Phi_i)
-
-        U_dyn: list[Float[Array, "n_toas _"]] = []
-        for i in self._dynamic_indices:
-            _, U_i, Phi_i = self.correlated[i].covariance(toa_data, params)
-            if U_i is not None:
-                U_dyn.append(U_i)
-                Phi_blocks.append(Phi_i)
-
-        # Hot path: use the cached jax.Array view so the device buffer
-        # is reused across calls instead of re-transferred per call.
-        if self._U_static is not None and U_dyn:
-            U = jnp.concatenate([self._U_static_jax, *U_dyn], axis=1)
-        elif self._U_static is not None:
-            U = self._U_static_jax
-        elif U_dyn:
-            U = jnp.concatenate(U_dyn, axis=1) if len(U_dyn) > 1 else U_dyn[0]
+        if self.correlated:
+            Us, Phis = zip(
+                *(
+                    comp.covariance(toa_data, params)[1:]
+                    for comp in self.correlated
+                )
+            )
+            U = jnp.concatenate(Us, axis=1)
+            Phidiag = jnp.concatenate(Phis)
         else:
             U = jnp.zeros((toa_data.n_toas, 0))
-
-        Phidiag = (
-            jnp.concatenate(Phi_blocks) if Phi_blocks else jnp.zeros(0)
-        )
+            Phidiag = jnp.zeros(0)
 
         return Ndiag, U, Phidiag
 

@@ -418,6 +418,52 @@ def woodbury_solve(
     return Ninv_B - Ninv_U @ Sigma_inv_UtNinvB
 
 
+def concat_woodbury_blocks(
+    *blocks: Optional[
+        tuple[Float[Array, "n_toas _k"], Float[Array, " _k"]]
+    ],
+) -> Optional[tuple[Float[Array, "n_toas k"], Float[Array, " k"]]]:
+    r"""Concatenate one or more low-rank Woodbury :math:`(U, \Phi)` blocks.
+
+    Each input is either ``None`` or a ``(U, Phi)`` tuple where ``U`` has
+    shape ``(n_toas, k_i)`` and ``Phi`` has shape ``(k_i,)``. ``None`` entries
+    are skipped.  The result is::
+
+        U   = jnp.concatenate([U_i  for non-None i], axis=1)   # (n_toas, sum k_i)
+        Phi = jnp.concatenate([Phi_i for non-None i])           # (sum k_i,)
+
+    A single non-None input is returned unchanged (no array copy).
+
+    Returns
+    -------
+    None
+        If every input is ``None`` (no contribution to the noise covariance —
+        the caller may treat this as "no Woodbury augmentation needed").
+    tuple of arrays
+        Concatenated ``(U, Phi)`` block otherwise.
+
+    Notes
+    -----
+    Used by :func:`single_pulsar_logL`, :func:`pta_logL`,
+    :class:`NoiseModel.covariance`, :func:`marginalize` and the
+    correlated-likelihood paths to compose the Woodbury low-rank update from
+    multiple sources (white-noise components, per-pulsar signal injectors,
+    cross-pulsar GW basis, analytic-marginalization prior block, etc.).
+
+    Callers that need a guaranteed-non-None empty-shaped result (e.g.
+    ``(zeros((n_toas, 0)), zeros(0))``) should provide that fallback at the
+    call site.
+    """
+    non_empty = [b for b in blocks if b is not None]
+    if not non_empty:
+        return None
+    if len(non_empty) == 1:
+        return non_empty[0]
+    Us = [U for U, _ in non_empty]
+    Phis = [Phi for _, Phi in non_empty]
+    return jnp.concatenate(Us, axis=1), jnp.concatenate(Phis)
+
+
 # ---------------------------------------------------------------------------
 # Woodbury precompute / apply split
 # ---------------------------------------------------------------------------
