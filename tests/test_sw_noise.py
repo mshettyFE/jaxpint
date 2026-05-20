@@ -95,66 +95,9 @@ def _make_plsw(n_toas=100, n_freqs=5, T=3.0 * 365.25 * 86400.0):
 
 
 class TestPLSWNoiseBasic:
-    """Basic shape and value tests for PLSWNoise."""
-
-    def test_covariance_shape(self):
-        n_toas, n_freqs = 50, 5
-        plsw, params, toa_data, _, _, _, _, _ = _make_plsw(n_toas=n_toas, n_freqs=n_freqs)
-
-        Ndiag, U, Phidiag = plsw.covariance(toa_data, params)
-
-        assert Ndiag.shape == (n_toas,)
-        assert U.shape == (n_toas, 2 * n_freqs)
-        assert Phidiag.shape == (2 * n_freqs,)
-        npt.assert_array_equal(Ndiag, jnp.zeros(n_toas))
-
-    def test_psd_weights_positive(self):
-        plsw, params, _, _, _, _, _, _ = _make_plsw()
-        weights = plsw.psd_weights(params)
-        assert jnp.all(weights > 0)
-        assert jnp.all(jnp.isfinite(weights))
-
-    def test_psd_weights_values(self):
-        """Verify PSD formula against manual computation."""
-        n_freqs = 3
-        T = 5.0 * 365.25 * 86400.0
-        plsw, params, _, _, freqs, df, _, _ = _make_plsw(
-            n_toas=20, n_freqs=n_freqs, T=T
-        )
-
-        log10_A = -13.0
-        gamma = 3.5
-        A = 10.0 ** log10_A
-
-        expected_psd = (
-            A ** 2 / (12.0 * np.pi ** 2)
-            * FYR ** (gamma - 3.0)
-            * np.array(freqs) ** (-gamma)
-        )
-        expected_weights = np.repeat(expected_psd * np.array(df), 2)
-
-        weights = plsw.psd_weights(params)
-        npt.assert_allclose(np.array(weights), expected_weights, rtol=1e-12)
-
-    def test_generate_shape(self):
-        plsw, params, toa_data, _, _, _, _, _ = _make_plsw(n_toas=50)
-        key = jax.random.PRNGKey(42)
-        draws = plsw.generate(toa_data, params, key)
-        assert draws.shape == (50,)
-
-    def test_generate_reproducible(self):
-        plsw, params, toa_data, _, _, _, _, _ = _make_plsw()
-        key = jax.random.PRNGKey(42)
-        d1 = plsw.generate(toa_data, params, key)
-        d2 = plsw.generate(toa_data, params, key)
-        npt.assert_array_equal(d1, d2)
-
-    def test_generate_different_keys(self):
-        plsw, params, toa_data, _, _, _, _, _ = _make_plsw()
-        d1 = plsw.generate(toa_data, params, jax.random.PRNGKey(0))
-        d2 = plsw.generate(toa_data, params, jax.random.PRNGKey(1))
-        # SW noise amplitudes are very small; use relative tolerance
-        assert not np.allclose(d1, d2, atol=0, rtol=0.01)
+    """SW-noise-specific tests; shared shape/PSD/generate tests live in
+    ``test_correlated_noise_common.py``.
+    """
 
     def test_sw_scaling_with_geometry(self):
         """Verify scaled basis matches manual geometry × DMCONST / f² computation."""

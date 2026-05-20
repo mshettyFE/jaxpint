@@ -1,6 +1,5 @@
 """Tests for BinaryDDGR delay model against PINT."""
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import numpy.testing as npt
@@ -96,55 +95,6 @@ class TestBinaryDDGRvsPINT:
                             err_msg="DR mismatch")
         npt.assert_allclose(jax_dth, pint_dth, rtol=2e-10,
                             err_msg="DTH mismatch")
-
-    @pytest.mark.slow
-    def test_ddgr_delay_matches_pint(self, ddgr_params):
-        """Full DDGR delay should match PINT."""
-        pytest.importorskip("pint")
-        import astropy.units as u
-        from pint.models.stand_alone_psr_binaries.DDGR_model import DDGRmodel
-
-        from jaxpint.binary.ddgr import BinaryDDGR
-
-        # --- PINT ---
-        bm = DDGRmodel()
-        pint_params = {
-            "PB": ddgr_params["PB"] * u.day,
-            "T0": np.longdouble(ddgr_params["T0"]) * u.day,
-            "A1": ddgr_params["A1"] * u.lightsecond,
-            "ECC": ddgr_params["ECC"] * u.Unit(""),
-            "OM": ddgr_params["OM_deg"] * u.deg,
-            "MTOT": ddgr_params["MTOT"] * u.Msun,
-            "M2": ddgr_params["M2"] * u.Msun,
-        }
-        t = np.linspace(54000.5, 54200.0, 500) * u.day
-        bm.update_input(barycentric_toa=t, **pint_params)
-        pint_delay = bm.DDdelay().to(u.second).value
-
-        # --- JaxPINT ---
-        ddgr = BinaryDDGR(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
-            mtot_name="MTOT", m2_name="M2",
-        )
-
-        t0_int = np.floor(ddgr_params["T0"])
-        t0_frac = ddgr_params["T0"] - t0_int
-
-        param_names = ("PB", "T0", "A1", "ECC", "OM", "MTOT", "M2")
-        param_values = [
-            ddgr_params["PB"], t0_frac, ddgr_params["A1"],
-            ddgr_params["ECC"], ddgr_params["OM"],
-            ddgr_params["MTOT"], ddgr_params["M2"],
-        ]
-        params = make_binary_params(
-            param_names, param_values, "BinaryDDGR",
-            epoch_int_values={"T0": t0_int},
-        )
-        toa_data = make_binary_toa_data(np.linspace(54000.5, 54200.0, 500))
-        jax_delay = np.array(ddgr(toa_data, params, jnp.zeros(500)))
-
-        npt.assert_allclose(jax_delay, pint_delay, atol=1e-11, rtol=1e-11)
 
     @pytest.mark.slow
     def test_ddgr_matches_dd_with_same_pk(self, ddgr_params):
@@ -276,66 +226,3 @@ class TestBinaryDDGRvsPINT:
 
         assert not np.allclose(d_no, d_x), "XOMDOT should change the delay"
 
-    def test_ddgr_jit(self, ddgr_params):
-        """BinaryDDGR should be JIT-compilable."""
-        from jaxpint.binary.ddgr import BinaryDDGR
-
-        ddgr = BinaryDDGR(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
-            mtot_name="MTOT", m2_name="M2",
-        )
-
-        t0_int = np.floor(ddgr_params["T0"])
-        t0_frac = ddgr_params["T0"] - t0_int
-
-        param_names = ("PB", "T0", "A1", "ECC", "OM", "MTOT", "M2")
-        param_values = [
-            ddgr_params["PB"], t0_frac, ddgr_params["A1"],
-            ddgr_params["ECC"], ddgr_params["OM"],
-            ddgr_params["MTOT"], ddgr_params["M2"],
-        ]
-        params = make_binary_params(param_names, param_values, "BinaryDDGR", {"T0": t0_int})
-        n = 10
-        toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
-
-        jitted = jax.jit(ddgr)
-        result = jitted(toa_data, params, jnp.zeros(n))
-        assert result.shape == (n,)
-        assert jnp.all(jnp.isfinite(result))
-
-    def test_ddgr_autodiff(self, ddgr_params):
-        """BinaryDDGR should be differentiable via JAX autodiff."""
-        from jaxpint.binary.ddgr import BinaryDDGR
-
-        ddgr = BinaryDDGR(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
-            mtot_name="MTOT", m2_name="M2",
-        )
-
-        t0_int = np.floor(ddgr_params["T0"])
-        t0_frac = ddgr_params["T0"] - t0_int
-
-        param_names = ("PB", "T0", "A1", "ECC", "OM", "MTOT", "M2")
-        param_values = [
-            ddgr_params["PB"], t0_frac, ddgr_params["A1"],
-            ddgr_params["ECC"], ddgr_params["OM"],
-            ddgr_params["MTOT"], ddgr_params["M2"],
-        ]
-        params = make_binary_params(param_names, param_values, "BinaryDDGR", {"T0": t0_int})
-        n = 10
-        toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
-
-        def delay_fn(param_values):
-            p = params.with_free_values(param_values)
-            return ddgr(toa_data, p, jnp.zeros(n))
-
-        J = jax.jacobian(delay_fn)(params.free_values())
-        assert J.shape == (n, len(param_names))
-        assert jnp.all(jnp.isfinite(J))
-        # MTOT and M2 columns should be nonzero
-        mtot_col = list(param_names).index("MTOT")
-        m2_col = list(param_names).index("M2")
-        assert jnp.any(jnp.abs(J[:, mtot_col]) > 0)
-        assert jnp.any(jnp.abs(J[:, m2_col]) > 0)

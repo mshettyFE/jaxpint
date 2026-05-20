@@ -1,6 +1,5 @@
 """Tests for BinaryELL1 delay model against PINT."""
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import numpy.testing as npt
@@ -26,55 +25,7 @@ def ell1_params():
 
 
 class TestBinaryELL1vsPINT:
-    """Compare JaxPINT BinaryELL1 against PINT's standalone ELL1model."""
-
-    @pytest.mark.slow
-    def test_ell1_delay_matches_pint(self, ell1_params):
-        """ELL1 delay should match PINT to float64 precision."""
-        pytest.importorskip("pint")
-        import astropy.units as u
-        from pint.models.stand_alone_psr_binaries.ELL1_model import ELL1model
-        from pint import Tsun
-
-        from jaxpint.binary.ell1 import BinaryELL1
-
-        # --- PINT ELL1 model ---
-        bm = ELL1model()
-        pint_params = {
-            "PB": ell1_params["PB"] * u.day,
-            "TASC": np.longdouble(ell1_params["TASC"]) * u.day,
-            "A1": ell1_params["A1"] * u.lightsecond,
-            "EPS1": ell1_params["EPS1"] * u.Unit(""),
-            "EPS2": ell1_params["EPS2"] * u.Unit(""),
-            "M2": ell1_params["M2"] * u.M_sun,
-            "SINI": ell1_params["SINI"] * u.Unit(""),
-            "PBDOT": ell1_params["PBDOT"] * u.Unit(""),
-        }
-        t = np.linspace(54000.5, 54300.0, 500) * u.day
-        bm.update_input(barycentric_toa=t, **pint_params)
-        pint_delay = bm.ELL1delay().to(u.second).value
-
-        # --- JaxPINT BinaryELL1 ---
-        ell1 = BinaryELL1(
-            pb_name="PB", tasc_name="TASC", a1_name="A1",
-            eps1_name="EPS1", eps2_name="EPS2",
-            m2_name="M2", sini_name="SINI", pbdot_name="PBDOT",
-        )
-
-        tasc_int = np.floor(ell1_params["TASC"])
-        tasc_frac = ell1_params["TASC"] - tasc_int
-
-        param_names = ("PB", "TASC", "A1", "EPS1", "EPS2", "M2", "SINI", "PBDOT")
-        param_values = [ell1_params["PB"], tasc_frac, ell1_params["A1"],
-                        ell1_params["EPS1"], ell1_params["EPS2"],
-                        ell1_params["M2"], ell1_params["SINI"], ell1_params["PBDOT"]]
-        params = make_binary_params(param_names, param_values, "BinaryELL1",
-                              epoch_int_values={"TASC": tasc_int})
-
-        toa_data = make_binary_toa_data(np.linspace(54000.5, 54300.0, 500))
-        jax_delay = np.array(ell1(toa_data, params, jnp.zeros(500)))
-
-        npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
+    """ELL1 variants beyond the standard parametrized suite in ``test_binary_common.py``."""
 
     @pytest.mark.slow
     def test_ell1_no_shapiro(self, ell1_params):
@@ -116,61 +67,3 @@ class TestBinaryELL1vsPINT:
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
 
-    def test_ell1_jit(self, ell1_params):
-        """BinaryELL1 should be JIT-compilable."""
-        from jaxpint.binary.ell1 import BinaryELL1
-
-        ell1 = BinaryELL1(
-            pb_name="PB", tasc_name="TASC", a1_name="A1",
-            eps1_name="EPS1", eps2_name="EPS2", shapiro_mode="none",
-        )
-
-        tasc_int = np.floor(ell1_params["TASC"])
-        tasc_frac = ell1_params["TASC"] - tasc_int
-
-        params = make_binary_params(
-            ("PB", "TASC", "A1", "EPS1", "EPS2"),
-            [ell1_params["PB"], tasc_frac, ell1_params["A1"],
-             ell1_params["EPS1"], ell1_params["EPS2"]],
-            "BinaryELL1", epoch_int_values={"TASC": tasc_int},
-        )
-
-        n = 10
-        toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
-        jitted = jax.jit(ell1)
-        result = jitted(toa_data, params, jnp.zeros(n))
-        assert result.shape == (n,)
-        assert jnp.all(jnp.isfinite(result))
-
-    def test_ell1_autodiff(self, ell1_params):
-        """BinaryELL1 should be differentiable via JAX autodiff."""
-        from jaxpint.binary.ell1 import BinaryELL1
-
-        ell1 = BinaryELL1(
-            pb_name="PB", tasc_name="TASC", a1_name="A1",
-            eps1_name="EPS1", eps2_name="EPS2",
-            m2_name="M2", sini_name="SINI",
-        )
-
-        tasc_int = np.floor(ell1_params["TASC"])
-        tasc_frac = ell1_params["TASC"] - tasc_int
-
-        param_names = ("PB", "TASC", "A1", "EPS1", "EPS2", "M2", "SINI")
-        param_values = [ell1_params["PB"], tasc_frac, ell1_params["A1"],
-                        ell1_params["EPS1"], ell1_params["EPS2"],
-                        ell1_params["M2"], ell1_params["SINI"]]
-        params = make_binary_params(param_names, param_values, "BinaryELL1",
-                              epoch_int_values={"TASC": tasc_int})
-
-        n = 10
-        toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
-
-        def delay_fn(param_values):
-            p = params.with_free_values(param_values)
-            return ell1(toa_data, p, jnp.zeros(n))
-
-        J = jax.jacobian(delay_fn)(params.free_values())
-        assert J.shape == (n, len(param_names))
-        assert jnp.all(jnp.isfinite(J))
-        a1_col = list(param_names).index("A1")
-        assert jnp.any(jnp.abs(J[:, a1_col]) > 0)

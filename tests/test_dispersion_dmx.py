@@ -10,22 +10,23 @@ from jaxpint.delay.dispersion_dmx import DispersionDMX
 from tests.helpers import make_gbt_toa_data, make_dmx_params
 
 
-def _single_bin_component():
+def _make_dmx_component(n_bins):
+    """Build a DispersionDMX with auto-named bins."""
+    idx = tuple(f"{i + 1:04d}" for i in range(n_bins))
     return DispersionDMX(
-        n_bins=1,
-        dmx_names=("DMX_0001",),
-        dmxr1_names=("DMXR1_0001",),
-        dmxr2_names=("DMXR2_0001",),
+        n_bins=n_bins,
+        dmx_names=tuple(f"DMX_{i}" for i in idx),
+        dmxr1_names=tuple(f"DMXR1_{i}" for i in idx),
+        dmxr2_names=tuple(f"DMXR2_{i}" for i in idx),
     )
+
+
+def _single_bin_component():
+    return _make_dmx_component(1)
 
 
 def _two_bin_component():
-    return DispersionDMX(
-        n_bins=2,
-        dmx_names=("DMX_0001", "DMX_0002"),
-        dmxr1_names=("DMXR1_0001", "DMXR1_0002"),
-        dmxr2_names=("DMXR2_0001", "DMXR2_0002"),
-    )
+    return _make_dmx_component(2)
 
 
 # ===========================================================================
@@ -39,12 +40,7 @@ class TestConstruction:
         assert c.dmx_names == ("DMX_0001",)
 
     def test_multiple_bins(self):
-        c = DispersionDMX(
-            n_bins=3,
-            dmx_names=("DMX_0001", "DMX_0002", "DMX_0003"),
-            dmxr1_names=("DMXR1_0001", "DMXR1_0002", "DMXR1_0003"),
-            dmxr2_names=("DMXR2_0001", "DMXR2_0002", "DMXR2_0003"),
-        )
+        c = _make_dmx_component(3)
         assert c.n_bins == 3
 
     def test_zero_bins_raises(self):
@@ -86,81 +82,68 @@ class TestPytree:
 # ===========================================================================
 
 class TestDelay:
-    def test_single_bin_toa_inside(self):
-        """TOA inside the bin gets the DMX delay."""
-        comp = _single_bin_component()
-        dmx_val = 0.5
-        freq = 1400.0
-        params = make_dmx_params([dmx_val], [58900.0], [59100.0])
-        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
-                                  freq=freq)
-        result = comp(toa_data, params, jnp.zeros(1))
-        expected = dmx_val * DMCONST / freq**2
-        assert jnp.isclose(result[0], expected, rtol=1e-12)
-
-    def test_single_bin_toa_outside(self):
-        """TOA outside the bin gets zero delay."""
-        comp = _single_bin_component()
-        params = make_dmx_params([0.5], [58900.0], [58950.0])
-        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
-                                  freq=1400.0)
-        result = comp(toa_data, params, jnp.zeros(1))
-        assert jnp.isclose(result[0], 0.0, atol=1e-30)
-
-    def test_boundary_inclusion(self):
-        """TOAs at exact bin boundaries are included."""
-        comp = _single_bin_component()
-        dmx_val = 0.3
-        freq = 1400.0
-        r1, r2 = 59000.0, 59100.0
-        params = make_dmx_params([dmx_val], [r1], [r2])
-        expected = dmx_val * DMCONST / freq**2
-
-        # TOA at start boundary
-        toa_start = make_gbt_toa_data(n_toas=1, tdb_int=r1, tdb_frac=0.0,
-                                   freq=freq)
-        assert jnp.isclose(comp(toa_start, params, jnp.zeros(1))[0],
-                           expected, rtol=1e-12)
-
-        # TOA at end boundary
-        toa_end = make_gbt_toa_data(n_toas=1, tdb_int=r2, tdb_frac=0.0,
-                                 freq=freq)
-        assert jnp.isclose(comp(toa_end, params, jnp.zeros(1))[0],
-                           expected, rtol=1e-12)
-
-    def test_two_bins_nonoverlapping(self):
-        """Two non-overlapping bins assign correct DMX to each TOA."""
-        comp = _two_bin_component()
-        dmx1, dmx2 = 0.5, -0.3
+    @pytest.mark.parametrize("toa_mjd, bins, dmx_values, expected_idx", [
+        pytest.param(
+            59000.0, [(58900.0, 59100.0)], [0.5], 0,
+            id="single_bin_inside",
+        ),
+        pytest.param(
+            59000.0, [(58900.0, 58950.0)], [0.5], None,
+            id="single_bin_toa_after_bin",
+        ),
+        pytest.param(
+            58000.0, [(59000.0, 59100.0)], [1.0], None,
+            id="single_bin_toa_before_bin",
+        ),
+        pytest.param(
+            59000.0, [(59000.0, 59100.0)], [0.3], 0,
+            id="boundary_start_inclusive",
+        ),
+        pytest.param(
+            59100.0, [(59000.0, 59100.0)], [0.3], 0,
+            id="boundary_end_inclusive",
+        ),
+        pytest.param(
+            58950.0, [(58900.0, 59000.0), (59100.0, 59200.0)], [0.5, -0.3], 0,
+            id="two_bin_first",
+        ),
+        pytest.param(
+            59150.0, [(58900.0, 59000.0), (59100.0, 59200.0)], [0.5, -0.3], 1,
+            id="two_bin_second",
+        ),
+    ])
+    def test_dmx_bin_membership(self, toa_mjd, bins, dmx_values, expected_idx):
+        """A TOA inside bin i picks up DMX_i * DMCONST / freq^2; outside all bins gives 0."""
+        comp = _make_dmx_component(len(bins))
         freq = 1400.0
         params = make_dmx_params(
-            [dmx1, dmx2],
-            [58900.0, 59100.0],
-            [59000.0, 59200.0],
+            dmx_values, [b[0] for b in bins], [b[1] for b in bins],
         )
-        # TOA in bin 1
-        toa1 = make_gbt_toa_data(n_toas=1, tdb_int=58950.0, tdb_frac=0.0,
-                              freq=freq)
-        r1 = comp(toa1, params, jnp.zeros(1))
-        assert jnp.isclose(r1[0], dmx1 * DMCONST / freq**2, rtol=1e-12)
+        toa_data = make_gbt_toa_data(
+            n_toas=1, tdb_int=toa_mjd, tdb_frac=0.0, freq=freq,
+        )
+        result = comp(toa_data, params, jnp.zeros(1))
+        if expected_idx is None:
+            assert jnp.isclose(result[0], 0.0, atol=1e-30)
+        else:
+            expected = dmx_values[expected_idx] * DMCONST / freq ** 2
+            assert jnp.isclose(result[0], expected, rtol=1e-12)
 
-        # TOA in bin 2
-        toa2 = make_gbt_toa_data(n_toas=1, tdb_int=59150.0, tdb_frac=0.0,
-                              freq=freq)
-        r2 = comp(toa2, params, jnp.zeros(1))
-        assert jnp.isclose(r2[0], dmx2 * DMCONST / freq**2, rtol=1e-12)
-
-    def test_frequency_dependence(self):
+    @pytest.mark.parametrize("freq_lo, freq_hi", [
+        (800.0, 1400.0),
+        (430.0, 1400.0),
+        (1400.0, 2100.0),
+    ])
+    def test_frequency_dependence(self, freq_lo, freq_hi):
         """Delay scales as 1/freq^2."""
         comp = _single_bin_component()
         dmx_val = 0.5
         params = make_dmx_params([dmx_val], [58900.0], [59100.0])
 
-        freq_lo, freq_hi = 800.0, 1400.0
         toa_lo = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
-                                freq=freq_lo)
+                                   freq=freq_lo)
         toa_hi = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
-                                freq=freq_hi)
+                                   freq=freq_hi)
         d_lo = comp(toa_lo, params, jnp.zeros(1))
         d_hi = comp(toa_hi, params, jnp.zeros(1))
 
@@ -169,7 +152,7 @@ class TestDelay:
         assert jnp.isclose(ratio, expected_ratio, rtol=1e-12)
 
     def test_multiple_toas_vectorized(self):
-        """Correct bin assignment across array of TOAs."""
+        """Correct bin assignment across an array of TOAs."""
         comp = _two_bin_component()
         dmx1, dmx2 = 0.5, -0.3
         freq = 1400.0
@@ -189,15 +172,6 @@ class TestDelay:
         assert jnp.isclose(result[1], 0.0, atol=1e-30)  # in gap
         assert jnp.isclose(result[2], dmx2 * DMCONST / freq**2, rtol=1e-12)
         assert jnp.isclose(result[3], dmx2 * DMCONST / freq**2, rtol=1e-12)
-
-    def test_toa_in_no_bin(self):
-        """TOA outside all bins gets zero delay."""
-        comp = _single_bin_component()
-        params = make_dmx_params([1.0], [59000.0], [59100.0])
-        toa_data = make_gbt_toa_data(n_toas=1, tdb_int=58000.0, tdb_frac=0.0,
-                                  freq=1400.0)
-        result = comp(toa_data, params, jnp.zeros(1))
-        assert jnp.isclose(result[0], 0.0, atol=1e-30)
 
     def test_acc_delay_ignored(self):
         """Accumulated delay does not affect DMX dispersion."""
@@ -378,12 +352,7 @@ PLANET_SHAPIRO       N
         """JaxPINT DMX delay matches PINT within float64 tolerance."""
         toa_data, params, pint_delay, model = pint_setup
 
-        comp = DispersionDMX(
-            n_bins=4,
-            dmx_names=("DMX_0001", "DMX_0002", "DMX_0003", "DMX_0004"),
-            dmxr1_names=("DMXR1_0001", "DMXR1_0002", "DMXR1_0003", "DMXR1_0004"),
-            dmxr2_names=("DMXR2_0001", "DMXR2_0002", "DMXR2_0003", "DMXR2_0004"),
-        )
+        comp = _make_dmx_component(4)
         jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
 
         assert jnp.allclose(
