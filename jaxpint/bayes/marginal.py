@@ -206,15 +206,21 @@ def marginalize(
     *,
     over: Iterable[str],
     priors: Mapping[str, Prior],
-    toa_data: TOAData,
-    timing_model: TimingModel,
-    noise_model: NoiseModel,
-    fiducial_params: ParameterVector,
+    # single-pulsar arguments (required when likelihood is single_pulsar_logL):
+    toa_data: Optional[TOAData] = None,
+    timing_model: Optional[TimingModel] = None,
+    noise_model: Optional[NoiseModel] = None,
+    fiducial_params: Optional[ParameterVector] = None,
+    # common options:
     allow_nonlinear: bool = False,
     validate_linearity: bool = True,
     laplace_error_tol: float = 1e-6,
 ) -> tuple[Callable, dict[str, Prior], ParameterVector]:
-    """Build an analytically-marginalized single-pulsar log-likelihood.
+    """Build an analytically-marginalized log-likelihood.
+
+    Dispatches on ``likelihood`` to the appropriate per-backend marg path.
+    Currently supports :func:`jaxpint.likelihood.single_pulsar_logL` only;
+    a :func:`jaxpint.pta.likelihood.pta_logL` branch is planned next.
 
     Returns ``(g, sampled_priors, reduced_skeleton)`` where:
 
@@ -231,15 +237,15 @@ def marginalize(
       for ``with_free_values()`` so that ``.free_values()`` returns the
       kept-entry slice that ``g`` expects.
 
-    currently only accepts only :class:`ImproperPrior` in ``over``; Gaussian
-     and Uniform  raise    ``NotImplementedError`` with a clear message.
+    Currently only accepts :class:`ImproperPrior` in ``over``; Gaussian
+    and Uniform raise ``NotImplementedError`` with a clear message.
 
     Parameters
     ----------
     likelihood
         Currently must be :func:`jaxpint.likelihood.single_pulsar_logL`
         (or a callable with the same signature).  Multi-pulsar
-        marginalization is deferred.
+        marginalization is planned for the next phase.
     over
         Fully-qualified names of parameters to marginalize out.  Must be a
         subset of ``fiducial_params.names``.
@@ -250,6 +256,7 @@ def marginalize(
         their name is not in ``over``).
     toa_data, timing_model, noise_model
         Static likelihood arguments, captured into the returned closure.
+        Required when ``likelihood is single_pulsar_logL``.
     fiducial_params
         The linearization point y_fid.  The design matrix
         ``M = ∂r/∂y|_{y_fid}`` and (optional) Hessian are computed once
@@ -300,22 +307,60 @@ def marginalize(
     PriorValidationError
         If any name in ``over`` is missing from ``priors``.
     NotImplementedError
-        If ``likelihood`` is not :func:`single_pulsar_logL` (phase-2 will
-        add :func:`pta_logL` dispatch); if ``over`` contains a parameter
-        whose assigned prior is not an :class:`ImproperPrior`; or if it
-        contains a parameter that fails the linearity check when
+        If ``likelihood`` is not a supported callable; if ``over`` contains
+        a parameter whose assigned prior is not an :class:`ImproperPrior`;
+        or if it contains a parameter that fails the linearity check when
         ``allow_nonlinear=False``.
     """
-    # --- 0. Likelihood-dispatch check (phase 1: single_pulsar_logL only) -
-    # For now, anything other than single_pulsar_logL is
-    # rejected loudly so the contract matches the documentation.
-    if likelihood is not single_pulsar_logL:
-        raise NotImplementedError(
-            "marginalize() phase 1 supports only single_pulsar_logL as the "
-            f"`likelihood` argument; got {getattr(likelihood, '__name__', repr(likelihood))!r}. "
-            "Multi-pulsar marginalization (pta_logL) is planned for phase 2."
+    if likelihood is single_pulsar_logL:
+        if (
+            toa_data is None
+            or timing_model is None
+            or noise_model is None
+            or fiducial_params is None
+        ):
+            raise TypeError(
+                "marginalize(single_pulsar_logL, ...) requires the kwargs "
+                "`toa_data`, `timing_model`, `noise_model`, `fiducial_params`."
+            )
+        return _marginalize_single_pulsar(
+            over=over,
+            priors=priors,
+            toa_data=toa_data,
+            timing_model=timing_model,
+            noise_model=noise_model,
+            fiducial_params=fiducial_params,
+            allow_nonlinear=allow_nonlinear,
+            validate_linearity=validate_linearity,
+            laplace_error_tol=laplace_error_tol,
         )
 
+    raise NotImplementedError(
+        "marginalize() currently supports only single_pulsar_logL as the "
+        f"`likelihood` argument; got "
+        f"{getattr(likelihood, '__name__', repr(likelihood))!r}. "
+        "Multi-pulsar marginalization (pta_logL) is planned next."
+    )
+
+
+def _marginalize_single_pulsar(
+    *,
+    over: Iterable[str],
+    priors: Mapping[str, Prior],
+    toa_data: TOAData,
+    timing_model: TimingModel,
+    noise_model: NoiseModel,
+    fiducial_params: ParameterVector,
+    allow_nonlinear: bool,
+    validate_linearity: bool,
+    laplace_error_tol: float,
+) -> tuple[Callable, dict[str, Prior], ParameterVector]:
+    """Single-pulsar marg implementation.
+
+    Internal helper called by :func:`marginalize` when
+    ``likelihood is single_pulsar_logL``.  Same semantics as the public
+    function; see :func:`marginalize` for parameter / return documentation.
+    """
     over_set = set(over)
     over_list = sorted(over_set)  # deterministic ordering for caching
 
