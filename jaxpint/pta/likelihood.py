@@ -792,7 +792,7 @@ def _chunk_logL(
     static_argnames=(
         "timing_models",
         "signal_injectors",
-        "correlated_injector",
+        "correlated_injectors",
         "p_offset",
     ),
 )
@@ -803,40 +803,45 @@ def _chunk_correlated(
     noise_models_chunk: tuple[NoiseModel, ...],
     timing_models: tuple[TimingModel, ...],
     signal_injectors: tuple,
-    correlated_injector: CorrelatedSignalInjector,
+    correlated_injectors: tuple[CorrelatedSignalInjector, ...],
     p_offset: int,
 ) -> tuple[
     Float[Array, ""],
     Float[Array, ""],
-    Float[Array, " n_chunk_pulsars_x_n_basis"],
-    Float[Array, "n_chunk_pulsars_x_n_basis n_chunk_pulsars_x_n_basis"],
+    Float[Array, "n_chunk_pulsars n_basis_total"],
+    Float[Array, "n_chunk_pulsars n_basis_total n_basis_total"],
 ]:
     """JIT-compiled per-chunk Woodbury intermediates for the outer tier.
 
     For a contiguous chunk of pulsars
-    ``[p_offset, p_offset + len(pulsar_params_chunk))`` and a single
-    ``correlated_injector``, computes:
+    ``[p_offset, p_offset + len(pulsar_params_chunk))`` and the tuple of
+    correlated injectors active in this evaluation, computes:
 
     - per-pulsar ``SignalInjector`` delays / covariances (CW, CURN, …),
     - per-pulsar Woodbury intermediates ``(rCr_p, logdetC_p,
       basis_proj_residual_p, basis_overlap_p)`` via
-      :func:`_per_pulsar_intermediates`,
-    - the within-chunk concatenation ``basis_proj_residual_chunk =
-      concat(basis_proj_residual_p_for_p_in_chunk)`` and within-chunk
-      block-diagonal ``basis_overlap_chunk =
-      blockdiag(basis_overlap_p_for_p_in_chunk)``.
+      :func:`_per_pulsar_intermediates`, with the stacked basis
+      ``F_stack_p = [F_{0,p} | F_{1,p} | ... | F_{K-1,p}]`` so all
+      correlated injectors are projected against ``C_p^{-1}`` in one solve.
 
-    The big ``(n_toas, n_basis)`` Fourier-basis matrices and inner-tier
-    Woodbury working memory live only inside this JIT; they are freed
-    when the function returns, leaving only the small chunk-sized
-    outputs in device memory.
+    Returns the per-pulsar slabs stacked along axis 0 — explicit per-pulsar
+    structure (no premature block-diag) so :func:`_finalize_correlated_chunked`
+    can concatenate slabs across chunks and feed them to the same joint
+    (k, p, b) assembly helpers used by the non-chunked path.
+
+    The big ``(n_toas, n_basis_total)`` Fourier-basis matrices and inner-tier
+    Woodbury working memory live only inside this JIT; they are freed when
+    the function returns, leaving only the small chunk-sized outputs in
+    device memory.
 
     Internal helper — callers should use :func:`pta_logL_chunked`.
     """
     chunk_sum_rCr = jnp.float64(0.0)
     chunk_sum_logdetC = jnp.float64(0.0)
-    basis_proj_residual_list: list[Float[Array, " n_basis"]] = []
-    basis_overlap_list: list[Float[Array, "n_basis n_basis"]] = []
+    basis_proj_residual_list: list[Float[Array, " n_basis_total"]] = []
+    basis_overlap_list: list[
+        Float[Array, "n_basis_total n_basis_total"]
+    ] = []
 
     for p_local in range(len(pulsar_params_chunk)):
         p_global = p_offset + p_local
@@ -849,7 +854,9 @@ def _chunk_correlated(
             signal_injectors,
         )
 
-        F_p = correlated_injector.get_fourier_basis(toa_data_chunk[p_local])
+        F_stack_p = _stacked_fourier_basis(
+            correlated_injectors, toa_data_chunk[p_local]
+        )
         (
             rCr_p, logdetC_p,
             basis_proj_residual_p, basis_overlap_p,
@@ -858,7 +865,7 @@ def _chunk_correlated(
             timing_models[p_global],
             noise_models_chunk[p_local],
             pulsar_params_chunk[p_local],
-            F_p,
+            F_stack_p,
             external_delay=ext_delay,
             external_cov=ext_cov,
         )
@@ -867,53 +874,73 @@ def _chunk_correlated(
         basis_proj_residual_list.append(basis_proj_residual_p)
         basis_overlap_list.append(basis_overlap_p)
 
-    basis_proj_residual_chunk = jnp.concatenate(basis_proj_residual_list)
-    basis_overlap_chunk = jax.scipy.linalg.block_diag(*basis_overlap_list)
+    # Stack along axis 0 so per-pulsar slabs survive intact for the finalize.
+    basis_proj_residual_chunk = jnp.stack(basis_proj_residual_list)
+    basis_overlap_chunk = jnp.stack(basis_overlap_list)
     return (
         chunk_sum_rCr, chunk_sum_logdetC,
         basis_proj_residual_chunk, basis_overlap_chunk,
     )
 
 
-@partial(jax.jit, static_argnames=("correlated_injector",))
+@partial(
+    jax.jit,
+    static_argnames=("correlated_injectors", "n_basis_per_k", "n_psr"),
+)
 def _finalize_correlated_chunked(
     global_params: GlobalParams,
-    correlated_injector: CorrelatedSignalInjector,
+    correlated_injectors: tuple[CorrelatedSignalInjector, ...],
     sum_rCr: Float[Array, ""],
     sum_logdetC: Float[Array, ""],
     basis_proj_residual_chunks: tuple,
     basis_overlap_chunks: tuple,
+    n_basis_per_k: tuple[int, ...],
+    n_psr: int,
 ) -> Float[Array, ""]:
     """Cross-pulsar Cholesky reduction over chunk-level intermediates.
 
-    Assembles the full ``(n_psr * n_basis,)`` ``basis_proj_residual_joint``
-    and the full ``(n_psr * n_basis, n_psr * n_basis)`` block-diagonal
-    ``basis_overlap_joint`` from chunk-level pieces, builds
-    ``Sigma_corr = Phi_corr_inv + basis_overlap_joint``, and returns this
-    injector's contribution to ``logL``.
+    Concatenates per-pulsar slabs across chunks (the per-pulsar structure
+    was preserved by :func:`_chunk_correlated`'s ``stack`` outputs), then
+    runs the same joint (k, p, b) assembly + Cholesky as the non-chunked
+    correlated path in :func:`pta_logL`.  Returns the total correlated
+    contribution to ``logL`` minus the ``-½ N log(2π)`` constant (which
+    the caller adds once).
 
-    The final dense matrices are small (``n_psr * n_basis`` is typically
-    a few thousand) so this step runs once per call as a single JIT.
+    The final dense matrices are small (``n_psr * n_basis_total`` is
+    typically a few thousand) so this step runs once per call as a single
+    JIT.
     """
-    S = correlated_injector.get_psd(global_params)
-    Gamma = correlated_injector.get_orf_matrix()
-    Phi_corr = jnp.kron(Gamma, jnp.diag(S))
-    Phi_corr_inv = jnp.kron(jnp.linalg.inv(Gamma), jnp.diag(1.0 / S))
+    # Stitch per-pulsar slabs back together across chunks (axis 0 = pulsar).
+    basis_proj_residual_per_pulsar = jnp.concatenate(
+        list(basis_proj_residual_chunks), axis=0,
+    )  # (n_psr, n_basis_total)
+    basis_overlap_per_pulsar = jnp.concatenate(
+        list(basis_overlap_chunks), axis=0,
+    )  # (n_psr, n_basis_total, n_basis_total)
 
-    basis_proj_residual_joint = jnp.concatenate(list(basis_proj_residual_chunks))
-    basis_overlap_joint = jax.scipy.linalg.block_diag(*basis_overlap_chunks)
-    Sigma_corr = Phi_corr_inv + basis_overlap_joint
+    Phi_joint, Phi_joint_inv = _phi_and_phi_inv_joint(
+        correlated_injectors, global_params,
+    )
+    basis_overlap_joint = _assemble_basis_overlap_joint_kpb(
+        basis_overlap_per_pulsar, n_basis_per_k, n_psr,
+    )
+    basis_proj_residual_joint = _assemble_basis_proj_residual_joint_kpb(
+        basis_proj_residual_per_pulsar, n_basis_per_k, n_psr,
+    )
 
-    Sigma_cf = jax.scipy.linalg.cho_factor(Sigma_corr)
-    Sigma_inv_z = jax.scipy.linalg.cho_solve(Sigma_cf, basis_proj_residual_joint)
-    correction = jnp.dot(basis_proj_residual_joint, Sigma_inv_z)
+    Sigma_joint = Phi_joint_inv + basis_overlap_joint
+    Sigma_cf = jax.scipy.linalg.cho_factor(Sigma_joint)
+    correction = jnp.dot(
+        basis_proj_residual_joint,
+        jax.scipy.linalg.cho_solve(Sigma_cf, basis_proj_residual_joint),
+    )
 
-    _, logdet_Phi_corr = jnp.linalg.slogdet(Phi_corr)
-    logdet_Sigma_corr = 2.0 * jnp.sum(jnp.log(jnp.diag(Sigma_cf[0])))
+    _, logdet_Phi_joint = jnp.linalg.slogdet(Phi_joint)
+    logdet_Sigma_joint = 2.0 * jnp.sum(jnp.log(jnp.diag(Sigma_cf[0])))
 
-    contribution = -0.5 * (sum_rCr - correction)
-    contribution = contribution - 0.5 * (
-        sum_logdetC + logdet_Phi_corr + logdet_Sigma_corr
+    contribution = (
+        -0.5 * (sum_rCr - correction)
+        - 0.5 * (sum_logdetC + logdet_Phi_joint + logdet_Sigma_joint)
     )
     return contribution
 
@@ -1001,52 +1028,56 @@ def pta_logL_chunked(
             total += float(chunk_total)
         return total
 
-    # ---- Correlated path: accumulate chunk intermediates, finalize once ----
-    total_logL = 0.0
-    for cinj in config.correlated_injectors:
-        sum_rCr = 0.0
-        sum_logdetC = 0.0
-        basis_proj_residual_chunks: list = []
-        basis_overlap_chunks: list = []
+    # ---- Correlated path: one joint solve across all correlated injectors ----
+    n_basis_per_k = _n_basis_per_injector(
+        config.correlated_injectors, config.toa_data_list[0]
+    )
 
-        for start in range(0, n, chunk_size):
-            end = min(start + chunk_size, n)
-            (
-                chunk_rCr, chunk_logdetC,
-                basis_proj_residual_chunk, basis_overlap_chunk,
-            ) = _chunk_correlated(
-                global_params,
-                pulsar_params[start:end],
-                config.toa_data_list[start:end],
-                config.noise_models[start:end],
-                config.timing_models,
-                config.signal_injectors,
-                cinj,
-                start,
-            )
-            # Block before the next chunk starts so the previous chunk's
-            # transient (n_toas, n_basis) Fourier-basis matrices and
-            # Woodbury workspace are freed before the next chunk allocates.
-            jax.block_until_ready((
-                chunk_rCr, chunk_logdetC,
-                basis_proj_residual_chunk, basis_overlap_chunk,
-            ))
-            sum_rCr += float(chunk_rCr)
-            sum_logdetC += float(chunk_logdetC)
-            basis_proj_residual_chunks.append(basis_proj_residual_chunk)
-            basis_overlap_chunks.append(basis_overlap_chunk)
+    sum_rCr = 0.0
+    sum_logdetC = 0.0
+    basis_proj_residual_chunks: list = []
+    basis_overlap_chunks: list = []
 
-        injector_contribution = _finalize_correlated_chunked(
+    for start in range(0, n, chunk_size):
+        end = min(start + chunk_size, n)
+        (
+            chunk_rCr, chunk_logdetC,
+            basis_proj_residual_chunk, basis_overlap_chunk,
+        ) = _chunk_correlated(
             global_params,
-            cinj,
-            jnp.float64(sum_rCr),
-            jnp.float64(sum_logdetC),
-            tuple(basis_proj_residual_chunks),
-            tuple(basis_overlap_chunks),
+            pulsar_params[start:end],
+            config.toa_data_list[start:end],
+            config.noise_models[start:end],
+            config.timing_models,
+            config.signal_injectors,
+            config.correlated_injectors,
+            start,
         )
-        total_logL += float(injector_contribution)
+        # Block before the next chunk starts so the previous chunk's
+        # transient (n_toas, n_basis_total) Fourier-basis matrices and
+        # Woodbury workspace are freed before the next chunk allocates.
+        jax.block_until_ready((
+            chunk_rCr, chunk_logdetC,
+            basis_proj_residual_chunk, basis_overlap_chunk,
+        ))
+        sum_rCr += float(chunk_rCr)
+        sum_logdetC += float(chunk_logdetC)
+        basis_proj_residual_chunks.append(basis_proj_residual_chunk)
+        basis_overlap_chunks.append(basis_overlap_chunk)
+
+    correlated_contribution = _finalize_correlated_chunked(
+        global_params,
+        config.correlated_injectors,
+        jnp.float64(sum_rCr),
+        jnp.float64(sum_logdetC),
+        tuple(basis_proj_residual_chunks),
+        tuple(basis_overlap_chunks),
+        n_basis_per_k,
+        n,
+    )
 
     n_total = sum(td.n_toas for td in config.toa_data_list)
-    total_logL -= 0.5 * n_total * float(jnp.log(2.0 * jnp.pi))
-
-    return total_logL
+    return (
+        float(correlated_contribution)
+        - 0.5 * n_total * float(jnp.log(2.0 * jnp.pi))
+    )
