@@ -139,8 +139,8 @@ class NoiseComponent(eqx.Module):
         params: ParameterVector,
     ) -> tuple[
         Float[Array, " n_toas"],
-        Float[Array, "n_toas n_basis"] | None,
-        Float[Array, " n_basis"] | None,
+        Float[Array, "n_toas n_basis"],
+        Float[Array, " n_basis"],
     ]:
         """Return the Woodbury decomposition of this component's covariance.
 
@@ -148,8 +148,10 @@ class NoiseComponent(eqx.Module):
 
             C = diag(Ndiag) + U @ diag(Phidiag) @ Uᵀ
 
-        For purely diagonal noise, return ``(Ndiag, None, None)``.
-        For purely low-rank noise, return ``(zeros, U, Phidiag)``.
+        Both ``U`` and ``Phidiag`` are always arrays.  Components without
+        a low-rank contribution return zero-width arrays of shape
+        ``(n_toas, 0)`` and ``(0,)`` respectively.  Components without a
+        diagonal contribution return ``jnp.zeros(n_toas)`` for ``Ndiag``.
 
         Parameters
         ----------
@@ -162,10 +164,10 @@ class NoiseComponent(eqx.Module):
         -------
         Ndiag : (n_toas,)
             Diagonal variance contribution.
-        U : (n_toas, n_basis) or None
-            Basis matrix for low-rank contribution.
-        Phidiag : (n_basis,) or None
-            Basis weights for low-rank contribution.
+        U : (n_toas, n_basis)
+            Basis matrix for low-rank contribution; ``n_basis`` may be 0.
+        Phidiag : (n_basis,)
+            Basis weights for low-rank contribution; ``n_basis`` may be 0.
 
         Raises
         ------

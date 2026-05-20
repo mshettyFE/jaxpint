@@ -7,7 +7,6 @@ from ._base import (
     compute_design_matrix,
     compute_phase_residuals,
     compute_time_residuals,
-    _subtract_weighted_mean,
     wls_step,
 )
 from .wls import WLSFitResult, WLSFitter

@@ -1,27 +1,19 @@
 """PTA likelihood module for JaxPINT.
 
 Composes :func:`jaxpint.likelihood.single_pulsar_logL` across multiple
-pulsars with shared signal injections (CW sources, GWB, etc.).
+pulsars with shared signal injections (CW sources, GWB, etc.).  Optional
+cross-pulsar correlations (e.g. Hellings-Downs GWB) are handled by the
+same :func:`pta_logL` entry point via the
+:class:`~jaxpint.pta.likelihood.CorrelatedSignalInjector` interface.
 """
 
 from jaxpint.pta.params import GlobalParams
 from jaxpint.pta.likelihood import (
+    CorrelatedSignalInjector,
     PTAConfig,
     SignalInjector,
     precompute_single_pulsar_pta_factor,
     pta_logL,
-    single_pulsar_pta_logL,
-    single_pulsar_pta_logL_with_factor,
-)
-from jaxpint.pta.scan import (
-    PerPulsarScanAxis,
-    GlobalScanAxis,
-    scan_logL,
-)
-from jaxpint.pta.correlated_likelihood import (
-    CorrelatedPTAConfig,
-    CorrelatedSignalInjector,
-    pta_logL_correlated,
 )
 from jaxpint.pta.fisher import fisher_matrix, flatten_params, unflatten_params
 from jaxpint.pta.signals import (
@@ -45,18 +37,8 @@ __all__ = [
     "GlobalParams",
     "PTAConfig",
     "SignalInjector",
-    "pta_logL",
-    "single_pulsar_pta_logL",
-    "single_pulsar_pta_logL_with_factor",
-    "precompute_single_pulsar_pta_factor",
-    # Scans
-    "PerPulsarScanAxis",
-    "GlobalScanAxis",
-    "scan_logL",
-    # Correlated
-    "CorrelatedPTAConfig",
     "CorrelatedSignalInjector",
-    "pta_logL_correlated",
+    "pta_logL",
     # Fisher
     "fisher_matrix",
     "flatten_params",

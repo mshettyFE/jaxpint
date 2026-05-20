@@ -31,8 +31,9 @@ from jaxpint.fitters import (
     WLSFitter,
     compute_design_matrix,
     compute_time_residuals,
-    _subtract_weighted_mean,
 )
+
+from jaxpint.fitters._base import _subtract_weighted_mean
 
 
 # ---------------------------------------------------------------------------

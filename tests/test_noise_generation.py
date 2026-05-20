@@ -82,8 +82,8 @@ class TestWhiteNoiseGenerate:
         noise = ScaleToaError(efac_names=("EFAC1",), equad_names=("EQUAD1",))
 
         Ndiag, U, Phidiag = noise.covariance(toa_data, params)
-        assert U is None
-        assert Phidiag is None
+        assert U.shape == (n_toas, 0)
+        assert Phidiag.shape == (0,)
 
         n_draws = 5000
         keys = jax.random.split(jax.random.PRNGKey(0), n_draws)

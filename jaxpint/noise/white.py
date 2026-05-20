@@ -84,11 +84,15 @@ class ScaleToaError(NoiseComponent):
         self,
         toa_data: TOAData,
         params: ParameterVector,
-    ) -> tuple[Float[Array, " n_toas"], None, None]:
+    ) -> tuple[
+        Float[Array, " n_toas"],
+        Float[Array, "n_toas 0"],
+        Float[Array, " 0"],
+    ]:
         """Compute the white noise diagonal covariance.
 
         Returns the EFAC/EQUAD-scaled variance as the diagonal term,
-        with no low-rank (basis) contribution.
+        with empty-shaped basis arrays (white noise is purely diagonal).
 
         Parameters
         ----------
@@ -101,13 +105,17 @@ class ScaleToaError(NoiseComponent):
         -------
         Ndiag : (n_toas,)
             Scaled variance for each TOA (seconds squared).
-        U : None
-            No basis matrix (white noise is purely diagonal).
-        Phidiag : None
-            No basis weights.
+        U : (n_toas, 0)
+            Zero-width basis (white noise has no low-rank contribution).
+        Phidiag : (0,)
+            Zero-length basis weights.
         """
         sigma = self.scaled_sigma(toa_data, params)
-        return sigma ** 2, None, None
+        return (
+            sigma ** 2,
+            jnp.zeros((toa_data.n_toas, 0)),
+            jnp.zeros(0),
+        )
 
     def generate(
         self,
