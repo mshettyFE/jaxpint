@@ -51,48 +51,9 @@ def _make_plred(n_toas=100, n_freqs=5, T=3.0 * 365.25 * 86400.0):
 
 
 class TestPLRedNoiseBasic:
-    """Basic shape and value tests for PLRedNoise."""
-
-    def test_covariance_shape(self):
-        """covariance() returns correct shapes."""
-        plred, params, toa_data, F, _, _ = _make_plred(n_toas=50, n_freqs=5)
-
-        Ndiag, U, Phidiag = plred.covariance(toa_data, params)
-
-        assert Ndiag.shape == (50,)
-        assert U.shape == (50, 10)
-        assert Phidiag.shape == (10,)
-        npt.assert_array_equal(Ndiag, jnp.zeros(50))
-
-    def test_psd_weights_positive(self):
-        """PSD weights should be positive and finite for typical parameters."""
-        plred, params, _, _, _, _ = _make_plred()
-        weights = plred.psd_weights(params)
-        assert jnp.all(weights > 0)
-        assert jnp.all(jnp.isfinite(weights))
-
-    def test_psd_weights_values(self):
-        """Verify PSD formula against manual computation."""
-        n_freqs = 3
-        T = 5.0 * 365.25 * 86400.0
-        plred, params, _, _, freqs, df = _make_plred(
-            n_toas=20, n_freqs=n_freqs, T=T
-        )
-
-        log10_A = -13.0
-        gamma = 3.5
-        A = 10.0 ** log10_A
-
-        # Manual computation
-        expected_psd = (
-            A ** 2 / (12.0 * np.pi ** 2)
-            * FYR ** (gamma - 3.0)
-            * np.array(freqs) ** (-gamma)
-        )
-        expected_weights = np.repeat(expected_psd * np.array(df), 2)
-
-        weights = plred.psd_weights(params)
-        npt.assert_allclose(np.array(weights), expected_weights, rtol=1e-12)
+    """Red-noise-specific tests; shared shape/PSD/generate tests live in
+    ``test_correlated_noise_common.py``.
+    """
 
     def test_psd_weights_red_spectrum(self):
         """Lower frequencies should have higher PSD (red spectrum)."""
@@ -101,28 +62,6 @@ class TestPLRedNoiseBasic:
         # Even indices are sin weights; compare consecutive frequencies
         for i in range(0, 16, 2):
             assert weights[i] > weights[i + 2]
-
-    def test_generate_shape(self):
-        """generate() should return (n_toas,) array."""
-        plred, params, toa_data, _, _, _ = _make_plred(n_toas=50)
-        key = jax.random.PRNGKey(42)
-        draws = plred.generate(toa_data, params, key)
-        assert draws.shape == (50,)
-
-    def test_generate_reproducible(self):
-        """Same key produces same noise."""
-        plred, params, toa_data, _, _, _ = _make_plred()
-        key = jax.random.PRNGKey(42)
-        d1 = plred.generate(toa_data, params, key)
-        d2 = plred.generate(toa_data, params, key)
-        npt.assert_array_equal(d1, d2)
-
-    def test_generate_different_keys(self):
-        """Different keys produce different noise."""
-        plred, params, toa_data, _, _, _ = _make_plred()
-        d1 = plred.generate(toa_data, params, jax.random.PRNGKey(0))
-        d2 = plred.generate(toa_data, params, jax.random.PRNGKey(1))
-        assert not np.allclose(d1, d2)
 
     def test_basis_is_fourier_matrix(self):
         """The stored basis should match the Fourier design matrix."""

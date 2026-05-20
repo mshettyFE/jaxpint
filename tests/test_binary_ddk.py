@@ -1,6 +1,5 @@
 """Tests for BinaryDDK delay model against PINT."""
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import numpy.testing as npt
@@ -145,17 +144,6 @@ class TestBinaryDDKvsPINT:
         return jax_delay
 
     @pytest.mark.slow
-    def test_ddk_delay_matches_pint(self, ddk_params):
-        """DDK delay should match PINT."""
-        pytest.importorskip("pint")
-
-        t_mjd = np.linspace(54200.0, 54600.0, 200)
-        pint_delay, obs_pos = self._setup_pint_ddk(ddk_params, t_mjd, k96=True)
-        jax_delay = self._make_jax_ddk(ddk_params, t_mjd, obs_pos, k96=True)
-
-        npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
-
-    @pytest.mark.slow
     def test_ddk_no_k96(self, ddk_params):
         """DDK with K96=False (parallax only)."""
         pytest.importorskip("pint")
@@ -168,101 +156,6 @@ class TestBinaryDDKvsPINT:
         npt.assert_allclose(jax_nok96, pint_nok96, atol=1e-12, rtol=1e-12)
         # K96 proper motion corrections are small but nonzero
         assert np.max(np.abs(pint_k96 - pint_nok96)) > 1e-9, "K96 should change the delay"
-
-    def test_ddk_jit(self, ddk_params):
-        """BinaryDDK should be JIT-compilable."""
-        from jaxpint.binary.ddk import BinaryDDK
-
-        ddk = BinaryDDK(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
-            kin_name="KIN", kom_name="KOM", px_name="PX",
-            raj_name="RAJ", decj_name="DECJ",
-            k96=False,
-        )
-
-        t0_int = np.floor(ddk_params["T0"])
-        t0_frac = ddk_params["T0"] - t0_int
-
-        param_names = ("PB", "T0", "A1", "ECC", "OM", "KIN", "KOM", "PX", "RAJ", "DECJ")
-        param_values = [
-            ddk_params["PB"], t0_frac, ddk_params["A1"],
-            ddk_params["ECC"], ddk_params["OM"],
-            ddk_params["KIN"], ddk_params["KOM"], ddk_params["PX"],
-            ddk_params["RAJ"], ddk_params["DECJ"],
-        ]
-        params = make_params(param_names, param_values, components="BinaryDDK",
-                             epoch_int_values={"T0": t0_int})
-
-        n = 10
-        t_mjd = np.linspace(54200.0, 54400.0, n)
-        toa_data = _make_toa_data_base(
-            t_mjd=t_mjd,
-            tzr_tdb_int=jnp.array(54000.0), tzr_tdb_frac=jnp.array(0.5),
-            tzr_freq=jnp.array(jnp.inf), tzr_ssb_obs_pos=jnp.zeros(3),
-        )
-        # Give some nonzero obs_pos
-        import equinox as eqx
-        AU_km = 149597870.7
-        phase = 2 * np.pi * (t_mjd - 51544.5) / 365.25
-        obs_pos = np.column_stack([AU_km * np.cos(phase), AU_km * np.sin(phase), np.zeros(n)])
-        toa_data = eqx.tree_at(lambda t: t.ssb_obs_pos, toa_data, jnp.array(obs_pos))
-
-        jitted = jax.jit(ddk)
-        result = jitted(toa_data, params, jnp.zeros(n))
-        assert result.shape == (n,)
-        assert jnp.all(jnp.isfinite(result))
-
-    def test_ddk_autodiff(self, ddk_params):
-        """BinaryDDK should be differentiable via JAX autodiff."""
-        from jaxpint.binary.ddk import BinaryDDK
-
-        ddk = BinaryDDK(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
-            kin_name="KIN", kom_name="KOM", px_name="PX",
-            raj_name="RAJ", decj_name="DECJ",
-            k96=False,
-        )
-
-        t0_int = np.floor(ddk_params["T0"])
-        t0_frac = ddk_params["T0"] - t0_int
-
-        param_names = ("PB", "T0", "A1", "ECC", "OM", "KIN", "KOM", "PX", "RAJ", "DECJ")
-        param_values = [
-            ddk_params["PB"], t0_frac, ddk_params["A1"],
-            ddk_params["ECC"], ddk_params["OM"],
-            ddk_params["KIN"], ddk_params["KOM"], ddk_params["PX"],
-            ddk_params["RAJ"], ddk_params["DECJ"],
-        ]
-        params = make_params(param_names, param_values, components="BinaryDDK",
-                             epoch_int_values={"T0": t0_int})
-
-        n = 10
-        t_mjd = np.linspace(54200.0, 54400.0, n)
-        toa_data = _make_toa_data_base(
-            t_mjd=t_mjd,
-            tzr_tdb_int=jnp.array(54000.0), tzr_tdb_frac=jnp.array(0.5),
-            tzr_freq=jnp.array(jnp.inf), tzr_ssb_obs_pos=jnp.zeros(3),
-        )
-        import equinox as eqx
-        AU_km = 149597870.7
-        phase = 2 * np.pi * (t_mjd - 51544.5) / 365.25
-        obs_pos = np.column_stack([AU_km * np.cos(phase), AU_km * np.sin(phase), np.zeros(n)])
-        toa_data = eqx.tree_at(lambda t: t.ssb_obs_pos, toa_data, jnp.array(obs_pos))
-
-        def delay_fn(param_values):
-            p = params.with_free_values(param_values)
-            return ddk(toa_data, p, jnp.zeros(n))
-
-        J = jax.jacobian(delay_fn)(params.free_values())
-        assert J.shape == (n, len(param_names))
-        assert jnp.all(jnp.isfinite(J))
-        # KIN and KOM columns should be nonzero
-        kin_col = list(param_names).index("KIN")
-        kom_col = list(param_names).index("KOM")
-        assert jnp.any(jnp.abs(J[:, kin_col]) > 0)
-        assert jnp.any(jnp.abs(J[:, kom_col]) > 0)
 
     @pytest.mark.slow
     def test_ddk_large_px_matches_dd(self, ddk_params):

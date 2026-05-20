@@ -61,46 +61,9 @@ def _make_pldm(n_toas=100, n_freqs=5, T=3.0 * 365.25 * 86400.0):
 
 
 class TestPLDMNoiseBasic:
-    """Basic shape and value tests for PLDMNoise."""
-
-    def test_covariance_shape(self):
-        n_toas, n_freqs = 50, 5
-        pldm, params, toa_data, _, _, _, _, _ = _make_pldm(n_toas=n_toas, n_freqs=n_freqs)
-
-        Ndiag, U, Phidiag = pldm.covariance(toa_data, params)
-
-        assert Ndiag.shape == (n_toas,)
-        assert U.shape == (n_toas, 2 * n_freqs)
-        assert Phidiag.shape == (2 * n_freqs,)
-        npt.assert_array_equal(Ndiag, jnp.zeros(n_toas))
-
-    def test_psd_weights_positive(self):
-        pldm, params, _, _, _, _, _, _ = _make_pldm()
-        weights = pldm.psd_weights(params)
-        assert jnp.all(weights > 0)
-        assert jnp.all(jnp.isfinite(weights))
-
-    def test_psd_weights_values(self):
-        """Verify PSD formula against manual computation."""
-        n_freqs = 3
-        T = 5.0 * 365.25 * 86400.0
-        pldm, params, _, _, _, freqs, df, _ = _make_pldm(
-            n_toas=20, n_freqs=n_freqs, T=T
-        )
-
-        log10_A = -13.0
-        gamma = 3.5
-        A = 10.0 ** log10_A
-
-        expected_psd = (
-            A ** 2 / (12.0 * np.pi ** 2)
-            * FYR ** (gamma - 3.0)
-            * np.array(freqs) ** (-gamma)
-        )
-        expected_weights = np.repeat(expected_psd * np.array(df), 2)
-
-        weights = pldm.psd_weights(params)
-        npt.assert_allclose(np.array(weights), expected_weights, rtol=1e-12)
+    """DM-noise-specific tests; shared shape/PSD/generate tests live in
+    ``test_correlated_noise_common.py``.
+    """
 
     def test_psd_weights_red_spectrum(self):
         """Lower frequencies should have higher PSD."""
@@ -108,25 +71,6 @@ class TestPLDMNoiseBasic:
         weights = pldm.psd_weights(params)
         for i in range(0, 16, 2):
             assert weights[i] > weights[i + 2]
-
-    def test_generate_shape(self):
-        pldm, params, toa_data, _, _, _, _, _ = _make_pldm(n_toas=50)
-        key = jax.random.PRNGKey(42)
-        draws = pldm.generate(toa_data, params, key)
-        assert draws.shape == (50,)
-
-    def test_generate_reproducible(self):
-        pldm, params, toa_data, _, _, _, _, _ = _make_pldm()
-        key = jax.random.PRNGKey(42)
-        d1 = pldm.generate(toa_data, params, key)
-        d2 = pldm.generate(toa_data, params, key)
-        npt.assert_array_equal(d1, d2)
-
-    def test_generate_different_keys(self):
-        pldm, params, toa_data, _, _, _, _, _ = _make_pldm()
-        d1 = pldm.generate(toa_data, params, jax.random.PRNGKey(0))
-        d2 = pldm.generate(toa_data, params, jax.random.PRNGKey(1))
-        assert not np.allclose(d1, d2)
 
     def test_basis_includes_dm_scaling(self):
         """Pre-computed basis should differ from raw Fourier by (1400/f)^2."""
