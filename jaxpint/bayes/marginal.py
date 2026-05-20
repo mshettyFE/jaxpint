@@ -18,6 +18,7 @@ This module provides:
 
 from __future__ import annotations
 
+import dataclasses
 import warnings
 from typing import (
     TYPE_CHECKING,
@@ -37,6 +38,8 @@ from jaxpint.bayes.validate import PriorValidationError
 from jaxpint.likelihood import single_pulsar_logL
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
+from jaxpint.pta.likelihood import PTAConfig, SignalInjector, pta_logL
+from jaxpint.pta.params import GlobalParams
 from jaxpint.types import ParameterVector, TOAData
 from jaxpint.utils import concat_woodbury_blocks
 
@@ -211,16 +214,25 @@ def marginalize(
     timing_model: Optional[TimingModel] = None,
     noise_model: Optional[NoiseModel] = None,
     fiducial_params: Optional[ParameterVector] = None,
+    # PTA arguments (required when likelihood is pta_logL):
+    config: Optional[PTAConfig] = None,
+    pulsar_names: Optional[tuple[str, ...]] = None,
+    fiducial_pulsar_params: Optional[tuple[ParameterVector, ...]] = None,
+    fiducial_global_params: Optional[GlobalParams] = None,
     # common options:
     allow_nonlinear: bool = False,
     validate_linearity: bool = True,
     laplace_error_tol: float = 1e-6,
-) -> tuple[Callable, dict[str, Prior], ParameterVector]:
+) -> tuple[Callable, dict[str, Prior], object]:
     """Build an analytically-marginalized log-likelihood.
 
     Dispatches on ``likelihood`` to the appropriate per-backend marg path.
-    Currently supports :func:`jaxpint.likelihood.single_pulsar_logL` only;
-    a :func:`jaxpint.pta.likelihood.pta_logL` branch is planned next.
+    Supports :func:`jaxpint.likelihood.single_pulsar_logL` (per-pulsar
+    timing-model marg) and :func:`jaxpint.pta.likelihood.pta_logL`
+    (per-pulsar timing-model marg across an entire PTA, including in the
+    presence of correlated injectors).  Global-parameter marg (CW / GWB
+    hyperparameters) is intentionally not supported — discovery samples
+    those via MCMC and we follow that convention.
 
     Returns ``(g, sampled_priors, reduced_skeleton)`` where:
 
@@ -335,11 +347,34 @@ def marginalize(
             laplace_error_tol=laplace_error_tol,
         )
 
+    if likelihood is pta_logL:
+        if (
+            config is None
+            or pulsar_names is None
+            or fiducial_pulsar_params is None
+            or fiducial_global_params is None
+        ):
+            raise TypeError(
+                "marginalize(pta_logL, ...) requires the kwargs "
+                "`config`, `pulsar_names`, `fiducial_pulsar_params`, "
+                "`fiducial_global_params`."
+            )
+        return _marginalize_pta(
+            over=over,
+            priors=priors,
+            config=config,
+            pulsar_names=tuple(pulsar_names),
+            fiducial_pulsar_params=tuple(fiducial_pulsar_params),
+            fiducial_global_params=fiducial_global_params,
+            allow_nonlinear=allow_nonlinear,
+            validate_linearity=validate_linearity,
+            laplace_error_tol=laplace_error_tol,
+        )
+
     raise NotImplementedError(
-        "marginalize() currently supports only single_pulsar_logL as the "
+        "marginalize() supports only single_pulsar_logL and pta_logL as the "
         f"`likelihood` argument; got "
-        f"{getattr(likelihood, '__name__', repr(likelihood))!r}. "
-        "Multi-pulsar marginalization (pta_logL) is planned next."
+        f"{getattr(likelihood, '__name__', repr(likelihood))!r}."
     )
 
 
@@ -504,3 +539,342 @@ def _marginalize_single_pulsar(
         )
 
     return likelihood_marg, sampled_priors, reduced_skeleton
+
+
+# ---------------------------------------------------------------------------
+# PTA marginalization
+# ---------------------------------------------------------------------------
+
+
+class _MarginalizationInjector(SignalInjector):
+    """Injects cached per-pulsar marg Woodbury blocks at evaluation time.
+
+    Internal helper used by :func:`_marginalize_pta`.  The block for pulsar
+    ``p`` is fixed at setup (computed from the fiducial Jacobian); the
+    injector ignores its ``pulsar_params`` and ``global_params`` arguments
+    and just returns the cached tuple.
+
+    Stored as a regular Python attribute (not an :class:`eqx.field`),
+    mirroring the convention used by concrete :class:`SignalInjector`
+    subclasses like
+    :class:`~jaxpint.pta.signals.gwb.CURNInjector` and
+    :class:`~jaxpint.pta.signals.correlated_gwb.HDCorrelatedGWBInjector`.
+    """
+
+    def __init__(
+        self,
+        cached_blocks: tuple[
+            Optional[
+                tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]
+            ],
+            ...,
+        ],
+    ):
+        self.cached_blocks = cached_blocks
+
+    def register_params(self, global_params: GlobalParams) -> GlobalParams:
+        # Marg'd parameters are per-pulsar and held at fiducial — no new
+        # globals registered.
+        return global_params
+
+    def covariance(
+        self,
+        p: int,
+        toa_data: TOAData,
+        pulsar_params: ParameterVector,
+        global_params: GlobalParams,
+    ) -> Optional[
+        tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]
+    ]:
+        return self.cached_blocks[p]
+
+
+def _resolve_pta_marg_targets(
+    over: Iterable[str],
+    pulsar_names: tuple[str, ...],
+    fiducial_pulsar_params: tuple[ParameterVector, ...],
+    fiducial_global_params: GlobalParams,
+) -> tuple[list[list[str]], list[list[int]]]:
+    """Classify each FQN in ``over`` as a per-pulsar marg target.
+
+    Returns ``(bare_names_per_pulsar, bare_indices_per_pulsar)`` — both
+    are lists of length ``n_psr``.  For pulsar ``p``, the lists contain
+    the bare parameter names and corresponding indices within
+    ``fiducial_pulsar_params[p].values`` for parameters marg'd in that
+    pulsar.  Pulsars with no marg targets get empty lists.
+
+    Raises ``NotImplementedError`` for global-parameter names (deferred)
+    and ``ValueError`` for unresolvable names.
+    """
+    n_psr = len(pulsar_names)
+    global_name_set = set(fiducial_global_params.names)
+
+    # Per-pulsar accumulators (preserve sort order for deterministic caching).
+    bare_names_per_pulsar: list[list[str]] = [[] for _ in range(n_psr)]
+    bare_indices_per_pulsar: list[list[int]] = [[] for _ in range(n_psr)]
+
+    for fqn in sorted(set(over)):
+        # Global names take precedence — they're handled separately (and
+        # currently rejected).
+        if fqn in global_name_set:
+            raise NotImplementedError(
+                f"marginalize: global-parameter marginalization is not yet "
+                f"implemented; got {fqn!r} in `over` (matches a name in "
+                f"`fiducial_global_params.names`).  CW and GWB hyperparameters "
+                "should be sampled, following the convention used by `discovery`."
+            )
+
+        # Find matching pulsar(s).  Iterate all pulsars to handle the case
+        # where one pulsar's name is a prefix of another (e.g. "J1234" and
+        # "J1234_extra"): both might syntactically match different bare-name
+        # splits, so we resolve by checking which split yields a real bare
+        # name in the corresponding pulsar_params.
+        matches: list[tuple[int, str]] = []
+        for p in range(n_psr):
+            prefix = f"{pulsar_names[p]}_"
+            if not fqn.startswith(prefix):
+                continue
+            bare = fqn[len(prefix):]
+            if bare in fiducial_pulsar_params[p].names:
+                matches.append((p, bare))
+
+        if not matches:
+            raise ValueError(
+                f"marginalize: name {fqn!r} in `over` matches no pulsar "
+                f"and is not a global-parameter name.  Expected either a "
+                f"fully-qualified per-pulsar name (e.g. "
+                f"f'{{pulsar_name}}_{{param_name}}') or a name in "
+                f"`fiducial_global_params.names`."
+            )
+        if len(matches) > 1:
+            raise ValueError(
+                f"marginalize: name {fqn!r} in `over` matches multiple "
+                f"pulsars: {[pulsar_names[p] for p, _ in matches]}.  "
+                "Pulsar names may not be ambiguous prefixes of each other "
+                "for the same bare parameter."
+            )
+
+        p, bare = matches[0]
+        bare_names_per_pulsar[p].append(bare)
+        bare_indices_per_pulsar[p].append(
+            fiducial_pulsar_params[p].param_index(bare)
+        )
+
+    return bare_names_per_pulsar, bare_indices_per_pulsar
+
+
+def _marginalize_pta(
+    *,
+    over: Iterable[str],
+    priors: Mapping[str, Prior],
+    config: PTAConfig,
+    pulsar_names: tuple[str, ...],
+    fiducial_pulsar_params: tuple[ParameterVector, ...],
+    fiducial_global_params: GlobalParams,
+    allow_nonlinear: bool,
+    validate_linearity: bool,
+    laplace_error_tol: float,
+) -> tuple[Callable, dict[str, Prior], tuple[ParameterVector, ...]]:
+    """PTA marg implementation (per-pulsar timing parameters).
+
+    Internal helper called by :func:`marginalize` when
+    ``likelihood is pta_logL``.  Builds per-pulsar Woodbury marg blocks,
+    wraps them in a :class:`_MarginalizationInjector`, and returns a
+    callable that evaluates ``pta_logL`` against the marg-augmented
+    config.  See :func:`marginalize` for parameter / return documentation.
+    """
+    from jaxpint.fitters._base import compute_time_residuals
+
+    over_set = set(over)
+    n_psr = len(pulsar_names)
+
+    # --- 1. Validate setup ---------------------------------------------------
+    if len(fiducial_pulsar_params) != n_psr:
+        raise ValueError(
+            f"marginalize: pulsar_names has length {n_psr} but "
+            f"fiducial_pulsar_params has length {len(fiducial_pulsar_params)}."
+        )
+    if config.n_pulsars != n_psr:
+        raise ValueError(
+            f"marginalize: pulsar_names has length {n_psr} but "
+            f"config has {config.n_pulsars} pulsars."
+        )
+
+    # --- 2. Completeness check ----------------------------------------------
+    missing = over_set - set(priors.keys())
+    if missing:
+        raise PriorValidationError(
+            f"marginalize: priors dict is missing entries for {sorted(missing)} "
+            f"(found in `over` but not in `priors`)."
+        )
+
+    # --- 3. Prior-shape check (ImproperPrior only) --------------------------
+    bad = [
+        (n, type(priors[n]).__name__)
+        for n in sorted(over_set)
+        if not isinstance(priors[n], ImproperPrior)
+    ]
+    if bad:
+        raise NotImplementedError(
+            "marginalize() phase 1 supports only ImproperPrior in `over`. "
+            f"Got non-Improper priors for: {bad}. "
+            "Keep these parameters sampled (combine_log_prob will apply their "
+            "priors), or assign ImproperPrior() if you want analytic "
+            "marginalization with no prior information."
+        )
+
+    # --- 4. Resolve over → per-pulsar (bare, index) lists ------------------
+    bare_names_per_pulsar, bare_indices_per_pulsar = _resolve_pta_marg_targets(
+        over_set,
+        pulsar_names,
+        fiducial_pulsar_params,
+        fiducial_global_params,
+    )
+
+    # --- 5. Per-pulsar Jacobian + cached Woodbury blocks --------------------
+    cached_blocks: list[
+        Optional[
+            tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]
+        ]
+    ] = []
+    # For the linearity check we also retain per-pulsar M_p and over_indices.
+    per_pulsar_M: list[Optional[Float[Array, "n_toas n_marg_p"]]] = []
+    per_pulsar_J_full: list[Optional[Float[Array, "n_toas n_params_p"]]] = []
+    for p in range(n_psr):
+        bare_indices = bare_indices_per_pulsar[p]
+        if len(bare_indices) == 0:
+            cached_blocks.append(None)
+            per_pulsar_M.append(None)
+            per_pulsar_J_full.append(None)
+            continue
+
+        timing_model_p = config.timing_models[p]
+        toa_data_p = config.toa_data_list[p]
+        fiducial_p = fiducial_pulsar_params[p]
+
+        def _resid_fn(values, _tm=timing_model_p, _td=toa_data_p, _fp=fiducial_p):
+            params = eqx.tree_at(lambda pv: pv.values, _fp, values)
+            return compute_time_residuals(_tm, _td, params)
+
+        J_full_p = jax.jacobian(_resid_fn)(fiducial_p.values)
+        idx_array = jnp.asarray(bare_indices, dtype=jnp.int32)
+        M_p = -J_full_p[:, idx_array]
+        Phi_p = jnp.full(len(bare_indices), 1e40, dtype=jnp.float64)
+        cached_blocks.append((M_p, Phi_p))
+        per_pulsar_M.append(M_p)
+        per_pulsar_J_full.append(J_full_p)
+
+    # --- 6. Linearity check (per pulsar) ------------------------------------
+    if validate_linearity:
+        flagged_all: list[tuple[str, float]] = []
+        for p in range(n_psr):
+            bare_names = bare_names_per_pulsar[p]
+            if not bare_names:
+                continue
+            bare_indices = bare_indices_per_pulsar[p]
+            J_full_p = per_pulsar_J_full[p]
+            M_p = per_pulsar_M[p]
+            assert J_full_p is not None and M_p is not None  # have marg targets
+
+            noise_model_p = config.noise_models[p]
+            toa_data_p = config.toa_data_list[p]
+            fiducial_p = fiducial_pulsar_params[p]
+
+            Ndiag_p = noise_model_p.scaled_sigma(toa_data_p, fiducial_p) ** 2
+            trust_radii_p = jnp.asarray(
+                [
+                    _trust_radius_for_prior(priors[fqn], idx, J_full_p, Ndiag_p)
+                    for fqn, idx in zip(
+                        (
+                            f"{pulsar_names[p]}_{bare}"
+                            for bare in bare_names
+                        ),
+                        bare_indices,
+                    )
+                ]
+            )
+            flagged_p = _check_linearity(
+                config.timing_models[p],
+                toa_data_p,
+                fiducial_p,
+                over_indices=tuple(bare_indices),
+                over_names=tuple(
+                    f"{pulsar_names[p]}_{bare}" for bare in bare_names
+                ),
+                trust_radii=trust_radii_p,
+                M_full_cols=M_p,
+                tol=laplace_error_tol,
+            )
+            flagged_all.extend(flagged_p)
+
+        if flagged_all:
+            if not allow_nonlinear:
+                msg = "\n".join(
+                    f"  - {name}: Laplace error ratio = {ratio:.2e} > tol = {laplace_error_tol:.2e}"
+                    for name, ratio in flagged_all
+                )
+                raise NotImplementedError(
+                    "marginalize: cannot analytically marginalize parameter(s) "
+                    "whose Laplace-approximation error exceeds the tolerance "
+                    "within the prior support (i.e., the residual's second-order "
+                    "Taylor term is not negligible compared to its linear term "
+                    "over one prior-σ step from fiducial):\n"
+                    f"{msg}\n\n"
+                    "Options:\n"
+                    "  - Remove these from `over` and sample them instead.\n"
+                    "  - Pass allow_nonlinear=True to accept the Laplace approximation\n"
+                    "    around the fiducial parameters (matches discovery's behavior).\n"
+                    "  - Raise laplace_error_tol if you've assessed the error and find it acceptable."
+                )
+            else:
+                msg = "; ".join(
+                    f"{name} (ratio={ratio:.2e})" for name, ratio in flagged_all
+                )
+                warnings.warn(
+                    f"marginalize: marginalizing nonlinear parameter(s) via "
+                    f"Laplace approximation around fiducial: {msg}. "
+                    "Marginalized likelihood is accurate to O((y - y_fid)^2). "
+                    "For exact treatment, sample these parameters instead.",
+                    stacklevel=2,
+                )
+
+    # --- 7. Build modified config with marg injector appended --------------
+    marg_injector = _MarginalizationInjector(tuple(cached_blocks))
+    # ``signal_injectors`` is a static-field tuple of ``SignalInjector``
+    # instances.  ``eqx.tree_at`` interprets ``c.signal_injectors`` as a
+    # pytree of leaves rather than as a single field to replace, so use
+    # the standard dataclass replacement instead — eqx.Module is a
+    # frozen dataclass under the hood.
+    modified_config = dataclasses.replace(
+        config,
+        signal_injectors=config.signal_injectors + (marg_injector,),
+    )
+
+    # --- 8. Reduced per-pulsar skeletons -----------------------------------
+    reduced_pulsar_skeletons = tuple(
+        fiducial_pulsar_params[p].with_marginalized(bare_names_per_pulsar[p])
+        for p in range(n_psr)
+    )
+
+    # --- 9. Sampled priors --------------------------------------------------
+    sampled_priors: dict[str, Prior] = {
+        n: pri for n, pri in priors.items() if n not in over_set
+    }
+
+    # --- 10. Build the wrapper ---------------------------------------------
+    def likelihood_marg_pta(
+        global_params: GlobalParams,
+        reduced_pulsar_params: tuple[ParameterVector, ...],
+    ) -> Float[Array, ""]:
+        # Reconstruct full per-pulsar params: kept entries come from the
+        # user-supplied reduced_pulsar_params; marg'd entries stay at the
+        # fiducial values cached inside reduced_pulsar_skeletons[p].
+        full_pulsar_params = tuple(
+            skeleton.with_free_values(rp.free_values())
+            for skeleton, rp in zip(
+                reduced_pulsar_skeletons, reduced_pulsar_params
+            )
+        )
+        return pta_logL(global_params, full_pulsar_params, modified_config)
+
+    return likelihood_marg_pta, sampled_priors, reduced_pulsar_skeletons
