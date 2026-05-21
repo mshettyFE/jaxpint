@@ -2,8 +2,8 @@
 
 Component fields that store parameter names must follow the naming
 convention: end with ``_name`` for a single parameter name, or
-``_names`` for a tuple of parameter names.  This enables
-:meth:`required_params` to discover them automatically.
+``_names`` for a tuple of parameter names.  This enables each base
+class's ``required_params()`` method to discover them automatically.
 """
 
 from __future__ import annotations
@@ -285,9 +285,10 @@ class DispersionDelayComponent(DelayComponent):
     """Base class for delay components that contribute to dispersion measure.
 
     Subclasses must implement :meth:`compute_dm` returning the DM
-    contribution in pc/cm³, in addition to :meth:`__call__` which
-    returns delay in seconds.  The timing model uses ``compute_dm``
-    to evaluate the total model DM for wideband fitting.
+    contribution in pc/cm³, in addition to ``__call__`` (inherited from
+    :class:`DelayComponent`) which returns delay in seconds.  The timing
+    model uses ``compute_dm`` to evaluate the total model DM for wideband
+    fitting.
     """
 
     def compute_dm(

@@ -64,8 +64,10 @@ def fplus_fcross(
 
     Returns
     -------
-    fplus, fcross : scalars
-        Antenna pattern coefficients.
+    fplus : scalar
+        Plus-polarization antenna pattern coefficient.
+    fcross : scalar
+        Cross-polarization antenna pattern coefficient.
 
     References
     ----------
@@ -187,7 +189,7 @@ class CWInjector(SignalInjector):
         Naming prefix for this source in :class:`GlobalParams`.
     initial_values : dict, optional
         Override default initial values.  Keys must be in
-        :data:`CW_PARAM_DEFAULTS`.
+        ``CW_PARAM_DEFAULTS``.
     """
 
     param_defaults = CW_PARAM_DEFAULTS

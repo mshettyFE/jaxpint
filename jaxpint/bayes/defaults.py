@@ -104,7 +104,7 @@ def collect_param_names(
     """Build the canonical list of fully-qualified parameter names.
 
     Use it to feed
-    :func:`~jaxpint.bayes.validate.validate_priors` the canonical
+    :func:`~jaxpint.bayes.validate_priors` the canonical
     ``expected_params`` argument so completeness checks line up with what
     the helpers would produce.
 
@@ -140,7 +140,7 @@ def _resolve_pulsars(psrs):
     Accepts either:
 
     - An object with ``.pulsar_names`` and ``.pulsar_params_list`` (e.g.
-      :class:`~jaxpint.loaders.nanograv.NanogravPTA`,
+      :class:`~jaxpint.loaders.NanogravPTA`,
       :class:`~jaxpint.notebook_utils.SyntheticPTA`).
     - An iterable of ``(name, ParameterVector)`` pairs.
     """
@@ -162,7 +162,7 @@ def timing_priors(
     Parameters
     ----------
     psrs
-        Either a :class:`~jaxpint.loaders.nanograv.NanogravPTA`-like
+        Either a :class:`~jaxpint.loaders.NanogravPTA`-like
         container with ``.pulsar_names`` / ``.pulsar_params_list``, or
         an iterable of ``(name, ParameterVector)`` pairs.
     prior
@@ -180,7 +180,7 @@ def timing_priors(
     Notes
     -----
     The same ``prior`` instance is shared across every entry — this is
-    fine because :class:`Prior` instances are frozen ``equinox.Module``s.
+    fine because :class:`Prior` instances are frozen :class:`equinox.Module` objects.
     Override individual parameters by composing later via dict union::
 
         priors = (
@@ -233,7 +233,7 @@ def distance_priors(
     Parameters
     ----------
     psrs
-        :class:`~jaxpint.loaders.nanograv.NanogravPTA`-like container or
+        :class:`~jaxpint.loaders.NanogravPTA`-like container or
         iterable of ``(name, ParameterVector)`` pairs.
     prior
         See above.
@@ -356,7 +356,7 @@ def from_par_file(
     Parameters
     ----------
     psrs
-        :class:`~jaxpint.loaders.nanograv.NanogravPTA`-like container or
+        :class:`~jaxpint.loaders.NanogravPTA`-like container or
         iterable of ``(name, ParameterVector)`` pairs.  Used only to
         validate that the keys in ``parameter_values`` correspond to
         existing pulsars.
@@ -400,7 +400,7 @@ def cw_priors(prefix: str = "cw_") -> dict[str, Prior]:
     """Standard continuous-wave source priors (no ``phi_psr`` nuisances).
 
     Returns priors for the seven canonical CW source parameters used by
-    :class:`~jaxpint.pta.signals.cw.CWInjector`:
+    :class:`~jaxpint.pta.CWInjector`:
 
     - ``log10_h``       — strain amplitude (uniform in log10).
     - ``log10_fgw``     — GW frequency (uniform in log10).
@@ -423,7 +423,7 @@ def cw_priors(prefix: str = "cw_") -> dict[str, Prior]:
     prefix
         Name prefix used by the CW injector when registering its
         parameters into :class:`~jaxpint.pta.params.GlobalParams`.
-        Defaults to ``"cw_"``, matching :class:`CWInjector`'s default.
+        Defaults to ``"cw_"``, matching :class:`~jaxpint.pta.CWInjector`'s default.
 
     Returns
     -------
@@ -453,7 +453,7 @@ def cw_phi_psr_priors(psrs, *, prefix: str = "cw_") -> dict[str, Prior]:
     Parameters
     ----------
     psrs
-        :class:`~jaxpint.loaders.nanograv.NanogravPTA`-like container or
+        :class:`~jaxpint.loaders.NanogravPTA`-like container or
         iterable of ``(name, ParameterVector)`` pairs.
     prefix
         See :func:`cw_priors`.
@@ -497,7 +497,7 @@ def noise_priors_simple(
     Parameters
     ----------
     psrs
-        :class:`~jaxpint.loaders.nanograv.NanogravPTA`-like container or
+        :class:`~jaxpint.loaders.NanogravPTA`-like container or
         iterable of ``(name, ParameterVector)`` pairs.
     include_red_noise
         If ``True`` (default), also assign per-pulsar red-noise
@@ -505,7 +505,7 @@ def noise_priors_simple(
         ``defaults["rednoise_log10_A"]`` and ``defaults["rednoise_gamma"]``.
     defaults
         Mapping from suffix → :class:`Prior`.  Defaults to
-        :data:`NANOGRAV_NOISE_DEFAULTS`.
+        ``NANOGRAV_NOISE_DEFAULTS``.
     suffixes
         Which white-noise parameter suffixes to assign per pulsar.
         Defaults to ``("efac", "t2equad", "log10_ecorr")``.

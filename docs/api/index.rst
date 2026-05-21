@@ -78,3 +78,21 @@ PTA
    :recursive:
 
    jaxpint.pta
+
+Bayesian Inference
+------------------
+
+.. autosummary::
+   :toctree: generated
+   :recursive:
+
+   jaxpint.bayes
+
+Data Loaders
+------------
+
+.. autosummary::
+   :toctree: generated
+   :recursive:
+
+   jaxpint.loaders

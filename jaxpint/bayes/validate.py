@@ -40,7 +40,7 @@ def validate_priors(
         triggers a :class:`PriorValidationError`.
 
         The canonical way to construct this list is via
-        :func:`jaxpint.bayes.defaults.collect_param_names`, which
+        :func:`jaxpint.bayes.collect_param_names`, which
         produces the same fully-qualified names
         (``f"{psr_name}_{param_name}"`` per pulsar plus global parameter
         names) that the bulk-prior helpers (:func:`timing_priors`,
@@ -66,7 +66,7 @@ def validate_priors(
 
     See Also
     --------
-    jaxpint.bayes.defaults.collect_param_names :
+    jaxpint.bayes.collect_param_names :
         Build the ``expected_params`` list from a pulsar collection plus
         an optional :class:`~jaxpint.pta.params.GlobalParams`.
     """

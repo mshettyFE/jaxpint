@@ -415,7 +415,7 @@ class ParameterVector(eqx.Module):
         """Return a copy with marginalized_mask=True for the given names.
 
         Values for marg'd entries are left as-is — they become the y_fid that
-        :func:`jaxpint.bayes.marginal.marginalize` anchors its linearization on.
+        :func:`~jaxpint.bayes.marginalize` anchors its linearization on.
         Marginalized parameters are dropped from ``free_values()`` /
         ``with_free_values()`` (their values are held fixed at y_fid during
         likelihood evaluation, but their prior covariance is folded into the
@@ -423,9 +423,9 @@ class ParameterVector(eqx.Module):
 
         Parameters
         ----------
-        names : iterable of str
-            Parameter names to mark as marginalized. Each name must be present
-            in ``self.names``.
+        names
+            Iterable of parameter names (``str``) to mark as marginalized.
+            Each name must be present in ``self.names``.
 
         Returns
         -------

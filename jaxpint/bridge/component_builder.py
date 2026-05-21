@@ -26,8 +26,8 @@ def build_timing_model(
     """Construct a JaxPINT :class:`~jaxpint.model.TimingModel` from a PINT model.
 
     Converts the PINT model to a :class:`ParResult` and optional
-    :class:`TOAData`, then delegates to
-    :func:`jaxpint.bridge._model_builder.build_model`.
+    :class:`~jaxpint.types.TOAData`, then delegates to
+    ``jaxpint.bridge._model_builder.build_model``.
 
     Parameters
     ----------
