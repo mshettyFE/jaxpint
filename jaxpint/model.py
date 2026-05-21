@@ -85,7 +85,7 @@ class TimingModel(eqx.Module):
     ) -> Float[Array, " n_toas"]:
         """Compute total model DM at each TOA (pc/cm³).
 
-        Sums DM contributions from all :class:`DispersionDelayComponent`
+        Sums DM contributions from all :class:`~jaxpint.components.DispersionDelayComponent`
         instances in :attr:`dispersion_components`.  Used for wideband
         DM residual computation.
 
@@ -186,7 +186,7 @@ class TimingModel(eqx.Module):
 
     @property
     def components(self) -> tuple[DelayComponent | PhaseComponent, ...]:
-        """All components in order: delay components then phase components."""
+        """Return all components, delay components first then phase components."""
         return self.delay_components + self.phase_components
 
     @property
@@ -309,7 +309,7 @@ class TimingModel(eqx.Module):
         """Return each dispersion component's DM contribution.
 
         Computes total delay first, then calls ``compute_dm`` on each
-        :class:`DispersionDelayComponent`.  Component names match those
+        :class:`~jaxpint.components.DispersionDelayComponent`.  Component names match those
         used by :meth:`decompose_delay` for the same components.
 
         .. warning::

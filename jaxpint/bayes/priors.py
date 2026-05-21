@@ -218,7 +218,7 @@ class Gaussian(Prior):
 
     Used for informative priors derived from independent measurements
     (par-file fits, VLBI distances, etc.).  When marginalized analytically
-    inside :func:`jaxpint.bayes.marginal.marginalize`, ``sigma**2`` enters
+    inside :func:`jaxpint.bayes.marginalize`, ``sigma**2`` enters
     the Woodbury regularizer in place of the improper ``1e40``.
 
     Examples
@@ -259,7 +259,7 @@ class ImproperPrior(Prior):
     """Improper flat prior over the entire real line.
 
     The "discovery-equivalent" prior.  Has no normalization (does not
-    integrate to a finite value), so :meth:`sample` raises and any
+    integrate to a finite value), so :meth:`Prior.sample` raises and any
     operation requiring normalization (evidence, predictive sampling)
     should reject it.  :meth:`log_prob` returns ``0.0`` everywhere — the
     constant is arbitrary and irrelevant for MCMC ratios, gradients, and
@@ -268,7 +268,7 @@ class ImproperPrior(Prior):
     Use this for parameters that should be analytically marginalized
     with no prior information (the standard treatment of timing-model
     parameters in NANOGrav workflows).  Inside
-    :func:`jaxpint.bayes.marginal.marginalize`, an :class:`ImproperPrior`
+    :func:`jaxpint.bayes.marginalize`, an :class:`ImproperPrior`
     triggers the ``Phi = 1e40`` Woodbury regularizer that produces the
     discovery-equivalent flat-prior projection. (TODO)
 

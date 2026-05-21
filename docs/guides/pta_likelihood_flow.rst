@@ -1,5 +1,5 @@
-High Level Overview of the Signal Processing Pipeline of JAXPint (WIP)
-######################################################################
+Signal Processing Pipeline Overview
+===================================
 
 The PTA signal processing pipeline from raw TOA data to log likelihood evaluation is a bit confusing to an outsider. This is my best attempt at explaining this from end to end; this is also my mental model that I had in mind when building JAXPint.
 
@@ -12,12 +12,12 @@ For a visual summary of all of this:
    End-to-end flow: raw ``.par``/``.tim`` files → PINT parsing and JaxPINT bridge → per-pulsar forward model (residuals + covariance) → signal injector contributions → per-pulsar Gaussian log-likelihood → PTA log-likelihood (uncorrelated sum, or Hellings-Downs correlated).
 
 Input Data 
-**********
+----------
 
 Each pulsar in the array is represented by two different files: a .par file and .tim file 
 
 .tim File
-=========
+~~~~~~~~~
 
 The ``.tim`` file is a list of one time-of-arrival (TOA) per line, plus a handful of optional file-level directives. JaxPINT reads these via PINT, so anything PINT understands works here. Since PTAs have been around for a while, there are a smorgasbord of different formats. 
 
@@ -42,7 +42,7 @@ The trailing ``-flag value`` pairs are free-form metadata attached to each TOA. 
 TEMPO2 also defines a small set of in-file commands (``TIME`` offsets, ``EFAC``, ``EQUAD``, ``MODE``, ``SKIP``/``NOSKIP``, ``INCLUDE``, ``JUMP``/``NOJUMP``) that PINT applies on read. Unlike the ``.par`` parameter set, there is no single enumerated catalog of flag names -- each PTA defines its own conventions. See the `TEMPO2 manual <https://bitbucket.org/psrsoft/tempo2/src/master/documentation/>`_ for the authoritative format specification, and the `PINT explanation page <https://nanograv-pint.readthedocs.io/en/latest/explanation.html>`_ for PINT-specific notes on what happens when the file is loaded.
 
 Some important observations
----------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 - The fundamental unit of data for a TOA is the triple
 
@@ -56,16 +56,16 @@ consisting of the observing frequency :math:`\nu` (MHz), the pulse arrival time 
 - There is no gaurentee on uniform cadence between TOAs (which makes sense, since the telescope could be down for maintainance or someething)
 
 Parsing .tim files in JAXPint 
------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 I made the pragmatic decision to offload the TOA parsing to PINT. I didn't want to deal with all the nuances of different time standards, flags and backends and probably other things that I'm forgetting.
 
-The .tim parsing workflow is the read in .tim files via PINT, which results in a `pint.toa.TOAs <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.toa.TOAs.html>`_ object (an ``astropy.table.Table`` with one row per TOA) -- and then converted that into a JAX-compatible container, :class:`~jaxpint.types.TOAData`, via :func:`~jaxpint.bridge.toa_conversion.pint_toas_to_jax`.
+The .tim parsing workflow is the read in .tim files via PINT, which results in a `pint.toa.TOAs <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.toa.TOAs.html>`_ object (an ``astropy.table.Table`` with one row per TOA) -- and then converted that into a JAX-compatible container, :class:`~jaxpint.types.TOAData`, via :func:`~jaxpint.bridge.pint_toas_to_jax`.
 
 In principle, it would be straightforward to skip the PINT parsing dependency and just write directly to  :class:`~jaxpint.types.TOAData`.
 
 .par File
-=========
+~~~~~~~~~
 
 This is just a plain table of values which specifies how to build a particular pulsar model.
 
@@ -91,7 +91,7 @@ Most of the parameters in PINT are supported (with the exception of some obscure
 for the full list of accepted keywords, units, and aliases.
 
 Parsing .par files in JAXPint
------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 JAXPint currently outsources the initial parsing and construction of the pulsar timing model to PINT. This was done for reasons exactly analagous to PINT. I don't want to be writing parsers that have already been written.
 
@@ -101,13 +101,13 @@ The flow mirrors the ``.tim`` case:
 
 2. The PINT ``TimingModel`` is then handed to the JaxPINT bridge layer, which produces two JAX-native objects:
 
-   - :func:`~jaxpint.bridge.model_conversion.pint_model_to_params` extracts every numerical parameter into a flat :class:`~jaxpint.types.ParameterVector` -- the only differentiable leaf of the pytree.
-   - :func:`~jaxpint.bridge.component_builder.build_timing_model` constructs the JAX-native :class:`~jaxpint.model.TimingModel`. Astropy units are stripped and every scalar becomes plain ``float64``.
+   - :func:`~jaxpint.bridge.pint_model_to_params` extracts every numerical parameter into a flat :class:`~jaxpint.types.ParameterVector` -- the only differentiable leaf of the pytree.
+   - :func:`~jaxpint.bridge.build_timing_model` constructs the JAX-native :class:`~jaxpint.model.TimingModel`. Astropy units are stripped and every scalar becomes plain ``float64``.
 
 Once this conversion is done, the PINT object is no longer needed at runtime -- the rest of the pipeline operates entirely on the JaxPINT types.
 
-Synthetic Versus Real Data 
-========================== 
+Synthetic Versus Real Data
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 As an aside, notice that the pipeline doesn't care about the origin of the .par and .tim files. Hence, you could run JAXPint on real pulsar data, or you can generate synthetic .par and .tim files.
 
@@ -116,7 +116,7 @@ For synthetic data generation,  you could use `PINT's model construction facilit
 If you have some external signal (re: CW gravitational wave of a stochastic GW background), you could also generate a mock timeseries to reflect these injected signals.
 
 TimingModel
-***********
+-----------
 
 :class:`~jaxpint.model.TimingModel` is the deterministic side of the pipeline, and it is best thought of as a **forward model**: given a :class:`~jaxpint.types.ParameterVector` and a :class:`~jaxpint.types.TOAData`, it predicts a pulsar rotational phase for each TOA. The output has the same shape as the input timestamps -- ``(n_toas,)`` -- but the values are *phases* (cycles), not modified times.
 
@@ -125,7 +125,7 @@ Every TOA marks a moment where the pulse beam swept past Earth, so by constructi
 Internally, TimingModel holds three tuples of components -- delays, phases, and dispersion -- and combines them in different ways.
 
 Delay components
-================
+~~~~~~~~~~~~~~~~
 
 A "delay" here is the correction between the **topocentric TOA** (what the telescope recorded, after PINT's clock corrections) and the time at which the pulsar's intrinsic spin model -- the :math:`F_0, F_1, \ldots` polynomial -- actually applies. That reference time is effectively the pulse emission time in the pulsar's rest frame. Concretely, if :math:`t` is the topocentric TOA and :math:`\Delta t_\mathrm{total}(t)` is the full delay, the phase model is evaluated at
 
@@ -155,7 +155,7 @@ Each individual :math:`\Delta t_k` accounts for one physical reason the pulse to
 Walking the ``delay_components`` tuple in order effectively steps the reference frame outward along the signal path: **observatory → SSB → pulsar system barycenter → pulsar surface**.
 
 The accumulating chain
-----------------------
+^^^^^^^^^^^^^^^^^^^^^^
 
 :meth:`~jaxpint.model.TimingModel.compute_delay` walks the ``delay_components`` tuple sequentially. Each component contributes an additive term, but *sees the accumulated delay from prior components* as an input. The final value is still a simple sum,
 
@@ -174,7 +174,7 @@ where
 The order matters because :math:`\Delta t_k` is in general a *function of* :math:`\Delta t_{<k}`, not just an additive constant. A binary-orbit Rømer delay, for instance, has to be computed in the SSB frame -- which only exists once the astrometric correction has already been peeled off. If two components genuinely commute (their contributions don't depend on prior delay), their ordering is irrelevant; in practice most components are weakly order-dependent.
 
 Phase components
-================
+~~~~~~~~~~~~~~~~
 
 :meth:`~jaxpint.model.TimingModel.compute_phase` sums the contributions from every component in ``phase_components``. Addition is commutative, so order is irrelevant here. Each component receives the total delay from above as input, then returns its own phase contribution as a :class:`~jaxpint.dual_float.DualFloat` (an integer + fractional cycle split, kept separate to preserve double-precision over long baselines).
 
@@ -195,10 +195,10 @@ Some examples of phase components:
 
 After summing, the model subtracts the phase at the TZR reference TOA to get absolute phase, then applies the ``PHOFF`` offset if present.
 
-When this absolute phase is fed into :func:`~jaxpint.fitters._base.compute_phase_residuals`, the integer portion is reconciled against ``delta_pulse_number`` (which pins each TOA to a specific integer pulse). **Only the fractional part survives as the residual** -- the integer pulse count cancels out, leaving the sub-cycle timing mismatch that the fitter tries to minimise.
+When this absolute phase is fed into :func:`~jaxpint.fitters.compute_phase_residuals`, the integer portion is reconciled against ``delta_pulse_number`` (which pins each TOA to a specific integer pulse). **Only the fractional part survives as the residual** -- the integer pulse count cancels out, leaving the sub-cycle timing mismatch that the fitter tries to minimise.
 
 Dispersion components
-=====================
+~~~~~~~~~~~~~~~~~~~~~
 
 Dispersion components are a specialisation (:class:`~jaxpint.components.DispersionDelayComponent`) that participate twice:
 
@@ -210,7 +210,7 @@ For narrowband fits, only the first role matters; ``compute_dm`` is simply not c
 .. _noisemodel:
 
 NoiseModel
-**********
+----------
 
 :class:`~jaxpint.noise.noise_model.NoiseModel` is the stochastic side. Every correlated noise source contributes a block to a single, unified pulsar-level covariance matrix expressed in Woodbury form:
 
@@ -224,10 +224,10 @@ NoiseModel
 
 Each individual noise component contributes linearly. Adding a new noise source means appending a few columns to :math:`U` and a few entries to :math:`\Phi_\mathrm{diag}`, nothing else.
 
-:meth:`~jaxpint.noise.noise_model.NoiseModel.covariance` returns the triple :math:`(N_\mathrm{diag},\; U,\; \Phi_\mathrm{diag})`, which the GLS fitters then feed directly into the Woodbury identity to avoid ever materialising the dense :math:`n_\mathrm{toas} \times n_\mathrm{toas}` covariance.
+:meth:`~jaxpint.noise.NoiseModel.covariance` returns the triple :math:`(N_\mathrm{diag},\; U,\; \Phi_\mathrm{diag})`, which the GLS fitters then feed directly into the Woodbury identity to avoid ever materialising the dense :math:`n_\mathrm{toas} \times n_\mathrm{toas}` covariance.
 
 Fitting
-*******
+-------
 
 Once the raw ``.par``/``.tim`` files have been converted to JAX-native objects, everything downstream is pure JAX code -- no more Astropy units, no more PINT dependency at runtime. A fit takes four inputs:
 
@@ -237,24 +237,24 @@ Once the raw ``.par``/``.tim`` files have been converted to JAX-native objects, 
 - :class:`~jaxpint.noise.noise_model.NoiseModel` -- optional; carries ``EFAC``/``EQUAD``/``ECORR``/red-noise contributions.
 
 Residuals
-=========
+~~~~~~~~~
 
 Residuals come in two flavors, both pure functions of ``(model, toa_data, params)``:
 
-- :func:`~jaxpint.fitters._base.compute_phase_residuals` returns the fractional part of the model phase (in cycles), with ``delta_pulse_number`` offsets accounted for.
-- :func:`~jaxpint.fitters._base.compute_time_residuals` wraps the phase residuals and divides by the spin frequency :math:`F_0` to return residuals in seconds.
+- :func:`~jaxpint.fitters.compute_phase_residuals` returns the fractional part of the model phase (in cycles), with ``delta_pulse_number`` offsets accounted for.
+- :func:`~jaxpint.fitters.compute_time_residuals` wraps the phase residuals and divides by the spin frequency :math:`F_0` to return residuals in seconds.
 
 Both return a ``jax.Array`` of shape ``(n_toas,)``.
 
 PTA Likelihood Construction
-***************************
+---------------------------
 
 All of the above holds on a per pulsar level. For PTA, you run this procedure for each pulsar timeseries in your PTA to generate a set of time-residuals (ie. What offset do you need to apply to the given MJDs which best matches the given pulsar model?). 
 
 Denote the i-th pulsar timing residual as :math:`\Delta t_i` and its pulsar-level covariance (built by the :class:`~jaxpint.noise.noise_model.NoiseModel`) as :math:`C_i`. The number of toas per pulsar is denoted as :math:`N_{i}`.
 
 Per-pulsar Gaussian log-likelihood
-==================================
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Under the usual assumption that each pulsar's residuals are a zero-mean Gaussian with covariance :math:`C_i`, the per pulsar log-likelihood is
 
@@ -267,7 +267,7 @@ Under the usual assumption that each pulsar's residuals are a zero-mean Gaussian
 Because :math:`C_i` has the Woodbury structure :math:`C_i = \mathrm{diag}(N_i) + U_i\,\mathrm{diag}(\Phi_i)\,U_i^{\mathsf{T}}` (see the :ref:`NoiseModel <noisemodel>` section), both the quadratic form and the log-determinant can be evaluated in :math:`\mathcal{O}(n_\mathrm{toas}\,n_\mathrm{basis}^2)` time without ever materialising the dense :math:`n_\mathrm{toas}\times n_\mathrm{toas}` matrix. 
 
 Uncorrelated PTA log-likelihood
-===============================
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 When the pulsars are treated as independent (no cross-pulsar correlations), the full PTA log-likelihood is just the sum:
 
@@ -275,7 +275,7 @@ When the pulsars are treated as independent (no cross-pulsar correlations), the 
 
    \ln \mathcal{L}_\mathrm{PTA} \;=\; \sum_i \ln \mathcal{L}_i.
 
-This is what :func:`~jaxpint.pta.likelihood.pta_logL` computes. It takes three things:
+This is what :func:`~jaxpint.pta.pta_logL` computes. It takes three things:
 
 - A :class:`~jaxpint.pta.params.GlobalParams` -- the parameters that are shared across pulsars (e.g. CW source sky location, common red-noise spectral index, …).
 - A ``tuple`` of per-pulsar :class:`~jaxpint.types.ParameterVector` objects -- timing and noise parameters for each pulsar.
@@ -284,7 +284,7 @@ This is what :func:`~jaxpint.pta.likelihood.pta_logL` computes. It takes three t
 Internally, ``pta_logL`` loops over pulsars; for each one it asks every ``SignalInjector`` for (i) a deterministic delay contribution to subtract from the residuals and (ii) a ``(U, Phi)`` covariance augmentation to append to the noise model, then hands everything to :func:`~jaxpint.likelihood.single_pulsar_logL`.
 
 Signal injectors
-----------------
+^^^^^^^^^^^^^^^^
 
 :class:`~jaxpint.pta.likelihood.SignalInjector` is an abstract base class that lets you plug in PTA-wide signals without touching the core likelihood. Each injector implements one or both of:
 
@@ -292,7 +292,7 @@ Signal injectors
 - ``covariance(p, toa_data, pulsar_params, global_params)`` -- returns a ``(U, Phi)`` pair that augments pulsar :math:`i`'s noise model. Used for stochastic signals such as a common-spectrum red process.
 
 How the injector contributions enter the per-pulsar likelihood
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 For each pulsar :math:`i`, ``pta_logL`` collects the ``delay`` outputs from every injector :math:`\alpha` and **subtracts their sum** from the timing residual that goes into :math:`\ln \mathcal{L}_i`:
 
@@ -326,13 +326,13 @@ Concrete injectors shipped today:
 
    * - Injector
      - Signal
-   * - :class:`~jaxpint.pta.signals.cw.CWInjector` / :class:`~jaxpint.pta.signals.cw.CWInjectorStack`
+   * - :class:`~jaxpint.pta.CWInjector` / ``CWInjectorStack``
      - Single or multiple continuous-wave sources (deterministic, via ``delay``).
    * - :class:`~jaxpint.pta.signals.gwb.CURNInjector`
      - Common uncorrelated red noise -- the same power-law spectrum in every pulsar, no cross-correlations (stochastic, via ``covariance``).
 
 Correlated PTA log-likelihood
-=============================
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A real gravitational-wave background does not leave the pulsars independent: it induces cross-pulsar correlations with an angular dependence described by an **overlap reduction function** (ORF), most famously the Hellings-Downs curve for an isotropic stochastic background. The correlated log-likelihood is
 
@@ -352,12 +352,12 @@ where :math:`\Delta t` is the concatenation of all per-pulsar residuals and the 
 
 with :math:`D = \mathrm{blockdiag}(C_1, \ldots, C_N)` (the per-pulsar noise), :math:`V = \mathrm{blockdiag}(F_1, \ldots, F_N)` (the per-pulsar Fourier bases), :math:`\Gamma` the ORF matrix of shape ``(n_pulsars, n_pulsars)``, and :math:`S` the GWB power-law PSD.
 
-This is what :func:`~jaxpint.pta.correlated_likelihood.pta_logL_correlated` computes, using a two-tier Woodbury scheme:
+This is what ``pta_logL_correlated`` computes, using a two-tier Woodbury scheme:
 
 1. An **inner** per-pulsar Woodbury solve handles :math:`D` (white + per-pulsar correlated noise).
 2. An **outer** dense Cholesky on the compressed Fourier-basis system couples pulsars through :math:`\Gamma`.
 
-This avoids ever forming :math:`C` itself (which would be :math:`n_\mathrm{tot}\times n_\mathrm{tot}`) while still capturing the cross-pulsar physics. The static bundle is :class:`~jaxpint.pta.correlated_likelihood.CorrelatedPTAConfig`, and the corresponding injector ABC is :class:`~jaxpint.pta.correlated_likelihood.CorrelatedSignalInjector`.
+This avoids ever forming :math:`C` itself (which would be :math:`n_\mathrm{tot}\times n_\mathrm{tot}`) while still capturing the cross-pulsar physics. The static bundle is ``CorrelatedPTAConfig``, and the corresponding injector ABC is :class:`~jaxpint.pta.CorrelatedSignalInjector`.
 
 Correlated injector shipped today:
 
@@ -368,10 +368,10 @@ Correlated injector shipped today:
    * - Injector
      - Signal
    * - :class:`~jaxpint.pta.signals.correlated_gwb.HDCorrelatedGWBInjector`
-     - Isotropic stochastic GWB with Hellings-Downs cross-correlations (:func:`~jaxpint.pta.signals.orf.hd_orf`). Related ORFs in :mod:`jaxpint.pta.signals.orf`: :func:`~jaxpint.pta.signals.orf.monopole_orf`, :func:`~jaxpint.pta.signals.orf.dipole_orf`.
+     - Isotropic stochastic GWB with Hellings-Downs cross-correlations (:func:`~jaxpint.pta.hd_orf`). Related ORFs in ``jaxpint.pta.signals.orf``: :func:`~jaxpint.pta.monopole_orf`, :func:`~jaxpint.pta.dipole_orf`.
 
 Putting it together
-===================
+~~~~~~~~~~~~~~~~~~~
 
 A minimal end-to-end PTA log-likelihood evaluation:
 
@@ -396,4 +396,4 @@ A minimal end-to-end PTA log-likelihood evaluation:
 
    logL = pta_logL(global_params, pulsar_params, config)  # scalar jax.Array
 
-Swapping ``pta_logL`` for :func:`~jaxpint.pta.correlated_likelihood.pta_logL_correlated` (with a :class:`~jaxpint.pta.correlated_likelihood.CorrelatedPTAConfig` and one or more correlated injectors) turns on the Hellings-Downs coupling. Because both functions are pure JAX, the whole thing plays nicely with ``jax.jit``, ``jax.grad``, and downstream samplers like BlackJAX.
+Swapping ``pta_logL`` for ``pta_logL_correlated`` (with a ``CorrelatedPTAConfig`` and one or more correlated injectors) turns on the Hellings-Downs coupling. Because both functions are pure JAX, the whole thing plays nicely with ``jax.jit``, ``jax.grad``, and downstream samplers like BlackJAX.

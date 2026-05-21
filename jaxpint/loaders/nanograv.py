@@ -42,8 +42,8 @@ class NanogravPTA(NamedTuple):
     """Output of :func:`load_nanograv_pta`.
 
     Tuple fields after ``pulsar_names`` mirror
-    :class:`jaxpint.notebook_utils.SyntheticPTA` exactly, so the result drops
-    straight into :class:`jaxpint.pta.likelihood.PTAConfig`::
+    ``jaxpint.notebook_utils.SyntheticPTA`` exactly, so the result drops
+    straight into :class:`~jaxpint.pta.PTAConfig`::
 
         psrs = load_nanograv_pta("/data/NG15yr/narrowband")
         cfg = PTAConfig(

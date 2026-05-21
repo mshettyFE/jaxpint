@@ -235,7 +235,12 @@ def weighted_mean_sdev(
 
     Returns
     -------
-    (wmean, werr, wsdev)
+    wmean : float
+        Weighted mean of ``arrin``.
+    werr : float
+        Error on the weighted mean.
+    wsdev : float
+        Weighted sample standard deviation.
     """
     wmean, werr = weighted_mean(arrin, weights_in, inputmean, calcerr)
 
@@ -272,9 +277,13 @@ def normalize_designmatrix(
 
     Returns
     -------
-    (M_normalized, norms, degenerate)
-        ``degenerate`` is a boolean mask that is True for columns with
-        zero norm (i.e. parameters that have no effect on the residuals).
+    M_normalized : 2-D array
+        ``M`` divided column-wise by its column norms.
+    norms : 1-D array
+        Per-column 2-norms of ``M``.
+    degenerate : 1-D bool array
+        ``True`` for columns with zero norm — parameters that have no
+        effect on the residuals.
     """
     norm = jnp.sqrt(jnp.sum(M ** 2, axis=0))
     degenerate = norm == 0.0
@@ -436,16 +445,18 @@ def concat_woodbury_blocks(
 
     Returns
     -------
-    None
-        If every input is ``None`` (no contribution to the noise covariance —
-        the caller may treat this as "no Woodbury augmentation needed").
-    tuple of arrays
-        Concatenated ``(U, Phi)`` block otherwise.
+    out : tuple or None
+        ``None`` if every input is ``None`` — no contribution to the noise
+        covariance, which the caller may treat as "no Woodbury augmentation
+        needed".  Otherwise the concatenated ``(U, Phi)`` block (a tuple of
+        two arrays).
 
     Notes
     -----
-    Used by :func:`single_pulsar_logL`, :func:`pta_logL`,
-    :class:`NoiseModel.covariance`, :func:`marginalize` and the
+    Used by :func:`~jaxpint.likelihood.single_pulsar_logL`,
+    :func:`~jaxpint.pta.pta_logL`,
+    :meth:`~jaxpint.noise.NoiseModel.covariance`,
+    :func:`~jaxpint.bayes.marginalize` and the
     correlated-likelihood paths to compose the Woodbury low-rank update from
     multiple sources (white-noise components, per-pulsar signal injectors,
     cross-pulsar GW basis, analytic-marginalization prior block, etc.).
@@ -494,7 +505,7 @@ class WoodburyFactor(eqx.Module):
         Cholesky factor of ``Σ = Φ⁻¹ + U^T N⁻¹ U`` (the array half of
         :func:`jax.scipy.linalg.cho_factor`'s output).
     Sigma_cf_lower : bool
-        ``lower`` flag from :func:`cho_factor`. Static metadata.
+        ``lower`` flag from :func:`jax.scipy.linalg.cho_factor`. Static metadata.
     logdet_C : scalar
         ``log det(C) = sum log N + sum log Φ + log det Σ``, precomputed.
     """

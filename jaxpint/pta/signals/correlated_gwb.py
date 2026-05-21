@@ -44,7 +44,7 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
         Observing time span in seconds.
     orf_func : callable, optional
         Overlap reduction function ``(pos1, pos2) -> scalar``.
-        Defaults to :func:`~jaxpint.pta.signals.orf.hd_orf`.
+        Defaults to :func:`~jaxpint.pta.hd_orf`.
     prefix : str
         Naming prefix for parameters in :class:`GlobalParams`.
     initial_values : dict, optional

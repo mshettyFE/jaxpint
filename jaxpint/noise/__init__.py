@@ -1,6 +1,7 @@
 """Noise components for JaxPINT timing models."""
 
 from jaxpint.noise.white import ScaleToaError
+from jaxpint.noise.dm_white import ScaleDmError
 from jaxpint.noise.ecorr import EcorrNoise
 from jaxpint.noise.red_noise import PLRedNoise
 from jaxpint.noise.dm_noise import PLDMNoise
@@ -15,5 +16,6 @@ __all__ = [
     "PLDMNoise",
     "PLRedNoise",
     "PLSWNoise",
+    "ScaleDmError",
     "ScaleToaError",
 ]

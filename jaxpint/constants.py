@@ -24,7 +24,7 @@ TSUN: float = 4.92549094830932e-6
 #: Earth radius at 45 deg latitude (km)
 EARTH_R_KM: float = 6356.766
 
-#: Planet mass parameters: T_planet = T_sun / mass_ratio (s)
+#: Planet mass parameters; ``T_planet = T_sun / mass_ratio`` in seconds.
 PLANET_MASSES: dict[str, float] = {
     "jupiter": TSUN / 1047.3486,
     "saturn":  TSUN / 3497.898,
@@ -75,7 +75,7 @@ DMCONST: float = 1.0 / 2.41e-4
 
 # ── Troposphere (Niell 1996 mapping function) ─────────────────────
 
-#: Latitude breakpoints (radians): [0, 15, 30, 45, 60, 75, 90] degrees.
+#: Latitude breakpoints in radians; corresponds to 0, 15, 30, 45, 60, 75, 90 degrees.
 #: Indices 0 and 6 are copies of 1 and 5 for constant extrapolation.
 NIELL_LAT_BREAKS = jnp.array(
     [0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0]

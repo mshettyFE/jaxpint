@@ -26,8 +26,8 @@ class MaskInfo:
 class ParResult:
     """Complete result of converting a timing model to JaxPINT's internal format.
 
-    Produced by :func:`jaxpint.bridge.model_conversion.pint_model_to_params`
-    and consumed by :func:`jaxpint.bridge._model_builder.build_model`.
+    Produced by :func:`jaxpint.bridge.pint_model_to_params`
+    and consumed by ``jaxpint.bridge._model_builder.build_model``.
     """
     params: ParameterVector  # JIT-able values that jax can trace
     component_set: set[Component] = field(default_factory=set)  # What components need to be built

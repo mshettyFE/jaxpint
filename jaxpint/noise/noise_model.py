@@ -55,7 +55,7 @@ class NoiseModel(eqx.Module):
 
     At construction the correlated components are partitioned into:
 
-    - **static-basis** components (those with :meth:`NoiseComponent.static_basis`
+    - **static-basis** components (those with :meth:`~jaxpint.components.NoiseComponent.static_basis`
       returning a non-``None`` array) — their bases are hstacked once into
       ``_U_static``.
     - **dynamic-basis** components — their bases are recomputed per call.
@@ -245,7 +245,7 @@ class NoiseModel(eqx.Module):
 
     @property
     def components(self) -> tuple:
-        """All non-None noise components: white_noise, correlated, dm_white_noise."""
+        """Return all non-None noise components in order (white, correlated, dm_white)."""
         result: list = []
         if self.white_noise is not None:
             result.append(self.white_noise)

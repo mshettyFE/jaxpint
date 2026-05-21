@@ -227,8 +227,8 @@ def marginalize(
     """Build an analytically-marginalized log-likelihood.
 
     Dispatches on ``likelihood`` to the appropriate per-backend marg path.
-    Supports :func:`jaxpint.likelihood.single_pulsar_logL` (per-pulsar
-    timing-model marg) and :func:`jaxpint.pta.likelihood.pta_logL`
+    Supports :func:`~jaxpint.likelihood.single_pulsar_logL` (per-pulsar
+    timing-model marg) and :func:`~jaxpint.pta.pta_logL`
     (per-pulsar timing-model marg across an entire PTA, including in the
     presence of correlated injectors).  Global-parameter marg (CW / GWB
     hyperparameters) is intentionally not supported — discovery samples
@@ -255,7 +255,7 @@ def marginalize(
     Parameters
     ----------
     likelihood
-        Currently must be :func:`jaxpint.likelihood.single_pulsar_logL`
+        Currently must be :func:`~jaxpint.likelihood.single_pulsar_logL`
         (or a callable with the same signature).  Multi-pulsar
         marginalization is planned for the next phase.
     over
@@ -306,7 +306,7 @@ def marginalize(
         Marginalized log-likelihood.  Takes a :class:`ParameterVector`
         whose ``marginalized_mask`` matches ``reduced_skeleton`` and
         returns a scalar.  Optional ``external_delay`` and ``external_cov``
-        kwargs pass through to :func:`single_pulsar_logL` for composition
+        kwargs pass through to :func:`~jaxpint.likelihood.single_pulsar_logL` for composition
         with signal injectors.
     sampled_priors : dict[str, Prior]
         ``priors`` with marg'd entries removed.

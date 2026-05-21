@@ -61,9 +61,10 @@ def single_pulsar_logL(
     external_delay : optional array (n_toas,)
         Pre-computed external delay in seconds (e.g., sum of CW signals).
         Subtracted from residuals (positive delay = later arrival).
-    external_cov : optional (U, Phi) tuple
-        U: (n_toas, n_basis), Phi: (n_basis,).
-        Augments the noise covariance: C += U @ diag(Phi) @ U^T.
+    external_cov
+        Optional ``(U, Phi)`` tuple where ``U`` has shape ``(n_toas, n_basis)``
+        and ``Phi`` has shape ``(n_basis,)``.  Augments the noise covariance:
+        ``C += U @ diag(Phi) @ U.T``.
 
     Returns
     -------
