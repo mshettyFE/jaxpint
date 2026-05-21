@@ -23,17 +23,17 @@ from tests.helpers import make_params_with_frozen_names
 
 
 class TestBuildQuantizationMatrix:
-    """Tests for _build_quantization_matrix."""
+    """Tests for build_quantization_matrix."""
 
     def test_simple_epochs(self):
         """Two epochs with 2 TOAs each, one singleton excluded."""
-        from jaxpint.bridge import _build_quantization_matrix
+        from jaxpint.utils import build_quantization_matrix
 
         # 5 TOAs: 2 in epoch A (~100s), 1 singleton (~200s), 2 in epoch B (~300s)
         times = np.array([100.0, 100.5, 200.0, 300.0, 300.3])
         masks = {"ECORR1": np.ones(5, dtype=bool)}
 
-        U, slices = _build_quantization_matrix(times, masks)
+        U, slices = build_quantization_matrix(times, masks)
 
         assert U.shape == (5, 2), f"Expected (5,2) got {U.shape}"
         # Epoch A: TOAs 0,1
@@ -44,25 +44,25 @@ class TestBuildQuantizationMatrix:
 
     def test_no_qualifying_epochs(self):
         """All singletons -> zero-column U."""
-        from jaxpint.bridge import _build_quantization_matrix
+        from jaxpint.utils import build_quantization_matrix
 
         times = np.array([100.0, 200.0, 300.0])
         masks = {"ECORR1": np.ones(3, dtype=bool)}
 
-        U, slices = _build_quantization_matrix(times, masks)
+        U, slices = build_quantization_matrix(times, masks)
         assert U.shape == (3, 0)
         assert slices["ECORR1"] == (0, 0)
 
     def test_multiple_ecorrs(self):
         """Two ECORR parameters with disjoint masks."""
-        from jaxpint.bridge import _build_quantization_matrix
+        from jaxpint.utils import build_quantization_matrix
 
         # 6 TOAs: first 3 belong to ECORR1, last 3 to ECORR2
         times = np.array([100.0, 100.5, 100.8, 200.0, 200.3, 200.7])
         mask1 = np.array([True, True, True, False, False, False])
         mask2 = np.array([False, False, False, True, True, True])
 
-        U, slices = _build_quantization_matrix(
+        U, slices = build_quantization_matrix(
             times, {"ECORR1": mask1, "ECORR2": mask2}
         )
 
@@ -75,12 +75,12 @@ class TestBuildQuantizationMatrix:
 
     def test_empty_mask(self):
         """ECORR with no matching TOAs."""
-        from jaxpint.bridge import _build_quantization_matrix
+        from jaxpint.utils import build_quantization_matrix
 
         times = np.array([100.0, 100.5])
         masks = {"ECORR1": np.zeros(2, dtype=bool)}
 
-        U, slices = _build_quantization_matrix(times, masks)
+        U, slices = build_quantization_matrix(times, masks)
         assert U.shape == (2, 0)
         assert slices["ECORR1"] == (0, 0)
 
@@ -255,7 +255,7 @@ class TestGLSSteps:
 
     def test_fullcov_augmented_dpars_agree(self, synthetic_gls_problem):
         """fullcov and augmented approaches give same dpars."""
-        from jaxpint.fitters import gls_step_augmented, gls_step_fullcov
+        from jaxpint.fitters.gls import gls_step_augmented, gls_step_fullcov
 
         residuals, Ndiag, U, Phidiag, M, threshold = synthetic_gls_problem
 
@@ -362,7 +362,7 @@ class TestQuantizationVsPINT:
         import pint.models as pm
         from pint.toa import get_TOAs
 
-        from jaxpint.bridge import _build_quantization_matrix
+        from jaxpint.utils import build_quantization_matrix
 
         # Use PINT's example data with ECORR
         pint_data = Path(pm.__file__).parent.parent / "data" / "examples"
@@ -395,7 +395,7 @@ class TestQuantizationVsPINT:
                 mask[idx] = True
             ecorr_masks[ename] = mask
 
-        our_U, slices = _build_quantization_matrix(tdb_s, ecorr_masks)
+        our_U, slices = build_quantization_matrix(tdb_s, ecorr_masks)
 
         assert our_U.shape == pint_U.shape, (
             f"Shape mismatch: ours={our_U.shape}, PINT={pint_U.shape}"

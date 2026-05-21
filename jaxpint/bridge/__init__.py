@@ -12,10 +12,7 @@ from jaxpint.bridge.model_conversion import (
     pint_model_to_params,
     params_to_pint_model,
 )
-from jaxpint.bridge.component_builder import (
-    build_timing_model,
-    _build_quantization_matrix,
-)
+from jaxpint.bridge.component_builder import build_timing_model
 from jaxpint.bridge._param_builder import ParResult
 
 __all__ = [

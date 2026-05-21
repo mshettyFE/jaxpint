@@ -7,15 +7,12 @@ from ._base import (
     compute_design_matrix,
     compute_phase_residuals,
     compute_time_residuals,
-    wls_step,
 )
 from .wls import WLSFitResult, WLSFitter
 from .gls import (
     GLSFitResult,
     GLSFitter,
     compute_gls_chi2,
-    gls_step_augmented,
-    gls_step_fullcov,
 )
 from .wideband import (
     WidebandGLSFitResult,
