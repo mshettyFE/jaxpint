@@ -28,6 +28,18 @@ class DualFloat(eqx.Module):
     int: Float[Array, "..."]
     frac: Float[Array, "..."]
 
+    def __check_init__(self):
+        if self.int.shape != self.frac.shape:
+            raise ValueError(
+                f"DualFloat int/frac shape mismatch: "
+                f"{self.int.shape} vs {self.frac.shape}"
+            )
+        if self.int.dtype != self.frac.dtype:
+            raise ValueError(
+                f"DualFloat int/frac dtype mismatch: "
+                f"{self.int.dtype} vs {self.frac.dtype}"
+            )
+
     # -- Factory methods (normalization) --
 
     @staticmethod
@@ -59,6 +71,12 @@ class DualFloat(eqx.Module):
 
         Suitable for MJD / time values (days). Overflow from the
         fractional part is carried into the integer part.
+
+        .. note::
+            Arithmetic operators (``+``, ``-``, ``*``) always renormalize
+            to the cycles convention (``frac in [-0.5, 0.5)``). If you
+            need days-form output after arithmetic, call
+            ``DualFloat.days(result.int, result.frac)`` explicitly.
         """
         int_part = jnp.asarray(int_part, dtype=jnp.float64)
         frac_part = jnp.asarray(frac_part, dtype=jnp.float64)
@@ -91,16 +109,25 @@ class DualFloat(eqx.Module):
         return DualFloat.cycles(self.int - other.int, self.frac - other.frac)
 
     def __neg__(self) -> DualFloat:
-        # Bypass normalization so that negation is exact and a - b == a + (-b)
-        # by construction (both paths feed identical values into cycles).
-        # The only out-of-range value this can produce is frac = 0.5
-        # (when the input had frac = -0.5); cycles normalizes it on the
-        # next arithmetic operation.
-        return DualFloat(int=-self.int, frac=-self.frac)
+        # Plain negation gives frac in (-0.5, 0.5]; the value 0.5 is out
+        # of canonical range. Patch the boundary by carrying when frac
+        # == -0.5: total -> -total = -int + 0.5 -> (-int + 1) + (-0.5).
+        on_boundary = self.frac == -0.5
+        new_int = jnp.where(on_boundary, -self.int + 1.0, -self.int)
+        new_frac = jnp.where(on_boundary, jnp.asarray(-0.5, dtype=self.frac.dtype), -self.frac)
+        return DualFloat(int=new_int, frac=new_frac)
 
     def __mul__(self, scalar) -> DualFloat:
         scalar = jnp.asarray(scalar, dtype=jnp.float64)
-        return DualFloat.cycles(self.int * scalar, self.frac * scalar)
+        raw_int = self.int * scalar
+        raw_frac = self.frac * scalar
+        # Restore the "int is integer-valued" invariant: round raw_int back
+        # to an integer and route its fractional residue into raw_frac.
+        # raw_int - int_rounded is exact in float64 for typical pulsar
+        # magnitudes (Sterbenz lemma applies once |raw_int| >= 1).
+        int_rounded = jnp.round(raw_int)
+        frac_adjusted = raw_frac + (raw_int - int_rounded)
+        return DualFloat.cycles(int_rounded, frac_adjusted)
 
     def __rmul__(self, scalar) -> DualFloat:
         return self.__mul__(scalar)

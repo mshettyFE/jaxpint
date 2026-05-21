@@ -58,21 +58,6 @@ class Spindown(PhaseComponent):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _compute_dt(
-        self,
-        toa_data: TOAData,
-        params: ParameterVector,
-        delay: Float[Array, " n_toas"],
-    ) -> Float[Array, " n_toas"]:
-        """Time from PEPOCH to each TOA minus delay, in seconds.
-
-        Uses the integer/fractional MJD split to avoid catastrophic
-        cancellation when TDB and PEPOCH are close in value.
-        """
-        pepoch = params.epoch_dual(self.pepoch_name)
-        dt = toa_data.tdb - pepoch
-        return dt.total * SECS_PER_DAY - delay
-
     def _get_spin_coeffs(
         self, params: ParameterVector
     ) -> Float[Array, " n_terms_plus_1"]:
@@ -84,6 +69,25 @@ class Spindown(PhaseComponent):
             [params.param_value(name) for name in self.spin_param_names]
         )
         return jnp.concatenate([jnp.zeros(1), f_values])
+
+    def _get_spin_coeffs_scaled(
+        self, params: ParameterVector
+    ) -> Float[Array, " n_terms_plus_1"]:
+        """Same as ``_get_spin_coeffs`` but with each F_k pre-divided by k!.
+
+        Hands :func:`taylor_horner_phase` coefficients in the form
+        ``[0, F0, F1/2!, F2/3!, ...]`` so its Horner loop doesn't need
+        per-step division — keeping ``c_int * x_int_s`` an exact
+        integer × integer product.
+        """
+        f_values = jnp.array(
+            [params.param_value(name) for name in self.spin_param_names]
+        )
+        n = f_values.shape[0]
+        # cumprod([1, 2, 3, ..., n]) = [1!, 2!, 3!, ..., n!]
+        factorials = jnp.cumprod(jnp.arange(1, n + 1, dtype=jnp.float64))
+        f_scaled = f_values / factorials
+        return jnp.concatenate([jnp.zeros(1), f_scaled])
 
     # ------------------------------------------------------------------
     # Public API
@@ -116,7 +120,7 @@ class Spindown(PhaseComponent):
         """
         pepoch = params.epoch_dual(self.pepoch_name)
         dt = toa_data.tdb - pepoch
-        coeffs = self._get_spin_coeffs(params)
+        coeffs = self._get_spin_coeffs_scaled(params)
         return taylor_horner_phase(dt.int, dt.frac, delay, coeffs)
 
     def change_pepoch(
