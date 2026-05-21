@@ -1,11 +1,15 @@
 """Tests for jaxpint.spin: Spindown phase component."""
 
+import math
+
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 
 
+from jaxpint.constants import SECS_PER_DAY
 from jaxpint.dual_float import DualFloat
 from jaxpint.phase.spin import Spindown
 from tests.helpers import make_gbt_toa_data, make_spindown_params
@@ -170,6 +174,45 @@ class TestPrecision:
         dt_expected = (toa_int - pepoch_int + tiny_frac) * 86400.0
         expected_phase = 1.0 * dt_expected
         assert jnp.isclose(result.total, expected_phase, rtol=1e-12)
+
+    def test_realistic_msp_30yr_high_order(self):
+        """End-to-end Spindown precision check at NANOGrav-realistic scale.
+
+        Exercises the same Horner precision regime as
+        test_high_order_matches_longdouble in test_utils.py, but through
+        the full Spindown.__call__ path. Guards against integration-level
+        regressions of the KBN compensation.
+        """
+        raw_f = [600.0, -1.0e-15, 1.0e-25]  # F0, F1, F2 (helper supports up to F2)
+        pepoch_int = 50000.0
+        pepoch_frac = 0.0
+        # 30-year baseline with day count % 7 != 0 to stress non-trivial dividers
+        toa_int = 60957.0
+        toa_frac = 0.314
+
+        spindown = Spindown(spin_param_names=("F0", "F1", "F2"))
+        params = make_spindown_params(
+            f0=raw_f[0], f1=raw_f[1], f2=raw_f[2],
+            pepoch_int=pepoch_int, pepoch_frac=pepoch_frac,
+        )
+        toa_data = make_gbt_toa_data(
+            n_toas=1, tdb_int=toa_int, tdb_frac=toa_frac,
+        )
+        delay = jnp.zeros(1)
+
+        result = spindown(toa_data, params, delay)
+
+        # Longdouble reference: sum_k F_k * x^{k+1} / (k+1)!
+        x = (np.longdouble(toa_int - pepoch_int) * np.longdouble(SECS_PER_DAY)
+             + np.longdouble(toa_frac - pepoch_frac) * np.longdouble(SECS_PER_DAY))
+        ld_expected = np.longdouble(0)
+        for k, f in enumerate(raw_f):
+            ld_expected += np.longdouble(f) * x ** (k + 1) / np.longdouble(math.factorial(k + 1))
+
+        actual = np.longdouble(float(result.int[0])) + np.longdouble(float(result.frac[0]))
+        # Expect ~1e-7 cycles (~0.2 ns at 600 Hz), same regime as the unit
+        # test. Tolerance 1e-6 to be robust against longdouble platform variation.
+        assert abs(float(actual - ld_expected)) < 1e-6
 
 
 # ===========================================================================

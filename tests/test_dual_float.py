@@ -14,7 +14,16 @@ _EPS64 = np.finfo(np.float64).eps
 
 
 def ulp_tol(expected):
-    """2 ULP of float64 at the magnitude of `expected`."""
+    """2 ULP of float64 at the magnitude of `expected`.
+
+    ULP = "Unit in the Last Place" — the spacing between adjacent
+    representable floats at a given magnitude. See
+    https://en.wikipedia.org/wiki/Unit_in_the_last_place.
+
+    For float64, ULP(x) ≈ |x| * 2^-52 ≈ |x| * 2.2e-16. We clamp the
+    magnitude at 1.0 so tests against near-zero expected values still
+    get a meaningful tolerance (2 * eps64).
+    """
     mag = float(np.max(np.abs(np.asarray(expected))))
     return 2 * _EPS64 * max(mag, 1.0)
 
@@ -800,3 +809,82 @@ class TestRealisticScales:
         roundtrip = (base + dm_phase) - dm_phase
         assert float(roundtrip.int) == float(base.int)
         assert abs(float(roundtrip.frac) - float(base.frac)) <= ulp_tol(base.frac)
+
+
+# ===========================================================================
+# Construction guards (__check_init__)
+# ===========================================================================
+
+class TestInitGuards:
+    def test_shape_mismatch_raises(self):
+        with pytest.raises(ValueError, match="shape mismatch"):
+            DualFloat(int=jnp.zeros(3), frac=jnp.zeros(4))
+
+    def test_dtype_mismatch_raises(self):
+        with pytest.raises(ValueError, match="dtype mismatch"):
+            DualFloat(
+                int=jnp.zeros(3, dtype=jnp.float64),
+                frac=jnp.zeros(3, dtype=jnp.float32),
+            )
+
+    def test_matching_shapes_ok(self):
+        DualFloat(int=jnp.zeros(3), frac=jnp.zeros(3))  # must not raise
+
+
+# ===========================================================================
+# Negation canonical form
+# ===========================================================================
+
+class TestNegationCanonicalForm:
+    """__neg__ must keep frac in [-0.5, 0.5), even at the -0.5 boundary."""
+
+    def test_neg_half_stays_canonical(self):
+        """For a = (int=5, frac=-0.5), -a must have frac in [-0.5, 0.5)."""
+        a = DualFloat.cycles(jnp.array(5.0), jnp.array(-0.5))
+        neg_a = -a
+        assert float(neg_a.frac) >= -0.5
+        assert float(neg_a.frac) < 0.5
+        # And the total must still be correct: -(5 - 0.5) = -4.5
+        assert float(neg_a.total) == pytest.approx(-4.5, abs=ulp_tol(-4.5))
+
+    def test_neg_half_negative_int(self):
+        """Same at a negative int."""
+        a = DualFloat.cycles(jnp.array(-3.0), jnp.array(-0.5))
+        neg_a = -a
+        assert float(neg_a.frac) >= -0.5
+        assert float(neg_a.frac) < 0.5
+        # -(-3 - 0.5) = 3.5
+        assert float(neg_a.total) == pytest.approx(3.5, abs=ulp_tol(3.5))
+
+    @given(dual_floats_cycles())
+    @settings(deadline=None)
+    def test_neg_always_canonical(self, a):
+        neg_a = -a
+        assert float(neg_a.frac) >= -0.5
+        assert float(neg_a.frac) < 0.5
+
+
+# ===========================================================================
+# __mul__ integer invariant
+# ===========================================================================
+
+class TestMulIntegerInvariant:
+    """After a * scalar, the result's int field must be integer-valued."""
+
+    @pytest.mark.parametrize("int_in, frac_in, scalar", [
+        (10950.0, 0.123, 622.122),         # pulsar-ish
+        (1.0, 0.25, 0.5),                  # small case
+        (-3.0, -0.4, 1.7),                 # negative int
+        (1e6, 0.3, 1e-3),                  # scalar < 1
+    ])
+    def test_int_is_integer(self, int_in, frac_in, scalar):
+        a = DualFloat.cycles(jnp.array(int_in), jnp.array(frac_in))
+        result = a * scalar
+        # int field must equal its own rounding (i.e. be exactly integer)
+        assert float(result.int) == float(jnp.round(result.int))
+
+    @given(dual_floats_cycles(), scalars())
+    @settings(deadline=None)
+    def test_int_is_integer_hypothesis(self, a, s):
+        result = a * s
+        assert float(result.int) == float(jnp.round(result.int))

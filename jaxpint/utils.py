@@ -113,6 +113,14 @@ def taylor_horner_phase(
     when a large absolute phase (~10^10 cycles) is computed as a single
     float64.
 
+    ``coeffs`` must be **pre-divided by factorial** — i.e.
+    ``coeffs[k] = F_{k-1} / k!`` for k >= 1, with ``coeffs[0] = 0`` for
+    the constant phase term. (For Spindown, use
+    :meth:`Spindown._get_spin_coeffs_scaled`.) This lets the Horner loop
+    multiply by ``x`` without an inner division, which keeps
+    ``c_int * x_int_s`` as exact integer × integer when ``c_int`` is
+    integer-valued and the product stays under 2^53.
+
     Parameters
     ----------
     dt_int_days : (n_toas,)
@@ -122,7 +130,7 @@ def taylor_horner_phase(
     delay : (n_toas,)
         Accumulated signal delay in seconds.
     coeffs : (n_coeffs,)
-        Taylor coefficients: ``coeffs[k]`` multiplies ``dt**k / k!``.
+        Pre-divided Taylor coefficients (see above).
 
     Returns
     -------
@@ -140,9 +148,8 @@ def taylor_horner_phase(
     n_coeffs = coeffs.shape[0]
 
     def body(i, state):
-        phase_int, phase_frac = state
+        phase_int, phase_frac, comp = state
         coeff = coeffs[n_coeffs - 1 - i]
-        fact = jnp.asarray(n_coeffs - i, dtype=jnp.float64)
 
         # Split phase_frac into integer + remainder in [-0.5, 0.5).
         # Using round (not floor) so tiny negative values like -1e-15
@@ -151,23 +158,52 @@ def taylor_horner_phase(
         pf_rem = phase_frac - pf_int
         c_int = phase_int + pf_int
 
-        # Multiply by x/fact, keeping integer and fractional separate.
-        # c_int * x_int_s is int × int (exact when product < 2^53).
-        new_int = c_int * (x_int_s / fact)
-        new_frac = (c_int * (x_frac_s / fact)
-                    + pf_rem * (x_int_s / fact)
-                    + pf_rem * (x_frac_s / fact)
-                    + coeff)
+        # Multiply by x = x_int_s + x_frac_s. With c_int integer-valued
+        # and the product below 2^53, c_int * x_int_s is exact.
+        new_int_base = c_int * x_int_s
+        base_frac = (c_int * x_frac_s
+                     + pf_rem * x_int_s
+                     + pf_rem * x_frac_s)
+
+        # The polynomial accumulator gets multiplied by x at each step, so
+        # the compensation carried from the previous iteration must scale
+        # with x as well to stay registered with the bits it represents.
+        # KBN convention: comp = true_value - rounded_value (negative of
+        # rounding error). The "corrected" accumulator at this iter is
+        # base_frac + comp*x, so we add comp_x into the coeff side.
+        comp_x = comp * x_int_s + comp * x_frac_s
+
+        # Kahan-Babuška-Neumaier-compensated addition of coeff to the small
+        # frac residue. Without compensation, when coeff ~ F0 (~600) and
+        # base_frac includes a residue at ~1e-7 cycles, the sum rounds at
+        # ULP(600) ~ 7e-14, contaminating the residue. Next iteration's
+        # `pf_rem * x_int_s` amplifies that loss to ~7e-5 cycles.
+        y = coeff + comp_x
+        t = base_frac + y
+        # The optimization_barrier prevents XLA from algebraically folding
+        # the (s - t) and (y - t) subexpressions back to zero — those
+        # subtractions are exact by Sterbenz only if `t` is treated as an
+        # opaque rounded value. 
+        t_pinned = jax.lax.optimization_barrier(t)
+        new_comp = jnp.where(
+            jnp.abs(base_frac) >= jnp.abs(y),
+            (base_frac - t_pinned) + y,
+            (y - t_pinned) + base_frac,
+        )
+        new_frac = t
 
         # Normalize: carry overflow from frac to int.
         # Using round (not floor) so the remainder stays in [-0.5, 0.5),
         # consistent with the round-based split at the start.
         overflow = jnp.round(new_frac)
-        return new_int + overflow, new_frac - overflow
+        return new_int_base + overflow, new_frac - overflow, new_comp
 
     z = jnp.zeros_like(dt_int_days)
-    result_int, result_frac = jax.lax.fori_loop(0, n_coeffs, body, (z, z))
-    return DualFloat.cycles(result_int, result_frac)
+    result_int, result_frac, result_comp = jax.lax.fori_loop(
+        0, n_coeffs, body, (z, z, z),
+    )
+    # Fold the residual compensation back into the frac before normalization.
+    return DualFloat.cycles(result_int, result_frac + result_comp)
 
 
 # ---------------------------------------------------------------------------
