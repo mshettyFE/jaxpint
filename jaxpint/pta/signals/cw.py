@@ -34,6 +34,9 @@ from jaxpint.pta.likelihood import SignalInjector
 # Speed of light (m/s) and kpc → metres conversion
 _C: float = 299_792_458.0
 _KPC_TO_M: float = 3.085_677_581e19
+_MPC_TO_M: float = 1.0e3 * _KPC_TO_M  # Mpc → metres
+# GM_sun / c^3 in seconds (chirp mass in geometric units; matches constants.TSUN)
+_TSUN: float = 4.925_490_948e-6
 
 # Reference epoch: MJD of J2000.0, in seconds
 _TREF: float = 86400.0 * 51544.5
@@ -167,6 +170,57 @@ CW_PARAM_DEFAULTS: dict[str, float] = {
     "psi": 0.0,  # polarisation angle (rad)
     "phase0": 0.0,  # Earth-term orbital phase (rad)
 }
+
+
+def log10_strain_from_binary(
+    log10_mc: Float[Array, ""],
+    log10_dist: Float[Array, ""],
+    log10_fgw: Float[Array, ""],
+) -> Float[Array, ""]:
+    r"""``log10`` GW strain ``h0`` of a circular SMBH binary (Earth-term amplitude).
+
+    Reparameterizes the CW strain in terms of the physical source properties,
+    so callers can sweep / fit chirp mass and luminosity distance instead of the
+    raw ``log10_h``.  The result drops straight into the CW ``log10_h`` slot;
+    :func:`cw_delay_from_array` then applies the Detweiler (1979) strain-to-residual
+    scaling ``alpha = h0 / (2*pi*f)`` internally.
+
+    .. math::
+        h_0 = \frac{2\,(G\mathcal{M}/c^3)^{5/3}\,c\,(\pi f)^{2/3}}{D_L}
+
+    i.e. ``h0 ∝ M_c^{5/3} f^{2/3} / D_L``.  Note this is the *strain*; the induced
+    timing-residual amplitude carries an extra ``1/(2*pi*f)`` (applied in the
+    delay), giving the familiar ``∝ M_c^{5/3} f^{-1/3} / D_L`` residual scaling.
+
+    Parameters
+    ----------
+    log10_mc : scalar
+        ``log10`` chirp mass in solar masses.
+    log10_dist : scalar
+        ``log10`` luminosity distance in Mpc.
+    log10_fgw : scalar
+        ``log10`` GW frequency in Hz.
+
+    Returns
+    -------
+    scalar
+        ``log10(h0)`` (dimensionless strain), suitable for the ``log10_h``
+        parameter of :class:`CWInjector`.
+
+    References
+    ----------
+    .. [cw_strain_thorne87] Thorne (1987), in *300 Years of Gravitation*;
+       see also Ellis, Siemens & Creighton (2012), ApJ 756, 175.
+    """
+    mc_sec = (10.0 ** log10_mc) * _TSUN          # G M_c / c^3 in seconds
+    dist_m = (10.0 ** log10_dist) * _MPC_TO_M    # luminosity distance in metres
+    fgw = 10.0 ** log10_fgw                      # GW frequency in Hz
+    h0 = (
+        2.0 * _C * mc_sec ** (5.0 / 3.0)
+        * (jnp.pi * fgw) ** (2.0 / 3.0)
+        / dist_m
+    )
+    return jnp.log10(h0)
 
 
 class CWInjector(SignalInjector):
