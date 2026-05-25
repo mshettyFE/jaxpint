@@ -268,12 +268,19 @@ def compute_skymap(
          f"R_eff = {r_eff:.2f} Mpc (nside={nside}, data_mode={data_mode})")
 
     # dist_ll_mpc is a HEALPix map (RING ordering); nside lets plot use hp.mollview.
+    # pulsar_pos (ICRS unit vectors) lets plot_results_with_pulsars overlay them.
     return {
         "dist_ll_mpc": dist_ll,
         "nside": np.int64(nside), "r_eff_mpc": np.float64(r_eff),
-        "log10_mc": np.float64(LOG10_MC), "f_gw": np.float64(F_GW),
+        # Fixed CGW source parameters (for plot annotation), in handy units:
+        "chirp_mass_msun": np.float64(10.0 ** LOG10_MC),
+        "log10_mc": np.float64(LOG10_MC),
+        "f_gw": np.float64(F_GW), "log10_fgw": np.float64(LOG10_FGW),
+        "cos_inc": np.float64(cos_inc_fix), "psi": np.float64(psi_fix),
+        "phase0": np.float64(phase0_fix), "orientation": np.array(orientation),
         "pulsar_names": np.array(names), "n_pulsars": np.int64(len(names)),
-        "orientation": np.array(orientation), "data_mode": np.array(data_mode),
+        "pulsar_pos": np.asarray(positions),
+        "data_mode": np.array(data_mode),
     }
 
 
@@ -301,10 +308,81 @@ def plot_results(results: dict) -> None:
         ),
         unit="$D_L$ lower limit [Mpc]",
         cmap="viridis",
+        # Center on RA=12h (180 deg); with healpy's default astro flip RA then
+        # increases to the left, matching NANOGrav Fig 8's convention.
+        rot=[180, 0],
     )
     hp.graticule()
     plt.savefig("cgw_distance_skymap.png", dpi=130, bbox_inches="tight")
     print("Wrote cgw_distance_skymap.png")
+
+
+def _positions_from_par(names, data_dir=DATA_DIR):
+    """ICRS unit vectors for ``names``, read from ocarina .par files (no TOAs).
+
+    Fallback for plotting an .npz that predates the ``pulsar_pos`` field. Reads
+    only the par files (sky position is all we need), so it's fast and doesn't
+    touch the .tim data.
+    """
+    import pint.models as pm
+    from jaxpint.bridge import pint_model_to_params
+
+    par_dir = Path(data_dir) / "par"
+    out = []
+    for name in names:
+        # Match the par whose stem (before the first '_') equals the pulsar name,
+        # mirroring the loader's keying so B1937+21 doesn't grab its variants.
+        cands = [p for p in sorted(par_dir.glob(f"{name}*.par"))
+                 if p.stem.split("_", 1)[0] == name]
+        if not cands:
+            raise FileNotFoundError(f"no par file for {name!r} under {par_dir}")
+        pp = pint_model_to_params(pm.get_model(str(cands[0]))).params
+        out.append(pulsar_unit_vector_icrs(pp))
+    return np.stack(out)
+
+
+def plot_results_with_pulsars(results: dict, data_dir=None,
+                              output: str = "cgw_distance_skymap_pulsars.png") -> None:
+    """Like :func:`plot_results`, but overlays each pulsar as a red star.
+
+    Pulsar positions come from ``results['pulsar_pos']`` when present (saved by
+    :func:`compute_skymap`); for older .npz files lacking that field they are
+    read from the ocarina par files via :func:`_positions_from_par` (pass
+    ``data_dir`` or rely on ``$JAXPINT_OCARINA_DIR`` / the default).
+    """
+    hp = _import_healpy()
+    import matplotlib.pyplot as plt
+
+    dist = results["dist_ll_mpc"]   # HEALPix map, RING ordering
+    if "pulsar_pos" in results:
+        pos = np.atleast_2d(np.asarray(results["pulsar_pos"]))
+    else:
+        names = [str(n) for n in np.atleast_1d(results["pulsar_names"])]
+        pos = _positions_from_par(names, data_dir or DATA_DIR)
+
+    # ICRS unit vector (x, y, z) -> healpy (theta=colatitude, phi=longitude).
+    theta = np.arccos(np.clip(pos[:, 2], -1.0, 1.0))
+    phi = np.arctan2(pos[:, 1], pos[:, 0])
+
+    hp.mollview(
+        dist,
+        title=(
+            f"95% lower limit on $D_L$  ($\\mathcal{{M}}=10^9 M_\\odot$, $f=27$ nHz)\n"
+            f"$R_{{eff}}$={float(results['r_eff_mpc']):.1f} Mpc, "
+            f"{int(results['n_pulsars'])} pulsars (red stars)"
+        ),
+        unit="$D_L$ lower limit [Mpc]",
+        cmap="viridis",
+        # Center on RA=12h (180 deg); with healpy's default astro flip RA then
+        # increases to the left, matching NANOGrav Fig 8's convention.
+        rot=[180, 0],
+    )
+    hp.graticule()
+    # projscatter draws onto the current mollview projection (theta/phi in rad).
+    hp.projscatter(theta, phi, marker="*", s=120, color="red",
+                   edgecolors="black", linewidths=0.5, zorder=5)
+    plt.savefig(output, dpi=130, bbox_inches="tight")
+    print(f"Wrote {output}")
 
 
 def main() -> None:
@@ -327,10 +405,16 @@ def main() -> None:
                              "'real': matched filter from residuals (needs matching noise model).")
     sp = sub.add_parser("plot")
     sp.add_argument("--input", dest="path", type=Path, default=DEFAULT_DATA_PATH)
+    sp.add_argument("--pulsars", action="store_true",
+                    help="Overlay pulsar locations as red stars.")
 
     args = p.parse_args()
     if args.mode == "plot":
-        plot_results(load_results(args.path))
+        results = load_results(args.path)
+        if getattr(args, "pulsars", False):
+            plot_results_with_pulsars(results)
+        else:
+            plot_results(results)
         return
 
     subset = None if getattr(args, "full", False) else SMOKE_SUBSET
