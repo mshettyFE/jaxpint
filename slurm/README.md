@@ -1,9 +1,19 @@
 # Running JaxPINT on NYU Torch HPC
 
-This bundle runs `examples/nanograv_two_pulsar_distance_scan.py` on Torch
-inside an Apptainer container, using an ext3 overlay for the Python env.
-The local `.venv` is **not** shipped — the env is rebuilt from `uv.lock`
-inside the overlay.
+This bundle runs JaxPINT example jobs on Torch inside an Apptainer container,
+using an ext3 overlay for the Python env. The local `.venv` is **not** shipped
+— the env is rebuilt from `uv.lock` inside the overlay.
+
+Two jobs share the same overlay (no new Python deps between them):
+
+- **`run_distance_scan.sbatch`** — `examples/nanograv_two_pulsar_distance_scan.py`
+  on the NANOGrav 15-yr narrowband data (staged by `fetch_data.sh`).
+- **`run_cgw_skymap.sbatch`** — `examples/cgw_distance_skymap.py`, the CGW 95%
+  distance-lower-limit sky map (no-MCMC Bayesian approximation of Fig. 8 of
+  arXiv:2306.16222) on the synthetic **ocarina** dataset (staged by
+  `stage_ocarina.sh`). See the dedicated section below.
+
+The distance-scan setup is documented first; the sky map reuses steps 1 and 3.
 
 ## One-time setup
 
@@ -67,6 +77,58 @@ run the `plot` subcommand locally if you want figures.
   injected and the env mounted read-only.
 - Runs the `generate` subcommand only — pure GPU compute, no matplotlib.
   Plot from the `.npz` afterwards.
+
+## CGW distance sky map (`run_cgw_skymap.sbatch`)
+
+Same overlay and image as the distance scan — do the **one-time setup** steps 1
+(clone) and 3 (`build_overlay.sh`) first if you haven't. This job does *not*
+need the Zenodo download; it uses the small synthetic **ocarina** dataset
+instead.
+
+1. **Stage ocarina** (run on your **laptop**, which has `ocarina/`):
+
+   ```sh
+   bash slurm/stage_ocarina.sh <netid>
+   ```
+
+   rsyncs `ocarina/{par,tim}` (~63 MB) to
+   `/scratch/<netid>/jaxpint-data/ocarina/` over the Torch data-transfer node.
+
+2. **Set your account** in `slurm/run_cgw_skymap.sbatch` (replace
+   `<TODO_FILL_IN>`), then submit from the repo root on Torch:
+
+   ```sh
+   sbatch slurm/run_cgw_skymap.sbatch
+   squeue --me
+   tail -f slurm-<JOBID>.out
+   ```
+
+   Output lands at `/scratch/$USER/jaxpint-out/cgw-skymap-<JOBID>.npz`. Pull it
+   back and render the Mollweide figure locally:
+
+   ```sh
+   python examples/cgw_distance_skymap.py plot --input cgw-skymap-<JOBID>.npz
+   ```
+
+What the job does:
+
+- Earth-term-only, white-noise-only, timing-model-marginalized matched filter;
+  per sky pixel it marginalizes a `(cos_inc, psi, phase0)` grid under a uniform
+  `h0` prior, takes the 95% strain UL, and inverts it to a distance lower limit
+  (`M = 1e9 Msun`, `f = 27 nHz`). Prints `R_eff` at the end.
+- `--full` uses all pulsars (the duplicate `B1937+21` telescope variants are
+  dropped automatically). Resolution is `--npix` equal-area directions
+  (default 192); lower it for a quick pass, raise it for a finer map.
+- If it OOMs, drop `--npix` and/or the orientation grid (`ext_grid` in
+  `compute_skymap`); the per-pixel marginalized-likelihood graph is the main
+  memory cost. 128 GB + one GPU is sized to clear the local-laptop OOM.
+- **`--data-mode expected` is required for ocarina.** The synthetic ocarina
+  TOAs contain red noise (the par files carry `RNAMP`/`RNIDX`), which the
+  white-noise-only model does not fit. `expected` mode sets the matched filter
+  `X=(d|s_hat)=0` and reports the noise-realization-independent sensitivity
+  (`h0_95 ≈ 1.96/sqrt(Y)`). `--data-mode real` would instead be dominated by
+  that unmodeled red noise (spurious many-sigma "detections"); only use it once
+  the analysis noise model matches the data.
 
 ## Caveats
 

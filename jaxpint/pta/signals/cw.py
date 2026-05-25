@@ -114,6 +114,8 @@ def cw_delay(
     global_params,
     prefix: str = "cw0_",
     earth_term_only: bool = False,
+    linear_amplitude: bool = False,
+    param_names: tuple[str, ...] = None,
 ) -> Float[Array, " n_toas"]:
     """CW-induced timing delay for one pulsar (Earth + pulsar term).
 
@@ -150,13 +152,18 @@ def cw_delay(
     .. [cw_e13] Ellis (2013), CQG 30, 224004.
     .. [cw_d79] Detweiler (1979), ApJ 234, 1100.
     """
-    # Extract CW source parameters and delegate to cw_delay_from_array
+    # Extract CW source parameters and delegate to cw_delay_from_array.
+    # param_names defaults to the canonical log10_h-based order; the linear
+    # amplitude mode passes a list whose first entry is the linear strain.
+    if param_names is None:
+        param_names = tuple(CW_PARAM_DEFAULTS)
     cw_params = jnp.array([
         global_params.param_value(f"{prefix}{name}")
-        for name in CW_PARAM_DEFAULTS
+        for name in param_names
     ])
     return cw_delay_from_array(
-        toa_data, pos, pulsar_dist, cw_params, earth_term_only=earth_term_only
+        toa_data, pos, pulsar_dist, cw_params,
+        earth_term_only=earth_term_only, linear_amplitude=linear_amplitude,
     )
 
 
@@ -173,6 +180,13 @@ CW_PARAM_DEFAULTS: dict[str, float] = {
     "psi": 0.0,  # polarisation angle (rad)
     "phase0": 0.0,  # Earth-term orbital phase (rad)
 }
+
+# Default amplitude for CWInjector(linear_amplitude=True), where the amplitude
+# parameter is the linear strain ``h0`` rather than ``log10_h``. Derived from the
+# log10_h default so the two conventions can't drift (here 10**-14 = 1e-14).
+# CW_PARAM_DEFAULTS itself stays a clean 7-entry positional vector (code builds
+# cw_params arrays straight from its values), so the linear default lives here.
+CW_LINEAR_AMP_DEFAULT: float = 10.0 ** CW_PARAM_DEFAULTS["log10_h"]
 
 
 def log10_strain_from_binary(
@@ -245,8 +259,17 @@ class CWInjector(SignalInjector):
     prefix : str
         Naming prefix for this source in :class:`GlobalParams`.
     initial_values : dict, optional
-        Override default initial values.  Keys must be in
-        ``CW_PARAM_DEFAULTS``.
+        Override default initial values.  Keys must be in this injector's
+        parameter set (see ``linear_amplitude`` for the amplitude key).
+    earth_term_only : bool
+        Drop the pulsar term (and the pulsar-distance dependence). Standard for
+        sensitivity / upper-limit sky maps.
+    linear_amplitude : bool
+        If True the amplitude parameter is the *linear* strain ``h0`` (named
+        ``"h0"``) instead of ``log10(h0)`` (named ``"log10_h"``).  In this mode
+        the residual is exactly linear in the amplitude, so the log-likelihood is
+        exactly quadratic in it — required by the analytic upper-limit machinery
+        in :mod:`jaxpint.pta.cw_upper_limit`.  Default False.
     """
 
     param_defaults = CW_PARAM_DEFAULTS
@@ -258,21 +281,35 @@ class CWInjector(SignalInjector):
         prefix: str = "cw0_",
         initial_values: Optional[dict[str, float]] = None,
         earth_term_only: bool = False,
+        linear_amplitude: bool = False,
     ):
         self.positions = pulsar_positions
         self.dist_param = dist_param_name
         self.prefix = prefix
         self.earth_term_only = earth_term_only
+        self.linear_amplitude = linear_amplitude
 
-        self.param_spec: dict[str, float] = dict(CW_PARAM_DEFAULTS)
+        # The amplitude parameter is renamed (and defaults to 0 = no signal) in
+        # linear mode; the other six parameters are unchanged.
+        self.amp_name = "h0" if linear_amplitude else "log10_h"
+        amp_default = (
+            CW_LINEAR_AMP_DEFAULT if linear_amplitude
+            else CW_PARAM_DEFAULTS["log10_h"]
+        )
+        nonamp = [k for k in CW_PARAM_DEFAULTS if k != "log10_h"]
+        self.param_names: tuple[str, ...] = (self.amp_name, *nonamp)
+
+        spec = {self.amp_name: amp_default}
+        spec.update({k: CW_PARAM_DEFAULTS[k] for k in nonamp})
         if initial_values is not None:
-            unknown = set(initial_values) - set(CW_PARAM_DEFAULTS)
+            unknown = set(initial_values) - set(self.param_names)
             if unknown:
                 raise ValueError(
                     f"Unknown CW parameters: {unknown}. "
-                    f"Valid parameters: {list(CW_PARAM_DEFAULTS.keys())}"
+                    f"Valid parameters: {list(self.param_names)}"
                 )
-            self.param_spec.update(initial_values)
+            spec.update(initial_values)
+        self.param_spec: dict[str, float] = spec
 
     # -- SignalInjector protocol ------------------------------------------------
 
@@ -289,8 +326,8 @@ class CWInjector(SignalInjector):
         GlobalParams
             Updated copy with this CW source's parameters appended.
         """
-        names = [f"{self.prefix}{n}" for n in self.param_spec]
-        values = list(self.param_spec.values())
+        names = [f"{self.prefix}{n}" for n in self.param_names]
+        values = [self.param_spec[n] for n in self.param_names]
         return global_params.add_params(names, values)
 
     def delay(self, p, toa_data, pulsar_params, global_params):
@@ -312,13 +349,20 @@ class CWInjector(SignalInjector):
         (n_toas,) array
             CW timing residual in seconds.
         """
+        # Earth-term-only has no pulsar-distance dependence, so don't require PX.
+        pulsar_dist = (
+            jnp.float64(1.0) if self.earth_term_only
+            else pulsar_params.param_value(self.dist_param)
+        )
         return cw_delay(
             toa_data,
             self.positions[p],
-            pulsar_params.param_value(self.dist_param),
+            pulsar_dist,
             global_params,
             prefix=self.prefix,
             earth_term_only=self.earth_term_only,
+            linear_amplitude=self.linear_amplitude,
+            param_names=self.param_names,
         )
 
     # covariance() inherited from SignalInjector — returns None (CW is deterministic)
@@ -339,6 +383,7 @@ def cw_delay_from_array(
     pulsar_dist: Float[Array, ""],
     cw_params: Float[Array, " 7"],
     earth_term_only: bool = False,
+    linear_amplitude: bool = False,
 ) -> Float[Array, " n_toas"]:
     """CW timing delay using a flat parameter array (vmappable over sources).
 
@@ -347,8 +392,15 @@ def cw_delay_from_array(
     :class:`~jaxpint.pta.params.GlobalParams`.
 
     Parameter order (matching :data:`CW_PARAM_DEFAULTS` key order):
-        0: log10_h, 1: cos_gwtheta, 2: gwphi, 3: log10_fgw,
-        4: cos_inc, 5: psi, 6: phase0
+        0: log10_h (or linear h0, see *linear_amplitude*), 1: cos_gwtheta,
+        2: gwphi, 3: log10_fgw, 4: cos_inc, 5: psi, 6: phase0
+
+    linear_amplitude : bool
+        If True, ``cw_params[0]`` is the *linear* strain ``h0`` instead of
+        ``log10(h0)``.  The residual is then exactly linear in that entry, which
+        is what makes the log-likelihood exactly quadratic in the amplitude (used
+        by the analytic upper-limit machinery, :mod:`jaxpint.pta.cw_upper_limit`).
+        Default False keeps the ``log10_h`` parametrization.
 
     Parameters
     ----------
@@ -378,7 +430,7 @@ def cw_delay_from_array(
     delay : (n_toas,) array
         CW timing residual in seconds.
     """
-    h0 = 10.0 ** cw_params[0]
+    h0 = cw_params[0] if linear_amplitude else 10.0 ** cw_params[0]
     gwtheta = jnp.arccos(cw_params[1])
     gwphi = cw_params[2]
     f0 = 10.0 ** cw_params[3]
