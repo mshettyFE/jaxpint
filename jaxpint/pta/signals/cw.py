@@ -113,6 +113,7 @@ def cw_delay(
     pulsar_dist: Float[Array, ""],
     global_params,
     prefix: str = "cw0_",
+    earth_term_only: bool = False,
 ) -> Float[Array, " n_toas"]:
     """CW-induced timing delay for one pulsar (Earth + pulsar term).
 
@@ -154,7 +155,9 @@ def cw_delay(
         global_params.param_value(f"{prefix}{name}")
         for name in CW_PARAM_DEFAULTS
     ])
-    return cw_delay_from_array(toa_data, pos, pulsar_dist, cw_params)
+    return cw_delay_from_array(
+        toa_data, pos, pulsar_dist, cw_params, earth_term_only=earth_term_only
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -254,10 +257,12 @@ class CWInjector(SignalInjector):
         dist_param_name: str = "PX",
         prefix: str = "cw0_",
         initial_values: Optional[dict[str, float]] = None,
+        earth_term_only: bool = False,
     ):
         self.positions = pulsar_positions
         self.dist_param = dist_param_name
         self.prefix = prefix
+        self.earth_term_only = earth_term_only
 
         self.param_spec: dict[str, float] = dict(CW_PARAM_DEFAULTS)
         if initial_values is not None:
@@ -313,6 +318,7 @@ class CWInjector(SignalInjector):
             pulsar_params.param_value(self.dist_param),
             global_params,
             prefix=self.prefix,
+            earth_term_only=self.earth_term_only,
         )
 
     # covariance() inherited from SignalInjector — returns None (CW is deterministic)
@@ -332,6 +338,7 @@ def cw_delay_from_array(
     pos: Float[Array, "3"],
     pulsar_dist: Float[Array, ""],
     cw_params: Float[Array, " 7"],
+    earth_term_only: bool = False,
 ) -> Float[Array, " n_toas"]:
     """CW timing delay using a flat parameter array (vmappable over sources).
 
@@ -352,8 +359,19 @@ def cw_delay_from_array(
     pulsar_dist : scalar
         Pulsar parallax in mas (types.py convention). Converted internally
         to physical distance in kpc for the Ellis+2012 pulsar-term phase.
+        Unused when ``earth_term_only`` is True.
     cw_params : (7,) array
         Flat CW parameter vector in canonical order.
+    earth_term_only : bool
+        If True, keep only the Earth-term sinusoid and drop the pulsar term.
+        The full residual uses ``delta_sin = sin(phase_earth) - sin(phase_pulsar)``
+        and ``delta_cos = cos(phase_earth) - cos(phase_pulsar)`` (written here via
+        the sum-to-product identity); dropping the pulsar term leaves
+        ``delta_sin = sin(phase_earth)``, ``delta_cos = cos(phase_earth)``.  This
+        removes the dependence on ``pulsar_dist`` (whose ~10% uncertainty makes the
+        pulsar-term phase unconstrained at PTA frequencies), and is the standard
+        simplification for upper-limit / sensitivity sky maps.  Default False
+        preserves the full Earth + pulsar term behavior.
 
     Returns
     -------
@@ -378,33 +396,39 @@ def cw_delay_from_array(
     # Main contribution of pulsar distance is the phase as measured at earth and pulsar
     phase_earth = phase0 + 2.0 * jnp.pi * f0 * (toas_s - _TREF)
 
-    sin_theta = jnp.sin(gwtheta)
-    cos_theta = jnp.cos(gwtheta)
-    omhat = jnp.array([
-        -sin_theta * jnp.cos(gwphi),
-        -sin_theta * jnp.sin(gwphi),
-        -cos_theta,
-    ])
-
-    cos_mu = jnp.dot(omhat, pos)
-    # pulsar_dist is parallax in mas (types.py convention).
-    # Ellis+2012 (arXiv:1204.4218) writes the pulsar-term phase in terms of
-    # the physical distance L; convert mas -> kpc via L_kpc = 1 / PX_mas.
-    dist_m = (1.0 / pulsar_dist) * _KPC_TO_M
-    # Pulsar phase gets delayed by light vacuum time
-    phase_pulsar = phase_earth - (
-        2.0 * jnp.pi * f0 * dist_m / _C * (1.0 + cos_mu)
-    )
-
     alpha = h0 / (2.0 * jnp.pi * f0)
 
-    # Sum to product formula  to convert sin(t_{p}) - sin(t_{e}) = sin((t_{p}+t_{e})/2)cos((t_{p}-t_{e})/2)
-    # Similar for cosine differences as well
-    phi_avg = 0.5 * (phase_earth + phase_pulsar)
-    phi_diff = 0.5 * (phase_earth - phase_pulsar)
+    if earth_term_only:
+        # Drop the pulsar term: delta_sin/delta_cos with the pulsar-term
+        # sinusoid removed (see docstring). No dependence on pulsar_dist.
+        delta_sin = jnp.sin(phase_earth)
+        delta_cos = jnp.cos(phase_earth)
+    else:
+        sin_theta = jnp.sin(gwtheta)
+        cos_theta = jnp.cos(gwtheta)
+        omhat = jnp.array([
+            -sin_theta * jnp.cos(gwphi),
+            -sin_theta * jnp.sin(gwphi),
+            -cos_theta,
+        ])
 
-    delta_sin = 2.0 * jnp.cos(phi_avg) * jnp.sin(phi_diff)
-    delta_cos = -2.0 * jnp.sin(phi_avg) * jnp.sin(phi_diff)
+        cos_mu = jnp.dot(omhat, pos)
+        # pulsar_dist is parallax in mas (types.py convention).
+        # Ellis+2012 (arXiv:1204.4218) writes the pulsar-term phase in terms of
+        # the physical distance L; convert mas -> kpc via L_kpc = 1 / PX_mas.
+        dist_m = (1.0 / pulsar_dist) * _KPC_TO_M
+        # Pulsar phase gets delayed by light vacuum time
+        phase_pulsar = phase_earth - (
+            2.0 * jnp.pi * f0 * dist_m / _C * (1.0 + cos_mu)
+        )
+
+        # Sum to product formula  to convert sin(t_{p}) - sin(t_{e}) = sin((t_{p}+t_{e})/2)cos((t_{p}-t_{e})/2)
+        # Similar for cosine differences as well
+        phi_avg = 0.5 * (phase_earth + phase_pulsar)
+        phi_diff = 0.5 * (phase_earth - phase_pulsar)
+
+        delta_sin = 2.0 * jnp.cos(phi_avg) * jnp.sin(phi_diff)
+        delta_cos = -2.0 * jnp.sin(phi_avg) * jnp.sin(phi_diff)
 
     cos_inc = jnp.cos(inc)
     At = -(1.0 + cos_inc**2) * delta_sin
@@ -423,6 +447,7 @@ def sum_cw_delays(
     pos: Float[Array, "3"],
     pulsar_dist: Float[Array, ""],
     cw_params_stack: Float[Array, "n_cw 7"],
+    earth_term_only: bool = False,
 ) -> Float[Array, " n_toas"]:
     """Sum CW delays from multiple sources via vmap.
 
@@ -444,7 +469,9 @@ def sum_cw_delays(
         Total CW delay summed over all sources.
     """
     per_source = jax.vmap(
-        lambda p: cw_delay_from_array(toa_data, pos, pulsar_dist, p)
+        lambda p: cw_delay_from_array(
+            toa_data, pos, pulsar_dist, p, earth_term_only=earth_term_only
+        )
     )(cw_params_stack)  # (n_cw, n_toas)
     return jnp.sum(per_source, axis=0)
 
@@ -499,11 +526,13 @@ class CWInjectorStack(SignalInjector):
         dist_param_name: str = "PX",
         initial_values: Optional[dict[str, float]] = None,
         per_source_values: Optional[list[dict[str, float]]] = None,
+        earth_term_only: bool = False,
     ):
         self.positions = pulsar_positions
         self.dist_param = dist_param_name
         self.n_sources = n_sources
         self.prefixes = tuple(f"cw{i}_" for i in range(n_sources))
+        self.earth_term_only = earth_term_only
 
         # Build per-source param specs
         self.param_specs: list[dict[str, float]] = []
@@ -585,6 +614,7 @@ class CWInjectorStack(SignalInjector):
             self.positions[p],
             pulsar_params.param_value(self.dist_param),
             cw_stack,
+            earth_term_only=self.earth_term_only,
         )
 
     # covariance() inherited from SignalInjector — returns None (CW is deterministic)
