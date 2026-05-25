@@ -21,6 +21,10 @@ dependencies = [
 [project.optional-dependencies]
 cuda = ["jax[cpu,cuda13]>=0.4.20"]
 cpu = ["jax[cpu]>=0.4.20"]
+# Sky-map example (examples/cgw_distance_skymap.py): HEALPix pixelization +
+# Mollweide plotting. healpy already pulls matplotlib, listed explicitly because
+# the example imports it directly.
+skymap = ["healpy>=1.16.0", "matplotlib>=3.7"]
 docs = [
     "sphinx>=9.1.0",
     "sphinx-copybutton>=0.5.2",
@@ -28,6 +32,7 @@ docs = [
 ]
 dev = [
     "jaxpint[docs]",
+    "jaxpint[skymap]",
     "pytest>=7.0",
     "pytest-xdist>=3.8.0",
     "hypothesis>=6.0",

@@ -104,7 +104,8 @@ instead.
    ```
 
    Output lands at `/scratch/$USER/jaxpint-out/cgw-skymap-<JOBID>.npz`. Pull it
-   back and render the Mollweide figure locally:
+   back and render the `hp.mollview` figure locally (needs healpy locally:
+   `pip install 'jaxpint[skymap]'`):
 
    ```sh
    python examples/cgw_distance_skymap.py plot --input cgw-skymap-<JOBID>.npz
@@ -112,16 +113,21 @@ instead.
 
 What the job does:
 
-- Earth-term-only, white-noise-only, timing-model-marginalized matched filter;
-  per sky pixel it marginalizes a `(cos_inc, psi, phase0)` grid under a uniform
-  `h0` prior, takes the 95% strain UL, and inverts it to a distance lower limit
-  (`M = 1e9 Msun`, `f = 27 nHz`). Prints `R_eff` at the end.
+- Earth-term-only, white-noise-only matched filter. The linear timing-model
+  parameters are marginalized analytically (improper priors) **except pulsar
+  distance/parallax `PX`, which is held fixed**; the CGW orientation
+  `(cos_inc, psi, phase0)` is also **held fixed** (default face-on/optimal), so
+  per pixel the 95% strain UL is closed form. Inverts to a distance lower limit
+  (`M = 1e9 Msun`, `f = 27 nHz`) and prints `R_eff` at the end.
+- Sky grid is HEALPix (`hp.pix2ang`), so the saved `dist_ll_mpc` is a HEALPix
+  map (RING ordering) and `R_eff = <D_L^3>^(1/3)` is exact. `--nside` sets the
+  resolution (`npix = 12*nside^2`; default 8 → 768 pixels).
 - `--full` uses all pulsars (the duplicate `B1937+21` telescope variants are
-  dropped automatically). Resolution is `--npix` equal-area directions
-  (default 192); lower it for a quick pass, raise it for a finer map.
-- If it OOMs, drop `--npix` and/or the orientation grid (`ext_grid` in
-  `compute_skymap`); the per-pixel marginalized-likelihood graph is the main
-  memory cost. 128 GB + one GPU is sized to clear the local-laptop OOM.
+  dropped automatically).
+- Needs the **`skymap` extra** (healpy + matplotlib); `build_overlay.sh` already
+  installs it via `uv sync --extra cuda --extra skymap`.
+- If it OOMs, drop `--nside`; the per-pixel marginalized-likelihood graph is the
+  main memory cost. 128 GB + one GPU is sized to clear the local-laptop OOM.
 - **`--data-mode expected` is required for ocarina.** The synthetic ocarina
   TOAs contain red noise (the par files carry `RNAMP`/`RNIDX`), which the
   white-noise-only model does not fit. `expected` mode sets the matched filter
