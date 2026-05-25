@@ -450,7 +450,11 @@ def _marginalize_single_pulsar(
             p = eqx.tree_at(lambda pv: pv.values, fiducial_params, values)
             return compute_time_residuals(timing_model, toa_data, p)
 
-        J_full = jax.jacobian(_resid_fn)(fiducial_params.values)
+        # Forward-mode: the design matrix dr/dy is tall (n_toas >> n_params),
+        # so jacfwd costs O(n_toas * n_params); reverse mode (jax.jacobian)
+        # vmaps n_toas backward passes -> O(n_toas**2) and OOMs on
+        # high-cadence pulsars (e.g. 35k TOAs).
+        J_full = jax.jacfwd(_resid_fn)(fiducial_params.values)
         marg_idx_array = jnp.asarray(over_indices, dtype=jnp.int32)
         M_marg = -J_full[:, marg_idx_array]   # (n_toas, n_marg)
         Phi_marg = jnp.full(len(over_indices), 1e40, dtype=jnp.float64)
@@ -756,7 +760,9 @@ def _marginalize_pta(
             params = eqx.tree_at(lambda pv: pv.values, _fp, values)
             return compute_time_residuals(_tm, _td, params)
 
-        J_full_p = jax.jacobian(_resid_fn)(fiducial_p.values)
+        # Forward-mode (see _marginalize_single_pulsar): tall design matrix,
+        # so jacfwd is O(n_toas * n_params) vs jacrev's O(n_toas**2) blowup.
+        J_full_p = jax.jacfwd(_resid_fn)(fiducial_p.values)
         idx_array = jnp.asarray(bare_indices, dtype=jnp.int32)
         M_p = -J_full_p[:, idx_array]
         Phi_p = jnp.full(len(bare_indices), 1e40, dtype=jnp.float64)
