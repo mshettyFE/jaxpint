@@ -22,7 +22,7 @@ import pytest
 from jaxpint.pta.params import GlobalParams
 from jaxpint.pta.signals.cw import (
     fplus_fcross, cw_delay, cw_delay_from_array, sum_cw_delays,
-    CWInjector, CWInjectorStack, CW_PARAM_DEFAULTS,
+    CWInjector, CWInjectorStack, CW_PARAM_DEFAULTS, log10_strain_from_binary,
 )
 from jaxpint.pta.signals.gwb import (
     powerlaw_psd, fourier_basis, gwb_covariance, CURNInjector, CURN_PARAM_DEFAULTS, FYR,
@@ -236,6 +236,45 @@ class TestCWDelay:
             toa_data, pos, jnp.float64(1.0), gp
         )
         assert jnp.allclose(eager, jitted)
+
+
+# ===================================================================
+# TestLog10StrainFromBinary
+# ===================================================================
+
+
+class TestLog10StrainFromBinary:
+    """Strain reparameterization h0(M_c, D_L, f).
+
+    Reference: h0 = 2 c (G M_c/c^3)^(5/3) (pi f)^(2/3) / D_L
+    (Thorne 1987; Ellis, Siemens & Creighton 2012).
+    """
+
+    def test_scaling_exponents(self):
+        """log10_h slopes must be -1 in distance, 5/3 in mass, 2/3 in frequency."""
+        base = log10_strain_from_binary(9.0, 1.0, -8.0)
+        d_dist = log10_strain_from_binary(9.0, 1.3, -8.0) - base
+        d_mass = log10_strain_from_binary(9.3, 1.0, -8.0) - base
+        d_freq = log10_strain_from_binary(9.0, 1.0, -7.7) - base
+        assert jnp.isclose(d_dist / 0.3, -1.0, rtol=1e-10)
+        assert jnp.isclose(d_mass / 0.3, 5.0 / 3.0, rtol=1e-10)
+        assert jnp.isclose(d_freq / 0.3, 2.0 / 3.0, rtol=1e-10)
+
+    def test_reference_magnitude(self):
+        """M_c=1e9 Msun, f=1e-8 Hz, h0=1e-14 implies D_L ~ 27.6 Mpc."""
+        log10_h_at_1mpc = log10_strain_from_binary(9.0, 0.0, -8.0)
+        # h0 ∝ 1/D, so the distance giving log10_h = -14 is 10**(A - (-14)).
+        dist_mpc = 10.0 ** (float(log10_h_at_1mpc) - (-14.0))
+        assert jnp.isclose(dist_mpc, 27.6, rtol=1e-2)
+
+    def test_jit_and_vmap(self):
+        """Must be jittable and vmappable (used inside the 2D likelihood sweep)."""
+        grid = jnp.linspace(0.5, 2.0, 16)
+        f = jax.jit(jax.vmap(lambda d: log10_strain_from_binary(9.0, d, -8.0)))
+        out = f(grid)
+        assert out.shape == (16,)
+        # Monotonically decreasing in distance.
+        assert jnp.all(jnp.diff(out) < 0.0)
 
 
 # ===================================================================

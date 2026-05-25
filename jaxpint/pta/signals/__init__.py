@@ -7,6 +7,7 @@ from jaxpint.pta.signals.cw import (
     cw_delay,
     cw_delay_from_array,
     fplus_fcross,
+    log10_strain_from_binary,
     sum_cw_delays,
 )
 from jaxpint.pta.signals.gwb import (
@@ -27,6 +28,7 @@ __all__ = [
     "cw_delay_from_array",
     "sum_cw_delays",
     "fplus_fcross",
+    "log10_strain_from_binary",
     "CURN_PARAM_DEFAULTS",
     "CURNInjector",
     "fourier_basis",
