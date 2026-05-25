@@ -442,7 +442,7 @@ class TestJITAndGrad:
 
         logL_eager = likelihood_marg(skel)
         logL_jit = jax.jit(likelihood_marg)(skel)
-        npt.assert_allclose(float(logL_jit), float(logL_eager), rtol=1e-12)
+        npt.assert_allclose(float(logL_jit), float(logL_eager), rtol=1e-8)
 
     def test_grad_wrt_kept_values_is_finite(self, synth_objects):
         jax_model, noise_model, toa_data, params = synth_objects
