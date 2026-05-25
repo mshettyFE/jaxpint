@@ -74,8 +74,10 @@ uv --version
 # Sync the project venv into /ext3/venv from the lockfile.
 export UV_PROJECT_ENVIRONMENT=/ext3/venv
 cd "'"${PROJECT_DIR}"'"
-echo "[inner] uv sync --extra cuda (slow step; downloads JAX + CUDA wheels)"
-uv sync --extra cuda
+# --extra skymap adds healpy + matplotlib, needed by the CGW sky-map job
+# (run_cgw_skymap.sbatch). Harmless for the distance-scan job.
+echo "[inner] uv sync --extra cuda --extra skymap (slow step; downloads JAX + CUDA wheels)"
+uv sync --extra cuda --extra skymap
 
 # Explicitly install the jaxpint project itself as editable. `uv sync`
 # is supposed to handle this, but it silently skips the project under
