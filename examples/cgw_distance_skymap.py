@@ -270,6 +270,7 @@ def compute_skymap(
     # is replicated only chunk-wide (bounds memory) while removing per-pixel
     # dispatch. A plain vmap over all npix would OOM on the full PTA.
     fstat_map = None  # set only in marginalized real mode
+    X_map = Y_map = None  # per-pixel matched filter / signal power (fixed-orientation diagnostic)
 
     if marginalize_orientation:
         # Per pixel the only heavy step is building the F_e basis quadratics
@@ -331,6 +332,9 @@ def compute_skymap(
              f"data_mode={data_mode}; chunked vmap (batch={pixel_chunk}), compiling...")
 
         Xs, Ys = all_xy(sky)                              # (npix,), (npix,) on device
+        # Capture raw (X, Y) before any expected-mode zeroing: Y=(s_hat|s_hat) is
+        # the noise-independent signal power; dist_ll=0 pixels are exactly Y~0.
+        X_map, Y_map = np.asarray(Xs), np.asarray(Ys)
         if data_mode == "expected":
             Xs = jnp.zeros_like(Xs)                       # X=0: noise-only sensitivity
         h0_95 = h0_95_closed_form(Xs, Ys)                 # elementwise truncated-Gaussian UL
@@ -373,6 +377,11 @@ def compute_skymap(
     }
     if fstat_map is not None:
         results["fstat_map"] = fstat_map  # 2F per pixel (marginalized real mode)
+    if X_map is not None:
+        # Diagnostic (fixed-orientation): matched filter X=(d|s_hat) and signal
+        # power Y=(s_hat|s_hat) per pixel. dist_ll=0 <=> Y~0 (degenerate template).
+        results["X_map"] = X_map
+        results["Y_map"] = Y_map
     return results
 
 
