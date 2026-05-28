@@ -1,6 +1,7 @@
 """Tests for the analytic CW strain upper-limit helpers."""
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -9,7 +10,11 @@ from jax.scipy.special import ndtr
 from jaxpint.pta.cw_upper_limit import (
     quadratic_coeffs,
     h0_95_closed_form,
+    h0_95_marginalized,
     h0_to_distance,
+    orientation_coeffs,
+    basis_quadratics,
+    fstat,
 )
 from jaxpint.pta.params import GlobalParams
 from jaxpint.pta.signals.cw import CWInjector, log10_strain_from_binary
@@ -110,3 +115,113 @@ class TestCWInjectorLinearMode:
         inj, gp, toa = self._setup()
         d0 = inj.delay(0, toa, None, gp.with_value("cw0_h0", 0.0))
         assert jnp.allclose(d0, 0.0, atol=1e-30)
+
+
+class TestH0Marginalized:
+    """h0_95_marginalized: mixture-CDF quantile over an orientation grid."""
+
+    @pytest.mark.parametrize("X,Y", [(0.0, 4.0), (5.0, 2.0), (-3.0, 1.5)])
+    def test_single_orientation_reduces_to_closed_form(self, X, Y):
+        # A one-point grid is one truncated Gaussian -> must match the closed form.
+        marg = h0_95_marginalized(jnp.array([X]), jnp.array([Y]))
+        closed = h0_95_closed_form(jnp.float64(X), jnp.float64(Y))
+        assert jnp.allclose(marg, closed, rtol=1e-6)
+
+    def test_identical_orientations_reduce_to_closed_form(self):
+        # N copies of the same component is the same posterior -> same quantile.
+        X, Y = 2.0, 1.3
+        marg = h0_95_marginalized(jnp.full((7,), X), jnp.full((7,), Y))
+        closed = h0_95_closed_form(jnp.float64(X), jnp.float64(Y))
+        assert jnp.allclose(marg, closed, rtol=1e-6)
+
+    def test_expected_mode_between_component_limits(self):
+        # X=0 mixture of two sensitivities: the marginal 95% sits between the
+        # best (large Y) and worst (small Y) single-orientation limits.
+        Y_big, Y_small = 9.0, 1.0
+        marg = h0_95_marginalized(jnp.array([0.0, 0.0]), jnp.array([Y_big, Y_small]))
+        best = h0_95_closed_form(jnp.float64(0.0), jnp.float64(Y_big))
+        worst = h0_95_closed_form(jnp.float64(0.0), jnp.float64(Y_small))
+        assert best < marg < worst
+
+    def test_vmaps_over_pixels(self):
+        Xs = jnp.zeros((3, 5))
+        Ys = jnp.abs(jax.random.normal(jax.random.PRNGKey(1), (3, 5))) + 0.5
+        out = jax.vmap(h0_95_marginalized)(Xs, Ys)
+        assert out.shape == (3,) and jnp.all(out > 0)
+
+
+class TestOrientationCoeffs:
+    def test_shape_and_finite(self):
+        c = orientation_coeffs(jnp.float64(0.3), jnp.float64(0.6), jnp.float64(0.9))
+        assert c.shape == (4,) and jnp.all(jnp.isfinite(c))
+
+
+class TestFstat:
+    def test_matches_maximized_loglike(self):
+        # 2F = b^T M^-1 b = 2 * max_A (A.b - 0.5 A.M.A).
+        key = jax.random.PRNGKey(3)
+        A = jax.random.normal(key, (4, 4))
+        M = A @ A.T + jnp.eye(4)            # SPD
+        b = jax.random.normal(jax.random.PRNGKey(4), (4,))
+        A_hat = jnp.linalg.solve(M, b)
+        loglike_max = A_hat @ b - 0.5 * A_hat @ M @ A_hat
+        assert jnp.allclose(fstat(M, b), 2.0 * loglike_max, rtol=1e-10)
+
+
+class TestBasisReductionConsistency:
+    """The crucial validation: orientation_coeffs + basis_quadratics must
+    reproduce the real CWInjector residual structure. If orientation_coeffs were
+    derived wrong (sign/normalization vs cw.py), held-out reconstruction breaks.
+
+    Uses 2 pulsars (so the 4 basis waveforms {f_p S, f_p C, f_c S, f_c C} are
+    full rank; one pulsar collapses them to rank 2)."""
+
+    def _toy_pta_logL(self):
+        positions = jnp.array([[0.3, -0.6, 0.74], [-0.5, 0.2, 0.84]])
+        positions = positions / jnp.linalg.norm(positions, axis=1, keepdims=True)
+        inj = CWInjector(
+            positions, earth_term_only=True, linear_amplitude=True,
+            initial_values={"cos_gwtheta": 0.3, "gwphi": 1.7, "log10_fgw": -8.0},
+        )
+        gp = inj.register_params(GlobalParams.empty())
+        t = np.linspace(58000.0, 60500.0, 24)
+        toas = [make_toa_data(t_mjd=t), make_toa_data(t_mjd=t + 7.0)]
+        # Fixed pseudo-data + inverse-variance (the quadratic logL: X=(d|s), Y=(s|s)).
+        key = jax.random.PRNGKey(7)
+        data = jax.random.normal(key, (2 * t.size,)) * 1e-7
+        invvar = jnp.full((2 * t.size,), 1.0 / (1e-7) ** 2)
+
+        def logL(amp, ci, psi, ph):
+            g = (gp.with_value("cw0_h0", amp)
+                   .with_value("cw0_cos_inc", ci)
+                   .with_value("cw0_psi", psi)
+                   .with_value("cw0_phase0", ph))
+            s = jnp.concatenate([inj.delay(i, toas[i], None, g) for i in range(2)])
+            return jnp.sum(data * s * invvar) - 0.5 * jnp.sum(s * s * invvar)
+
+        return logL
+
+    def test_reconstructs_held_out_orientations(self):
+        logL = self._toy_pta_logL()
+        M, b = basis_quadratics(logL)
+
+        # Held-out orientations not in the extraction set.
+        key = jax.random.PRNGKey(123)
+        k1, k2, k3 = jax.random.split(key, 3)
+        cis = jax.random.uniform(k1, (6,), minval=-1.0, maxval=1.0)
+        psis = jax.random.uniform(k2, (6,), minval=0.0, maxval=float(np.pi))
+        phs = jax.random.uniform(k3, (6,), minval=0.0, maxval=2.0 * float(np.pi))
+        for ci, psi, ph in zip(cis, psis, phs):
+            c = orientation_coeffs(ci, psi, ph)
+            X_recon, Y_recon = c @ b, c @ M @ c
+            X_direct, Y_direct = quadratic_coeffs(lambda a: logL(a, ci, psi, ph))
+            assert jnp.allclose(X_recon, X_direct, rtol=1e-6, atol=1e-8)
+            assert jnp.allclose(Y_recon, Y_direct, rtol=1e-6, atol=1e-8)
+
+    def test_gram_matrix_is_psd(self):
+        logL = self._toy_pta_logL()
+        M, _ = basis_quadratics(logL)
+        # M = (basis|basis) is symmetric PSD; full rank with 2 distinct pulsars.
+        assert jnp.allclose(M, M.T, atol=1e-10)
+        eigs = jnp.linalg.eigvalsh(M)
+        assert jnp.all(eigs > -1e-8)

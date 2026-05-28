@@ -15,18 +15,25 @@ Method (see ``jaxpint/pta/cw_upper_limit.py`` for the math):
    marginalizes the (linear) timing-model parameters once.  Autodiff of the
    marginalized likelihood w.r.t. the amplitude gives ``X=(d|s_hat)`` and
    ``Y=(s_hat|s_hat)`` exactly.
-3. The CGW orientation ``(cos_inc, psi, phase0)`` is held *fixed* (first-pass;
-   default face-on/optimal), so per sky pixel the posterior is one truncated
-   Gaussian and the 95% strain UL is closed form → invert to a distance lower
-   limit.  Report ``R_eff = [<D_L^3>]^(1/3)``.
+3. The CGW orientation ``(cos_inc, psi, phase0)`` is either held *fixed*
+   (default; face-on/optimal -> closed-form truncated-Gaussian UL per pixel, an
+   optimistic bound) or *marginalized* with uniform physical priors via
+   ``--marginalize-orientation`` (matches the Fig. 8 convention; still no MCMC).
+   The marginalized path uses the F_e-statistic basis reduction: per pixel the
+   heavy likelihood builds a 4x4 ``M`` and 4-vector ``b`` once, then every grid
+   orientation is two cheap quadratic forms and the mixture posterior's 95%
+   quantile is closed-form-per-component + a 1-D root-find.  Invert to a
+   distance lower limit; report ``R_eff = [<D_L^3>]^(1/3)``.
 
 Assumptions: Earth-term only; white noise only (diagonal EFAC/EQUAD; ECORR and
 red noise dropped); ``M = 1e9 Msun``, ``f_GW = 27 nHz``; CGW orientation fixed
-(not marginalized); timing-model parameters marginalized.
+*or* marginalized (``--marginalize-orientation``); timing-model parameters
+marginalized.
 
 Usage
 -----
-    python examples/cgw_distance_skymap.py generate [--output PATH] [--nside N] [--full]
+    python examples/cgw_distance_skymap.py generate [--output PATH] [--nside N] \
+        [--full] [--marginalize-orientation] [--n-cosinc N --n-psi N --n-phase0 N]
     python examples/cgw_distance_skymap.py plot     [--input  PATH]
     python examples/cgw_distance_skymap.py both
 
@@ -71,8 +78,16 @@ LOG10_MC = 9.0                      # chirp mass 1e9 Msun
 F_GW = 27e-9                        # 27 nHz
 LOG10_FGW = float(np.log10(F_GW))
 
-# B1937+21 appears three times in ocarina (combined + per-telescope); keep one.
-DROP_PULSARS = {"B1937+21ao", "B1937+21gbt"}
+# Six pulsars appear as a combined file plus per-telescope (ao/gbt) splits; the
+# combined .par/.tim already holds every telescope's TOAs (and VLA-only TOAs that
+# are in no split), so keep only the combined one and drop the splits to avoid
+# double-counting (worst for J1713/J1909, the most sensitive pulsars).
+DROP_PULSARS = {
+    "B1937+21ao", "B1937+21gbt",
+    "J1600-3053gbt", "J1643-1224gbt",
+    "J1713+0747ao", "J1713+0747gbt",
+    "J1903+0327ao", "J1909-3744gbt",
+}
 
 # Small, well-timed default subset for the smoke test (Earth-term needs no PX).
 SMOKE_SUBSET = ["J1909-3744", "J1713+0747", "J0613-0200", "J1744-1134"]
@@ -119,6 +134,10 @@ def compute_skymap(
     pulsar_subset=SMOKE_SUBSET,
     nside=8,
     orientation=FIXED_ORIENTATION,
+    marginalize_orientation=False,
+    n_cosinc=11,
+    n_psi=8,
+    n_phase0=8,
     validate_linearity=False,
     data_mode="expected",
     pixel_chunk=64,
@@ -126,20 +145,33 @@ def compute_skymap(
     """Compute the 95% distance lower-limit sky map. Returns a results dict.
 
     The linear timing-model parameters are marginalized analytically (improper
-    priors), but the CGW orientation is *fixed* to ``orientation`` =
-    (cos_inc, psi, phase0) rather than marginalized — a first-pass sensitivity.
-    With a single orientation the per-pixel posterior is one truncated Gaussian,
-    so the limit is closed form (:func:`h0_95_closed_form`).
+    priors). The CGW orientation is handled one of two ways:
+
+    - ``marginalize_orientation=False`` (default): orientation is *fixed* to
+      ``orientation`` = (cos_inc, psi, phase0) — a first-pass, optimistic
+      (face-on) sensitivity. With a single orientation the per-pixel posterior
+      is one truncated Gaussian, so the limit is closed form
+      (:func:`h0_95_closed_form`).
+    - ``marginalize_orientation=True``: marginalize over (cos_inc, psi, phase0)
+      with uniform physical priors (matching the NANOGrav Fig. 8 convention),
+      still without MCMC. Uses the F_e-statistic basis reduction
+      (:func:`basis_quadratics`): the heavy likelihood builds a per-pixel 4x4
+      ``M`` and 4-vector ``b`` once, then ``X,Y`` at every grid orientation are
+      cheap quadratic forms in ``orientation_coeffs``; the mixture posterior's
+      95% quantile is :func:`h0_95_marginalized`. The grid is ``n_cosinc`` x
+      ``n_psi`` x ``n_phase0`` midpoints over cos_inc in [-1,1], psi in [0,pi),
+      phase0 in [0,2pi).
 
     data_mode:
       - "expected": set the matched filter X=(d|s_hat)=0, so the limit depends
         only on Y=(s_hat|s_hat). Gives the *expected* (noise-realization-
-        independent) sensitivity sky map. REQUIRED here because the synthetic
-        ocarina TOAs contain red noise that the white-noise-only model does not
-        account for; the real-residual matched filter would otherwise be
-        dominated by that unmodeled red noise (huge spurious "detections").
-      - "real": use X from the actual residuals. Only meaningful once the noise
-        model matches the data (e.g. red noise included).
+        independent) sensitivity sky map (array geometry, cadence, and noise
+        model only).
+      - "real": use X from the actual residuals. Valid when the analysis noise
+        model matches the data; the ocarina datasets are now white-only
+        (EFAC/EQUAD), so the white-noise model matches and real mode is
+        meaningful. (If the data carried unmodeled red noise, X would be
+        dominated by it and produce huge spurious "detections".)
 
     pixel_chunk: number of sky pixels vmapped together per chunk (the rest are
     scanned). Trades memory for speed — raise it to go faster if memory allows,
@@ -161,6 +193,7 @@ def compute_skymap(
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import (
         quadratic_coeffs, h0_95_closed_form, h0_to_distance,
+        orientation_coeffs, basis_quadratics, h0_95_marginalized, fstat,
     )
 
     # ---- 1. Load + filter --------------------------------------------------
@@ -227,12 +260,6 @@ def compute_skymap(
         gp_new = eqx.tree_at(lambda gg: gg.values, gp, v)
         return g(gp_new, reduced_pp)
 
-    cos_inc_fix, psi_fix, phase0_fix = (float(x) for x in orientation)
-
-    def xy_for_pixel(cos_gwtheta, gwphi):
-        f = lambda amp: logL_at(amp, cos_gwtheta, gwphi, cos_inc_fix, psi_fix, phase0_fix)
-        return quadratic_coeffs(f)  # scalar X, Y at the fixed orientation
-
     # ---- 5. HEALPix sky grid (RING ordering, exactly equal-area) -----------
     npix = hp.nside2npix(nside)
     theta, phi = hp.pix2ang(nside, np.arange(npix))   # colatitude, longitude
@@ -242,23 +269,73 @@ def compute_skymap(
     # pixels at a time and scans over the chunks, so the grad-of-likelihood tape
     # is replicated only chunk-wide (bounds memory) while removing per-pixel
     # dispatch. A plain vmap over all npix would OOM on the full PTA.
-    @jax.jit
-    def all_xy(sky_arr):
-        return jax.lax.map(
-            lambda row: xy_for_pixel(row[0], row[1]),
-            sky_arr, batch_size=pixel_chunk,
-        )
+    fstat_map = None  # set only in marginalized real mode
 
-    _log(f"nside={nside} -> {npix} HEALPix pixels, fixed orientation "
-         f"(cos_inc={cos_inc_fix}, psi={psi_fix}, phase0={phase0_fix}), "
-         f"data_mode={data_mode}; chunked vmap (batch={pixel_chunk}), compiling...")
+    if marginalize_orientation:
+        # Per pixel the only heavy step is building the F_e basis quadratics
+        # (M 4x4, b 4-vec); the orientation grid afterwards is cheap linear
+        # algebra. basis_quadratics scans its probe orientations internally, so
+        # memory stays one-orientation-wide times pixel_chunk.
+        def mb_for_pixel(cos_gwtheta, gwphi):
+            logL_pix = lambda amp, ci, ps, ph: logL_at(amp, cos_gwtheta, gwphi, ci, ps, ph)
+            return basis_quadratics(logL_pix)
 
-    Xs, Ys = all_xy(sky)                              # (npix,), (npix,) on device
-    if data_mode == "expected":
-        Xs = jnp.zeros_like(Xs)                       # X=0: noise-only sensitivity
+        @jax.jit
+        def all_mb(sky_arr):
+            return jax.lax.map(
+                lambda row: mb_for_pixel(row[0], row[1]),
+                sky_arr, batch_size=pixel_chunk,
+            )
 
-    # ---- 6. Limits + distances, vectorized over the whole map (one transfer) -
-    h0_95 = h0_95_closed_form(Xs, Ys)                 # elementwise truncated-Gaussian UL
+        _log(f"nside={nside} -> {npix} HEALPix pixels, MARGINALIZING orientation "
+             f"({n_cosinc}x{n_psi}x{n_phase0} grid), data_mode={data_mode}; "
+             f"chunked vmap (batch={pixel_chunk}), compiling...")
+
+        Ms, bs = all_mb(sky)                          # (npix,4,4), (npix,4)
+        if data_mode == "expected":
+            bs = jnp.zeros_like(bs)                   # X(omega)=0: noise-only sensitivity
+
+        # Uniform-prior orientation grid (midpoint rule -> equal weights):
+        # cos_inc in [-1,1], psi in [0,pi), phase0 in [0,2pi).
+        ci = -1.0 + 2.0 * (jnp.arange(n_cosinc) + 0.5) / n_cosinc
+        ps = jnp.pi * (jnp.arange(n_psi) + 0.5) / n_psi
+        ph = 2.0 * jnp.pi * (jnp.arange(n_phase0) + 0.5) / n_phase0
+        CI, PS, PH = jnp.meshgrid(ci, ps, ph, indexing="ij")
+        grid = jnp.stack([CI.ravel(), PS.ravel(), PH.ravel()], axis=1)          # (N,3)
+        Cgrid = jax.vmap(lambda o: orientation_coeffs(o[0], o[1], o[2]))(grid)  # (N,4)
+
+        def limit_pixel(M, b):
+            Xk = Cgrid @ b                                     # (N,) matched filter per omega
+            Yk = jnp.einsum("na,ab,nb->n", Cgrid, M, Cgrid)    # (N,) signal power per omega
+            return h0_95_marginalized(Xk, Yk)
+
+        h0_95 = jax.vmap(limit_pixel)(Ms, bs)                  # (npix,)
+        if data_mode == "real":
+            fstat_map = np.asarray(jax.vmap(fstat)(Ms, bs))    # 2F detection statistic
+    else:
+        cos_inc_fix, psi_fix, phase0_fix = (float(x) for x in orientation)
+
+        def xy_for_pixel(cos_gwtheta, gwphi):
+            f = lambda amp: logL_at(amp, cos_gwtheta, gwphi, cos_inc_fix, psi_fix, phase0_fix)
+            return quadratic_coeffs(f)  # scalar X, Y at the fixed orientation
+
+        @jax.jit
+        def all_xy(sky_arr):
+            return jax.lax.map(
+                lambda row: xy_for_pixel(row[0], row[1]),
+                sky_arr, batch_size=pixel_chunk,
+            )
+
+        _log(f"nside={nside} -> {npix} HEALPix pixels, fixed orientation "
+             f"(cos_inc={cos_inc_fix}, psi={psi_fix}, phase0={phase0_fix}), "
+             f"data_mode={data_mode}; chunked vmap (batch={pixel_chunk}), compiling...")
+
+        Xs, Ys = all_xy(sky)                              # (npix,), (npix,) on device
+        if data_mode == "expected":
+            Xs = jnp.zeros_like(Xs)                       # X=0: noise-only sensitivity
+        h0_95 = h0_95_closed_form(Xs, Ys)                 # elementwise truncated-Gaussian UL
+
+    # ---- 6. Distances, vectorized over the whole map -----------------------
     dist_ll = np.asarray(h0_to_distance(h0_95, LOG10_MC, LOG10_FGW))
 
     # HEALPix pixels are exactly equal-area, so R_eff = <D_L^3>^(1/3) is exact.
@@ -267,21 +344,36 @@ def compute_skymap(
          f"{dist_ll.min():.1f}/{np.median(dist_ll):.1f}/{dist_ll.max():.1f} Mpc; "
          f"R_eff = {r_eff:.2f} Mpc (nside={nside}, data_mode={data_mode})")
 
+    # The fixed-orientation fields are NaN when marginalizing (no single orientation).
+    if marginalize_orientation:
+        cos_inc_out = psi_out = phase0_out = np.float64(np.nan)
+        orientation_out = np.array([np.nan, np.nan, np.nan])
+    else:
+        cos_inc_out = np.float64(cos_inc_fix)
+        psi_out = np.float64(psi_fix)
+        phase0_out = np.float64(phase0_fix)
+        orientation_out = np.array(orientation)
+
     # dist_ll_mpc is a HEALPix map (RING ordering); nside lets plot use hp.mollview.
     # pulsar_pos (ICRS unit vectors) lets plot_results_with_pulsars overlay them.
-    return {
+    results = {
         "dist_ll_mpc": dist_ll,
         "nside": np.int64(nside), "r_eff_mpc": np.float64(r_eff),
         # Fixed CGW source parameters (for plot annotation), in handy units:
         "chirp_mass_msun": np.float64(10.0 ** LOG10_MC),
         "log10_mc": np.float64(LOG10_MC),
         "f_gw": np.float64(F_GW), "log10_fgw": np.float64(LOG10_FGW),
-        "cos_inc": np.float64(cos_inc_fix), "psi": np.float64(psi_fix),
-        "phase0": np.float64(phase0_fix), "orientation": np.array(orientation),
+        "cos_inc": cos_inc_out, "psi": psi_out,
+        "phase0": phase0_out, "orientation": orientation_out,
+        "marginalize_orientation": np.bool_(marginalize_orientation),
+        "orient_grid": np.array([n_cosinc, n_psi, n_phase0]),
         "pulsar_names": np.array(names), "n_pulsars": np.int64(len(names)),
         "pulsar_pos": np.asarray(positions),
         "data_mode": np.array(data_mode),
     }
+    if fstat_map is not None:
+        results["fstat_map"] = fstat_map  # 2F per pixel (marginalized real mode)
+    return results
 
 
 def save_results(path: Path, results: dict) -> None:
@@ -303,7 +395,7 @@ def plot_results(results: dict) -> None:
         dist,
         title=(
             f"95% lower limit on $D_L$  ($\\mathcal{{M}}=10^9 M_\\odot$, $f=27$ nHz)\n"
-            f"$R_{{eff}}$={float(results['r_eff_mpc']):.1f} Mpc, "
+#            f"$R_{{eff}}$={float(results['r_eff_mpc']):.1f} Mpc, "
             f"{int(results['n_pulsars'])} pulsars"
         ),
         unit="$D_L$ lower limit [Mpc]",
@@ -368,7 +460,7 @@ def plot_results_with_pulsars(results: dict, data_dir=None,
         dist,
         title=(
             f"95% lower limit on $D_L$  ($\\mathcal{{M}}=10^9 M_\\odot$, $f=27$ nHz)\n"
-            f"$R_{{eff}}$={float(results['r_eff_mpc']):.1f} Mpc, "
+#            f"$R_{{eff}}$={float(results['r_eff_mpc']):.1f} Mpc, "
             f"{int(results['n_pulsars'])} pulsars (red stars)"
         ),
         unit="$D_L$ lower limit [Mpc]",
@@ -401,8 +493,19 @@ def main() -> None:
         sp.add_argument("--validate-linearity", action="store_true")
         sp.add_argument("--data-mode", choices=("expected", "real"), default="expected",
                         help="'expected': X=(d|s_hat)=0, noise-realization-independent "
-                             "sensitivity (use this — ocarina has unmodeled red noise). "
-                             "'real': matched filter from residuals (needs matching noise model).")
+                             "sensitivity (array geometry only). "
+                             "'real': matched filter from residuals; valid for the "
+                             "white-only ocarina datasets (model matches data).")
+        sp.add_argument("--marginalize-orientation", action="store_true",
+                        help="Marginalize the CGW orientation (cos_inc, psi, phase0) with "
+                             "uniform priors (matches Fig. 8) instead of the fixed face-on "
+                             "optimum. Uses the F_e basis reduction (no MCMC).")
+        sp.add_argument("--n-cosinc", type=int, default=11,
+                        help="Orientation grid: cos_inc samples (default 11).")
+        sp.add_argument("--n-psi", type=int, default=8,
+                        help="Orientation grid: psi samples (default 8).")
+        sp.add_argument("--n-phase0", type=int, default=8,
+                        help="Orientation grid: phase0 samples (default 8).")
     sp = sub.add_parser("plot")
     sp.add_argument("--input", dest="path", type=Path, default=DEFAULT_DATA_PATH)
     sp.add_argument("--pulsars", action="store_true",
@@ -421,6 +524,8 @@ def main() -> None:
     results = compute_skymap(
         pulsar_subset=subset, nside=args.nside, pixel_chunk=args.pixel_chunk,
         validate_linearity=args.validate_linearity, data_mode=args.data_mode,
+        marginalize_orientation=args.marginalize_orientation,
+        n_cosinc=args.n_cosinc, n_psi=args.n_psi, n_phase0=args.n_phase0,
     )
     save_results(args.path, results)
     if args.mode == "both":
