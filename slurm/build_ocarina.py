@@ -5,8 +5,9 @@ For each pulsar in the NANOGrav 15yr narrowband release:
 
 1. Strip its .par file to bare-minimum: sky location + spindown + noise.
    Drop binary, DM/DMX, FD, JUMP, chromatic/wavex, glitches.
-2. Generate N uniform-cadence synthetic TOAs (1 µs error, 1400 MHz, GBT)
-   using JaxPINT's make_fake_toas with the original noise model.
+2. Generate N uniform-cadence synthetic TOAs (1 µs error, 1400 MHz, GBT):
+   PINT places them on integer pulse phase (leap-second-aware clock chain so
+   they round-trip on reload) and JaxPINT's white-noise model adds the noise.
 
 Outputs:
     ocarina/par/<orig>.par   76 stripped .par files
@@ -25,9 +26,10 @@ import jax
 import numpy as np
 import pint.models as pm
 import pint.simulation as psim
+from astropy.time import TimeDelta
 
 from jaxpint.bridge import build_timing_model, pint_model_to_params, pint_toas_to_jax
-from jaxpint.simulation import make_fake_toas
+from jaxpint.simulation import simulate_noise
 
 
 REPO = Path("/home/hector/NYU/PTA/jax_pint")
@@ -111,6 +113,15 @@ def inspect_tim(tim_path: Path) -> tuple[int, str]:
 
 
 def synthesize(par_text: str, n_toas: int, dominant_flag: str, key):
+    """Return a PINT TOAs object: on-pulse placement + white-noise realization.
+
+    PINT places the TOAs on integer pulse phase using its full, leap-second-aware
+    clock chain, so the written MJDs round-trip exactly on reload. The white noise
+    is drawn from JaxPINT's noise model (identical to the analysis covariance) and
+    applied to the PINT TOAs, so it goes out through PINT's leap-correct writer.
+    (A hand-rolled MJD writer silently scrambled TOAs within a day of each leap
+    second, which corrupted the real-mode CGW matched filter.)
+    """
     pint_model = pm.get_model(io.StringIO(par_text))
     start = float(pint_model.START.value)
     finish = float(pint_model.FINISH.value)
@@ -124,42 +135,12 @@ def synthesize(par_text: str, n_toas: int, dominant_flag: str, key):
     )
     toa_data = pint_toas_to_jax(pint_toas, model=pint_model)
     params = pint_model_to_params(pint_model).params
-    jax_model, noise_model = build_timing_model(pint_model, pint_toas)
-    synthetic = make_fake_toas(
-        jax_model, toa_data, params, key,
-        noise_components=tuple(noise_model.components),
+    _, noise_model = build_timing_model(pint_model, pint_toas)
+    noise_s = np.asarray(
+        simulate_noise(toa_data, params, key, tuple(noise_model.components))
     )
-    return synthetic, pint_model
-
-
-def _format_mjd(whole: int, frac: float) -> str:
-    """Format an int/frac MJD pair as <int>.<17 fractional digits>."""
-    while frac < 0.0:
-        whole -= 1
-        frac += 1.0
-    while frac >= 1.0:
-        whole += 1
-        frac -= 1.0
-    frac_str = f"{frac:.17f}"
-    if frac_str.startswith("1."):
-        whole += 1
-        digits = "0" * 17
-    else:
-        digits = frac_str.split(".", 1)[1][:17].ljust(17, "0")
-    return f"{whole}.{digits}"
-
-
-def write_tim(path: Path, synthetic, pint_model, dominant_flag: str) -> None:
-    psr = pint_model.PSR.value
-    mjd_int = np.asarray(synthetic.mjd_int)
-    mjd_frac = np.asarray(synthetic.mjd_frac)
-    flag_part = f"-f {dominant_flag}" if dominant_flag else ""
-    lines = ["FORMAT 1"]
-    for i in range(int(synthetic.n_toas)):
-        mjd_str = _format_mjd(int(mjd_int[i]), float(mjd_frac[i]))
-        line = f" {psr}  1400.000000  {mjd_str}  1.000  gbt {flag_part}".rstrip()
-        lines.append(line)
-    path.write_text("\n".join(lines) + "\n")
+    pint_toas.adjust_TOAs(TimeDelta(noise_s * u.s))
+    return pint_toas
 
 
 def main(seed: int, out_dir: Path):
@@ -184,9 +165,9 @@ def main(seed: int, out_dir: Path):
             (out_dir / "par" / par_path.name).write_text(simplified)
             n_toas, dominant_flag = inspect_tim(tim_path)
             key = jax.random.fold_in(base_key, i)
-            synthetic, pint_model = synthesize(simplified, n_toas, dominant_flag, key)
+            fake_toas = synthesize(simplified, n_toas, dominant_flag, key)
             tim_out = out_dir / "tim" / tim_path.name
-            write_tim(tim_out, synthetic, pint_model, dominant_flag)
+            fake_toas.write_TOA_file(str(tim_out), format="tempo2")
             print(f"[{i+1:2d}/{len(par_files)}] {psr_name}: N={n_toas} -f={dominant_flag}")
         except Exception as e:
             msg = f"{type(e).__name__}: {e}"
