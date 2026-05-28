@@ -134,6 +134,10 @@ def h0_95_closed_form(
     implicit ``1`` with ``phi_hi = ndtr((h_max - mu) / sigma)`` and use
     ``q = phi_lo + level * (phi_hi - phi_lo)``.
     """
+    # Floor Y at the smallest positive normal float64 so a degenerate pixel
+    # (Y -> 0) yields a huge-but-finite sigma -> a very weak limit, rather than
+    # a NaN/inf from 1/sqrt(0). Matches h0_95_marginalized.
+    Y = jnp.maximum(Y, jnp.finfo(jnp.float64).tiny)
     mu = X / Y
     sigma = 1.0 / jnp.sqrt(Y)
     phi_lo = ndtr(-mu / sigma)                # Phi(-mu/sigma): mass below the h0=0 wall
@@ -178,3 +182,206 @@ def h0_to_distance(
     # limit on h0 yields a 95% lower limit on D_L.
     log10_dist_mpc = log10_h0_at_1mpc - jnp.log10(h0)
     return 10.0 ** log10_dist_mpc
+
+
+# ---------------------------------------------------------------------------
+# Orientation marginalization (no MCMC) via the F_e-statistic basis reduction
+# ---------------------------------------------------------------------------
+# At a fixed sky position the Earth-term CW residual is a linear combination of
+# four orientation-independent basis waveforms {f_p*sin, f_p*cos, f_c*sin,
+# f_c*cos} (see cw_delay_from_array, cw.py). For unit strain the residual is
+#
+#     s(omega) = sum_a c_a(omega) * basis_a ,
+#
+# with c(omega) an analytic function of the orientation (cos_inc, psi, phase0)
+# and basis_a carrying all the data/noise/sky/time dependence. Hence the matched
+# filter and signal power at ANY orientation are quadratic forms in c:
+#
+#     X(omega) = (d | s) = c(omega) . b ,        b_a   = (d | basis_a)
+#     Y(omega) = (s | s) = c(omega) . M c(omega), M_ab = (basis_a | basis_b)
+#
+# So the heavy PTA likelihood is touched only to build the per-pixel 4-vector b
+# and 4x4 Gram matrix M once (:func:`basis_quadratics`); every orientation in the
+# marginalization grid is then two cheap contractions. The same c(omega) (and
+# hence the same machinery) applies with the pulsar term at *fixed* distance --
+# only the basis waveforms change. Refs: Jaranowski-Krolak-Schutz 1998;
+# Ellis, Siemens & Creighton 2012 (arXiv:1204.4218); Taylor, Ellis & Gair 2014
+# (arXiv:1406.5224).
+
+
+def orientation_coeffs(
+    cos_inc: Float[Array, ""],
+    psi: Float[Array, ""],
+    phase0: Float[Array, ""],
+) -> Float[Array, " 4"]:
+    """The 4 orientation amplitudes ``c(omega)`` for the Earth-term CW basis.
+
+    Derived from ``cw_delay_from_array`` (cw.py): expanding the residual over the
+    quadratures ``sin(2 pi f0 t)``, ``cos(2 pi f0 t)`` and the two antenna
+    patterns gives ``s = h0 * sum_a c_a * basis_a`` with, writing
+    ``a_i = 1 + cos_inc**2`` and ``b_i = 2 cos_inc``,
+
+        c1 =  a_i cos2psi cos phi0 - b_i sin2psi sin phi0
+        c2 =  a_i cos2psi sin phi0 + b_i sin2psi cos phi0
+        c3 = -a_i sin2psi cos phi0 - b_i cos2psi sin phi0
+        c4 = -a_i sin2psi sin phi0 + b_i cos2psi cos phi0
+
+    Any overall constant (the ``-1/(2 pi f0)`` prefactor, sign) is irrelevant: it
+    is absorbed consistently into ``b`` and ``M`` by :func:`basis_quadratics`,
+    since the same ``c`` is used for both extraction and evaluation.
+
+    Pure function of three scalars -> a length-4 vector; vmaps over a grid.
+    """
+    a_i = 1.0 + cos_inc**2
+    b_i = 2.0 * cos_inc
+    cc2 = jnp.cos(2.0 * psi)
+    ss2 = jnp.sin(2.0 * psi)
+    cp = jnp.cos(phase0)
+    sp = jnp.sin(phase0)
+    return jnp.stack([
+        a_i * cc2 * cp - b_i * ss2 * sp,
+        a_i * cc2 * sp + b_i * ss2 * cp,
+        -a_i * ss2 * cp - b_i * cc2 * sp,
+        -a_i * ss2 * sp + b_i * cc2 * cp,
+    ])
+
+
+def _default_extraction_orientations(n: int = 16, seed: int = 0) -> Float[Array, "n 3"]:
+    """Fixed pseudo-random ``(cos_inc, psi, phase0)`` probes spanning the cube.
+
+    Random points (vs a coarse product grid) reliably make the design matrices
+    for the ``b`` (rank 4) and ``M`` (rank 10) solves well conditioned. Fixed
+    seed -> reproducible.
+    """
+    key = jax.random.PRNGKey(seed)
+    k1, k2, k3 = jax.random.split(key, 3)
+    cos_inc = jax.random.uniform(k1, (n,), minval=-1.0, maxval=1.0)
+    psi = jax.random.uniform(k2, (n,), minval=0.0, maxval=jnp.pi)
+    phase0 = jax.random.uniform(k3, (n,), minval=0.0, maxval=2.0 * jnp.pi)
+    return jnp.stack([cos_inc, psi, phase0], axis=1)
+
+
+_EXTRACTION_ORIENTATIONS = _default_extraction_orientations()
+
+
+def basis_quadratics(
+    logL_at_orientation: Callable[..., Float[Array, ""]],
+    orientations: Float[Array, "k 3"] = _EXTRACTION_ORIENTATIONS,
+) -> tuple[Float[Array, "4 4"], Float[Array, " 4"]]:
+    """Extract some fiducial per-pixel Gram matrix ``M`` (4x4) and data vector ``b`` (4).
+
+    Evaluates the (heavy) likelihood only at the ``k`` probe ``orientations``,
+    reusing :func:`quadratic_coeffs`, then solves the small linear systems
+    ``X_k = c_k . b`` and ``Y_k = c_k . M c_k`` for ``b`` and the symmetric
+    ``M``. 
+
+    Parameters
+    ----------
+    logL_at_orientation : callable
+        ``(amp, cos_inc, psi, phase0) -> logL`` for a *fixed* sky location; ``amp`` is
+        the linear strain (so logL is quadratic in it). The caller closes over
+        the sky position and the timing-marginalized PTA likelihood.
+    orientations : (k, 3) array
+        Probe ``(cos_inc, psi, phase0)`` points; ``k >= 10`` (from symmetry of M)
+        and well spread (re: design matrix c_k should be full rank and small condition number;
+                         random draw of orientations seems to work fine).
+
+    Returns
+    -------
+    M, b : (4, 4), (4,)
+        The basis Gram matrix ``M_ab = (basis_a | basis_b)`` and the data
+        projection ``b_a = (d | basis_a)``, where ``basis_a`` are the 4
+        orientation-independent CW waveforms and ``(.|.)`` is the timing-
+        marginalized GLS inner product (see the section-header comment). They
+        satisfy ``X(omega) = c(omega) . b`` and ``Y(omega) = c(omega) . M c(omega)``
+        for any orientation.
+    """
+    def xy_one(orient):
+        f = lambda amp: logL_at_orientation(amp, orient[0], orient[1], orient[2])
+        return quadratic_coeffs(f)
+
+    Xs, Ys = jax.lax.map(xy_one, orientations)               # (k,), (k,)
+    C = jax.vmap(lambda o: orientation_coeffs(o[0], o[1], o[2]))(orientations)  # (k,4)
+
+    # b: X(omega) = c(omega) . b is linear in the 4-vector b -> stacked solve.
+    b = jnp.linalg.pinv(C) @ Xs
+
+    # We want to solve for the matrix M which satisfies: Y = c M c^T. So we have 10 variables we need to solve for 
+    # This part pulls out the 10 independent elements of that equation (re: upper triangular) 
+    # We are double counting the off diagonal elements since they repeat  in the lower half
+    iu, ju = jnp.triu_indices(4)
+    design = C[:, iu] * C[:, ju] * jnp.where(iu == ju, 1.0, 2.0)   
+    m = jnp.linalg.pinv(design) @ Ys
+    # After solving the independent components, we shove them back into the full matrix (first upper, then lower half)
+    M = jnp.zeros((4, 4), dtype=m.dtype).at[iu, ju].set(m).at[ju, iu].set(m)
+    return M, b
+
+
+def h0_95_marginalized(
+    Xs: Float[Array, " n"],
+    Ys: Float[Array, " n"],
+    level: float = 0.95,
+    n_iter: int = 60,
+) -> Float[Array, ""]:
+    r"""95% UL on ``h0`` marginalized over an orientation grid (uniform prior).
+
+    Each orientation ``k`` contributes a truncated-Gaussian likelihood in ``h0``
+    with ``mu_k = X_k/Y_k``, ``sigma_k = 1/sqrt(Y_k)``. With a uniform prior over
+    the (equally weighted) orientation grid and on ``h0 >= 0``, the marginal
+    posterior is the mixture ``p(h0) ∝ sum_k exp(h0 X_k - 0.5 Y_k h0^2)``. Its
+    CDF is an analytic weighted sum of normal CDFs; this returns the ``level``
+    quantile by bisection.
+
+    The constant ``logL(0)`` cancels in the normalized CDF (never exponentiated).
+    Component weights ``exp(0.5 X_k^2/Y_k)`` are stabilized by subtracting the
+    max in log-space (cancels in the CDF ratio); in expected mode (``X=0``) all
+    weights are 1 and every term is bounded, so it is unconditionally stable.
+
+    Reduces exactly to :func:`h0_95_closed_form` for a single orientation.
+
+    Parameters
+    ----------
+    Xs, Ys : (n,) arrays
+        Per-orientation matched filter and signal power (e.g. ``c_k.b`` and
+        ``c_k.M c_k``). ``Ys`` must be positive.
+    level : float
+        Credible level (default 0.95).
+    n_iter : int
+        Bisection iterations (default 60 -> float64-tight).
+    """
+    Ys = jnp.maximum(Ys, jnp.finfo(jnp.float64).tiny)
+    mu = Xs / Ys
+    sigma = 1.0 / jnp.sqrt(Ys)
+    # log weight per component, up to a common additive constant; subtract max.
+    log_w = 0.5 * Xs * Xs / Ys + jnp.log(sigma)
+    w = jnp.exp(log_w - jnp.max(log_w))
+    phi_lo = ndtr(-mu / sigma)        # mass below the h0=0 wall, per component
+    phi_hi = ndtr(mu / sigma)         # component mass over [0, inf)
+    denom = jnp.sum(w * phi_hi)
+
+    def cdf(H):
+        num = jnp.sum(w * (ndtr((H - mu) / sigma) - phi_lo))
+        return num / denom
+
+    # The mixture quantile is below max_k(mu_k) + a few sigma; bracket generously.
+    H_hi0 = jnp.max(mu) + 12.0 * jnp.max(sigma)
+
+    def body(_, bounds):
+        lo, hi = bounds
+        mid = 0.5 * (lo + hi)
+        go_up = cdf(mid) < level
+        return (jnp.where(go_up, mid, lo), jnp.where(go_up, hi, mid))
+
+    lo, hi = jax.lax.fori_loop(0, n_iter, body, (jnp.zeros_like(H_hi0), H_hi0))
+    return 0.5 * (lo + hi)
+
+
+def fstat(M: Float[Array, "4 4"], b: Float[Array, " 4"]) -> Float[Array, ""]:
+    """Coherent Earth-term detection statistic ``2F = b^T M^{-1} b``.
+
+    The likelihood maximized over the 4 basis amplitudes (``A_hat = M^{-1} b``).
+    Under the null ``2F ~ chi^2_4``; a signal adds the SNR^2 (noncentral). Only
+    meaningful in real mode (``b`` from actual residuals with a matching noise
+    model); in expected mode ``b = 0`` so ``2F = 0`` by construction.
+    """
+    return b @ jnp.linalg.solve(M, b)

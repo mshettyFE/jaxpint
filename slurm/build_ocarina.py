@@ -14,6 +14,7 @@ Outputs:
 """
 from __future__ import annotations
 
+import argparse
 import io
 from collections import Counter
 from glob import glob
@@ -31,7 +32,7 @@ from jaxpint.simulation import make_fake_toas
 
 REPO = Path("/home/hector/NYU/PTA/jax_pint")
 SRC = REPO / "minish/jpg00017/NANOGrav15yr_PulsarTiming_v2.0.0/narrowband"
-DST = REPO / "ocarina"
+DST = REPO / "ocarina_2"
 
 
 KEEP_TOKENS = {
@@ -44,8 +45,10 @@ KEEP_TOKENS = {
     "RAJ", "DECJ", "ELONG", "ELAT",
     "PMRA", "PMDEC", "PMELONG", "PMELAT", "PX",
     # noise model
-    "EFAC", "EQUAD", "ECORR",
-    "RNAMP", "RNIDX", "TNRedAmp", "TNRedGam", "TNRedC",
+    "EFAC", "EQUAD",
+    # white-only: ECORR + red noise dropped so ocarina_2 matches ocarina's model
+    # "ECORR",
+    # "RNAMP", "RNIDX", "TNRedAmp", "TNRedGam", "TNRedC",
 }
 
 
@@ -159,14 +162,17 @@ def write_tim(path: Path, synthetic, pint_model, dominant_flag: str) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
-def main():
-    (DST / "par").mkdir(parents=True, exist_ok=True)
-    (DST / "tim").mkdir(parents=True, exist_ok=True)
+def main(seed: int, out_dir: Path):
+    (out_dir / "par").mkdir(parents=True, exist_ok=True)
+    (out_dir / "tim").mkdir(parents=True, exist_ok=True)
+
+    # Record the seed so the noise draw is reproducible from the dataset alone.
+    (out_dir / "seed.txt").write_text(f"{seed}\n")
 
     par_files = sorted(glob(str(SRC / "par" / "*.par")))
-    print(f"Processing {len(par_files)} pulsars")
+    print(f"Processing {len(par_files)} pulsars into {out_dir} (seed={seed})")
 
-    base_key = jax.random.PRNGKey(20260501)
+    base_key = jax.random.PRNGKey(seed)
     failures: list[tuple[str, str]] = []
 
     for i, par_str in enumerate(par_files):
@@ -175,11 +181,11 @@ def main():
         psr_name = par_path.stem.split("_")[0]
         try:
             simplified = strip_par(par_path)
-            (DST / "par" / par_path.name).write_text(simplified)
+            (out_dir / "par" / par_path.name).write_text(simplified)
             n_toas, dominant_flag = inspect_tim(tim_path)
             key = jax.random.fold_in(base_key, i)
             synthetic, pint_model = synthesize(simplified, n_toas, dominant_flag, key)
-            tim_out = DST / "tim" / tim_path.name
+            tim_out = out_dir / "tim" / tim_path.name
             write_tim(tim_out, synthetic, pint_model, dominant_flag)
             print(f"[{i+1:2d}/{len(par_files)}] {psr_name}: N={n_toas} -f={dominant_flag}")
         except Exception as e:
@@ -196,4 +202,17 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--seed", type=int, default=2501,
+        help="PRNG seed for the noise draw (default: 2501)",
+    )
+    parser.add_argument(
+        "--out", type=Path, default=DST,
+        help=f"output dataset directory (default: {DST})",
+    )
+    args = parser.parse_args()
+    main(args.seed, args.out)

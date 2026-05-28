@@ -37,16 +37,21 @@ module purge
 # Don't preallocate the GPU (matches local behavior; avoids autotuner OOM).
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
-# Ocarina par/tim directory staged by slurm/stage_ocarina.sh. The driver reads
-# this via $JAXPINT_OCARINA_DIR.
-export JAXPINT_OCARINA_DIR="/scratch/${USER}/jaxpint-data/ocarina"
+# Which staged dataset to run, and in which likelihood mode. Override at submit:
+#   sbatch --export=ALL,OCARINA=ocarina,DATA_MODE=real slurm/run_cgw_skymap.sbatch
+OCARINA="${OCARINA:-ocarina_2}"
+DATA_MODE="${DATA_MODE:-real}"
+
+# Ocarina par/tim directory staged by slurm/stage_ocarina.sh (mirrors the local
+# dataset name). The driver reads this via $JAXPINT_OCARINA_DIR.
+export JAXPINT_OCARINA_DIR="${JAXPINT_OCARINA_DIR:-/scratch/${USER}/jaxpint-data/${OCARINA}}"
 
 OVERLAY="/scratch/${USER}/jaxpint/overlay-15GB-500K.ext3"
 IMAGE="/share/apps/images/cuda12.1.1-cudnn8.9.0-devel-ubuntu22.04.2.sif"
 PROJECT_DIR="${SLURM_SUBMIT_DIR}"
 
 OUT_DIR="/scratch/${USER}/jaxpint-out"
-OUT_FILE="${OUT_DIR}/cgw-skymap-${SLURM_JOB_ID}.npz"
+OUT_FILE="${OUT_DIR}/cgw-skymap-${OCARINA}-${DATA_MODE}-${SLURM_JOB_ID}.npz"
 mkdir -p "${OUT_DIR}"
 
 # Resolution / fidelity knobs (override by editing these).
@@ -64,6 +69,7 @@ echo "[sbatch] OVERLAY     = ${OVERLAY}"
 echo "[sbatch] IMAGE       = ${IMAGE}"
 echo "[sbatch] PROJECT_DIR = ${PROJECT_DIR}"
 echo "[sbatch] OCARINA_DIR = ${JAXPINT_OCARINA_DIR}"
+echo "[sbatch] DATA_MODE   = ${DATA_MODE}"
 echo "[sbatch] OUT_FILE    = ${OUT_FILE}"
 echo "[sbatch] NSIDE       = ${NSIDE}"
 
@@ -79,6 +85,6 @@ srun singularity exec --nv \
     --env "JAXPINT_OCARINA_DIR=${JAXPINT_OCARINA_DIR}" \
     --env "XLA_PYTHON_CLIENT_PREALLOCATE=false" \
     "${IMAGE}" \
-    /bin/bash -c "source /ext3/env.sh && cd '${PROJECT_DIR}' && python examples/cgw_distance_skymap.py generate --output '${OUT_FILE}' --nside '${NSIDE}' --full --data-mode expected"
+    /bin/bash -c "source /ext3/env.sh && cd '${PROJECT_DIR}' && python examples/cgw_distance_skymap.py generate --output '${OUT_FILE}' --nside '${NSIDE}' --full --data-mode '${DATA_MODE}'"
 
 echo "[sbatch] Done. Output at ${OUT_FILE}"
