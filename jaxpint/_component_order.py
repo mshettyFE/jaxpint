@@ -8,7 +8,7 @@ correct physical order.
 
 from __future__ import annotations
 
-from jaxpint.bridge._registry import Component
+from jaxpint.par.registry import Component
 
 # Mirrors PINT's DEFAULT_ORDER (timing_model.py:119-135), extended with
 # categories PINT doesn't list (they sort to end in PINT) and noise

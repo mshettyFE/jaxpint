@@ -1,18 +1,24 @@
-"""Model conversion: PINT TimingModel ↔ JaxPINT ParameterVector.
+"""Model conversion: PINT TimingModel <-> JaxPINT ParameterVector.
 
-Handles extracting numeric parameters from a PINT model into a flat
-JAX array (with unit conversion for angles and epochs), and writing
-fitted values back.
+The forward path (:func:`pint_model_to_params`) is a thin PINT adapter:
+:func:`_pint_to_raw_params` reads each PINT parameter object into an
+adapter-neutral :class:`~jaxpint.par.raw_params.RawParam`, and
+:func:`_pint_detect_components` reads PINT's authoritative component registry.
+All unit coercion, alias synthesis, classification, and ``ParameterVector``
+assembly then happen in the shared, PINT-free
+:func:`jaxpint.par.core.raw_params_to_result` -- the same core the future native
+``.par`` parser will use.
+
+The reverse path (:func:`params_to_pint_model`) writes fitted values back into a
+PINT model; it is PINT-specific and not shared.
 """
 
 from __future__ import annotations
 
 import logging
-import math
 from typing import Optional
 
 import astropy.units as u
-import jax.numpy as jnp
 from pint.models.parameter import (
     AngleParameter,
     MJDParameter,
@@ -28,19 +34,17 @@ from pint.models.timing_model import TimingModel as PINTTimingModel
 from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
 
 from jaxpint.bridge.toa_conversion import _split_mjd_time
-from jaxpint.bridge._aliases import (
-    synthesize_pb_from_fb,
-    synthesize_tnredamp_from_rnamp,
-)
-from jaxpint.bridge._param_builder import ParResult, MaskInfo
-from jaxpint.bridge._registry import BinaryModel, Component
+from jaxpint.par.core import raw_params_to_result
+from jaxpint.par.raw_params import ParamKind, RawParam
+from jaxpint.par.registry import BinaryModel, Component
+from jaxpint.par.result import ParResult
 from jaxpint.types import ParameterVector
 
 log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# PINT component name → JaxPINT Component enum mapping
+# PINT component name -> JaxPINT Component enum mapping
 # ---------------------------------------------------------------------------
 
 _PINT_COMPONENT_MAP: dict[str, Component] = {
@@ -78,43 +82,17 @@ _PINT_COMPONENT_MAP: dict[str, Component] = {
 }
 
 
-# PINT float parameters that are metadata, not fitted quantities, and
-# whose values may legitimately be non-finite (e.g. `TZRFRQ=inf` for an
-# asymptotic-frequency reference TOA). They're stashed in `metadata` and
-# kept out of the JAX-backed values vector, where `inf` would trip
-# `JAX_DEBUG_INFS` at array construction.
+# PINT float parameters that are metadata, not fitted quantities, and whose
+# values may legitimately be non-finite (e.g. `TZRFRQ=inf` for an
+# asymptotic-frequency reference TOA). They're stashed in `metadata` and kept
+# out of the JAX-backed values vector, where `inf` would trip `JAX_DEBUG_INFS`
+# at array construction.
 _METADATA_ONLY_FLOAT_PARAMS: frozenset[str] = frozenset({"TZRFRQ"})
 
 
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
-
-
-def _convert_deg_to_rad(quantity):
-    """Convert a quantity with degree-based units to radian-based units.
-
-    Uses astropy's ``dimensionless_angles()`` equivalency to replace
-    degrees with radians in any compound unit (e.g. deg → rad, deg/yr → rad/s).
-
-    Returns (value, unit_string) if conversion was applied, or None if the
-    quantity does not contain degrees.
-    """
-    try:
-        unit = quantity.unit
-        if u.deg not in unit.bases:
-            return None
-    except (AttributeError, TypeError):
-        return None
-
-    # Build the target unit by replacing deg with rad in the decomposition
-    rad_unit = unit
-    for base, power in zip(unit.bases, unit.powers):
-        if base == u.deg:
-            rad_unit = rad_unit * (u.rad / u.deg) ** power
-
-    converted = quantity.to(rad_unit, equivalencies=u.dimensionless_angles())
-    return float(converted.value), str(converted.unit)
 
 
 def _split_epoch_jd(quantity) -> tuple[float, float]:
@@ -124,193 +102,155 @@ def _split_epoch_jd(quantity) -> tuple[float, float]:
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# PINT adapter: PINT TimingModel -> list[RawParam] + detected components
 # ---------------------------------------------------------------------------
 
 
-def pint_model_to_params(model: PINTTimingModel) -> ParResult:
-    """Convert a PINT TimingModel to a JaxPINT :class:`ParResult`.
+def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
+    """Read each set PINT parameter object into an adapter-neutral RawParam.
 
-    Iterates all parameters, skipping non-numeric types (str, bool, int,
-    func) for the ParameterVector but collecting them into metadata,
-    bool_params, and int_params dicts.  MJD epochs are split into a
-    static integer day and a dynamic fractional day.  Angles are
-    converted to radians.
-
-    Parameters
-    ----------
-    model : pint.models.TimingModel
-        The timing model to extract parameters from.
-
-    Returns
-    -------
-    ParResult
-        A container holding the ``ParameterVector``, the set of detected
-        timing-model components, optional binary model identifier,
-        string metadata, mask info, integer parameters, and boolean
-        parameters extracted from the PINT model.
+    Does only the source-specific extraction (precision-preserving MJD split via
+    astropy ``jd1/jd2``, angle -> radians, mask key/value extraction, pair
+    splitting); all unit-algebra and assembly is deferred to
+    :func:`jaxpint.par.core.raw_params_to_result`.  Parameters in
+    ``model.params`` order; unset parameters (``quantity is None``) are skipped.
     """
-    names: list[str] = []
-    values: list[float] = []
-    units: list[str] = []
-    frozen_mask: list[bool] = []
-    epoch_int_values: dict[str, float] = {}
-
-    metadata: dict[str, str] = {}
-    int_params: dict[str, int] = {}
-    bool_params: dict[str, bool] = {}
-    mask_info: dict[str, MaskInfo] = {}
+    raw: list[RawParam] = []
 
     for pname in model.params:
         param = getattr(model, pname)
 
-        # Collect non-numeric parameter types into side dicts
+        # Non-numeric parameter types -> side dicts (handled by the core).
         if isinstance(param, strParameter):
             if param.value is not None:
-                metadata[pname] = str(param.value)
+                raw.append(RawParam(pname, ParamKind.STR, str_value=str(param.value)))
             continue
         if isinstance(param, boolParameter):
             if param.value is not None:
-                bool_params[pname] = bool(param.value)
+                raw.append(RawParam(pname, ParamKind.BOOL, bool_value=bool(param.value)))
             continue
         if isinstance(param, intParameter):
             if param.value is not None:
-                int_params[pname] = int(param.value)
+                raw.append(RawParam(pname, ParamKind.INT, int_value=int(param.value)))
             continue
 
-        # Metadata-only floats (e.g. TZRFRQ=inf is a valid PINT idiom for
-        # "asymptotic-frequency reference TOA"; the live consumer reads it
-        # via PINT's get_TZR_toa → TOAData.tzr_freq, not from this vector).
-        # Stash as a string so params_to_pint_model can still round-trip
-        # if needed, and keep `inf` out of the JAX values array.
+        # Metadata-only floats (e.g. TZRFRQ=inf): stash as a string so the value
+        # stays out of the JAX array.
         if pname in _METADATA_ONLY_FLOAT_PARAMS:
             if getattr(param, "value", None) is not None:
-                metadata[pname] = str(param.value)
+                raw.append(RawParam(pname, ParamKind.STR, str_value=str(param.value)))
             continue
 
-        # funcParameter has no .value — skip anything without it
+        # funcParameter has no .value -- skip anything without it; skip unset.
         if not hasattr(param, "value") or not hasattr(param, "quantity"):
             continue
-        # Skip unset parameters
         if param.quantity is None:
             continue
 
-        # Collect mask_info for maskParameters
-        if isinstance(param, maskParameter):
-            if hasattr(param, 'key') and param.key is not None:
-                key_value2 = None
-                if hasattr(param, 'key_value') and isinstance(param.key_value, (list, tuple)) and len(param.key_value) == 2:
-                    key_value2 = str(param.key_value[1])
-                    kv = str(param.key_value[0])
-                else:
-                    kv = str(param.key_value) if param.key_value is not None else ""
-                mask_info[pname] = MaskInfo(
-                    name=pname,
-                    key=str(param.key),
-                    key_value=kv,
-                    key_value2=key_value2,
-                )
-
-        # Pair parameters (e.g. WAVE, IFUNC) store [value_a, value_b] lists.
-        # Detected via pairParameter type OR prefixParameter with parameter_type="pair".
-        # Split into two ParameterVector entries with _A / _B suffixes.
+        # Pair parameters (WAVE, IFUNC): [value_a, value_b].  Detected via
+        # pairParameter type OR prefixParameter with parameter_type="pair".
         is_pair = isinstance(param, pairParameter) or (
             hasattr(param, "parameter_type") and param.parameter_type == "pair"
         )
         if is_pair:
             pair = param.quantity
-            if pair is None:
-                continue
             if not isinstance(pair, (list, tuple)) or len(pair) != 2:
                 continue
             val_a = float(pair[0].value) if hasattr(pair[0], "value") else float(pair[0])
             val_b = float(pair[1].value) if hasattr(pair[1], "value") else float(pair[1])
             unit_str = str(param.units) if param.units is not None else ""
-            for suffix, val in [("_A", val_a), ("_B", val_b)]:
-                names.append(pname + suffix)
-                values.append(val)
-                units.append(unit_str)
-                frozen_mask.append(param.frozen)
+            raw.append(RawParam(
+                pname, ParamKind.PAIR, value_pair=(val_a, val_b),
+                unit=unit_str, frozen=param.frozen,
+            ))
+            continue
+
+        # Mask parameters (JUMP/EFAC/EQUAD/ECORR/...): carry both the scalar
+        # value and the key info; the core builds MaskInfo and converts
+        # EQUAD/ECORR us->s.
+        if isinstance(param, maskParameter):
+            mask_key = None
+            mkv = None
+            mkv2 = None
+            if hasattr(param, "key") and param.key is not None:
+                if (
+                    isinstance(param.key_value, (list, tuple))
+                    and len(param.key_value) == 2
+                ):
+                    mkv = str(param.key_value[0])
+                    mkv2 = str(param.key_value[1])
+                else:
+                    mkv = str(param.key_value) if param.key_value is not None else ""
+                mask_key = str(param.key)
+            raw.append(RawParam(
+                pname, ParamKind.MASK, value=float(param.value),
+                unit=str(param.units), frozen=param.frozen,
+                mask_key=mask_key, mask_key_value=mkv, mask_key_value2=mkv2,
+            ))
             continue
 
         if isinstance(param, MJDParameter):
             mjd_int, mjd_frac = _split_epoch_jd(param.quantity)
-            epoch_int_values[pname] = mjd_int
-            values.append(mjd_frac)
-            units.append("day")
+            raw.append(RawParam(
+                pname, ParamKind.MJD, mjd_split=(mjd_int, mjd_frac),
+                frozen=param.frozen,
+            ))
+            continue
 
-        elif isinstance(param, AngleParameter):
+        if isinstance(param, AngleParameter):
             val_rad = float(param.quantity.to(u.rad).value)
-            values.append(val_rad)
-            units.append("rad")
+            raw.append(RawParam(pname, ParamKind.ANGLE, value=val_rad, frozen=param.frozen))
+            continue
 
-        elif isinstance(param, maskParameter) and (
-            pname.startswith("EQUAD") or pname.startswith("ECORR")
-        ):
-            # EQUAD/ECORR are stored in microseconds in PINT; convert to
-            # seconds to match TOAData.error convention.
-            values.append(float(param.quantity.to(u.s).value))
-            units.append("s")
-
-        elif (
+        if (
             isinstance(param, prefixParameter)
             and getattr(param, "parameter_type", None) == "MJD"
         ):
-            # MJD-type prefix parameters (e.g. GLEP_N, DMXR1_N, PWEP_N):
-            # split the raw MJD float into integer day + fractional day.
+            # MJD-type prefix parameters (GLEP_N, DMXR1_N, PWEP_N): split the raw
+            # MJD float into integer day + fractional day.
             mjd_val = float(param.value)
             mjd_int = float(int(mjd_val))
             mjd_frac = mjd_val - mjd_int
-            epoch_int_values[pname] = mjd_int
-            values.append(mjd_frac)
-            units.append("day")
+            raw.append(RawParam(
+                pname, ParamKind.MJD, mjd_split=(mjd_int, mjd_frac),
+                frozen=param.frozen,
+            ))
+            continue
 
-        else:
-            # floatParameter, prefixParameter, maskParameter, etc.
-            # Convert degree-based units to radian-based (e.g. OM deg → rad,
-            # OMDOT deg/yr → rad/s) so binary models get radians throughout.
-            deg_result = _convert_deg_to_rad(param.quantity)
-            if deg_result is not None:
-                val, unit_str = deg_result
-                values.append(val)
-                units.append(unit_str)
-            else:
-                values.append(float(param.value))
-                units.append(str(param.units))
+        # floatParameter, non-MJD prefixParameter, etc.  Pass the native unit
+        # string through; the core converts deg-based units to radian-based.
+        raw.append(RawParam(
+            pname, ParamKind.FLOAT, value=float(param.value),
+            unit=str(param.units), frozen=param.frozen,
+        ))
 
-        names.append(pname)
-        frozen_mask.append(param.frozen)
+    return raw
 
-    # Some PINT floatParameters are semantically integers and the standalone
-    # parser puts them in int_params.  Mirror that here so _model_builder
-    # picks them up via par.int_params.get(...).
-    _INT_VALUED_FLOATS = {"TNREDC", "TNDMC", "TNCHROMC", "TNSWC", "SWM", "SIFUNC"}
-    for ivname in _INT_VALUED_FLOATS:
-        if hasattr(model, ivname):
-            p = getattr(model, ivname)
-            if p.value is not None:
-                int_params[ivname] = int(p.value)
 
-    # Synthesize canonical parameter names from alternate par-file conventions.
-    # Each alias mutates the in-progress lists in place; see jaxpint.bridge._aliases.
-    synthesize_tnredamp_from_rnamp(model, names, values, units, frozen_mask)
-    synthesize_pb_from_fb(model, names, values, units, frozen_mask)
+def _pint_detect_components(
+    model: PINTTimingModel,
+) -> tuple[set[Component], Optional[BinaryModel], dict[str, str]]:
+    """Read PINT's authoritative component registry into JaxPINT's vocabulary.
 
-    # Build component_set from PINT model's component registry
+    Returns ``(component_set, binary_model, metadata_extra)`` where
+    ``metadata_extra`` carries derived metadata that isn't a parameter line
+    (currently the SolarWindDispersionX ``theta0``).
+    """
     component_set: set[Component] = set()
     binary_model: Optional[BinaryModel] = None
+    metadata_extra: dict[str, str] = {}
 
     for comp_name, comp in model.components.items():
         if comp_name in ("AbsPhase",):
             continue
         if comp_name in _PINT_COMPONENT_MAP:
             component_set.add(_PINT_COMPONENT_MAP[comp_name])
-            #  TODO: HACKY way of storing theta0. Need to find a workaround 
-            # Precompute theta0 for SolarWindDispersionX from PINT
+            #  TODO: HACKY way of storing theta0. Need to find a workaround.
+            # Precompute theta0 for SolarWindDispersionX from PINT.
             if comp_name == "SolarWindDispersionX":
                 try:
                     theta0_rad = float(comp.theta0.to(u.rad).value)
-                    metadata["_SWX_THETA0_RAD"] = str(theta0_rad)
+                    metadata_extra["_SWX_THETA0_RAD"] = str(theta0_rad)
                 except Exception:
                     log.warning("Could not compute SWX theta0 from PINT")
         elif isinstance(comp, PINTPulsarBinary):
@@ -329,34 +269,38 @@ def pint_model_to_params(model: PINTTimingModel) -> ParResult:
                 comp_name, type(comp).__name__,
             )
 
-    non_finite = [(n, v, u_) for n, v, u_ in zip(names, values, units)
-                  if not math.isfinite(float(v))]
-    if non_finite:
-        items = ", ".join(f"{n}={v} [{u_}]" for n, v, u_ in non_finite[:10])
-        more = f" (+{len(non_finite) - 10} more)" if len(non_finite) > 10 else ""
-        raise ValueError(
-            f"Non-finite PINT parameter value(s): {items}{more}. "
-            "Check the par file for missing or unset parameters that "
-            "synthesize aliases (e.g. PB from FB0=0, TNREDAMP from RNAMP=0)."
-        )
+    return component_set, binary_model, metadata_extra
 
-    param_vector = ParameterVector(
-        values=jnp.asarray(values, dtype=jnp.float64),
-        frozen_mask=tuple(frozen_mask),
-        names=tuple(names),
-        units=tuple(units),
-        epoch_int_values=epoch_int_values,
-    )
 
-    return ParResult(
-        params=param_vector,
-        component_set=component_set,
-        binary_model=binary_model,
-        metadata=metadata,
-        mask_info=mask_info,
-        int_params=int_params,
-        bool_params=bool_params,
-    )
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def pint_model_to_params(model: PINTTimingModel) -> ParResult:
+    """Convert a PINT TimingModel to a JaxPINT :class:`ParResult`.
+
+    Thin composition: read the PINT model into ``RawParam``s and detect its
+    components, then hand both to the shared
+    :func:`jaxpint.par.core.raw_params_to_result`.  MJD epochs are split into a
+    static integer day and a dynamic fractional day; angles are converted to
+    radians; degree-based rates to radian-based; EQUAD/ECORR us->s; pair
+    parameters split into ``_A``/``_B``.
+
+    Parameters
+    ----------
+    model : pint.models.TimingModel
+        The timing model to extract parameters from.
+
+    Returns
+    -------
+    ParResult
+        Container with the ``ParameterVector``, detected components, optional
+        binary model, string metadata, mask info, integer and boolean params.
+    """
+    raw = _pint_to_raw_params(model)
+    component_set, binary_model, metadata_extra = _pint_detect_components(model)
+    return raw_params_to_result(raw, component_set, binary_model, metadata_extra)
 
 
 def params_to_pint_model(
