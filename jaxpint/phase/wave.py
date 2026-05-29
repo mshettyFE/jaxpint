@@ -20,7 +20,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import PhaseComponent
+from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -55,6 +55,12 @@ class Wave(PhaseComponent):
         If the length of ``wave_sin_names`` or ``wave_cos_names`` does not
         match ``n_terms``.
     """
+
+    PARAMS = (
+        ParamDecl("WAVE1", kind="pair", prefix="WAVE"),
+        ParamDecl("WAVEEPOCH", kind="mjd"),
+        ParamDecl("WAVE_OM"),
+    )
 
     n_terms: int = eqx.field(static=True)
     wave_sin_names: tuple[str, ...] = eqx.field(static=True)

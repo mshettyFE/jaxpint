@@ -18,7 +18,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -40,6 +40,30 @@ class FDJump(DelayComponent):
         If ``fdjump_param_names`` and ``fdjump_fd_indices`` have different
         lengths.
     """
+
+    PARAMS = (
+        ParamDecl("FD1JUMP1", kind="mask", unit="s", aliases=("FD1JUMP",), prefix="FD1JUMP"),
+        ParamDecl("FD2JUMP1", kind="mask", unit="s", aliases=("FD2JUMP",), prefix="FD2JUMP"),
+        ParamDecl("FD3JUMP1", kind="mask", unit="s", aliases=("FD3JUMP",), prefix="FD3JUMP"),
+        ParamDecl("FD4JUMP1", kind="mask", unit="s", aliases=("FD4JUMP",), prefix="FD4JUMP"),
+        ParamDecl("FD5JUMP1", kind="mask", unit="s", aliases=("FD5JUMP",), prefix="FD5JUMP"),
+        ParamDecl("FD6JUMP1", kind="mask", unit="s", aliases=("FD6JUMP",), prefix="FD6JUMP"),
+        ParamDecl("FD7JUMP1", kind="mask", unit="s", aliases=("FD7JUMP",), prefix="FD7JUMP"),
+        ParamDecl("FD8JUMP1", kind="mask", unit="s", aliases=("FD8JUMP",), prefix="FD8JUMP"),
+        ParamDecl("FD9JUMP1", kind="mask", unit="s", aliases=("FD9JUMP",), prefix="FD9JUMP"),
+        ParamDecl("FD10JUMP1", kind="mask", unit="s", aliases=("FD10JUMP",), prefix="FD10JUMP"),
+        ParamDecl("FD11JUMP1", kind="mask", unit="s", aliases=("FD11JUMP",), prefix="FD11JUMP"),
+        ParamDecl("FD12JUMP1", kind="mask", unit="s", aliases=("FD12JUMP",), prefix="FD12JUMP"),
+        ParamDecl("FD13JUMP1", kind="mask", unit="s", aliases=("FD13JUMP",), prefix="FD13JUMP"),
+        ParamDecl("FD14JUMP1", kind="mask", unit="s", aliases=("FD14JUMP",), prefix="FD14JUMP"),
+        ParamDecl("FD15JUMP1", kind="mask", unit="s", aliases=("FD15JUMP",), prefix="FD15JUMP"),
+        ParamDecl("FD16JUMP1", kind="mask", unit="s", aliases=("FD16JUMP",), prefix="FD16JUMP"),
+        ParamDecl("FD17JUMP1", kind="mask", unit="s", aliases=("FD17JUMP",), prefix="FD17JUMP"),
+        ParamDecl("FD18JUMP1", kind="mask", unit="s", aliases=("FD18JUMP",), prefix="FD18JUMP"),
+        ParamDecl("FD19JUMP1", kind="mask", unit="s", aliases=("FD19JUMP",), prefix="FD19JUMP"),
+        ParamDecl("FD20JUMP1", kind="mask", unit="s", aliases=("FD20JUMP",), prefix="FD20JUMP"),
+        ParamDecl("FDJUMPLOG", kind="bool"),
+    )
 
     fdjump_param_names: tuple[str, ...] = eqx.field(static=True)
     fdjump_fd_indices: tuple[int, ...] = eqx.field(static=True)

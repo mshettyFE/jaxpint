@@ -14,6 +14,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
+from jaxpint.components import ParamDecl
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -28,6 +29,11 @@ class ScaleDmError(eqx.Module):
         Parameter names for DMEQUAD instances.
         Values must be in pc/cm³.
     """
+
+    PARAMS = (
+        ParamDecl("DMEFAC1", kind="mask", aliases=("DMEFAC",), prefix="DMEFAC"),
+        ParamDecl("DMEQUAD1", kind="mask", aliases=("DMEQUAD",), prefix="DMEQUAD"),
+    )
 
     dmefac_names: tuple[str, ...] = eqx.field(static=True)
     dmequad_names: tuple[str, ...] = eqx.field(static=True)

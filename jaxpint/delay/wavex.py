@@ -15,7 +15,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -46,6 +46,13 @@ class WaveX(DelayComponent):
         If the length of ``wxfreq_names``, ``wxsin_names``, or
         ``wxcos_names`` does not match ``n_components``.
     """
+
+    PARAMS = (
+        ParamDecl("WXFREQ_0001", prefix="WXFREQ_"),
+        ParamDecl("WXSIN_0001", prefix="WXSIN_", frozen_default=False),
+        ParamDecl("WXCOS_0001", prefix="WXCOS_", frozen_default=False),
+        ParamDecl("WXEPOCH", kind="mjd"),
+    )
 
     n_components: int = eqx.field(static=True)
     wxfreq_names: tuple[str, ...] = eqx.field(static=True)

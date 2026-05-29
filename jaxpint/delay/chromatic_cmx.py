@@ -20,7 +20,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import DMCONST
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -50,6 +50,13 @@ class ChromaticCMX(DelayComponent):
         If the length of ``cmx_names``, ``cmxr1_names``, or ``cmxr2_names``
         does not match ``n_bins``.
     """
+
+    PARAMS = (
+        ParamDecl("CMX_0001", prefix="CMX_", frozen_default=False),
+        ParamDecl("CMXR1_0001", kind="mjd", prefix="CMXR1_"),
+        ParamDecl("CMXR2_0001", kind="mjd", prefix="CMXR2_"),
+        ParamDecl("TNCHROMIDX"),
+    )
 
     n_bins: int = eqx.field(static=True)
     cmx_names: tuple[str, ...] = eqx.field(static=True)

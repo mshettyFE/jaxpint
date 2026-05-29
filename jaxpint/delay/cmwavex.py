@@ -20,7 +20,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import DMCONST
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -53,6 +53,14 @@ class CMWaveX(DelayComponent):
         If the length of ``cmwxfreq_names``, ``cmwxsin_names``, or
         ``cmwxcos_names`` does not match ``n_components``.
     """
+
+    PARAMS = (
+        ParamDecl("CMWXFREQ_0001", prefix="CMWXFREQ_"),
+        ParamDecl("CMWXSIN_0001", prefix="CMWXSIN_", frozen_default=False),
+        ParamDecl("CMWXCOS_0001", prefix="CMWXCOS_", frozen_default=False),
+        ParamDecl("CMWXEPOCH", kind="mjd"),
+        ParamDecl("TNCHROMIDX"),
+    )
 
     n_components: int = eqx.field(static=True)
     cmwxfreq_names: tuple[str, ...] = eqx.field(static=True)

@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import NoiseComponent
+from jaxpint.components import NoiseComponent, ParamDecl
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -35,6 +35,14 @@ class ScaleToaError(NoiseComponent):
         Values must be in **seconds** (the bridge converts from PINT's
         native microseconds).
     """
+
+    PARAMS = (
+        ParamDecl("EFAC1", kind="mask", prefix="EFAC",
+                  aliases=("EFAC", "T2EFAC", "T2EFAC1", "TNEF", "TNEF1"),
+                  prefix_aliases=("T2EFAC", "TNEF")),
+        ParamDecl("EQUAD1", kind="mask", unit="us", prefix="EQUAD",
+                  aliases=("EQUAD", "T2EQUAD", "T2EQUAD1"), prefix_aliases=("T2EQUAD",)),
+    )
 
     efac_names: tuple[str, ...] = eqx.field(static=True)
     equad_names: tuple[str, ...] = eqx.field(static=True)

@@ -20,7 +20,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import TSUN, AU_KM, PLANET_MASSES, PLANET_NAMES
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
@@ -83,6 +83,10 @@ class SolarSystemShapiroDelay(DelayComponent):
         When not None, the direction parameters are interpreted as ecliptic
         coordinates and rotated to ICRS using this obliquity (arcseconds).
     """
+
+    PARAMS = (
+        ParamDecl("PLANET_SHAPIRO", kind="bool"),
+    )
 
     raj_name: str = eqx.field(static=True, default="RAJ")
     decj_name: str = eqx.field(static=True, default="DECJ")

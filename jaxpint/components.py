@@ -1,14 +1,54 @@
 """Base component types for JaxPINT timing model modules.
 
-Component fields that store parameter names must follow the naming
-convention: end with ``_name`` for a single parameter name, or
-``_names`` for a tuple of parameter names.  This enables each base
-class's ``required_params()`` method to discover them automatically.
+Each timing-model component describes its parameters through **two related but
+distinct conventions**, used at two different stages of a component's life:
+
+1. ``PARAMS`` — the static *schema* (parse time)
+   ------------------------------------------------
+   Every concrete component declares a class-level
+   ``PARAMS: ClassVar[tuple[ParamDecl, ...]]`` listing the parameters it models,
+   with their type/unit/prefix/aliases (see :class:`ParamDecl`).  This exists
+   *before any instance* and is the vocabulary the native ``.par`` parser uses:
+   :mod:`jaxpint.par.spec` aggregates every component's ``PARAMS`` to know how to
+   parse each parameter and which component a parameter activates (detection).
+   It is a ``ClassVar`` (equinox excludes it from the pytree), so it is pure
+   static metadata, never a JIT leaf.  Declaring ``PARAMS`` is **required** for a
+   concrete component — the aggregator raises if it is missing/empty.
+
+2. ``*_name`` / ``*_names`` fields — the runtime *config* (post-parse)
+   --------------------------------------------------------------------
+   Instance fields whose names end in ``_name`` (a single parameter name) or
+   ``_names`` (a tuple of names) hold the **concrete** parameter names *this*
+   configured instance reads from the :class:`~jaxpint.types.ParameterVector` at
+   runtime — e.g. ``raj_name="RAJ"`` or ``spin_param_names=("F0","F1","F2")``.
+   The model builder fills these in from a parsed model, and they are static
+   ``eqx.field`` values so they stay constant inside JIT.  The naming convention
+   lets :meth:`PhaseComponent.required_params` (etc.) discover them via
+   :func:`_collect_param_names`.
+
+How they relate
+---------------
+``PARAMS`` is the *template* a component owns (e.g. Spindown owns the ``F``
+prefix family + ``PEPOCH``); the ``*_name``/``*_names`` fields are the *concrete,
+file-specific expansion* for one model (e.g. this pulsar's ``("F0","F1")``).
+The parser turns ``.par`` text into a ``ParameterVector`` using ``PARAMS``; the
+builder then sets each component's ``*_name`` fields from that vector.  They are
+the same parameters seen at two stages — declaration vs. configured instance —
+not redundant copies.
+
+Example::
+
+    class Spindown(PhaseComponent):
+        PARAMS = (ParamDecl("F0", unit="Hz", prefix="F"),   # static schema
+                  ParamDecl("PEPOCH", kind="mjd"))
+        spin_param_names: tuple[str, ...] = eqx.field(static=True)  # runtime config
+        pepoch_name: str = eqx.field(static=True, default="PEPOCH")
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import ClassVar, Optional
 
 import equinox as eqx
 import jax
@@ -16,6 +56,65 @@ from jaxtyping import Array, Float
 
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.dual_float import DualFloat
+
+
+# ---------------------------------------------------------------------------
+# Parameter declaration
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ParamDecl:
+    """Static declaration of a parameter a component models.
+
+    Each component class carries a class-level ``PARAMS: tuple[ParamDecl, ...]``
+    listing the parameters it consumes.  :mod:`jaxpint.par.spec` aggregates these
+    across all components to drive the native ``.par`` parser, so the parameter
+    vocabulary is owned by JaxPINT's own model rather than mined from PINT.
+
+    ``PARAMS`` is a plain class attribute (NOT an ``eqx.field``), so it stays
+    static metadata and never enters the pytree / JIT trace.  It is the static
+    *vocabulary*; the instance ``*_name``/``*_names`` fields are the per-fit
+    *config* the builder fills from a parsed model.
+
+    Fields
+    ------
+    name
+        Canonical (PINT) template name, e.g. ``RAJ``, ``F0``, ``DMX_0001``,
+        ``EQUAD1``, ``PB``.
+    kind
+        One of ``angle|mjd|mask|pair|str|bool|int|float``.  Drives parsing.
+    unit
+        Native unit string; used for angle parsing and the deg->rad / us->s
+        coercions.  Documentation-only (and may be ``""``) for plain floats.
+    aliases
+        True alternate spellings (e.g. ``("RA",)`` for ``RAJ``).
+    prefix
+        For an indexed/repeatable family, the prefix string (``"F"``, ``"DMX_"``,
+        ``"EQUAD"``, ``"JUMP"``); other indices reuse this declaration.
+    prefix_aliases
+        Alternate prefixes for the family (e.g. ``("T2EQUAD",)`` for ``EQUAD``).
+    scale, scale_threshold
+        PINT ``unit_scale``: a value above ``scale_threshold`` is multiplied by
+        ``scale`` (e.g. ``PBDOT 1.59`` -> ``1.59e-12``).
+    frozen_default
+        Frozen state when the par line has no fit flag (``False`` for families
+        like ``DMX_``/WaveX that default to free).
+
+    Detection note: a parameter activates ("triggers") its component when it is
+    *uniquely owned* by exactly one non-binary component; this is derived in
+    :mod:`jaxpint.par.spec`, not declared here (binary models are selected by
+    the ``BINARY`` line, not by parameter presence).
+    """
+
+    name: str
+    kind: str = "float"
+    unit: str = ""
+    aliases: tuple[str, ...] = ()
+    prefix: Optional[str] = None
+    prefix_aliases: tuple[str, ...] = ()
+    scale: Optional[float] = None
+    scale_threshold: Optional[float] = None
+    frozen_default: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +171,12 @@ class PhaseComponent(eqx.Module):
 
     Fields that store parameter names must end with ``_name`` (single)
     or ``_names`` (tuple).  This enables :meth:`required_params`.
+
+    Concrete subclasses must declare ``PARAMS`` (the parameters they model);
+    the native ``.par`` parser aggregates these (see :mod:`jaxpint.par.spec`).
     """
+
+    PARAMS: ClassVar[tuple[ParamDecl, ...]] = ()
 
     def __call__(
         self,
@@ -131,7 +235,12 @@ class NoiseComponent(eqx.Module):
 
     Fields that store parameter names must end with ``_name`` (single)
     or ``_names`` (tuple).  This enables :meth:`required_params`.
+
+    Concrete subclasses must declare ``PARAMS`` (the parameters they model);
+    the native ``.par`` parser aggregates these (see :mod:`jaxpint.par.spec`).
     """
+
+    PARAMS: ClassVar[tuple[ParamDecl, ...]] = ()
 
     def covariance(
         self,
@@ -240,7 +349,12 @@ class DelayComponent(eqx.Module):
 
     Fields that store parameter names must end with ``_name`` (single)
     or ``_names`` (tuple).  This enables :meth:`required_params`.
+
+    Concrete subclasses must declare ``PARAMS`` (the parameters they model);
+    the native ``.par`` parser aggregates these (see :mod:`jaxpint.par.spec`).
     """
+
+    PARAMS: ClassVar[tuple[ParamDecl, ...]] = ()
 
     def __call__(
         self,

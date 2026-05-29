@@ -46,7 +46,7 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import (
     AU_KM,
     DAYS_PER_JULIAN_YEAR,
@@ -221,6 +221,14 @@ class SolarWindDispersion(DelayComponent):
     ValueError
         If ``swm`` is 1 and ``swp_name`` is None.
     """
+
+    PARAMS = (
+        ParamDecl("NE_SW", aliases=("NE1AU", "SOLARN0")),
+        ParamDecl("NE_SW1", prefix="NE_SW"),
+        ParamDecl("SWEPOCH", kind="mjd"),
+        ParamDecl("SWM", kind="int"),
+        ParamDecl("SWP"),
+    )
 
     ne_sw_param_names: tuple[str, ...] = eqx.field(static=True)
     swepoch_name: str = eqx.field(static=True, default="SWEPOCH")

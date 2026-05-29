@@ -18,7 +18,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
@@ -52,6 +52,15 @@ class ExponentialDip(DelayComponent):
         ``expdipidx_names``, or ``expdiptau_names`` does not match
         ``n_dips``.
     """
+
+    PARAMS = (
+        ParamDecl("EXPDIPEP_1", kind="mjd", prefix="EXPDIPEP_", aliases=("EXPEP_1",), prefix_aliases=("EXPEP_",)),
+        ParamDecl("EXPDIPAMP_1", unit="s", prefix="EXPDIPAMP_", aliases=("EXPPH_1",), prefix_aliases=("EXPPH_",)),
+        ParamDecl("EXPDIPIDX_1", prefix="EXPDIPIDX_", aliases=("EXPINDEX_1",), prefix_aliases=("EXPINDEX_",)),
+        ParamDecl("EXPDIPTAU_1", prefix="EXPDIPTAU_", aliases=("EXPTAU_1",), prefix_aliases=("EXPTAU_",)),
+        ParamDecl("EXPDIPEPS"),
+        ParamDecl("EXPDIPFREF"),
+    )
 
     n_dips: int = eqx.field(static=True)
     expdipep_names: tuple[str, ...] = eqx.field(static=True)

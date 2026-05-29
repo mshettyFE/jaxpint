@@ -21,7 +21,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DispersionDelayComponent
+from jaxpint.components import DispersionDelayComponent, ParamDecl
 from jaxpint.constants import DAYS_PER_JULIAN_YEAR, DMCONST
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -51,6 +51,12 @@ class DispersionDM(DispersionDelayComponent):
     ValueError
         If the first DM term is not ``'DM'``.
     """
+
+    PARAMS = (
+        ParamDecl("DM"),
+        ParamDecl("DM1", prefix="DM"),
+        ParamDecl("DMEPOCH", kind="mjd"),
+    )
 
     dm_param_names: tuple[str, ...] = eqx.field(static=True)
     dmepoch_name: str = eqx.field(static=True, default="DMEPOCH")

@@ -33,7 +33,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import AU_KM, DMCONST
 from jaxpint.delay.solar_wind import _solar_wind_geometry_swm1, _sun_angle_and_distance
 from jaxpint.dual_float import DualFloat
@@ -75,6 +75,13 @@ class SolarWindDispersionX(DelayComponent):
         If the length of ``swxdm_names``, ``swxp_names``, ``swxr1_names``,
         or ``swxr2_names`` does not match ``n_bins``.
     """
+
+    PARAMS = (
+        ParamDecl("SWXDM_0001", prefix="SWXDM_"),
+        ParamDecl("SWXP_0001", prefix="SWXP_"),
+        ParamDecl("SWXR1_0001", kind="mjd", prefix="SWXR1_"),
+        ParamDecl("SWXR2_0001", kind="mjd", prefix="SWXR2_"),
+    )
 
     n_bins: int = eqx.field(static=True)
     swxdm_names: tuple[str, ...] = eqx.field(static=True)

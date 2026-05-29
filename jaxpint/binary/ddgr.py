@@ -19,7 +19,8 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.binary._param_decls import BINARY_CORE
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.constants import SECS_PER_DAY, TSUN, C_M_PER_S
 from jaxpint.binary.common import (
@@ -79,6 +80,21 @@ class BinaryDDGR(DelayComponent):
     Input masses MTOT and M2 determine all PK parameters via GR.
     XOMDOT and XPBDOT allow for excess beyond GR predictions.
     """
+
+    PARAMS = (
+        *BINARY_CORE,
+        ParamDecl("T0", kind="mjd"),
+        ParamDecl("GAMMA"),
+        ParamDecl("A0"),
+        ParamDecl("B0"),
+        ParamDecl("DR"),
+        ParamDecl("DTH", aliases=("DTHETA",)),
+        ParamDecl("M2"),
+        ParamDecl("SINI"),
+        ParamDecl("MTOT"),
+        ParamDecl("XOMDOT", unit="deg / yr"),
+        ParamDecl("XPBDOT", scale=1e-12, scale_threshold=1e-7),
+    )
 
     pb_name: str = eqx.field(static=True, default="PB")
     t0_name: str = eqx.field(static=True, default="T0")

@@ -31,7 +31,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import NoiseComponent
+from jaxpint.components import NoiseComponent, ParamDecl
 from jaxpint.constants import DMCONST, FYR
 from jaxpint.delay.solar_wind import (
     _solar_wind_geometry_swm0,
@@ -78,6 +78,12 @@ class PLSWNoise(NoiseComponent):
     fourier_basis: Float[Array, "n_toas n_basis"]
     freqs: Float[Array, " n_freqs"]
     freq_bin_widths: Float[Array, " n_freqs"]
+    PARAMS = (
+        ParamDecl("TNSWAMP"),
+        ParamDecl("TNSWGAM"),
+        ParamDecl("TNSWC", kind="int"),
+    )
+
     tnswamp_name: str = eqx.field(static=True)
     tnswgam_name: str = eqx.field(static=True)
     swm: int = eqx.field(static=True)

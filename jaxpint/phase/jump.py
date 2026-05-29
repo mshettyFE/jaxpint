@@ -14,7 +14,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import PhaseComponent
+from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
@@ -39,6 +39,10 @@ class PhaseJump(PhaseComponent):
     ValueError
         If no JUMP parameters are provided (``jump_param_names`` is empty).
     """
+
+    PARAMS = (
+        ParamDecl("JUMP1", kind="mask", unit="s", aliases=("JUMP",), prefix="JUMP"),
+    )
 
     jump_param_names: tuple[str, ...] = eqx.field(static=True)
     f0_name: str = eqx.field(static=True, default="F0")

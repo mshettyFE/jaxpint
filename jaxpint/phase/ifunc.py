@@ -20,7 +20,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import PhaseComponent
+from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -47,6 +47,11 @@ class IFunc(PhaseComponent):
     ValueError
         If fewer than one control point is provided.
     """
+
+    PARAMS = (
+        ParamDecl("IFUNC1", kind="pair", unit="s", prefix="IFUNC"),
+        ParamDecl("SIFUNC", kind="int"),
+    )
 
     interp_type: int = eqx.field(static=True)
     control_mjds: tuple[float, ...] = eqx.field(static=True)
