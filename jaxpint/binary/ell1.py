@@ -20,7 +20,8 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.binary._param_decls import BINARY_CORE
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.constants import SECS_PER_DAY, TSUN
 from jaxpint.binary.common import (
@@ -100,6 +101,22 @@ class BinaryELL1(DelayComponent):
     - ``"h3nharms"``: ELL1H with ``H3`` only — Freire-Wex 2010 Eq. 19
     - ``"none"``: No Shapiro delay.
     """
+
+    PARAMS = (
+        *BINARY_CORE,
+        ParamDecl("TASC", kind="mjd"),
+        ParamDecl("EPS1"),
+        ParamDecl("EPS1DOT"),
+        ParamDecl("EPS2"),
+        ParamDecl("EPS2DOT"),
+        ParamDecl("M2"),
+        ParamDecl("SINI"),
+        ParamDecl("H3"),
+        ParamDecl("H4"),
+        ParamDecl("STIGMA", aliases=("STIG", "VARSIGMA")),
+        ParamDecl("NHARMS", kind="int"),
+        ParamDecl("LNEDOT"),
+    )
 
     pb_name: str = eqx.field(static=True, default="PB")
     tasc_name: str = eqx.field(static=True, default="TASC")

@@ -17,6 +17,7 @@ from jaxtyping import Array, Float
 from jaxpint.components import (
     DelayComponent,
     DispersionDelayComponent,
+    ParamDecl,
     PhaseComponent,
     _make_component_names,
 )
@@ -39,6 +40,32 @@ class TimingModel(eqx.Module):
         TZR subtraction.  This matches PINT's ``PhaseOffset`` semantics
         where the offset is applied only to observation TOAs, not the TZR.
     """
+
+    # Top-level / administrative parameters PINT puts on the timing model itself
+    # (and the AbsPhase TZR anchor).  Mostly metadata; BINARY drives binary
+    # detection, PHOFF activates the phase-offset handling (see jaxpint.par.spec).
+    PARAMS = (
+        ParamDecl("PSR", kind="str", aliases=("PSRJ", "PSRB")),
+        ParamDecl("EPHEM", kind="str"),
+        ParamDecl("CLOCK", kind="str", aliases=("CLK",)),
+        ParamDecl("UNITS", kind="str"),
+        ParamDecl("TIMEEPH", kind="str"),
+        ParamDecl("T2CMETHOD", kind="str"),
+        ParamDecl("INFO", kind="str"),
+        ParamDecl("TRACK", kind="str"),
+        ParamDecl("BINARY", kind="str"),
+        ParamDecl("DILATEFREQ", kind="bool"),
+        ParamDecl("DMDATA", kind="bool"),
+        ParamDecl("NTOA", kind="int"),
+        ParamDecl("START", kind="mjd"),
+        ParamDecl("FINISH", kind="mjd"),
+        ParamDecl("TZRMJD", kind="mjd"),
+        ParamDecl("TZRFRQ", kind="str"),    # metadata (may be inf); never in the JAX vector
+        ParamDecl("TZRSITE", kind="str"),
+        ParamDecl("PHOFF"),                  # triggers PHASE_OFFSET (see par.spec)
+        ParamDecl("RM"), ParamDecl("CHI2"), ParamDecl("CHI2R"),
+        ParamDecl("TRES"), ParamDecl("DMRES"),
+    )
 
     delay_components: tuple[DelayComponent, ...] = eqx.field(static=True)
     phase_components: tuple[PhaseComponent, ...] = eqx.field(static=True)

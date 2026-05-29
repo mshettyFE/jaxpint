@@ -17,7 +17,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.dual_float import DualFloat
 from jaxpint.constants import (
     C_M_PER_S,
@@ -208,6 +208,10 @@ class TroposphereDelay(DelayComponent):
     Has no fittable parameters — ``CORRECT_TROPOSPHERE`` is handled at
     the bridge level (if False, this component is not added to the model).
     """
+
+    PARAMS = (
+        ParamDecl("CORRECT_TROPOSPHERE", kind="bool"),
+    )
 
     def __call__(
         self,

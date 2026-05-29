@@ -21,7 +21,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DispersionDelayComponent
+from jaxpint.components import DispersionDelayComponent, ParamDecl
 from jaxpint.constants import DMCONST
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -49,6 +49,12 @@ class DispersionDMX(DispersionDelayComponent):
         If the length of ``dmx_names``, ``dmxr1_names``, or ``dmxr2_names``
         does not match ``n_bins``.
     """
+
+    PARAMS = (
+        ParamDecl("DMX_0001", prefix="DMX_", frozen_default=False),
+        ParamDecl("DMXR1_0001", kind="mjd", prefix="DMXR1_"),
+        ParamDecl("DMXR2_0001", kind="mjd", prefix="DMXR2_"),
+    )
 
     n_bins: int = eqx.field(static=True)
     dmx_names: tuple[str, ...] = eqx.field(static=True)

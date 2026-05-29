@@ -17,7 +17,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import PhaseComponent
+from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -42,6 +42,11 @@ class Spindown(PhaseComponent):
     ValueError
         If the first spin term is not ``'F0'``.
     """
+
+    PARAMS = (
+        ParamDecl("F0", unit="Hz", prefix="F"),
+        ParamDecl("PEPOCH", kind="mjd"),
+    )
 
     spin_param_names: tuple[str, ...] = eqx.field(static=True)
     pepoch_name: str = eqx.field(static=True, default="PEPOCH")

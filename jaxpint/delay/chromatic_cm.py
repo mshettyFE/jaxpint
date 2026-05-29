@@ -20,7 +20,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import DAYS_PER_JULIAN_YEAR, DMCONST
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -45,6 +45,13 @@ class ChromaticCM(DelayComponent):
     ValueError
         If no CM terms are provided (``cm_param_names`` is empty).
     """
+
+    PARAMS = (
+        ParamDecl("CM"),
+        ParamDecl("CM1", prefix="CM"),
+        ParamDecl("CMEPOCH", kind="mjd"),
+        ParamDecl("TNCHROMIDX"),
+    )
 
     cm_param_names: tuple[str, ...] = eqx.field(static=True)
     cmepoch_name: str = eqx.field(static=True, default="CMEPOCH")

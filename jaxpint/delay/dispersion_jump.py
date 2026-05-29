@@ -11,7 +11,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DispersionDelayComponent
+from jaxpint.components import DispersionDelayComponent, ParamDecl
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -25,6 +25,10 @@ class DispersionJump(DispersionDelayComponent):
         Each name must have a corresponding boolean mask in
         ``toa_data.flag_masks``.
     """
+
+    PARAMS = (
+        ParamDecl("DMJUMP1", kind="mask", aliases=("DMJUMP",), prefix="DMJUMP"),
+    )
 
     dmjump_names: tuple[str, ...] = eqx.field(static=True)
 

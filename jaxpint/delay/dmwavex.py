@@ -17,7 +17,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DispersionDelayComponent
+from jaxpint.components import DispersionDelayComponent, ParamDecl
 from jaxpint.constants import DMCONST
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -48,6 +48,13 @@ class DMWaveX(DispersionDelayComponent):
         If the length of ``dmwxfreq_names``, ``dmwxsin_names``, or
         ``dmwxcos_names`` does not match ``n_components``.
     """
+
+    PARAMS = (
+        ParamDecl("DMWXFREQ_0001", prefix="DMWXFREQ_"),
+        ParamDecl("DMWXSIN_0001", prefix="DMWXSIN_", frozen_default=False),
+        ParamDecl("DMWXCOS_0001", prefix="DMWXCOS_", frozen_default=False),
+        ParamDecl("DMWXEPOCH", kind="mjd"),
+    )
 
     n_components: int = eqx.field(static=True)
     dmwxfreq_names: tuple[str, ...] = eqx.field(static=True)

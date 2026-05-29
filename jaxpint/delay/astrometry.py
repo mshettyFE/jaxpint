@@ -25,7 +25,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import C_KM_PER_S, KPC_TO_KM
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, compute_pulsar_direction_ecl
@@ -98,6 +98,15 @@ class AstrometryEquatorial(DelayComponent):
         Epoch parameter for proper-motion reference.  Required when PM is
         active; ignored otherwise.
     """
+
+    PARAMS = (
+        ParamDecl("RAJ", kind="angle", unit="hourangle", aliases=("RA",)),
+        ParamDecl("DECJ", kind="angle", unit="deg", aliases=("DEC",)),
+        ParamDecl("PMRA"),
+        ParamDecl("PMDEC"),
+        ParamDecl("PX"),
+        ParamDecl("POSEPOCH", kind="mjd"),
+    )
 
     raj_name: str = eqx.field(static=True, default="RAJ")
     decj_name: str = eqx.field(static=True, default="DECJ")
@@ -186,6 +195,16 @@ class AstrometryEcliptic(DelayComponent):
         Obliquity of the ecliptic in arcseconds (e.g. 84381.406 for
         IERS2010).  Resolved from the ECL parameter at bridge time.
     """
+
+    PARAMS = (
+        ParamDecl("ELONG", kind="angle", unit="deg", aliases=("LAMBDA",)),
+        ParamDecl("ELAT", kind="angle", unit="deg", aliases=("BETA",)),
+        ParamDecl("PMELONG", aliases=("PMLAMBDA",)),
+        ParamDecl("PMELAT", aliases=("PMBETA",)),
+        ParamDecl("PX"),
+        ParamDecl("POSEPOCH", kind="mjd"),
+        ParamDecl("ECL", kind="str"),
+    )
 
     elong_name: str = eqx.field(static=True, default="ELONG")
     elat_name: str = eqx.field(static=True, default="ELAT")

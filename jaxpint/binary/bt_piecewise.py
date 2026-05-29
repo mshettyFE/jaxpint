@@ -17,7 +17,8 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.binary._param_decls import BINARY_CORE
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.constants import SECS_PER_DAY
@@ -52,6 +53,16 @@ class BinaryBTPiecewise(DelayComponent):
         Parameter names for piece lower/upper boundaries (MJD, stored
         as regular parameters in ParameterVector).
     """
+
+    PARAMS = (
+        *BINARY_CORE,
+        ParamDecl("T0", kind="mjd"),
+        ParamDecl("GAMMA"),
+        ParamDecl("A1X_0000", prefix="A1X_", frozen_default=False),
+        ParamDecl("T0X_0000", kind="mjd", prefix="T0X_", frozen_default=False),
+        ParamDecl("XR1_0000", kind="mjd", prefix="XR1_"),
+        ParamDecl("XR2_0000", kind="mjd", prefix="XR2_"),
+    )
 
     pb_name: str = eqx.field(static=True, default="PB")
     t0_name: str = eqx.field(static=True, default="T0")

@@ -21,7 +21,8 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.binary._param_decls import BINARY_CORE
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.constants import SECS_PER_DAY, RAD_PER_MAS, KPC_TO_KM
 from jaxpint.binary.common import (
@@ -60,6 +61,21 @@ class BinaryDDK(DelayComponent):
     px_name : str
         Parallax parameter name (mas).
     """
+
+    PARAMS = (
+        *BINARY_CORE,
+        ParamDecl("T0", kind="mjd"),
+        ParamDecl("GAMMA"),
+        ParamDecl("A0"),
+        ParamDecl("B0"),
+        ParamDecl("DR"),
+        ParamDecl("DTH", aliases=("DTHETA",)),
+        ParamDecl("M2"),
+        ParamDecl("SINI"),
+        ParamDecl("KIN", unit="deg"),
+        ParamDecl("KOM", unit="deg"),
+        ParamDecl("K96", kind="bool"),
+    )
 
     pb_name: str = eqx.field(static=True, default="PB")
     t0_name: str = eqx.field(static=True, default="T0")

@@ -19,7 +19,8 @@ from typing import Optional
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.binary._param_decls import BINARY_CORE
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.binary.common import (
     compute_tt0,
@@ -47,6 +48,21 @@ class BinaryDD(DelayComponent):
     - ``"shapmax"`` (DDS): Uses ``SHAPMAX = -ln(1 - sin(i))``.
     - ``"h3stigma"`` (DDH): Uses ``H3`` and ``STIGMA``.
     """
+
+    PARAMS = (
+        *BINARY_CORE,
+        ParamDecl("T0", kind="mjd"),
+        ParamDecl("GAMMA"),
+        ParamDecl("A0"),
+        ParamDecl("B0"),
+        ParamDecl("DR"),
+        ParamDecl("DTH", aliases=("DTHETA",)),
+        ParamDecl("M2"),
+        ParamDecl("SINI"),
+        ParamDecl("SHAPMAX"),
+        ParamDecl("H3"),
+        ParamDecl("STIGMA", aliases=("STIG", "VARSIGMA")),
+    )
 
     pb_name: str = eqx.field(static=True, default="PB")
     t0_name: str = eqx.field(static=True, default="T0")

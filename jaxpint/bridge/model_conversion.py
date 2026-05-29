@@ -34,6 +34,7 @@ from pint.models.timing_model import TimingModel as PINTTimingModel
 from pint.models.pulsar_binary import PulsarBinary as PINTPulsarBinary
 
 from jaxpint.bridge.toa_conversion import _split_mjd_time
+from jaxpint.par.components import PINT_COMPONENT_MAP as _PINT_COMPONENT_MAP
 from jaxpint.par.core import raw_params_to_result
 from jaxpint.par.raw_params import ParamKind, RawParam
 from jaxpint.par.registry import BinaryModel, Component
@@ -41,45 +42,6 @@ from jaxpint.par.result import ParResult
 from jaxpint.types import ParameterVector
 
 log = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# PINT component name -> JaxPINT Component enum mapping
-# ---------------------------------------------------------------------------
-
-_PINT_COMPONENT_MAP: dict[str, Component] = {
-    "Spindown": Component.SPINDOWN,
-    "PhaseOffset": Component.PHASE_OFFSET,
-    "AstrometryEquatorial": Component.ASTROMETRY_EQUATORIAL,
-    "AstrometryEcliptic": Component.ASTROMETRY_ECLIPTIC,
-    "DispersionDM": Component.DISPERSION_DM,
-    "DispersionDMX": Component.DISPERSION_DMX,
-    "DispersionJump": Component.DISPERSION_JUMP,
-    "SolarSystemShapiro": Component.SOLAR_SYSTEM_SHAPIRO,
-    "SolarWindDispersion": Component.SOLAR_WIND_DISPERSION,
-    "SolarWindDispersionX": Component.SOLAR_WIND_DISPERSION_X,
-    "TroposphereDelay": Component.TROPOSPHERE_DELAY,
-    "PhaseJump": Component.PHASE_JUMP,
-    "ScaleToaError": Component.SCALE_TOA_ERROR,
-    "ScaleDmError": Component.SCALE_DM_ERROR,
-    "EcorrNoise": Component.ECORR_NOISE,
-    "PLRedNoise": Component.PL_RED_NOISE,
-    "PLDMNoise": Component.PL_DM_NOISE,
-    "PLChromNoise": Component.PL_CHROM_NOISE,
-    "PLSWNoise": Component.PL_SW_NOISE,
-    "WaveX": Component.WAVE_X,
-    "DMWaveX": Component.DM_WAVE_X,
-    "CMWaveX": Component.CM_WAVE_X,
-    "ChromaticCM": Component.CHROMATIC_CM,
-    "ChromaticCMX": Component.CHROMATIC_CMX,
-    "FD": Component.FREQUENCY_DEPENDENT,
-    "FDJump": Component.FD_JUMP,
-    "SimpleExponentialDip": Component.EXPONENTIAL_DIP,
-    "PiecewiseSpindown": Component.PIECEWISE_SPINDOWN,
-    "Wave": Component.WAVE,
-    "IFunc": Component.IFUNC,
-    "Glitch": Component.GLITCH,
-}
 
 
 # PINT float parameters that are metadata, not fitted quantities, and whose
@@ -173,14 +135,19 @@ def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
             mkv = None
             mkv2 = None
             if hasattr(param, "key") and param.key is not None:
-                if (
-                    isinstance(param.key_value, (list, tuple))
-                    and len(param.key_value) == 2
-                ):
-                    mkv = str(param.key_value[0])
-                    mkv2 = str(param.key_value[1])
+                kv = param.key_value
+                if isinstance(kv, (list, tuple)) and len(kv) == 2:
+                    mkv = str(kv[0])
+                    mkv2 = str(kv[1])
+                elif isinstance(kv, (list, tuple)) and len(kv) == 1:
+                    # single-value key (e.g. -fe / -f / tel): store the bare
+                    # value, not the list repr, so it matches the native parser
+                    # and is usable for TOA flag matching.
+                    mkv = str(kv[0])
+                elif kv is not None:
+                    mkv = str(kv)
                 else:
-                    mkv = str(param.key_value) if param.key_value is not None else ""
+                    mkv = ""
                 mask_key = str(param.key)
             raw.append(RawParam(
                 pname, ParamKind.MASK, value=float(param.value),

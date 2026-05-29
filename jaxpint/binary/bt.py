@@ -16,7 +16,8 @@ from typing import Optional
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent
+from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.binary._param_decls import BINARY_CORE
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.binary.common import (
     _bt_delay_formula,
@@ -50,6 +51,12 @@ class BinaryBT(DelayComponent):
     pbdot_name, omdot_name, edot_name, a1dot_name, gamma_name, xpbdot_name :
         Optional parameter names for secular derivatives.  ``None`` disables.
     """
+
+    PARAMS = (
+        *BINARY_CORE,
+        ParamDecl("T0", kind="mjd"),
+        ParamDecl("GAMMA"),
+    )
 
     pb_name: str = eqx.field(static=True, default="PB")
     t0_name: str = eqx.field(static=True, default="T0")

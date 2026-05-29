@@ -17,7 +17,7 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
 
-from jaxpint.components import NoiseComponent
+from jaxpint.components import NoiseComponent, ParamDecl
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -45,6 +45,11 @@ class EcorrNoise(NoiseComponent):
         For each ECORR parameter, the ``(start_col, end_col)`` range in
         the quantization matrix's column dimension.
     """
+
+    PARAMS = (
+        ParamDecl("ECORR1", kind="mask", unit="us", prefix="ECORR",
+                  aliases=("ECORR", "TNECORR", "TNECORR1"), prefix_aliases=("TNECORR",)),
+    )
 
     ecorr_names: tuple[str, ...] = eqx.field(static=True)
     quantization_matrix: Float[Array, "n_toas n_epochs"]

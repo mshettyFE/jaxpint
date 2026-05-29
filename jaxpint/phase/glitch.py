@@ -16,7 +16,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import PhaseComponent
+from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -45,6 +45,16 @@ class Glitch(PhaseComponent):
         If the length of any glitch parameter name tuple does not match
         ``n_glitches``.
     """
+
+    PARAMS = (
+        ParamDecl("GLEP_1", kind="mjd", prefix="GLEP_"),
+        ParamDecl("GLPH_1", prefix="GLPH_"),
+        ParamDecl("GLF0_1", prefix="GLF0_"),
+        ParamDecl("GLF1_1", prefix="GLF1_"),
+        ParamDecl("GLF2_1", prefix="GLF2_"),
+        ParamDecl("GLF0D_1", prefix="GLF0D_"),
+        ParamDecl("GLTD_1", prefix="GLTD_"),
+    )
 
     n_glitches: int = eqx.field(static=True)
     glep_names: tuple[str, ...] = eqx.field(static=True)

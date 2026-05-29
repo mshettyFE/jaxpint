@@ -15,7 +15,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import PhaseComponent
+from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -52,6 +52,16 @@ class PiecewiseSpindown(PhaseComponent):
         If the length of any segment parameter name tuple does not match
         ``n_pieces``.
     """
+
+    PARAMS = (
+        ParamDecl("PWEP_1", kind="mjd", prefix="PWEP_"),
+        ParamDecl("PWSTART_1", kind="mjd", prefix="PWSTART_"),
+        ParamDecl("PWSTOP_1", kind="mjd", prefix="PWSTOP_"),
+        ParamDecl("PWPH_1", prefix="PWPH_"),
+        ParamDecl("PWF0_1", prefix="PWF0_"),
+        ParamDecl("PWF1_1", prefix="PWF1_"),
+        ParamDecl("PWF2_1", prefix="PWF2_"),
+    )
 
     n_pieces: int = eqx.field(static=True)
     pwstart_names: tuple[str, ...] = eqx.field(static=True)

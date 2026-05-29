@@ -118,72 +118,68 @@ def raw_params_to_result(
     mask_info: dict[str, MaskInfo] = {}
 
     for rp in raw:
-        if rp.kind is ParamKind.STR:
-            if rp.str_value is not None:
-                metadata[rp.name] = rp.str_value
-            continue
-        if rp.kind is ParamKind.BOOL:
-            if rp.bool_value is not None:
-                bool_params[rp.name] = bool(rp.bool_value)
-            continue
-        if rp.kind is ParamKind.INT:
-            if rp.int_value is not None:
-                int_params[rp.name] = int(rp.int_value)
-            continue
+        match rp.kind:
+            case ParamKind.STR:
+                if rp.str_value is not None:
+                    metadata[rp.name] = rp.str_value
 
-        if rp.kind is ParamKind.MASK:
-            if rp.mask_key is not None:
-                mask_info[rp.name] = MaskInfo(
-                    name=rp.name,
-                    key=rp.mask_key,
-                    key_value=rp.mask_key_value if rp.mask_key_value is not None else "",
-                    key_value2=rp.mask_key_value2,
-                )
-            # EQUAD/ECORR are stored in microseconds; convert to seconds to
-            # match the TOAData.error convention.  All other mask params (JUMP,
-            # EFAC, ...) take the float path (deg->rad is a no-op for them).
-            if rp.name.startswith("EQUAD") or rp.name.startswith("ECORR"):
-                val = float((rp.value * u.Unit(rp.unit)).to(u.s).value)
-                unit_str = "s"
-            else:
-                val, unit_str = _coerce_float(rp.value, rp.unit)
-            names.append(rp.name)
-            values.append(val)
-            units.append(unit_str)
-            frozen_mask.append(rp.frozen)
-            continue
+            case ParamKind.BOOL:
+                if rp.bool_value is not None:
+                    bool_params[rp.name] = bool(rp.bool_value)
 
-        if rp.kind is ParamKind.PAIR:
-            val_a, val_b = rp.value_pair
-            for suffix, val in (("_A", val_a), ("_B", val_b)):
-                names.append(rp.name + suffix)
-                values.append(float(val))
-                units.append(rp.unit)
+            case ParamKind.INT:
+                if rp.int_value is not None:
+                    int_params[rp.name] = int(rp.int_value)
+
+            case ParamKind.MASK:
+                if rp.mask_key is not None:
+                    mask_info[rp.name] = MaskInfo(
+                        name=rp.name,
+                        key=rp.mask_key,
+                        key_value=rp.mask_key_value if rp.mask_key_value is not None else "",
+                        key_value2=rp.mask_key_value2,
+                    )
+                # EQUAD/ECORR are stored in microseconds; convert to seconds to
+                # match the TOAData.error convention.  All other mask params
+                # (JUMP, EFAC, ...) take the float path (deg->rad is a no-op).
+                if rp.name.startswith("EQUAD") or rp.name.startswith("ECORR"):
+                    val = float((rp.value * u.Unit(rp.unit)).to(u.s).value)
+                    unit_str = "s"
+                else:
+                    val, unit_str = _coerce_float(rp.value, rp.unit)
+                names.append(rp.name)
+                values.append(val)
+                units.append(unit_str)
                 frozen_mask.append(rp.frozen)
-            continue
 
-        if rp.kind is ParamKind.MJD:
-            mjd_int, mjd_frac = rp.mjd_split
-            epoch_int_values[rp.name] = float(mjd_int)
-            values.append(float(mjd_frac))
-            units.append("day")
-            names.append(rp.name)
-            frozen_mask.append(rp.frozen)
-            continue
+            case ParamKind.PAIR:
+                val_a, val_b = rp.value_pair
+                for suffix, val in (("_A", val_a), ("_B", val_b)):
+                    names.append(rp.name + suffix)
+                    values.append(float(val))
+                    units.append(rp.unit)
+                    frozen_mask.append(rp.frozen)
 
-        if rp.kind is ParamKind.ANGLE:
-            values.append(float(rp.value))
-            units.append("rad")
-            names.append(rp.name)
-            frozen_mask.append(rp.frozen)
-            continue
+            case ParamKind.MJD:
+                mjd_int, mjd_frac = rp.mjd_split
+                epoch_int_values[rp.name] = float(mjd_int)
+                values.append(float(mjd_frac))
+                units.append("day")
+                names.append(rp.name)
+                frozen_mask.append(rp.frozen)
 
-        # ParamKind.FLOAT
-        val, unit_str = _coerce_float(rp.value, rp.unit)
-        values.append(val)
-        units.append(unit_str)
-        names.append(rp.name)
-        frozen_mask.append(rp.frozen)
+            case ParamKind.ANGLE:
+                values.append(float(rp.value))
+                units.append("rad")
+                names.append(rp.name)
+                frozen_mask.append(rp.frozen)
+
+            case ParamKind.FLOAT:
+                val, unit_str = _coerce_float(rp.value, rp.unit)
+                values.append(val)
+                units.append(unit_str)
+                names.append(rp.name)
+                frozen_mask.append(rp.frozen)
 
     # Semantically-integer floats are exposed via int_params in addition to the
     # ParameterVector (mirrors PINT bridge behaviour).
