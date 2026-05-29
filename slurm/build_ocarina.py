@@ -5,9 +5,11 @@ For each pulsar in the NANOGrav 15yr narrowband release:
 
 1. Strip its .par file to bare-minimum: sky location + spindown + noise.
    Drop binary, DM/DMX, FD, JUMP, chromatic/wavex, glitches.
-2. Generate N uniform-cadence synthetic TOAs (1 µs error, 1400 MHz, GBT):
-   PINT places them on integer pulse phase (leap-second-aware clock chain so
-   they round-trip on reload) and JaxPINT's white-noise model adds the noise.
+2. Generate synthetic TOAs at the *real* per-pulsar sampling — the actual epochs,
+   frequencies, receivers and per-TOA errors from the source .tim — placed on
+   pulse against the stripped model (PINT's leap-aware clock chain, so they
+   round-trip on reload). JaxPINT's white-noise model (per-receiver EFAC/EQUAD on
+   the real errors) then adds heteroscedastic white noise.
 
 Outputs:
     ocarina/par/<orig>.par   76 stripped .par files
@@ -17,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import io
-from collections import Counter
 from glob import glob
 from pathlib import Path
 
@@ -46,11 +47,12 @@ KEEP_TOKENS = {
     # astrometry (Roemer)
     "RAJ", "DECJ", "ELONG", "ELAT",
     "PMRA", "PMDEC", "PMELONG", "PMELAT", "PX",
-    # noise model
+    # noise model: white (EFAC/EQUAD) + red spin noise (RNAMP/RNIDX or TNRed*),
+    # so red-noise-dominated pulsars get their realistic low-frequency limit.
     "EFAC", "EQUAD",
-    # white-only: ECORR + red noise dropped so ocarina_2 matches ocarina's model
+    "RNAMP", "RNIDX", "TNRedAmp", "TNRedGam", "TNRedC",
+    # ECORR (per-epoch white jitter) still dropped; uncomment to include it too.
     # "ECORR",
-    # "RNAMP", "RNIDX", "TNRedAmp", "TNRedGam", "TNRedC",
 }
 
 
@@ -86,52 +88,26 @@ def strip_par(par_path: Path) -> str:
     return "\n".join(out) + "\n"
 
 
-def inspect_tim(tim_path: Path) -> tuple[int, str]:
-    n = 0
-    flag_counter: Counter[str] = Counter()
-    with tim_path.open() as f:
-        for raw in f:
-            stripped = raw.strip()
-            if not stripped:
-                continue
-            head = stripped.split(maxsplit=1)[0]
-            if head in ("FORMAT", "MODE", "SKIP", "NOSKIP", "INCLUDE", "JUMP", "C"):
-                continue
-            if head.startswith("#"):
-                continue
-            tokens = stripped.split()
-            if "-cut" in tokens:
-                continue
-            n += 1
-            for i, t in enumerate(tokens):
-                if t == "-f" and i + 1 < len(tokens):
-                    flag_counter[tokens[i + 1]] += 1
-                    break
-    if not flag_counter:
-        return n, ""
-    return n, flag_counter.most_common(1)[0][0]
+def synthesize(par_text: str, tim_path: Path, key):
+    """Return a PINT TOAs object: real-sampling placement + noise realization.
 
+    PINT generates fake TOAs at the *real* source-.tim sampling — the actual
+    observation epochs, frequencies, receivers (``-f`` flags) and per-TOA errors —
+    placed on integer pulse phase against the stripped model with its full,
+    leap-second-aware clock chain (so the written MJDs round-trip on reload).
+    Using the real sampling gives the array its realistic, heterogeneous sky
+    sensitivity instead of the flat response of a uniform 1 us cadence.
 
-def synthesize(par_text: str, n_toas: int, dominant_flag: str, key):
-    """Return a PINT TOAs object: on-pulse placement + white-noise realization.
-
-    PINT places the TOAs on integer pulse phase using its full, leap-second-aware
-    clock chain, so the written MJDs round-trip exactly on reload. The white noise
-    is drawn from JaxPINT's noise model (identical to the analysis covariance) and
-    applied to the PINT TOAs, so it goes out through PINT's leap-correct writer.
-    (A hand-rolled MJD writer silently scrambled TOAs within a day of each leap
-    second, which corrupted the real-mode CGW matched filter.)
+    The noise is drawn from JaxPINT's noise model over every component the par
+    declares — white (per-receiver EFAC/EQUAD on the real errors) plus red spin
+    noise (PLRedNoise from RNAMP/RNIDX) — and applied via PINT's leap-correct
+    writer. NOTE: real-mode analysis must model the SAME components (white + red);
+    a white-only covariance would read the injected red noise as a spurious signal.
     """
     pint_model = pm.get_model(io.StringIO(par_text))
-    start = float(pint_model.START.value)
-    finish = float(pint_model.FINISH.value)
-    flags = {"f": dominant_flag} if dominant_flag else None
-    pint_toas = psim.make_fake_toas_uniform(
-        startMJD=start, endMJD=finish, ntoas=n_toas,
-        model=pint_model, error=1.0 * u.us,
-        freq=1400.0 * u.MHz, obs="gbt",
+    pint_toas = psim.make_fake_toas_fromtim(
+        str(tim_path), model=pint_model,
         add_noise=False, add_correlated_noise=False,
-        flags=flags,
     )
     toa_data = pint_toas_to_jax(pint_toas, model=pint_model)
     params = pint_model_to_params(pint_model).params
@@ -163,12 +139,11 @@ def main(seed: int, out_dir: Path):
         try:
             simplified = strip_par(par_path)
             (out_dir / "par" / par_path.name).write_text(simplified)
-            n_toas, dominant_flag = inspect_tim(tim_path)
             key = jax.random.fold_in(base_key, i)
-            fake_toas = synthesize(simplified, n_toas, dominant_flag, key)
+            fake_toas = synthesize(simplified, tim_path, key)
             tim_out = out_dir / "tim" / tim_path.name
             fake_toas.write_TOA_file(str(tim_out), format="tempo2")
-            print(f"[{i+1:2d}/{len(par_files)}] {psr_name}: N={n_toas} -f={dominant_flag}")
+            print(f"[{i+1:2d}/{len(par_files)}] {psr_name}: N={fake_toas.ntoas}")
         except Exception as e:
             msg = f"{type(e).__name__}: {e}"
             print(f"[{i+1:2d}/{len(par_files)}] {psr_name}: FAILED — {msg}")

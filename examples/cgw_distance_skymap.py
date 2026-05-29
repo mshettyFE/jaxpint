@@ -188,7 +188,6 @@ def compute_skymap(
     from jaxpint import load_nanograv_pta
     from jaxpint.pta.likelihood import PTAConfig, pta_logL
     from jaxpint.pta.params import GlobalParams
-    from jaxpint.noise.noise_model import NoiseModel
     from jaxpint.bayes import ImproperPrior, marginalize
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import (
@@ -205,11 +204,12 @@ def compute_skymap(
     toa_list = tuple(psrs.toa_data_list[i] for i in keep)
     pp_list = tuple(psrs.pulsar_params_list[i] for i in keep)
     tm_list = tuple(psrs.timing_models[i] for i in keep)
-    # White-noise-only: keep each pulsar's EFAC/EQUAD, drop correlated (ECORR/red).
-    nm_list = tuple(
-        NoiseModel(white_noise=psrs.noise_models[i].white_noise, correlated=())
-        for i in keep
-    )
+    # Full per-pulsar noise as built from the par: white (EFAC/EQUAD) + red
+    # (PLRedNoise). The analysis covariance must match the injected noise
+    # (build_ocarina) — a white-only covariance reads the data's red noise as a
+    # spurious CW signal and breaks real mode, and leaves the expected-mode
+    # sensitivity Y white-only (red-dominated pulsars stay over-weighted).
+    nm_list = tuple(psrs.noise_models[i] for i in keep)
     n_toa_total = int(sum(int(td.n_toas) for td in toa_list))
     _log(f"Loaded {len(names)} pulsars, {n_toa_total} TOAs total.")
 

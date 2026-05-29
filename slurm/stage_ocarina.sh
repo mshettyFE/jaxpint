@@ -10,7 +10,7 @@
 #     bash slurm/stage_ocarina.sh <netid> [local_ocarina_dir]
 #
 # Lands the data at:
-#     /scratch/<netid>/jaxpint-data/<dataset>/{par,tim}/
+#     /scratch/<netid>/jaxpint-data/<dataset>/{par,tim}/  (+ seed.txt if present)
 # where <dataset> mirrors the local directory name (e.g. ocarina, ocarina_2), so
 # multiple seeds can be staged side by side. run_cgw_skymap.sbatch reads the
 # chosen one via $JAXPINT_OCARINA_DIR.
@@ -41,9 +41,17 @@ N_TIM=$(find "${LOCAL_OCARINA}/tim" -name '*.tim' | wc -l | tr -d ' ')
 echo "[stage_ocarina] Local:  ${LOCAL_OCARINA}  (${N_PAR} par, ${N_TIM} tim)"
 echo "[stage_ocarina] Remote: ${NETID}@${DEST_HOST}:${DEST}"
 
+# Always stage par/ and tim/; include seed.txt (build_ocarina's noise-seed
+# provenance) when present so the remote dataset records which draw it is.
+sources=("${LOCAL_OCARINA}/par" "${LOCAL_OCARINA}/tim")
+if [[ -f "${LOCAL_OCARINA}/seed.txt" ]]; then
+    sources+=("${LOCAL_OCARINA}/seed.txt")
+else
+    echo "[stage_ocarina] WARNING: no seed.txt in ${LOCAL_OCARINA} (staging par/tim only)." >&2
+fi
+
 ssh "${NETID}@${DEST_HOST}" "mkdir -p '${DEST}'"
-rsync -avh --progress "${LOCAL_OCARINA}/par" "${LOCAL_OCARINA}/tim" \
-    "${NETID}@${DEST_HOST}:${DEST}/"
+rsync -avh --progress "${sources[@]}" "${NETID}@${DEST_HOST}:${DEST}/"
 
 echo
 echo "[stage_ocarina] Done. On Torch, the sbatch will read:"
