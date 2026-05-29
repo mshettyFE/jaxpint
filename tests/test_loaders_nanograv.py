@@ -192,99 +192,82 @@ def test_load_nanograv_pta_does_not_synthesize_when_tnredamp_set(tmp_path):
     assert params.names.count("TNREDGAM") == 1
 
 
-class _FakeParam:
-    """Minimal stand-in for a PINT parameter object — only ``value`` and
-    ``frozen`` are read by the alias synthesis functions."""
-
-    def __init__(self, value, frozen=True):
-        self.value = value
-        self.frozen = frozen
-
-
-class _FakeModel:
-    """Bag of attributes; ``getattr(model, name, None)`` returns the param
-    or ``None``. Mirrors how ``synthesize_*`` reads PINT models."""
-
-    def __init__(self, **params):
-        for k, v in params.items():
-            setattr(self, k, v)
-
-
 def test_synthesize_pb_from_fb0():
-    """FB0 only → PB synthesized as 1 / (FB0 * 86400) days."""
-    from jaxpint.bridge._aliases import synthesize_pb_from_fb
+    """FB0 only → PB synthesized as 1 / (FB0 * 86400) days, appended to the list."""
+    from jaxpint.par import ParamKind, RawParam
+    from jaxpint.par.aliases import synthesize_pb_from_fb
 
     fb0_hz = 8.3387216e-5  # J0023+0923 value
-    model = _FakeModel(FB0=_FakeParam(fb0_hz, frozen=False))
-    names, values, units, frozen = [], [], [], []
-    synthesize_pb_from_fb(model, names, values, units, frozen)
+    raw = [RawParam("FB0", ParamKind.FLOAT, value=fb0_hz, unit="Hz", frozen=False)]
+    synthesize_pb_from_fb(raw)
+    synth = raw[1:]
 
-    assert names == ["PB"]
-    assert abs(values[0] - 1.0 / (fb0_hz * 86400.0)) < 1e-15
-    assert units == ["d"]
-    assert frozen == [False]
+    assert [r.name for r in synth] == ["PB"]
+    assert abs(synth[0].value - 1.0 / (fb0_hz * 86400.0)) < 1e-15
+    assert synth[0].unit == "d"
+    assert synth[0].frozen is False
 
 
 def test_synthesize_pbdot_from_fb1():
     """FB0 and FB1 set → both PB and PBDOT synthesized."""
-    from jaxpint.bridge._aliases import synthesize_pb_from_fb
+    from jaxpint.par import ParamKind, RawParam
+    from jaxpint.par.aliases import synthesize_pb_from_fb
 
     fb0_hz = 8.3387216e-5
     fb1 = 3.6553667e-20
-    model = _FakeModel(
-        FB0=_FakeParam(fb0_hz, frozen=False),
-        FB1=_FakeParam(fb1, frozen=True),
-    )
-    names, values, units, frozen = [], [], [], []
-    synthesize_pb_from_fb(model, names, values, units, frozen)
+    raw = [
+        RawParam("FB0", ParamKind.FLOAT, value=fb0_hz, unit="Hz", frozen=False),
+        RawParam("FB1", ParamKind.FLOAT, value=fb1, unit="Hz / s", frozen=True),
+    ]
+    synthesize_pb_from_fb(raw)
+    synth = raw[2:]
 
-    assert names == ["PB", "PBDOT"]
-    assert abs(values[0] - 1.0 / (fb0_hz * 86400.0)) < 1e-15
-    assert abs(values[1] - (-fb1 / (fb0_hz * fb0_hz))) < 1e-25
-    assert units == ["d", "s / s"]
-    assert frozen == [False, True]
+    assert [r.name for r in synth] == ["PB", "PBDOT"]
+    assert abs(synth[0].value - 1.0 / (fb0_hz * 86400.0)) < 1e-15
+    assert abs(synth[1].value - (-fb1 / (fb0_hz * fb0_hz))) < 1e-25
+    assert [r.unit for r in synth] == ["d", "s / s"]
+    assert [r.frozen for r in synth] == [False, True]
 
 
 def test_synthesize_pb_skips_when_pb_set():
-    """If PB is already set, synthesis must not fire (would otherwise
+    """If PB is already present, synthesis must not fire (would otherwise
     duplicate PB in the parameter vector)."""
-    from jaxpint.bridge._aliases import synthesize_pb_from_fb
+    from jaxpint.par import ParamKind, RawParam
+    from jaxpint.par.aliases import synthesize_pb_from_fb
 
-    model = _FakeModel(
-        FB0=_FakeParam(8.3387216e-5),
-        PB=_FakeParam(0.139),  # days
-    )
-    names, values, units, frozen = [], [], [], []
-    synthesize_pb_from_fb(model, names, values, units, frozen)
+    raw = [
+        RawParam("FB0", ParamKind.FLOAT, value=8.3387216e-5, unit="Hz"),
+        RawParam("PB", ParamKind.FLOAT, value=0.139, unit="d"),  # days
+    ]
+    synthesize_pb_from_fb(raw)
 
-    assert names == []
-    assert values == []
+    assert [r.name for r in raw] == ["FB0", "PB"]  # nothing appended
 
 
 def test_synthesize_pbdot_skips_when_pbdot_set():
-    """PB synthesized, but PBDOT already set → don't overwrite."""
-    from jaxpint.bridge._aliases import synthesize_pb_from_fb
+    """PB synthesized, but PBDOT already present → don't overwrite."""
+    from jaxpint.par import ParamKind, RawParam
+    from jaxpint.par.aliases import synthesize_pb_from_fb
 
-    model = _FakeModel(
-        FB0=_FakeParam(8.3387216e-5),
-        FB1=_FakeParam(3.6553667e-20),
-        PBDOT=_FakeParam(1e-12),
-    )
-    names, values, units, frozen = [], [], [], []
-    synthesize_pb_from_fb(model, names, values, units, frozen)
+    raw = [
+        RawParam("FB0", ParamKind.FLOAT, value=8.3387216e-5, unit="Hz"),
+        RawParam("FB1", ParamKind.FLOAT, value=3.6553667e-20, unit="Hz / s"),
+        RawParam("PBDOT", ParamKind.FLOAT, value=1e-12, unit="s / s"),
+    ]
+    synthesize_pb_from_fb(raw)
+    synth = raw[3:]
 
-    assert names == ["PB"]
+    assert [r.name for r in synth] == ["PB"]
 
 
 def test_synthesize_pb_noop_without_fb0():
     """No FB0 → no synthesis, regardless of other state."""
-    from jaxpint.bridge._aliases import synthesize_pb_from_fb
+    from jaxpint.par.aliases import synthesize_pb_from_fb
 
-    model = _FakeModel()
-    names, values, units, frozen = [], [], [], []
-    synthesize_pb_from_fb(model, names, values, units, frozen)
+    raw = []
+    synthesize_pb_from_fb(raw)
 
-    assert names == []
+    assert raw == []
 
 
 def _ell1h_par_result(*, h3=False, h4=False, stigma=False, nharms=None):
@@ -292,8 +275,7 @@ def _ell1h_par_result(*, h3=False, h4=False, stigma=False, nharms=None):
     only the orbital params the ELL1H builder reads — H3/H4/STIGMA are
     appended only when the matching kwarg is set."""
     import jax.numpy as jnp
-    from jaxpint.bridge._param_builder import ParResult
-    from jaxpint.bridge._registry import BinaryModel
+    from jaxpint.par import BinaryModel, ParResult
     from jaxpint.types import ParameterVector
 
     names = ["PB", "TASC", "A1", "EPS1", "EPS2"]
