@@ -20,6 +20,7 @@ from pint.observatory.topo_obs import TopoObs
 from pint.toa import TOAs
 
 from jaxpint.constants import JD_MJD_OFFSET, PLANETS
+from jaxpint.utils import split_longdouble_days
 from jaxpint.types import TOAData
 
 log = logging.getLogger(__name__)
@@ -41,18 +42,6 @@ def _check_column_unit(table, colname: str, expected_unit) -> None:
     if hasattr(col, "unit") and col.unit is not None:
         # .to() raises UnitConversionError if dimensions don't match
         col.unit.to(expected_unit)
-
-
-def _split_mjd_longdouble(
-    ld_array: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Split a longdouble MJD array into float64 ``(int_day, frac_day)``.
-
-    ``frac_day`` is in [0, 1).
-    """
-    int_part = np.floor(ld_array)
-    frac_part = ld_array - int_part
-    return int_part.astype(np.float64), frac_part.astype(np.float64)
 
 
 def _split_mjd_time(
@@ -140,7 +129,7 @@ def extract_tzr_toa(
 
     tz_tbl = tz_toas.table
 
-    tdb_int, tdb_frac = _split_mjd_longdouble(
+    tdb_int, tdb_frac = split_longdouble_days(
         np.asarray(tz_tbl["tdbld"])
     )
 
@@ -238,7 +227,7 @@ def pint_toas_to_jax(
     mjd_int, mjd_frac = _split_mjd_time(tbl["mjd"])
 
     # -- TDB split -------------------------------------------------------
-    tdb_int, tdb_frac = _split_mjd_longdouble(np.asarray(tbl["tdbld"]))
+    tdb_int, tdb_frac = split_longdouble_days(np.asarray(tbl["tdbld"]))
 
     # -- Unit-validated scalar columns -----------------------------------
     error_s = toas.get_errors().to(u.s).value

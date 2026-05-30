@@ -21,12 +21,13 @@ class UnknownObservatory(KeyError):
 
 @dataclass(frozen=True)
 class ObsClockConfig:
-    """Everything the clock chain needs about one observatory."""
+    """Everything the clock + time/geometry stages need about one observatory."""
 
     canonical: str
     clock_files: tuple[str, ...]   # site clock-file names (may be empty, e.g. chime)
     apply_gps2utc: bool
     timescale: str                 # "utc" | "tdb" (tdb gates BIPM off, e.g. barycenter)
+    itrf_xyz: tuple[float, float, float] | None = None  # geocentric metres; None for barycenter
 
 
 @functools.cache
@@ -63,9 +64,11 @@ def resolve_observatory(token: str) -> ObsClockConfig:
     if canonical is None:
         raise UnknownObservatory(f"unknown observatory token {token!r}")
     entry = read_metadata()["observatories"][canonical]
+    xyz = entry.get("itrf_xyz")
     return ObsClockConfig(
         canonical=canonical,
         clock_files=tuple(entry.get("clock_file", [])),
         apply_gps2utc=bool(entry.get("apply_gps2utc", True)),
         timescale=str(entry.get("timescale", "utc")).lower(),
+        itrf_xyz=tuple(xyz) if xyz is not None else None,
     )

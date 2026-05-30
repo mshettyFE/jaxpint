@@ -113,10 +113,15 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3573741.1,
+        -269156.74,
+        5258407.3
+      ],
       "aliases": [
+        "a",
         "acreroad",
-        "ar",
-        "a"
+        "ar"
       ],
       "tempo_code": null,
       "itoa_code": null
@@ -125,6 +130,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        918091.6472072796,
+        -4346129.702203057,
+        4562012.861165226
+      ],
       "aliases": [
         "ar",
         "aro"
@@ -138,6 +148,11 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        2390487.08,
+        -5564731.357,
+        1994720.633
+      ],
       "aliases": [
         "3",
         "aoutc",
@@ -152,6 +167,11 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        2390490.0,
+        -5564764.0,
+        1994727.0
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -160,6 +180,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -2524263.18,
+        -4123529.78,
+        4147966.36
+      ],
       "aliases": [
         "hcro"
       ],
@@ -170,6 +195,11 @@
       "clock_file": [],
       "apply_gps2utc": false,
       "timescale": "utc",
+      "itrf_xyz": [
+        6378138.0,
+        0.0,
+        0.0
+      ],
       "aliases": [
         "axi"
       ],
@@ -180,11 +210,12 @@
       "clock_file": [],
       "apply_gps2utc": false,
       "timescale": "tdb",
+      "itrf_xyz": null,
       "aliases": [
-        "bat",
         "bary",
-        "ssb",
-        "@"
+        "bat",
+        "@",
+        "ssb"
       ],
       "tempo_code": null,
       "itoa_code": null
@@ -193,6 +224,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3919982.752,
+        2651.982,
+        5013849.826
+      ],
       "aliases": [
         "cam"
       ],
@@ -203,6 +239,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        1081906.02007569,
+        -4358005.62381148,
+        4514986.16069416
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -211,6 +252,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -2059166.313,
+        -3621302.972,
+        4814304.113
+      ],
       "aliases": [
         "ch",
         "y"
@@ -222,6 +268,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3828714.504,
+        -169458.987,
+        5080647.749
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -230,6 +281,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4034101.901,
+        487012.401,
+        4900230.21
+      ],
       "aliases": [
         "eflfr"
       ],
@@ -240,6 +296,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4034101.901,
+        487012.401,
+        4900230.21
+      ],
       "aliases": [
         "eflfrhba"
       ],
@@ -250,6 +311,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4034038.635,
+        487026.223,
+        4900280.057
+      ],
       "aliases": [
         "eflfrlba"
       ],
@@ -260,6 +326,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4034038.635,
+        487026.223,
+        4900280.057
+      ],
       "aliases": [
         "eflfrlbh"
       ],
@@ -270,6 +341,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4152568.416,
+        828788.802,
+        4754361.926
+      ],
       "aliases": [
         "uwlfr"
       ],
@@ -280,6 +356,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4152568.416,
+        828788.802,
+        4754361.926
+      ],
       "aliases": [
         "uwlfrhba"
       ],
@@ -290,6 +371,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4152561.068,
+        828868.725,
+        4754356.878
+      ],
       "aliases": [
         "uwlfrlba"
       ],
@@ -300,6 +386,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4152561.068,
+        828868.725,
+        4754356.878
+      ],
       "aliases": [
         "uwlfrlbh"
       ],
@@ -310,6 +401,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3940296.126,
+        816722.532,
+        4932394.152
+      ],
       "aliases": [
         "tblfr"
       ],
@@ -320,6 +416,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3940296.126,
+        816722.532,
+        4932394.152
+      ],
       "aliases": [
         "tblfrhba"
       ],
@@ -330,6 +431,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3940285.328,
+        816802.001,
+        4932392.757
+      ],
       "aliases": [
         "tblfrlba"
       ],
@@ -340,6 +446,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3940285.328,
+        816802.001,
+        4932392.757
+      ],
       "aliases": [
         "tblfrlbh"
       ],
@@ -350,6 +461,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3796380.254,
+        877613.809,
+        5032712.272
+      ],
       "aliases": [
         "polfr"
       ],
@@ -360,6 +476,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3796380.254,
+        877613.809,
+        5032712.272
+      ],
       "aliases": [
         "polfrhba"
       ],
@@ -370,6 +491,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3796327.609,
+        877591.315,
+        5032757.252
+      ],
       "aliases": [
         "polfrlba"
       ],
@@ -380,6 +506,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3796327.609,
+        877591.315,
+        5032757.252
+      ],
       "aliases": [
         "polfrlbh"
       ],
@@ -390,6 +521,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4005681.407,
+        450968.304,
+        4926457.94
+      ],
       "aliases": [
         "julfr"
       ],
@@ -400,6 +536,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4005681.407,
+        450968.304,
+        4926457.94
+      ],
       "aliases": [
         "julfrhba"
       ],
@@ -410,6 +551,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4005681.742,
+        450968.282,
+        4926457.67
+      ],
       "aliases": [
         "julfrlba"
       ],
@@ -420,6 +566,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4005681.742,
+        450968.282,
+        4926457.67
+      ],
       "aliases": [
         "julfrlbh"
       ],
@@ -430,6 +581,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3727218.128,
+        655108.821,
+        5117002.847
+      ],
       "aliases": [
         "ndlfr"
       ],
@@ -440,6 +596,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3727218.128,
+        655108.821,
+        5117002.847
+      ],
       "aliases": [
         "ndlfrhba"
       ],
@@ -450,6 +611,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3727207.778,
+        655184.9,
+        5117000.625
+      ],
       "aliases": [
         "ndlfrlba"
       ],
@@ -460,6 +626,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3727207.778,
+        655184.9,
+        5117000.625
+      ],
       "aliases": [
         "ndlfrlbh"
       ],
@@ -470,6 +641,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3923069.135,
+        -146804.404,
+        5009320.57
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -478,6 +654,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -2058897.5725006417,
+        -3621371.264826613,
+        4814353.577678314
+      ],
       "aliases": [
         "dr"
       ],
@@ -488,6 +669,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -4460892.6,
+        2682358.9,
+        -3674756.0
+      ],
       "aliases": [
         "tid43"
       ],
@@ -500,10 +686,15 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4033947.146,
+        486990.898,
+        4900431.067
+      ],
       "aliases": [
+        "ef",
         "g",
-        "eff",
-        "ef"
+        "eff"
       ],
       "tempo_code": "g",
       "itoa_code": "ef"
@@ -514,6 +705,11 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4033949.5,
+        486989.4,
+        4900430.8
+      ],
       "aliases": [
         "effix"
       ],
@@ -526,6 +722,11 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4033949.5,
+        486989.4,
+        4900430.8
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -536,6 +737,11 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -1668557.0,
+        5506838.0,
+        2744934.0
+      ],
       "aliases": [
         "k",
         "fa"
@@ -547,6 +753,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        2136819.194,
+        810039.5757,
+        5935299.0536
+      ],
       "aliases": [
         "filfr"
       ],
@@ -557,6 +768,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        2136819.194,
+        810039.5757,
+        5935299.0536
+      ],
       "aliases": [
         "filfrhba"
       ],
@@ -567,6 +783,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        2136833.225,
+        810088.74,
+        5935285.279
+      ],
       "aliases": [
         "filfrlba"
       ],
@@ -577,6 +798,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        2136833.225,
+        810088.74,
+        5935285.279
+      ],
       "aliases": [
         "filfrlbh"
       ],
@@ -587,6 +813,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4324017.054,
+        165545.16,
+        4670271.072
+      ],
       "aliases": [
         "frlfr"
       ],
@@ -597,6 +828,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4324017.054,
+        165545.16,
+        4670271.072
+      ],
       "aliases": [
         "frlfrhba"
       ],
@@ -607,6 +843,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4323980.155,
+        165608.408,
+        4670302.803
+      ],
       "aliases": [
         "frlfrlba"
       ],
@@ -617,6 +858,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4323980.155,
+        165608.408,
+        4670302.803
+      ],
       "aliases": [
         "frlfrlbh"
       ],
@@ -629,6 +875,11 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        882872.57,
+        -4924552.73,
+        3944154.92
+      ],
       "aliases": [
         "g1",
         "a"
@@ -640,9 +891,14 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        881856.58,
+        -4925311.86,
+        3943459.7
+      ],
       "aliases": [
-        "g3",
-        "9"
+        "9",
+        "g3"
       ],
       "tempo_code": "9",
       "itoa_code": "g3"
@@ -653,9 +909,14 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        882315.33,
+        -4925191.41,
+        3943414.05
+      ],
       "aliases": [
-        "g8",
-        "b"
+        "b",
+        "g8"
       ],
       "tempo_code": "b",
       "itoa_code": "g8"
@@ -664,6 +925,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        883772.7974,
+        -4924385.5975,
+        3944042.4991
+      ],
       "aliases": [
         "g2"
       ],
@@ -676,6 +942,11 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        882589.289,
+        -4924872.368,
+        3943729.418
+      ],
       "aliases": [
         "gb",
         "1"
@@ -689,6 +960,11 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        882589.65,
+        -4924872.32,
+        3943729.348
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -697,6 +973,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3856309.9493,
+        666598.9563,
+        5019641.4172
+      ],
       "aliases": [
         "geohf"
       ],
@@ -707,12 +988,17 @@
       "clock_file": [],
       "apply_gps2utc": false,
       "timescale": "utc",
+      "itrf_xyz": [
+        0.0,
+        0.0,
+        0.0
+      ],
       "aliases": [
-        "o",
         "geo_nogps",
         "0",
         "geo",
-        "coe"
+        "coe",
+        "o"
       ],
       "tempo_code": null,
       "itoa_code": null
@@ -721,6 +1007,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        0.0,
+        0.0,
+        0.0
+      ],
       "aliases": [
         "geo_gps",
         "coe_gps"
@@ -732,6 +1023,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        1656342.3,
+        5797947.77,
+        2073243.16
+      ],
       "aliases": [
         "gm",
         "r"
@@ -743,6 +1039,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -2353621.22,
+        -4641341.52,
+        3677052.352
+      ],
       "aliases": [
         "gs"
       ],
@@ -753,6 +1054,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        6346273.531,
+        -33779.7127,
+        634844.9454
+      ],
       "aliases": [
         "grao"
       ],
@@ -763,6 +1069,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3788815.62,
+        1131748.336,
+        5035101.19
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -771,6 +1082,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        5085442.78,
+        2668263.483,
+        -2768697.034
+      ],
       "aliases": [
         "hart"
       ],
@@ -781,6 +1097,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -767864.42219771,
+        -5987810.65796205,
+        2064148.57332404
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -789,6 +1110,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        5622462.3793,
+        1665449.2317,
+        -2505096.8054
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -797,9 +1123,14 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -3950077.96,
+        2522377.31,
+        -4311667.52
+      ],
       "aliases": [
-        "ho",
-        "4"
+        "4",
+        "ho"
       ],
       "tempo_code": "4",
       "itoa_code": "ho"
@@ -808,6 +1139,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        2765357.08,
+        -4449628.98,
+        -3625726.47
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -816,6 +1152,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        2765322.49,
+        -4449569.52,
+        -3625825.14
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -824,6 +1165,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3822294.825,
+        -153862.275,
+        5085987.071
+      ],
       "aliases": [
         "jb42"
       ],
@@ -834,10 +1180,15 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3822846.76,
+        -153802.28,
+        5086285.9
+      ],
       "aliases": [
-        "j2",
         "jbmk2",
-        "h"
+        "h",
+        "j2"
       ],
       "tempo_code": "h",
       "itoa_code": "j2"
@@ -846,6 +1197,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3822846.76,
+        -153802.28,
+        5086285.9
+      ],
       "aliases": [
         "jbmk2dfb"
       ],
@@ -856,6 +1212,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3822846.76,
+        -153802.28,
+        5086285.9
+      ],
       "aliases": [
         "jbmk2roach"
       ],
@@ -866,6 +1227,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3822625.769,
+        -154105.255,
+        5086486.256
+      ],
       "aliases": [
         "jboafb"
       ],
@@ -879,6 +1245,11 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3822625.769,
+        -154105.255,
+        5086486.256
+      ],
       "aliases": [
         "jbodfb"
       ],
@@ -892,6 +1263,11 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3822625.769,
+        -154105.255,
+        5086486.256
+      ],
       "aliases": [
         "jboroach"
       ],
@@ -904,9 +1280,14 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3822625.769,
+        -154105.255,
+        5086486.256
+      ],
       "aliases": [
-        "8",
-        "jb"
+        "jb",
+        "8"
       ],
       "tempo_code": "8",
       "itoa_code": "jb"
@@ -917,6 +1298,11 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3822626.04,
+        -154105.65,
+        5086486.04
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -925,6 +1311,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3822252.643,
+        -153995.683,
+        5086051.443
+      ],
       "aliases": [
         "jbm4"
       ],
@@ -935,6 +1326,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -3777336.024,
+        3484898.411,
+        3765313.697
+      ],
       "aliases": [
         "lcgt",
         "k1"
@@ -946,6 +1342,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        5109943.105,
+        2003650.7359,
+        -3239908.3195
+      ],
       "aliases": [
         "k7"
       ],
@@ -956,6 +1357,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3859711.492,
+        -201995.082,
+        5056134.285
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -964,9 +1370,14 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        5327021.651,
+        -1719555.576,
+        3051967.932
+      ],
       "aliases": [
-        "lapalma",
-        "lap"
+        "lap",
+        "lapalma"
       ],
       "tempo_code": null,
       "itoa_code": null
@@ -978,6 +1389,11 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4033949.5,
+        486989.4,
+        4900430.8
+      ],
       "aliases": [
         "leap"
       ],
@@ -988,6 +1404,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -2161414.9264,
+        -3834695.1789,
+        4600350.2266
+      ],
       "aliases": [
         "h1",
         "hanford"
@@ -999,6 +1420,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -74276.0447,
+        -5496283.7197,
+        3224257.0174
+      ],
       "aliases": [
         "l1",
         "livingston"
@@ -1010,6 +1436,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3826577.462,
+        461022.624,
+        5064892.526
+      ],
       "aliases": [
         "lf",
         "t"
@@ -1021,6 +1452,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        5326832.7629,
+        -1719636.1588,
+        3051795.1913
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -1029,9 +1465,14 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -1602196.6,
+        -5042313.47,
+        3553971.51
+      ],
       "aliases": [
-        "lw",
-        "x"
+        "x",
+        "lw"
       ],
       "tempo_code": "x",
       "itoa_code": "lw"
@@ -1040,9 +1481,14 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -1531155.54418,
+        -5045324.30517,
+        3579583.8945
+      ],
       "aliases": [
-        "lwasv",
-        "ls"
+        "ls",
+        "lwasv"
       ],
       "tempo_code": null,
       "itoa_code": "ls"
@@ -1051,6 +1497,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        5326878.7967,
+        -1719509.5201,
+        3051884.5175
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -1061,9 +1512,14 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        5109360.133,
+        2006852.586,
+        -3238948.127
+      ],
       "aliases": [
-        "mk",
-        "m"
+        "m",
+        "mk"
       ],
       "tempo_code": "m",
       "itoa_code": "mk"
@@ -1072,6 +1528,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        383395.727,
+        -173759.585,
+        5077751.313
+      ],
       "aliases": [
         "jbmk3"
       ],
@@ -1084,9 +1545,14 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -4483311.64,
+        2648815.92,
+        -3671909.31
+      ],
       "aliases": [
-        "e",
-        "mo"
+        "mo",
+        "e"
       ],
       "tempo_code": "e",
       "itoa_code": "mo"
@@ -1095,6 +1561,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -2559454.08,
+        5095372.14,
+        -2849057.18
+      ],
       "aliases": [
         "u",
         "mw"
@@ -1106,10 +1577,15 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4324165.81,
+        165927.11,
+        4670132.83
+      ],
       "aliases": [
         "ncy",
-        "nc",
-        "f"
+        "f",
+        "nc"
       ],
       "tempo_code": "f",
       "itoa_code": "nc"
@@ -1118,6 +1594,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        228310.702,
+        4631922.905,
+        4367064.059
+      ],
       "aliases": [
         "ns"
       ],
@@ -1128,6 +1609,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -4752329.7,
+        2790505.934,
+        -3200483.747
+      ],
       "aliases": [
         "atca"
       ],
@@ -1141,9 +1627,14 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4324165.81,
+        165927.11,
+        4670132.83
+      ],
       "aliases": [
-        "nuppi",
-        "w"
+        "w",
+        "nuppi"
       ],
       "tempo_code": null,
       "itoa_code": null
@@ -1152,6 +1643,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4323980.285,
+        165608.799,
+        4670302.65
+      ],
       "aliases": [],
       "tempo_code": null,
       "itoa_code": null
@@ -1160,9 +1656,14 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4461242.882451464,
+        919559.8351226494,
+        4449633.220012489
+      ],
       "aliases": [
-        "bo",
-        "d"
+        "d",
+        "bo"
       ],
       "tempo_code": "d",
       "itoa_code": "bo"
@@ -1171,6 +1672,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4324165.81,
+        165927.11,
+        4670132.83
+      ],
       "aliases": [
         "obspm"
       ],
@@ -1181,6 +1687,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        1442712.95,
+        6087044.73,
+        1251052.35
+      ],
       "aliases": [
         "or"
       ],
@@ -1193,10 +1704,15 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -4554231.5,
+        2816759.1,
+        -3454036.3
+      ],
       "aliases": [
-        "7",
         "pk",
-        "pks"
+        "pks",
+        "7"
       ],
       "tempo_code": "7",
       "itoa_code": "pk"
@@ -1205,6 +1721,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        5088964.0,
+        -301689.8,
+        3825017.0
+      ],
       "aliases": [
         "v",
         "pv"
@@ -1216,6 +1737,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        1288748.38,
+        -4694221.77,
+        4107418.8
+      ],
       "aliases": [
         "5",
         "pr"
@@ -1227,6 +1753,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -5461997.8,
+        -2412559.0,
+        2243024.0
+      ],
       "aliases": [
         "p",
         "ps"
@@ -1238,9 +1769,14 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        1430913.3496148302,
+        -4495711.383965823,
+        4278113.974517222
+      ],
       "aliases": [
-        "qu",
-        "2"
+        "2",
+        "qu"
       ],
       "tempo_code": "2",
       "itoa_code": "qu"
@@ -1249,6 +1785,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3370272.092,
+        712125.596,
+        5349990.934
+      ],
       "aliases": [
         "onlfr"
       ],
@@ -1259,6 +1800,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3370272.092,
+        712125.596,
+        5349990.934
+      ],
       "aliases": [
         "onlfrhba"
       ],
@@ -1269,6 +1815,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3370287.366,
+        712053.586,
+        5349991.228
+      ],
       "aliases": [
         "onlfrlba"
       ],
@@ -1279,6 +1830,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3370287.366,
+        712053.586,
+        5349991.228
+      ],
       "aliases": [
         "onlfrlbh"
       ],
@@ -1289,6 +1845,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -2826711.951,
+        4679231.627,
+        3274665.675
+      ],
       "aliases": [
         "s",
         "sh"
@@ -1300,6 +1861,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4865182.766,
+        791922.689,
+        4035137.174
+      ],
       "aliases": [
         "sr",
         "z"
@@ -1311,6 +1877,7 @@
       "clock_file": [],
       "apply_gps2utc": false,
       "timescale": "utc",
+      "itrf_xyz": null,
       "aliases": [
         "stl_geo",
         "spacecraft"
@@ -1322,6 +1889,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3817176.557,
+        -162921.17,
+        5089462.046
+      ],
       "aliases": [
         "pickmere"
       ],
@@ -1332,6 +1904,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        228310.702,
+        4631922.905,
+        4367064.059
+      ],
       "aliases": [
         "ns"
       ],
@@ -1342,6 +1919,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4008462.28,
+        -100376.948,
+        4943716.6
+      ],
       "aliases": [
         "uklfr"
       ],
@@ -1352,6 +1934,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4008462.28,
+        -100376.948,
+        4943716.6
+      ],
       "aliases": [
         "uklfrhba"
       ],
@@ -1362,6 +1949,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4008438.796,
+        -100310.064,
+        4943735.554
+      ],
       "aliases": [
         "uklfrlba"
       ],
@@ -1372,6 +1964,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4008438.796,
+        -100310.064,
+        4943735.554
+      ],
       "aliases": [
         "uklfrlbh"
       ],
@@ -1382,6 +1979,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3307865.236,
+        2487350.541,
+        4836939.784
+      ],
       "aliases": [
         "utr2"
       ],
@@ -1392,6 +1994,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        4546374.099,
+        842989.6976,
+        4378576.9624
+      ],
       "aliases": [
         "v1"
       ],
@@ -1404,10 +2011,15 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -1601192.0,
+        -5041981.4,
+        3554871.4
+      ],
       "aliases": [
-        "vl",
+        "jvla",
         "6",
-        "jvla"
+        "vl"
       ],
       "tempo_code": "6",
       "itoa_code": "vl"
@@ -1416,9 +2028,14 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -1601135.5133304405,
+        -5042005.480977412,
+        3554875.076856462
+      ],
       "aliases": [
-        "c",
-        "v2"
+        "v2",
+        "c"
       ],
       "tempo_code": "c",
       "itoa_code": "v2"
@@ -1427,6 +2044,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -5115324.399,
+        477843.305,
+        -3767192.886
+      ],
       "aliases": [
         "wark12m"
       ],
@@ -1437,6 +2059,11 @@
       "clock_file": [],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        -5115425.6,
+        477880.31,
+        -3767042.81
+      ],
       "aliases": [
         "wark30m"
       ],
@@ -1449,10 +2076,15 @@
       ],
       "apply_gps2utc": true,
       "timescale": "utc",
+      "itrf_xyz": [
+        3828445.659,
+        445223.6,
+        5064921.5677
+      ],
       "aliases": [
-        "i",
+        "we",
         "ws",
-        "we"
+        "i"
       ],
       "tempo_code": "i",
       "itoa_code": "ws"

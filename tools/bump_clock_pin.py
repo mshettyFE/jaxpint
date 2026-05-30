@@ -50,6 +50,21 @@ def _fmt_for(name: str, declared: str | None) -> str:
     return _FORMAT_BY_EXT.get(Path(name).suffix, "tempo2")
 
 
+def _itrf_xyz(obs):
+    """Observatory geocentric ITRF xyz in metres, or None (e.g. barycenter)."""
+    try:
+        loc = obs.earth_location_itrf()
+    except Exception:
+        return None
+    if loc is None:
+        return None
+    return [
+        float(loc.x.to_value("m")),
+        float(loc.y.to_value("m")),
+        float(loc.z.to_value("m")),
+    ]
+
+
 def generate_metadata() -> dict:
     import pint  # noqa: F401
     import pint.observatory.special_locations  # noqa: F401  registers bary/geo
@@ -91,6 +106,7 @@ def generate_metadata() -> dict:
             "clock_file": [fn for fn, _ in clock_files],
             "apply_gps2utc": bool(getattr(obs, "apply_gps2utc", True)),
             "timescale": str(getattr(obs, "timescale", "utc")).lower(),
+            "itrf_xyz": _itrf_xyz(obs),  # metres; None for barycenter
             "aliases": [str(a).lower() for a in (getattr(obs, "aliases", None) or [])],
             "tempo_code": (str(entry["tempo_code"]).lower()
                            if entry.get("tempo_code") else None),
