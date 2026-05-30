@@ -23,6 +23,25 @@ from jaxpint.dual_float import DualFloat
 
 
 # ---------------------------------------------------------------------------
+# Longdouble MJD split
+# ---------------------------------------------------------------------------
+
+def split_longdouble_days(
+    ld_array: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Split a longdouble day value into float64 ``(int_day, frac_day)``.
+
+    The integer/fractional split is performed in extended (longdouble)
+    precision *before* casting to float64, which is the whole point: a single
+    float64 cannot hold an absolute MJD (~60000) to sub-microsecond precision,
+    but the two-part ``(int, frac)`` form can.  ``frac_day`` is in [0, 1).
+    """
+    int_part = np.floor(ld_array)
+    frac_part = ld_array - int_part
+    return int_part.astype(np.float64), frac_part.astype(np.float64)
+
+
+# ---------------------------------------------------------------------------
 # Taylor polynomial evaluation
 # ---------------------------------------------------------------------------
 
