@@ -34,6 +34,7 @@ from ..par.components import Component
 from ..par.result import ParResult
 from ..tim import read_tim
 from ..types import TOAData
+from ._masks import select_toa_mask
 
 
 @dataclass
@@ -56,6 +57,10 @@ class _Core:
     obs_names: tuple
     obs_indices: np.ndarray
     n_toas: int
+    # For native flag-mask matching (select_toa_mask): the parsed TOAs and their
+    # per-TOA canonical observatory names.
+    raw_toas: list
+    obs_canonical: list
 
 
 def _flag_floats(toas, key):
@@ -145,6 +150,7 @@ def topocentric_core(
         ssb_obs_pos=ssb_obs_pos, ssb_obs_vel=ssb_obs_vel, obs_sun_pos=obs_sun_pos,
         planet_positions=planet_positions, dm_values=dm_values, dm_errors=dm_errors,
         obs_names=uniq, obs_indices=obs_indices, n_toas=n,
+        raw_toas=toas, obs_canonical=obs_canon,
     )
 
 
@@ -193,10 +199,34 @@ def native_toas_to_jax(
             )
         )
 
-    return _assemble(core, freq, to_jnp, planet_positions=core.planet_positions)
+    flag_masks = _build_flag_masks(core, par_result)
+    return _assemble(
+        core, freq, to_jnp, planet_positions=core.planet_positions,
+        flag_masks=flag_masks,
+    )
 
 
-def _assemble(core, freq, to_jnp, *, planet_positions):
+def _build_flag_masks(core, par_result: Optional[ParResult]) -> dict:
+    """Boolean TOA masks for every masked parameter in ``par_result.mask_info``.
+
+    An entry is produced for *every* masked parameter (not just those with
+    matches): the noise/jump components index ``flag_masks[name]`` directly, so a
+    missing key is a KeyError.
+    """
+    if par_result is None or not par_result.mask_info:
+        return {}
+    mjd_corrected = core.mjd_int + core.mjd_frac
+    return {
+        name: select_toa_mask(
+            info, core.raw_toas,
+            obs_canonical=core.obs_canonical,
+            mjd_corrected=mjd_corrected,
+        )
+        for name, info in par_result.mask_info.items()
+    }
+
+
+def _assemble(core, freq, to_jnp, *, planet_positions, flag_masks=None):
     jnp_planets = (
         None if planet_positions is None
         else {k: to_jnp(v) for k, v in planet_positions.items()}
@@ -209,7 +239,10 @@ def _assemble(core, freq, to_jnp, *, planet_positions):
         error=to_jnp(core.error_s),
         freq=to_jnp(freq),
         delta_pulse_number=to_jnp(core.delta_pulse_number),
-        flag_masks={},
+        flag_masks=(
+            {} if not flag_masks
+            else {k: jnp.asarray(v, dtype=jnp.bool_) for k, v in flag_masks.items()}
+        ),
         ssb_obs_pos=to_jnp(core.ssb_obs_pos),
         ssb_obs_vel=to_jnp(core.ssb_obs_vel),
         obs_sun_pos=to_jnp(core.obs_sun_pos),
