@@ -52,6 +52,7 @@ def test_native_path_usable_without_pint():
         "assert callable(jaxpint.native.get_model_and_toas)\n"
         "assert callable(jaxpint.native_toas_to_jax)\n"
         "assert callable(jaxpint.build_model)\n"
+        "assert callable(jaxpint.load_nanograv_pta)  # native loader, PINT-free\n"
         "import jaxpint.clock, jaxpint.tim, jaxpint.par  # PINT-free subsystems\n"
         "print('OK')\n"
     )
@@ -61,7 +62,7 @@ def test_native_path_usable_without_pint():
 
 @pytest.mark.parametrize("symbol", [
     "pint_toas_to_jax", "build_timing_model", "pint_model_to_params",
-    "extract_tzr_toa", "params_to_pint_model", "load_nanograv_pta",
+    "extract_tzr_toa", "params_to_pint_model",
 ])
 def test_pint_backed_symbol_raises_clear_error(symbol):
     r = _run(
@@ -79,12 +80,11 @@ def test_pint_backed_symbol_raises_clear_error(symbol):
 def test_no_pint_import_outside_bridge():
     """The PINT-free core must not regrow an `import pint`.
 
-    Allowed locations: jaxpint/bridge/, loaders/nanograv.py, notebook_utils.py
-    (and only inside functions there).
+    Allowed locations: jaxpint/bridge/, notebook_utils.py (and only inside
+    functions there).
     """
     allowed = {
         _REPO / "jaxpint" / "bridge",
-        _REPO / "jaxpint" / "loaders" / "nanograv.py",
         _REPO / "jaxpint" / "notebook_utils.py",
     }
 

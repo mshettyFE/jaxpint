@@ -269,7 +269,7 @@ class CWInjector(SignalInjector):
         ``"h0"``) instead of ``log10(h0)`` (named ``"log10_h"``).  In this mode
         the residual is exactly linear in the amplitude, so the log-likelihood is
         exactly quadratic in it — required by the analytic upper-limit machinery
-        in :mod:`jaxpint.pta.cw_upper_limit`.  Default False.
+        in ``jaxpint.pta.cw_upper_limit``.  Default False.
     """
 
     param_defaults = CW_PARAM_DEFAULTS
@@ -399,7 +399,7 @@ def cw_delay_from_array(
         If True, ``cw_params[0]`` is the *linear* strain ``h0`` instead of
         ``log10(h0)``.  The residual is then exactly linear in that entry, which
         is what makes the log-likelihood exactly quadratic in the amplitude (used
-        by the analytic upper-limit machinery, :mod:`jaxpint.pta.cw_upper_limit`).
+        by the analytic upper-limit machinery, ``jaxpint.pta.cw_upper_limit``).
         Default False keeps the ``log10_h`` parametrization.
 
     Parameters

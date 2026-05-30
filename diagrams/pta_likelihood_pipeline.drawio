@@ -1,31 +1,40 @@
 <mxfile host="Electron" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.5 Chrome/138.0.7204.251 Electron/37.6.1 Safari/537.36" version="28.2.5">
   <diagram name="PTA Log-Likelihood Pipeline" id="pta_logL_pipeline">
-    <mxGraphModel dx="800" dy="559" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1400" math="0" shadow="0">
+    <mxGraphModel dx="1143" dy="798" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1400" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="lane_bridge" value="Input &amp; bridge  (once per pulsar, then reused for every likelihood evaluation)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;fontSize=14;" parent="1" vertex="1">
-          <mxGeometry x="40" y="40" width="1320" height="220" as="geometry" />
+        <mxCell id="lane_bridge" value="Input &amp; parsing  (once per pulsar, then reused for every likelihood evaluation)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;verticalAlign=top;fontStyle=1;fontSize=14;" parent="1" vertex="1">
+          <mxGeometry x="40" y="40" width="1320" height="240" as="geometry" />
         </mxCell>
         <mxCell id="n_files" value="Raw files (per pulsar)&#xa;&#xa;• .par   (timing-model parameters)&#xa;• .tim  (TOAs + flags)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="80" y="90" width="240" height="120" as="geometry" />
+          <mxGeometry x="70" y="110" width="210" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="n_pint" value="PINT parsing&lt;br&gt;&lt;br&gt;pint.models.get_model (.par) → pint.models.TimingModel&lt;br&gt;&lt;br&gt;pint.toa.get_TOAs (.tim)&lt;br&gt;→ pint.toa.TOAs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;" parent="1" vertex="1">
-          <mxGeometry x="360" y="90" width="260" height="140" as="geometry" />
+        <mxCell id="n_native" value="jaxpint.native  —  native parsing  (PINT-free, default)&#xa;&#xa;get_model(.par) → ParResult     ·     get_TOAs(.tim) → TOAData     ·     build_model → (TimingModel, NoiseModel)&#xa;Native clock corrections · TT→TDB · barycentric posvels · flag masks · TZR · troposphere.&#xa;get_model_and_toas(.par, .tim) runs all three in one call." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="320" y="78" width="620" height="86" as="geometry" />
         </mxCell>
-        <mxCell id="n_bridge" value="jaxpint.bridge&#xa;&#xa;pint_model_to_params&#xa;pint_toas_to_jax&#xa;build_timing_model&#xa;&#xa;(strips Astropy units, converts to float64)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;" parent="1" vertex="1">
-          <mxGeometry x="660" y="90" width="280" height="140" as="geometry" />
+        <mxCell id="n_pint" value="PINT parsing  (optional — pip install jaxpint[pint])&#xa;&#xa;pint.models.get_model(.par) → pint.models.TimingModel&#xa;pint.toa.get_TOAs(.tim) → pint.toa.TOAs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;dashed=1;" parent="1" vertex="1">
+          <mxGeometry x="320" y="178" width="300" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="n_bridge" value="jaxpint.bridge  (optional)&#xa;&#xa;pint_model_to_params&#xa;pint_toas_to_jax · build_timing_model&#xa;(strips Astropy units → float64)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;dashed=1;" parent="1" vertex="1">
+          <mxGeometry x="660" y="178" width="280" height="86" as="geometry" />
         </mxCell>
         <mxCell id="n_jax_types" value="JAX-native inputs&#xa;&#xa;• ParameterVector&#xa;• TOAData&#xa;• TimingModel&#xa;• NoiseModel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;" parent="1" vertex="1">
           <mxGeometry x="980" y="90" width="280" height="140" as="geometry" />
         </mxCell>
-        <mxCell id="e_files_pint" style="endArrow=classic;html=1;rounded=0;" parent="1" source="n_files" target="n_pint" edge="1">
+        <mxCell id="e_files_native" value="default" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;fontSize=10;fontColor=#5a8a44;" parent="1" source="n_files" target="n_native" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_pint_bridge" style="endArrow=classic;html=1;rounded=0;" parent="1" source="n_pint" target="n_bridge" edge="1">
+        <mxCell id="e_native_jax" style="endArrow=classic;html=1;rounded=0;strokeColor=#82b366;" parent="1" source="n_native" target="n_jax_types" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_bridge_jax" style="endArrow=classic;html=1;rounded=0;" parent="1" source="n_bridge" target="n_jax_types" edge="1">
+        <mxCell id="e_files_pint" value="optional" style="endArrow=classic;html=1;rounded=0;dashed=1;fontSize=10;" parent="1" source="n_files" target="n_pint" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pint_bridge" style="endArrow=classic;html=1;rounded=0;dashed=1;" parent="1" source="n_pint" target="n_bridge" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bridge_jax" style="endArrow=classic;html=1;rounded=0;dashed=1;" parent="1" source="n_bridge" target="n_jax_types" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="lane_fwd" value="Per-pulsar forward model  (one evaluation per pulsar i)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;fontSize=14;" parent="1" vertex="1">
@@ -51,6 +60,7 @@
             <mxPoint x="980" y="218.60198581560292" as="sourcePoint" />
             <mxPoint x="156.39999999999986" y="340.0000000000001" as="targetPoint" />
             <Array as="points">
+              <mxPoint x="1010" y="270" />
               <mxPoint x="160" y="298.6" />
             </Array>
           </mxGeometry>

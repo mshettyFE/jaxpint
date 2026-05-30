@@ -15,18 +15,18 @@ JaxPINT targets numerical compatibility with PINT while providing a functional, 
 
 ## Comparison with PINT
 
-JaxPINT is not a replacement for PINT. The two libraries serve complementary roles:
+JaxPINT began as a JAX layer on top of PINT, but the `.par`/`.tim` loading path has since been ported, so **PINT is now an optional dependency** (`pip install jaxpint[pint]`). The two libraries still serve complementary roles:
 
 | | PINT | JaxPINT |
 |---|---|---|
-| **I/O** | Reads `.par`/`.tim` files, handles units via Astropy | Delegates all I/O to PINT via a bridge layer |
-| **Ephemeris** | Computes solar system ephemerides, barycentric corrections | Consumes pre-computed positions from PINT |
+| **I/O** | Reads `.par`/`.tim` files, handles units via Astropy | Native `.par`/`.tim` parser (TEMPO2 format); optional PINT bridge for other formats |
+| **Ephemeris & clock** | Bundles observatory + clock data, computes barycentric corrections | Native clock corrections, TT→TDB, and barycentric positions (Astropy/ERFA + JPL kernels), with auto-updating IPTA clock data |
 | **Timing model** | Object-oriented, mutable state, Astropy units throughout | Pure functional, immutable Equinox modules, plain float64 arrays |
 | **Derivatives** | Hand-coded analytical partial derivatives | Automatic via `jax.jacobian` |
 | **Fitting** | WLS/GLS with numpy | WLS/GLS with JAX (JIT-compiled, autodiff design matrices) |
 | **Hardware** | CPU only | CPU or GPU via JAX |
 
-**Typical workflow:** Load data with PINT, convert to JaxPINT types via the bridge layer, then fit or simulate entirely in JAX.
+**Typical workflow:** Parse `.par`/`.tim` natively into JaxPINT types, then fit or simulate entirely in JAX. PINT is only pulled in for the optional bridge adapters (converting an in-memory PINT model, or reading legacy TOA formats the native parser doesn't handle).
 
 ## Installation
 
@@ -41,55 +41,37 @@ Pick exactly one JAX flavor (`cuda` or `cpu`), and add `dev` if you plan to hack
 | CPU laptop, read-only | `uv sync --extra cpu` |
 | CPU laptop, developing | `uv sync --extra cpu --extra dev` |
 
+The native `.par`/`.tim` path needs none of PINT. Add `--extra pint` (or `pip install jaxpint[pint]`) only if you want the optional PINT-bridge adapters; `--extra dev` already includes it.
+
 ## Quick Start
 
+No PINT required — JaxPINT parses the files natively (the `.tim` must be TEMPO2 format):
+
 ```python
-# Used to load example data
-import pint.models as pm
-import pint.toa as pt
-from pint.config import examplefile
+import jaxpint.par as par
+from jaxpint import native, build_model, WLSFitter
 
-from jaxpint import (
-    build_timing_model,
-    pint_model_to_params,
-    pint_toas_to_jax,
-    ParameterVector,
-    compute_time_residuals,
-    WLSFitter
-)
+# Parse and build entirely in JaxPINT
+parsed = par.get_model("pulsar.par")               # ParResult: parameters + components
+toa_data = native.get_TOAs("pulsar.tim", parsed)   # TOAData (clock-corrected, barycentered)
+timing_model, noise_model = build_model(parsed, toa_data)   # TimingModel + NoiseModel
 
-## Temporarily have PINT shut up with DEBUG and INFO messages 
-from loguru import logger
-logger.disable("pint")      
+# `parsed.params` is the ParameterVector — the only differentiable leaf of the model
+fitter = WLSFitter(timing_model, toa_data, parsed.params, noise_model=noise_model)
 
-
-# Load example data from pint
-par_file = examplefile("NGC6440E.par")
-tim_file = examplefile("NGC6440E.tim")
-pint_model = pm.get_model(par_file)
-pint_toas = pt.get_TOAs(tim_file, ephem="DE421")
-
-#  convert PINT model and TOA data to JAX primitives
-# Actual TOA data
-toa_data = pint_toas_to_jax(pint_toas, model=pint_model)
-# Value store for all the possible parameters in the fitter
-params = pint_model_to_params(pint_model).params
-# Actual differentiable models. Split into deterministic and stochastic (re: corrrelation matrix) contributions
-timing_model, noise_model = build_timing_model(pint_model, pint_toas)
-
-fitter = WLSFitter(timing_model, toa_data, params, noise_model=noise_model)
-# JIT Warmup
-print("Warming up the fitter...")
-result = fitter.fit_toas(maxiter=1)
-print("Running...")
-result = fitter.fit_toas(maxiter=99)
+result = fitter.fit_toas(maxiter=1)    # first call JIT-compiles (warmup)
+result = fitter.fit_toas(maxiter=99)   # subsequent calls reuse the cached kernel
 
 print(f"Chi-squared: {result.chi2:.2f}")
 print(f"Degrees of freedom: {result.dof}")
 print(f"Reduced chi-squared: {result.reduced_chi2:.4f}")
 ```
 
-If you want more involved usages, see examples directory
+`native.get_model_and_toas("pulsar.par", "pulsar.tim")` collapses the three parsing lines into one call (mirroring PINT's `get_model_and_toas`), returning `(model, noise, toa_data)`.
+
+> **Don't have data handy?** PINT's bundled example files work as test data. Install the extra (`pip install jaxpint[pint]`) and locate a TEMPO2-format pair via `from pint.config import examplefile` — e.g. `examplefile("B1855+09_NANOGrav_dfg+12.tim")` and `examplefile("B1855+09_NANOGrav_dfg+12_TAI.par")`. The files are read by JaxPINT's *native* parser; PINT is used only to find them on disk. (Note: `NGC6440E.tim` is the older Princeton format, which the native parser does not read.)
+
+If you want more involved usages, see the `examples/` directory. To load via PINT instead (legacy formats, or an in-memory PINT model), see the [loading-data guide](docs/guides/loading_data.rst).
 
 ## Architecture
 
@@ -103,7 +85,7 @@ JaxPINT is built around three component types, all Equinox modules:
 
 These are orchestrated by `TimingModel`, which chains delays and sums phases. The only dynamic (differentiable) leaf in the entire pytree is `ParameterVector.values` — a flat `float64` array. All component fields are static metadata, making the model fully JIT-traceable.
 
-The **bridge layer** (`jaxpint.bridge`) converts between PINT objects and JaxPINT types. It is the only part of the codebase that touches Astropy units.
+Inputs are produced by the **native parser** (`jaxpint.par`, `jaxpint.tim`, `jaxpint.clock`, surfaced through `jaxpint.native`), which reads `.par`/`.tim` files straight into the JaxPINT types above. The optional **bridge layer** (`jaxpint.bridge`) does the same job starting from an in-memory PINT model. Astropy units only appear during parsing (the bridge, and the native ephemeris/clock stage); once parsing is done, the rest of the pipeline is plain `float64`.
 
 ## Testing
 

@@ -86,7 +86,7 @@ def raw_params_to_result(
     binary_model: Optional[BinaryModel] = None,
     metadata_extra: Optional[dict[str, str]] = None,
 ) -> ParResult:
-    """Assemble a :class:`ParResult` from adapter-neutral parsed parameters.
+    """Assemble a :class:`~jaxpint.par.result.ParResult` from adapter-neutral parsed parameters.
 
     Parameters
     ----------

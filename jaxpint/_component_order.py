@@ -1,7 +1,7 @@
 """Component ordering mirroring PINT's DEFAULT_ORDER.
 
 Defines the canonical execution order for timing model components.
-Used by :func:`jaxpint.bridge._model_builder.build_model` to process
+Used by :func:`jaxpint.model_builder.build_model` to process
 components via a priority queue so that delays are chained in the
 correct physical order.
 """

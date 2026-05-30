@@ -3,8 +3,7 @@
 Each timing-model component describes its parameters through **two related but
 distinct conventions**, used at two different stages of a component's life:
 
-1. ``PARAMS`` — the static *schema* (parse time)
-   ------------------------------------------------
+1. **``PARAMS`` — the static schema (parse time).**
    Every concrete component declares a class-level
    ``PARAMS: ClassVar[tuple[ParamDecl, ...]]`` listing the parameters it models,
    with their type/unit/prefix/aliases (see :class:`ParamDecl`).  This exists
@@ -15,8 +14,7 @@ distinct conventions**, used at two different stages of a component's life:
    static metadata, never a JIT leaf.  Declaring ``PARAMS`` is **required** for a
    concrete component — the aggregator raises if it is missing/empty.
 
-2. ``*_name`` / ``*_names`` fields — the runtime *config* (post-parse)
-   --------------------------------------------------------------------
+2. **``*_name`` / ``*_names`` fields — the runtime config (post-parse).**
    Instance fields whose names end in ``_name`` (a single parameter name) or
    ``_names`` (a tuple of names) hold the **concrete** parameter names *this*
    configured instance reads from the :class:`~jaxpint.types.ParameterVector` at
@@ -24,10 +22,9 @@ distinct conventions**, used at two different stages of a component's life:
    The model builder fills these in from a parsed model, and they are static
    ``eqx.field`` values so they stay constant inside JIT.  The naming convention
    lets :meth:`PhaseComponent.required_params` (etc.) discover them via
-   :func:`_collect_param_names`.
+   ``_collect_param_names``.
 
-How they relate
----------------
+**How they relate.**
 ``PARAMS`` is the *template* a component owns (e.g. Spindown owns the ``F``
 prefix family + ``PEPOCH``); the ``*_name``/``*_names`` fields are the *concrete,
 file-specific expansion* for one model (e.g. this pulsar's ``("F0","F1")``).

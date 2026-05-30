@@ -1,4 +1,4 @@
-"""Native ``.par`` -> :class:`ParResult` entry point (PINT-free).
+"""Native ``.par`` -> :class:`~jaxpint.par.result.ParResult` entry point (PINT-free).
 
 Composes the tokenizer, text adapter, and component detector, then hands the
 result to the shared :func:`jaxpint.par.core.raw_params_to_result` -- the same
@@ -17,7 +17,7 @@ from jaxpint.par.text_adapter import to_raw_params
 
 
 def get_model(par_path: str | Path) -> ParResult:
-    """Parse a ``.par`` file into a JaxPINT :class:`ParResult`, without PINT.
+    """Parse a ``.par`` file into a JaxPINT :class:`~jaxpint.par.result.ParResult`, without PINT.
 
     Mirror of ``pint.models.get_model`` + ``pint_model_to_params``: tokenize the
     file, adapt each line into a ``RawParam``, detect the active components and

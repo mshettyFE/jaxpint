@@ -135,7 +135,7 @@ def taylor_horner_phase(
     ``coeffs`` must be **pre-divided by factorial** — i.e.
     ``coeffs[k] = F_{k-1} / k!`` for k >= 1, with ``coeffs[0] = 0`` for
     the constant phase term. (For Spindown, use
-    :meth:`Spindown._get_spin_coeffs_scaled`.) This lets the Horner loop
+    ``Spindown._get_spin_coeffs_scaled``.) This lets the Horner loop
     multiply by ``x`` without an inner division, which keeps
     ``c_int * x_int_s`` as exact integer × integer when ``c_int`` is
     integer-valued and the product stays under 2^53.

@@ -9,7 +9,7 @@ For a visual summary of all of this:
    :alt: JaxPINT PTA log-likelihood signal processing pipeline
    :align: center
 
-   End-to-end flow: raw ``.par``/``.tim`` files → PINT parsing and JaxPINT bridge → per-pulsar forward model (residuals + covariance) → signal injector contributions → per-pulsar Gaussian log-likelihood → PTA log-likelihood (uncorrelated sum, or Hellings-Downs correlated).
+   End-to-end flow: raw ``.par``/``.tim`` files → JaxPINT native parsing (PINT optional) → per-pulsar forward model (residuals + covariance) → signal injector contributions → per-pulsar Gaussian log-likelihood → PTA log-likelihood (uncorrelated sum, or Hellings-Downs correlated).
 
 Input Data 
 ----------
@@ -19,7 +19,7 @@ Each pulsar in the array is represented by two different files: a .par file and 
 .tim File
 ~~~~~~~~~
 
-The ``.tim`` file is a list of one time-of-arrival (TOA) per line, plus a handful of optional file-level directives. JaxPINT reads these via PINT, so anything PINT understands works here. Since PTAs have been around for a while, there are a smorgasbord of different formats. 
+The ``.tim`` file is a list of one time-of-arrival (TOA) per line, plus a handful of optional file-level directives. JaxPINT parses these natively -- no PINT required -- via its own reader, which understands the TEMPO2 line format. Since PTAs have been around for a while, there are a smorgasbord of different formats; the legacy fixed-column ones (Princeton/Parkes/ITOA) are not handled by the native reader, but you can fall back to the optional PINT bridge for those.
 
 For simplicity, let's just look at one of these formats: TEMPO2 format. The first line must be ``FORMAT 1``, and every subsequent TOA line has five positional fields followed by zero or more ``-flag value`` metadata pairs:
 
@@ -39,7 +39,7 @@ Example:
 
 The trailing ``-flag value`` pairs are free-form metadata attached to each TOA. PTAs use them to tag the backend, frontend, observing group, receiver, etc. JaxPINT's noise model selects per-TOA ``EFAC``, ``EQUAD``, and ``ECORR`` values by matching against these flags, so the same flag keys have to appear consistently in the ``.tim`` file and the ``.par`` file.
 
-TEMPO2 also defines a small set of in-file commands (``TIME`` offsets, ``EFAC``, ``EQUAD``, ``MODE``, ``SKIP``/``NOSKIP``, ``INCLUDE``, ``JUMP``/``NOJUMP``) that PINT applies on read. Unlike the ``.par`` parameter set, there is no single enumerated catalog of flag names -- each PTA defines its own conventions. See the `TEMPO2 manual <https://bitbucket.org/psrsoft/tempo2/src/master/documentation/>`_ for the authoritative format specification, and the `PINT explanation page <https://nanograv-pint.readthedocs.io/en/latest/explanation.html>`_ for PINT-specific notes on what happens when the file is loaded.
+TEMPO2 also defines a small set of in-file commands (``TIME``/``PHASE`` offsets, ``EFAC``, ``EQUAD``, ``EMIN``/``EMAX``, ``FMIN``/``FMAX``, ``SKIP``/``NOSKIP``, ``INCLUDE``, ``JUMP``, ``INFO``) that JaxPINT's native reader applies on read, mirroring PINT (``MODE`` is recognized but ignored with a warning). Unlike the ``.par`` parameter set, there is no single enumerated catalog of flag names -- each PTA defines its own conventions. See the `TEMPO2 manual <https://bitbucket.org/psrsoft/tempo2/src/master/documentation/>`_ for the authoritative format specification, and the `PINT explanation page <https://nanograv-pint.readthedocs.io/en/latest/explanation.html>`_ for PINT-specific notes on what happens when the file is loaded.
 
 Some important observations
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -58,11 +58,11 @@ consisting of the observing frequency :math:`\nu` (MHz), the pulse arrival time 
 Parsing .tim files in JAXPint 
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-I made the pragmatic decision to offload the TOA parsing to PINT. I didn't want to deal with all the nuances of different time standards, flags and backends and probably other things that I'm forgetting.
+Originally I offloaded the TOA parsing to PINT -- I didn't want to deal with all the nuances of different time standards, flags, backends, and probably other things I'm forgetting. That work has since been ported, so JaxPINT now reads ``.tim`` files natively without any PINT dependency.
 
-The .tim parsing workflow is the read in .tim files via PINT, which results in a `pint.toa.TOAs <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.toa.TOAs.html>`_ object (an ``astropy.table.Table`` with one row per TOA) -- and then converted that into a JAX-compatible container, :class:`~jaxpint.types.TOAData`, via :func:`~jaxpint.bridge.pint_toas_to_jax`.
+The native workflow goes straight from the file to a JAX-compatible :class:`~jaxpint.types.TOAData` container via :func:`~jaxpint.native.get_TOAs` (which calls :func:`~jaxpint.loaders.native_toas_to_jax` under the hood). Along the way it reproduces the pieces PINT used to handle: the per-site clock corrections, the TT→TDB timescale conversion, the barycentric position/velocity vectors, the per-TOA observing-frequency barycentering, the flag-based parameter masks, the TZR absolute-phase anchor, and the troposphere geometry -- all in float64.
 
-In principle, it would be straightforward to skip the PINT parsing dependency and just write directly to  :class:`~jaxpint.types.TOAData`.
+The PINT route is still available as an optional fallback: read the file into a `pint.toa.TOAs <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.toa.TOAs.html>`_ object (an ``astropy.table.Table`` with one row per TOA) and convert it with :func:`~jaxpint.bridge.pint_toas_to_jax`. This requires the optional ``jaxpint[pint]`` extra and is mainly useful for the legacy TOA formats the native reader does not parse.
 
 .par File
 ~~~~~~~~~
@@ -93,25 +93,22 @@ for the full list of accepted keywords, units, and aliases.
 Parsing .par files in JAXPint
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-JAXPint currently outsources the initial parsing and construction of the pulsar timing model to PINT. This was done for reasons exactly analagous to PINT. I don't want to be writing parsers that have already been written.
+Like the ``.tim`` parsing, this was originally outsourced to PINT and has since been ported, so the ``.par`` flow is now native and PINT-free by default. The flow mirrors the ``.tim`` case:
 
-The flow mirrors the ``.tim`` case:
+1. The raw ``.par`` file is parsed by :func:`~jaxpint.par.parser.get_model`, which tokenizes the file, detects the active components and binary model, and assembles them into a :class:`~jaxpint.par.result.ParResult` -- the adapter-neutral contract that holds every parameter as plain ``float64`` plus the set of components to build.
 
-1. The raw ``.par`` file is read by `pint.models.get_model <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.models.get_model.html>`_, which returns a `pint.models.TimingModel <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.models.TimingModel.html>`_ object. That object holds every parameter as an ``astropy.units.Quantity`` and tracks PINT's component hierarchy (delays, phases, noise).
+2. The ``ParResult`` (optionally together with the parsed :class:`~jaxpint.types.TOAData`, needed for the TOA-dependent noise bases) is handed to :func:`~jaxpint.model_builder.build_model`, which constructs the JAX-native :class:`~jaxpint.model.TimingModel` and :class:`~jaxpint.noise.NoiseModel`. The flat differentiable parameters live in a :class:`~jaxpint.types.ParameterVector`, the only differentiable leaf of the pytree.
 
-2. The PINT ``TimingModel`` is then handed to the JaxPINT bridge layer, which produces two JAX-native objects:
+:func:`~jaxpint.native.get_model_and_toas` wraps steps 1-2 plus the ``.tim`` parsing into a single ``(model, noise, toa_data)`` call -- the native analogue of PINT's ``get_model_and_toas``.
 
-   - :func:`~jaxpint.bridge.pint_model_to_params` extracts every numerical parameter into a flat :class:`~jaxpint.types.ParameterVector` -- the only differentiable leaf of the pytree.
-   - :func:`~jaxpint.bridge.build_timing_model` constructs the JAX-native :class:`~jaxpint.model.TimingModel`. Astropy units are stripped and every scalar becomes plain ``float64``.
-
-Once this conversion is done, the PINT object is no longer needed at runtime -- the rest of the pipeline operates entirely on the JaxPINT types.
+The PINT route remains available behind the optional ``jaxpint[pint]`` extra: read the file with `pint.models.get_model <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.models.get_model.html>`_ to get a `pint.models.TimingModel <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.models.TimingModel.html>`_ (every parameter an ``astropy.units.Quantity``), then convert it with :func:`~jaxpint.bridge.pint_model_to_params` and :func:`~jaxpint.bridge.build_timing_model`. Either way, once parsing is done the PINT object is no longer needed at runtime -- the rest of the pipeline operates entirely on the JaxPINT types.
 
 Synthetic Versus Real Data
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 As an aside, notice that the pipeline doesn't care about the origin of the .par and .tim files. Hence, you could run JAXPint on real pulsar data, or you can generate synthetic .par and .tim files.
 
-For synthetic data generation,  you could use `PINT's model construction facilities <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.models.model_builder.get_model.html#pint.models.model_builder.get_model>`_, generate a uniform time series of observations with `pint.simulation.make_fake_toas_uniform <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.simulation.make_fake_toas_uniform.html>`_ (or one of the other generators in `pint.simulation <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.simulation.html>`_), and then pass the two through the pipeline to get the JAX-compatible model and time data.
+For synthetic data generation,  you could use `PINT's model construction facilities <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.models.model_builder.get_model.html#pint.models.model_builder.get_model>`_, generate a uniform time series of observations with `pint.simulation.make_fake_toas_uniform <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.simulation.make_fake_toas_uniform.html>`_ (or one of the other generators in `pint.simulation <https://nanograv-pint.readthedocs.io/en/latest/_autosummary/pint.simulation.html>`_), and then pass the two through the pipeline to get the JAX-compatible model and time data. (These simulation helpers live in PINT, so this route needs the optional ``jaxpint[pint]`` extra.)
 
 If you have some external signal (re: CW gravitational wave of a stochastic GW background), you could also generate a mock timeseries to reflect these injected signals.
 
