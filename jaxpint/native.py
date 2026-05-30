@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Optional, Union
 
-from .bridge._model_builder import build_model
+from .model_builder import build_model
 from .loaders.native import native_toas_to_jax
 from .par import get_model as _parse_par
 from .par.result import ParResult

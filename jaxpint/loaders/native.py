@@ -32,9 +32,8 @@ from ..constants import PLANETS
 from ..delay._barycentric import barycentric_radio_freq
 from ..par.components import Component
 from ..par.result import ParResult
-from ..tim import RawTOA, read_tim
+from ..tim import RawTOA, read_tim, select_toa_mask
 from ..types import TOAData
-from ._masks import select_toa_mask
 
 
 @dataclass

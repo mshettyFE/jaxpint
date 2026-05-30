@@ -59,16 +59,10 @@ from .fitters import (
     compute_wideband_design_matrix,
     compute_wideband_residuals,
 )
-from .bridge import (
-    build_timing_model,
-    extract_tzr_toa,
-    params_to_pint_model,
-    pint_model_to_params,
-    pint_toas_to_jax,
-)
+from .model_builder import build_model
 from .likelihood import single_pulsar_logL
 from . import native
-from .loaders import NanogravPTA, load_nanograv_pta
+from .loaders import native_toas_to_jax
 from .simulation import apply_delay_to_toas, make_fake_toas, simulate_noise, zero_residuals
 from .utils import (
     fourier_sum,
@@ -162,4 +156,36 @@ __all__ = [
     "woodbury_dot",
     "woodbury_solve",
     "zero_residuals",
+    # PINT-backed (lazy; require `pip install jaxpint[pint]`)
+    "build_timing_model",
+    "extract_tzr_toa",
+    "params_to_pint_model",
+    "pint_model_to_params",
+    "pint_toas_to_jax",
+    "NanogravPTA",
+    "load_nanograv_pta",
+    "build_model",
+    "native_toas_to_jax",
 ]
+
+# PINT-backed top-level symbols, resolved lazily so `import jaxpint` works
+# without PINT (an optional dependency).  Accessing one without PINT installed
+# raises a clear ImportError via the bridge/loaders __getattr__.
+_LAZY_PINT = {
+    "build_timing_model": "jaxpint.bridge",
+    "extract_tzr_toa": "jaxpint.bridge",
+    "params_to_pint_model": "jaxpint.bridge",
+    "pint_model_to_params": "jaxpint.bridge",
+    "pint_toas_to_jax": "jaxpint.bridge",
+    "NanogravPTA": "jaxpint.loaders",
+    "load_nanograv_pta": "jaxpint.loaders",
+}
+
+
+def __getattr__(name):
+    target = _LAZY_PINT.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+
+    return getattr(importlib.import_module(target), name)

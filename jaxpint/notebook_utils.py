@@ -43,13 +43,12 @@ import astropy.units as u
 import jax
 import jax.numpy as jnp
 import numpy as np
-import pint.simulation as psim
 from jaxtyping import Array, Float
 from matplotlib.axes import Axes
 from matplotlib.collections import QuadMesh
 
-from jaxpint.bridge.model_conversion import pint_model_to_params
-from jaxpint.bridge import build_timing_model, pint_toas_to_jax
+# PINT-backed helpers are imported lazily inside the functions that use them so
+# this demo module does not hard-require PINT at import time.
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.pta.likelihood import PTAConfig, SignalInjector
@@ -251,6 +250,11 @@ def setup_synthetic_pta(
         Named tuple of per-pulsar tuples ready to feed into
         :func:`inject_and_build_config`.
     """
+    import pint.simulation as psim
+
+    from jaxpint.bridge import build_timing_model, pint_toas_to_jax
+    from jaxpint.bridge.model_conversion import pint_model_to_params
+
     if mjds_per_pulsar is not None:
         if len(mjds_per_pulsar) != len(pint_models):
             raise ValueError(

@@ -1,4 +1,4 @@
-"""Tests for native flag-mask matching (jaxpint.loaders._masks.select_toa_mask).
+"""Tests for native flag-mask matching (jaxpint.tim.masks.select_toa_mask).
 
 PINT-free unit tests for the matcher, plus differential parity vs PINT's
 ``maskParameter.select_toa_mask`` over the example corpus.
@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from jaxpint.loaders._masks import select_toa_mask
+from jaxpint.tim.masks import select_toa_mask
 from jaxpint.par.result import MaskInfo
 from jaxpint.tim.raw_toa import RawTOA
 

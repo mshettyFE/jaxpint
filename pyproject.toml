@@ -14,11 +14,20 @@ requires-python = ">=3.12"
 dependencies = [
     "equinox>=0.11.0",
     "jaxtyping>=0.3.9",
-    "pint-pulsar>=1.0",
     "blackjax>=1.5",
+    # Native time/geometry pipeline (clock/timescale/posvels) uses these
+    # directly; they were previously pulled in transitively via pint-pulsar.
+    "astropy>=6.0",
+    "pyerfa>=2.0",
+    "jplephem>=2.21",
 ]
 
 [project.optional-dependencies]
+# PINT is optional: needed only for the bridge converters
+# (jaxpint.bridge.*), the NANOGrav loader (jaxpint.loaders.load_nanograv_pta),
+# and the notebook utilities. The native .par/.tim pipeline (jaxpint.native)
+# works without it.
+pint = ["pint-pulsar>=1.0"]
 cuda = ["jax[cpu,cuda13]>=0.4.20"]
 cpu = ["jax[cpu]>=0.4.20"]
 # Sky-map example (examples/cgw_distance_skymap.py): HEALPix pixelization +
@@ -33,6 +42,7 @@ docs = [
 dev = [
     "jaxpint[docs]",
     "jaxpint[skymap]",
+    "jaxpint[pint]",
     "pytest>=7.0",
     "pytest-xdist>=3.8.0",
     "hypothesis>=6.0",

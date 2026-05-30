@@ -2,8 +2,12 @@
 
 The data-side analogue of :mod:`jaxpint.par`: turns ``.tim`` text into a raw,
 pre-clock-correction TOA table (:class:`ParsedTim` of :class:`RawTOA`).  Clock
-corrections, TT/TDB conversion, ephemeris posvels, and flag->mask binding are
-downstream stages that consume this table; they are *not* done here.
+corrections, TT/TDB conversion, and ephemeris posvels are downstream stages that
+consume this table; they are *not* done here.
+
+:func:`~jaxpint.tim.masks.select_toa_mask` is the one consumer that lives
+alongside the parser: it matches a masked-parameter selector against the parsed
+``RawTOA`` flags/columns to produce the boolean ``TOAData.flag_masks``.
 """
 
 from __future__ import annotations
@@ -18,10 +22,12 @@ from .raw_toa import (
     get_time_offset,
     normalize_flag_key,
 )
+from .masks import select_toa_mask
 from .timfile import read_tim
 
 __all__ = [
     "read_tim",
+    "select_toa_mask",
     "RawTOA",
     "ParsedTim",
     "KnownFlag",
