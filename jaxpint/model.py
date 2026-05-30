@@ -105,6 +105,51 @@ class TimingModel(eqx.Module):
             delay = delay + comp(toa_data, params, delay)
         return delay
 
+    def compute_delay_to_binary(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+    ) -> Float[Array, " n_toas"]:
+        """Sum delay components up to (but excluding) the binary component.
+
+        Mirrors PINT's ``delay(cutoff=<binary>)`` used by
+        ``get_barycentric_toas``: every delay that maps the topocentric arrival
+        time to the binary barycentre, but not the binary orbital delay itself.
+        With no binary component this equals :meth:`compute_delay`.
+        """
+        from jaxpint.binary import (
+            BinaryBT,
+            BinaryBTPiecewise,
+            BinaryDD,
+            BinaryDDGR,
+            BinaryDDK,
+            BinaryELL1,
+        )
+
+        binary_types = (
+            BinaryBT, BinaryBTPiecewise, BinaryDD, BinaryDDGR, BinaryDDK, BinaryELL1,
+        )
+        delay = jnp.zeros(toa_data.n_toas)
+        for comp in self.delay_components:
+            if isinstance(comp, binary_types):
+                break
+            delay = delay + comp(toa_data, params, delay)
+        return delay
+
+    def compute_barycentric_toas(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+    ) -> DualFloat:
+        """Barycentric TOAs (TDB days), mirroring PINT ``get_barycentric_toas``.
+
+        ``bary = tdb - delay_before_binary`` (the delay is in seconds, converted
+        to days and subtracted in extended precision).
+        """
+        corr_days = self.compute_delay_to_binary(toa_data, params) / 86400.0
+        tdb = toa_data.tdb
+        return DualFloat.days(tdb.int, tdb.frac - corr_days)
+
     def compute_dm(
         self,
         toa_data: TOAData,
