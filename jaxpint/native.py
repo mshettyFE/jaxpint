@@ -7,9 +7,9 @@ Swapping ``from pint.models import get_model_and_toas`` for
 and objects are not PINT's.)
 
 Composes the already-built native pieces:
-``jaxpint.par.get_model`` (.par -> ParResult) +
-``jaxpint.loaders.native.native_toas_to_jax`` (.tim + ParResult -> TOAData) +
-``jaxpint.bridge._model_builder.build_model`` (ParResult [+ TOAData] ->
+:func:`jaxpint.par.parser.get_model` (.par -> ParResult) +
+:func:`jaxpint.loaders.native_toas_to_jax` (.tim + ParResult -> TOAData) +
+:func:`jaxpint.model_builder.build_model` (ParResult [+ TOAData] ->
 (TimingModel, NoiseModel)).  All PINT-free at runtime.
 """
 
@@ -50,7 +50,7 @@ def get_TOAs(
 ):
     """Load a ``.tim`` into a :class:`~jaxpint.types.TOAData`.
 
-    ``par`` may be a parsed :class:`ParResult` or a ``.par`` path (parsed here);
+    ``par`` may be a parsed :class:`~jaxpint.par.result.ParResult` or a ``.par`` path (parsed here);
     it supplies astrometry (barycentric freq), TZR/abs-phase, flag-mask
     selectors, troposphere config, and the default ephem/clock/planet settings.
     """

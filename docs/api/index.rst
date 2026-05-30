@@ -61,6 +61,24 @@ Fitters
 
    jaxpint.fitters
 
+Native Pipeline (PINT-free)
+---------------------------
+
+The native ``.par``/``.tim`` loading path and the parameter core it builds on.
+These require no PINT (see :mod:`jaxpint.bridge` for the PINT-backed adapters).
+
+.. autosummary::
+   :toctree: generated
+
+   jaxpint.native
+   jaxpint.model_builder
+   jaxpint.par.parser
+   jaxpint.par.core
+   jaxpint.par.registry
+   jaxpint.par.result
+   jaxpint.par.spec
+   jaxpint.par.raw_params
+
 PINT Bridge
 -----------
 

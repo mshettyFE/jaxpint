@@ -846,10 +846,12 @@ name = "jaxpint"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "astropy" },
     { name = "blackjax" },
     { name = "equinox" },
     { name = "jaxtyping" },
-    { name = "pint-pulsar" },
+    { name = "jplephem" },
+    { name = "pyerfa" },
 ]
 
 [package.optional-dependencies]
@@ -867,6 +869,7 @@ dev = [
     { name = "ipympl" },
     { name = "matplotlib" },
     { name = "nbconvert" },
+    { name = "pint-pulsar" },
     { name = "pydata-sphinx-theme" },
     { name = "pytest" },
     { name = "pytest-xdist" },
@@ -879,6 +882,9 @@ docs = [
     { name = "sphinx" },
     { name = "sphinx-copybutton" },
 ]
+pint = [
+    { name = "pint-pulsar" },
+]
 skymap = [
     { name = "healpy" },
     { name = "matplotlib" },
@@ -886,6 +892,7 @@ skymap = [
 
 [package.metadata]
 requires-dist = [
+    { name = "astropy", specifier = ">=6.0" },
     { name = "blackjax", specifier = ">=1.5" },
     { name = "equinox", specifier = ">=0.11.0" },
     { name = "git-filter-repo", marker = "extra == 'dev'", specifier = ">=2.47.0" },
@@ -896,19 +903,22 @@ requires-dist = [
     { name = "jax", extras = ["cpu"], marker = "extra == 'cpu'", specifier = ">=0.4.20" },
     { name = "jax", extras = ["cpu", "cuda13"], marker = "extra == 'cuda'", specifier = ">=0.4.20" },
     { name = "jaxpint", extras = ["docs"], marker = "extra == 'dev'" },
+    { name = "jaxpint", extras = ["pint"], marker = "extra == 'dev'" },
     { name = "jaxpint", extras = ["skymap"], marker = "extra == 'dev'" },
     { name = "jaxtyping", specifier = ">=0.3.9" },
+    { name = "jplephem", specifier = ">=2.21" },
     { name = "matplotlib", marker = "extra == 'skymap'", specifier = ">=3.7" },
     { name = "nbconvert", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "pint-pulsar", specifier = ">=1.0" },
+    { name = "pint-pulsar", marker = "extra == 'pint'", specifier = ">=1.0" },
     { name = "pydata-sphinx-theme", marker = "extra == 'docs'", specifier = ">=0.17.0" },
+    { name = "pyerfa", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.8.0" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=9.1.0" },
     { name = "sphinx-autobuild", marker = "extra == 'dev'", specifier = ">=2024.10.3" },
     { name = "sphinx-copybutton", marker = "extra == 'docs'", specifier = ">=0.5.2" },
 ]
-provides-extras = ["cuda", "cpu", "skymap", "docs", "dev"]
+provides-extras = ["pint", "cuda", "cpu", "skymap", "docs", "dev"]
 
 [[package]]
 name = "jaxtyping"

@@ -1,6 +1,6 @@
 """Component builder: PINT components → JaxPINT timing model components.
 
-Delegates to :mod:`jaxpint.bridge._model_builder` via the unified
+Delegates to :mod:`jaxpint.model_builder` via the unified
 :class:`ParResult` interface.  The bridge converts a PINT model to
 ``ParResult`` (see :func:`pint_model_to_params`), then
 ``build_model()`` constructs the JaxPINT components.
@@ -27,7 +27,7 @@ def build_timing_model(
 
     Converts the PINT model to a :class:`ParResult` and optional
     :class:`~jaxpint.types.TOAData`, then delegates to
-    ``jaxpint.bridge._model_builder.build_model``.
+    :func:`jaxpint.model_builder.build_model`.
 
     Parameters
     ----------

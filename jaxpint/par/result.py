@@ -1,9 +1,8 @@
 """Data structures for parsed timing model parameters.
 
 Defines :class:`ParResult` and :class:`MaskInfo`, the canonical contract
-between a parameter adapter (the PINT bridge, or the future native ``.par``
-parser) and JaxPINT's model builder
-(:func:`jaxpint.bridge._model_builder.build_model`).
+between a parameter adapter (the native ``.par`` parser or the PINT bridge)
+and JaxPINT's model builder (:func:`jaxpint.model_builder.build_model`).
 
 This module is PINT-free.
 """
@@ -33,7 +32,7 @@ class ParResult:
     Produced by a parameter adapter (e.g.
     :func:`jaxpint.bridge.pint_model_to_params`) via
     :func:`jaxpint.par.core.raw_params_to_result`, and consumed by
-    ``jaxpint.bridge._model_builder.build_model``.
+    :func:`jaxpint.model_builder.build_model`.
     """
     params: ParameterVector  # JIT-able values that jax can trace
     component_set: set[Component] = field(default_factory=set)  # What components need to be built

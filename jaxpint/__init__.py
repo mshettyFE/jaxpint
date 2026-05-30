@@ -62,7 +62,7 @@ from .fitters import (
 from .model_builder import build_model
 from .likelihood import single_pulsar_logL
 from . import native
-from .loaders import native_toas_to_jax
+from .loaders import NanogravPTA, load_nanograv_pta, native_toas_to_jax
 from .simulation import apply_delay_to_toas, make_fake_toas, simulate_noise, zero_residuals
 from .utils import (
     fourier_sum,
@@ -162,8 +162,7 @@ __all__ = [
     "params_to_pint_model",
     "pint_model_to_params",
     "pint_toas_to_jax",
-    "NanogravPTA",
-    "load_nanograv_pta",
+    # PINT-free
     "build_model",
     "native_toas_to_jax",
 ]
@@ -177,8 +176,6 @@ _LAZY_PINT = {
     "params_to_pint_model": "jaxpint.bridge",
     "pint_model_to_params": "jaxpint.bridge",
     "pint_toas_to_jax": "jaxpint.bridge",
-    "NanogravPTA": "jaxpint.loaders",
-    "load_nanograv_pta": "jaxpint.loaders",
 }
 
 

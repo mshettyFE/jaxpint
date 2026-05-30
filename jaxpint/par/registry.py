@@ -2,9 +2,9 @@
 
 These enums identify which timing model components are active and which
 binary orbital model is in use.  They are the shared vocabulary between
-the parameter adapters (PINT bridge :mod:`jaxpint.bridge.model_conversion`,
-and the future native ``.par`` parser) and the model builder
-(:mod:`jaxpint.bridge._model_builder`).
+the parameter adapters (the native ``.par`` parser :mod:`jaxpint.par.parser`
+and the PINT bridge :mod:`jaxpint.bridge`) and the model
+builder (:mod:`jaxpint.model_builder`).
 
 This module is PINT-free.
 """

@@ -7,13 +7,19 @@ model as pure JAX code built on `Equinox <https://github.com/patrick-kidger/equi
 trading PINT's Astropy-units interface for plain ``float64`` arrays in
 exchange for JIT compilation, automatic differentiation, and GPU execution.
 
-JaxPINT is **not** a replacement for PINT. PINT continues to own all I/O —
-``.par`` / ``.tim`` parsing, observatory database, clock corrections,
-ephemeris lookups — and JaxPINT consumes those via a thin bridge layer
-(:mod:`jaxpint.bridge`). After conversion every downstream computation
-(delays, phases, noise, likelihoods, fits) is plain JAX, so design matrices
-fall out of :func:`jax.jacobian` instead of being hand-coded, and the whole
-forward model JIT-compiles into a single XLA kernel.
+JaxPINT parses ``.par`` / ``.tim`` files **natively** — clock corrections,
+TT→TDB timescale conversion, barycentric ephemeris positions, flag-based
+parameter masks, the TZR absolute-phase anchor, and troposphere geometry are
+all reimplemented in JaxPINT (see :mod:`jaxpint.native`). PINT is therefore an
+**optional** dependency: install it with ``pip install jaxpint[pint]`` only if
+you want the :mod:`jaxpint.bridge` adapters (e.g. to convert an in-memory PINT
+model, or to read the legacy TOA formats the native reader does not parse).
+
+After parsing, every downstream computation (delays, phases, noise,
+likelihoods, fits) is plain JAX, so design matrices fall out of
+:func:`jax.jacobian` instead of being hand-coded, and the whole forward model
+JIT-compiles into a single XLA kernel. JaxPINT is validated for numerical
+parity against PINT but is otherwise independent of it at runtime.
 
 Installation
 ------------
@@ -26,42 +32,45 @@ manager. Pick one JAX flavor:
    uv sync --extra cpu    # CPU-only
    uv sync --extra cuda   # NVIDIA GPU
 
-Append ``--extra dev`` if you intend to hack on the source.
+Append ``--extra dev`` if you intend to hack on the source. Add ``--extra pint``
+(``pip install jaxpint[pint]``) only if you need the optional PINT-bridge
+adapters — the native ``.par`` / ``.tim`` path does not require it.
 
 Quickstart
 ----------
 
-Fit a real ``.par`` / ``.tim`` pair using a PINT example file:
+Fit a real ``.par`` / ``.tim`` pair — no PINT required:
 
 .. code-block:: python
 
-   import pint.models as pm
-   import pint.toa as pt
-   from pint.config import examplefile
+   import jaxpint.par as par
+   from jaxpint import native, build_model, WLSFitter
 
-   from jaxpint import (
-       build_timing_model,
-       pint_model_to_params,
-       pint_toas_to_jax,
-       WLSFitter,
-   )
+   # Parse and build entirely in JaxPINT (the .tim must be TEMPO2 format)
+   parsed = par.get_model("pulsar.par")               # ParResult: parameters + components
+   toa_data = native.get_TOAs("pulsar.tim", parsed)   # TOAData (clock-corrected, barycentered)
+   timing_model, noise_model = build_model(parsed, toa_data)  # TimingModel + NoiseModel
 
-   # Load with PINT, then convert to JaxPINT types
-   pint_model = pm.get_model(examplefile("NGC6440E.par"))
-   pint_toas = pt.get_TOAs(examplefile("NGC6440E.tim"), ephem="DE421")
-
-   toa_data = pint_toas_to_jax(pint_toas, model=pint_model)
-   params = pint_model_to_params(pint_model).params
-   timing_model, noise_model = build_timing_model(pint_model, pint_toas)
-
-   # Fit (first call JIT-compiles; subsequent calls are cached)
-   fitter = WLSFitter(timing_model, toa_data, params, noise_model=noise_model)
-   result = fitter.fit_toas(maxiter=99)
+   # `parsed.params` is the ParameterVector — the only differentiable leaf
+   fitter = WLSFitter(timing_model, toa_data, parsed.params, noise_model=noise_model)
+   result = fitter.fit_toas(maxiter=99)   # first call JIT-compiles; later calls are cached
 
    print(f"Reduced χ² = {result.reduced_chi2:.4f}  ({result.dof} dof)")
 
-For an end-to-end walkthrough of the PTA signal-processing pipeline, see
-:doc:`guides/pta_likelihood_flow`.
+:func:`jaxpint.native.get_model_and_toas` wraps the three parsing lines into a
+single call, mirroring PINT's ``get_model_and_toas``.
+
+.. tip::
+
+   Don't have a ``.par`` / ``.tim`` pair handy? PINT ships example files that
+   make good test data. Install the extra (``pip install jaxpint[pint]``) and
+   locate a TEMPO2-format pair with ``from pint.config import examplefile``,
+   e.g. ``examplefile("B1855+09_NANOGrav_dfg+12.tim")`` — the files are read by
+   JaxPINT's *native* parser; PINT is used only to find them on disk.
+
+For loading details (the native vs. PINT-bridge paths) see
+:doc:`guides/loading_data`; for an end-to-end walkthrough of the PTA
+signal-processing pipeline see :doc:`guides/pta_likelihood_flow`.
 
 Where to next
 -------------

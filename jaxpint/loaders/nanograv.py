@@ -9,9 +9,14 @@ layouts:
 - one directory per pulsar (``<root>/<PSR>/<stem>.par`` + sibling ``.tim``).
 
 The user downloads + extracts the tarball once and points
-:func:`load_nanograv_pta` at the resulting tree. The loader runs each pair
-through PINT and the JaxPINT bridge, returning the same tuple-of-tuples shape
-that :class:`jaxpint.pta.likelihood.PTAConfig` expects.
+:func:`load_nanograv_pta` at the resulting tree. The loader parses each pair
+**natively** (no PINT) via JaxPINT's own ``.par`` / ``.tim`` reader, returning
+the same tuple-of-tuples shape that :class:`jaxpint.pta.likelihood.PTAConfig`
+expects.
+
+The native ``.tim`` reader handles the TEMPO2 line format, which is what the
+NANOGrav narrowband releases ship; legacy fixed-column formats are not
+supported (see :doc:`/guides/loading_data`).
 
 This first pass supports narrowband only — wideband ingestion uses different
 fitting plumbing and will land separately.
@@ -23,16 +28,11 @@ import logging
 from pathlib import Path
 from typing import NamedTuple, Sequence
 
-import pint.models as pm
-import pint.toa as pt
-
-from jaxpint.bridge import (
-    build_timing_model,
-    pint_model_to_params,
-    pint_toas_to_jax,
-)
+from jaxpint.loaders.native import native_toas_to_jax
 from jaxpint.model import TimingModel
+from jaxpint.model_builder import build_model
 from jaxpint.noise import NoiseModel
+from jaxpint.par import get_model as parse_par
 from jaxpint.types import ParameterVector, TOAData
 
 log = logging.getLogger(__name__)
@@ -145,21 +145,17 @@ def load_nanograv_pta(
     exclude
         Pulsar names to drop after discovery / selection.
     ephem
-        Solar System ephemeris passed to :func:`pint.toa.get_TOAs`. Defaults
-        to ``DE440`` to match the 15yr release's reference analysis.
+        Solar System ephemeris passed to the native TOA loader
+        (:func:`jaxpint.native.get_TOAs`). Defaults to ``DE440`` to match the
+        15yr release's reference analysis.
     bipm_version
-        BIPM clock realisation passed to :func:`pint.toa.get_TOAs`.
+        BIPM clock realisation. The loader applies BIPM (``include_bipm=True``)
+        with this version.
     planets
-        Whether :func:`pint.toa.get_TOAs` should compute and cache
-        SSB-to-planet position vectors on the TOA table. These are
-        consumed by the ``PLANET_SHAPIRO`` delay component (Shapiro
-        delay through the gas giants). The bridge re-runs
-        :meth:`pint.toa.TOAs.compute_posvels` with ``planets=True`` for
-        any pulsar whose model has ``PLANET_SHAPIRO Y`` but is missing
-        the planet columns (see
-        :func:`jaxpint.bridge.pint_toas_to_jax`), so the default of
-        ``True`` is safe — passing ``False`` only defers the work into
-        the bridge, it cannot break PLANET_SHAPIRO evaluation.
+        Whether to compute SSB-to-planet position vectors. These are consumed by
+        the ``PLANET_SHAPIRO`` delay component (Shapiro delay through the gas
+        giants); the default of ``True`` is safe for any model, and pulsars
+        without ``PLANET_SHAPIRO`` simply ignore them.
 
     Returns
     -------
@@ -198,17 +194,16 @@ def load_nanograv_pta(
         par_path, tim_path = pairs[name]
         log.info("Loading %s from %s", name, par_path)
 
-        pint_model = pm.get_model(str(par_path))
-        pint_toas = pt.get_TOAs(
+        par_result = parse_par(str(par_path))
+        toa_data = native_toas_to_jax(
             str(tim_path),
-            model=pint_model,
+            par_result,
             ephem=ephem,
+            include_bipm=True,
             bipm_version=bipm_version,
             planets=planets,
         )
-        toa_data = pint_toas_to_jax(pint_toas, model=pint_model)
-        par_result = pint_model_to_params(pint_model)
-        tm, nm = build_timing_model(pint_model, pint_toas)
+        tm, nm = build_model(par_result, toa_data)
 
         out_names.append(name)
         toa_data_list.append(toa_data)
