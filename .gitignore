@@ -7,3 +7,9 @@ docs/_build/
 docs/api/generated/
 .claude/
 *.bkp
+
+# clock data: the bulk snapshot is downloaded at runtime, never committed.
+# Ignore everything in the dir, then re-include only the tracked schema, so any
+# future file types from the IPTA index (leap.sec, *.ut1, ...) stay ignored too.
+jaxpint/data/clock/*
+!jaxpint/data/clock/clock_metadata.json
