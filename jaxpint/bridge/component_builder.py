@@ -45,7 +45,7 @@ def build_timing_model(
     """
     from jaxpint.bridge.model_conversion import pint_model_to_params
     from jaxpint.bridge.toa_conversion import pint_toas_to_jax
-    from jaxpint.bridge._model_builder import build_model
+    from jaxpint.model_builder import build_model
 
     par = pint_model_to_params(pint_model)
     toa_data = pint_toas_to_jax(toas, model=pint_model) if toas is not None else None
