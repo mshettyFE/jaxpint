@@ -67,6 +67,7 @@ from .bridge import (
     pint_toas_to_jax,
 )
 from .likelihood import single_pulsar_logL
+from . import native
 from .loaders import NanogravPTA, load_nanograv_pta
 from .simulation import apply_delay_to_toas, make_fake_toas, simulate_noise, zero_residuals
 from .utils import (
@@ -145,6 +146,7 @@ __all__ = [
     "fourier_sum",
     "load_nanograv_pta",
     "make_fake_toas",
+    "native",
     "normalize_designmatrix",
     "params_to_pint_model",
     "pint_model_to_params",
