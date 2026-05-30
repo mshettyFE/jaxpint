@@ -220,7 +220,22 @@ def test_clock_file_path_missing_raises(cache, monkeypatch, fresh_state):
 
 
 def test_no_bulk_clock_files_committed():
-    """The repo must never accumulate committed .clk/.dat (download-only)."""
+    """The repo must never *commit* .clk/.dat (they are download-only).
+
+    Checks git's tracked set, not the working tree: the bulk snapshot is
+    downloaded into ``jaxpint/data/clock/`` at runtime (and is gitignored), so
+    those files legitimately exist on disk for any developer who has run the
+    chain — what must stay empty is the *committed* set.
+    """
+    import subprocess
+
     repo = Path(clock.__file__).resolve().parents[2]
-    bulk = list((repo / "jaxpint").rglob("*.clk")) + list((repo / "jaxpint").rglob("*.dat"))
-    assert not bulk, f"unexpected committed bulk clock files: {bulk}"
+    try:
+        tracked = subprocess.run(
+            ["git", "ls-files", "jaxpint/*.clk", "jaxpint/*.dat",
+             "jaxpint/**/*.clk", "jaxpint/**/*.dat"],
+            cwd=repo, capture_output=True, text=True, check=True,
+        ).stdout.split()
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pytest.skip("git not available")
+    assert not tracked, f"bulk clock files are committed (should be gitignored): {tracked}"

@@ -67,6 +67,11 @@
       "bogus_last_correction": false,
       "valid_beyond_ends": false
     },
+    "tai2tt_bipm2023.clk": {
+      "format": "tempo2",
+      "bogus_last_correction": false,
+      "valid_beyond_ends": false
+    },
     "time_ao.dat": {
       "format": "tempo",
       "bogus_last_correction": false,
@@ -104,135 +109,1353 @@
     }
   },
   "observatories": {
+    "acre": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "acreroad",
+        "ar",
+        "a"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "algonquin": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "ar",
+        "aro"
+      ],
+      "tempo_code": null,
+      "itoa_code": "ar"
+    },
     "arecibo": {
       "clock_file": [
         "time_ao.dat"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "3",
+        "aoutc",
+        "ao"
+      ],
+      "tempo_code": "3",
+      "itoa_code": "ao"
     },
     "arecibo_pre_2021": {
       "clock_file": [
         "time_ao.dat"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "ata": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "hcro"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "axis": {
+      "clock_file": [],
+      "apply_gps2utc": false,
+      "timescale": "utc",
+      "aliases": [
+        "axi"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "barycenter": {
+      "clock_file": [],
+      "apply_gps2utc": false,
+      "timescale": "tdb",
+      "aliases": [
+        "bat",
+        "bary",
+        "ssb",
+        "@"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "cambridge": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "cam"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "ccera": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "chime": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "ch",
+        "y"
+      ],
+      "tempo_code": "y",
+      "itoa_code": "ch"
+    },
+    "darnhall": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de601": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "eflfr"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de601hba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "eflfrhba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de601lba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "eflfrlba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de601lbh": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "eflfrlbh"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de602": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "uwlfr"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de602hba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "uwlfrhba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de602lba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "uwlfrlba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de602lbh": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "uwlfrlbh"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de603": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "tblfr"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de603hba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "tblfrhba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de603lba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "tblfrlba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de603lbh": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "tblfrlbh"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de604": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "polfr"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de604hba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "polfrhba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de604lba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "polfrlba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de604lbh": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "polfrlbh"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de605": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "julfr"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de605hba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "julfrhba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de605lba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "julfrlba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de605lbh": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "julfrlbh"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de609": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "ndlfr"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de609hba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "ndlfrhba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de609lba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "ndlfrlba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "de609lbh": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "ndlfrlbh"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "defford": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "drao": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "dr"
+      ],
+      "tempo_code": null,
+      "itoa_code": "dr"
+    },
+    "dss_43": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "tid43"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "effelsberg": {
       "clock_file": [
         "eff2gps.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "g",
+        "eff",
+        "ef"
+      ],
+      "tempo_code": "g",
+      "itoa_code": "ef"
     },
     "effelsberg_asterix": {
       "clock_file": [
         "effix2gps.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "effix"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "effelsberg_pre_2021": {
       "clock_file": [
         "eff2gps.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "fast": {
       "clock_file": [
         "time_fast.dat"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "k",
+        "fa"
+      ],
+      "tempo_code": "k",
+      "itoa_code": "fa"
+    },
+    "fi609": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "filfr"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "fi609hba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "filfrhba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "fi609lba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "filfrlba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "fi609lbh": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "filfrlbh"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "fr606": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "frlfr"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "fr606hba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "frlfrhba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "fr606lba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "frlfrlba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "fr606lbh": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "frlfrlbh"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "gb140": {
       "clock_file": [
         "time_gb140.dat"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "g1",
+        "a"
+      ],
+      "tempo_code": "a",
+      "itoa_code": "g1"
+    },
+    "gb300": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "g3",
+        "9"
+      ],
+      "tempo_code": "9",
+      "itoa_code": "g3"
     },
     "gb853": {
       "clock_file": [
         "time_gb853.dat"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "g8",
+        "b"
+      ],
+      "tempo_code": "b",
+      "itoa_code": "g8"
+    },
+    "gb_20m_xyz": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "g2"
+      ],
+      "tempo_code": null,
+      "itoa_code": "g2"
     },
     "gbt": {
       "clock_file": [
         "time_gbt.dat"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "gb",
+        "1"
+      ],
+      "tempo_code": "1",
+      "itoa_code": "gb"
     },
     "gbt_pre_2021": {
       "clock_file": [
         "time_gbt.dat"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "geo600": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "geohf"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "geocenter": {
+      "clock_file": [],
+      "apply_gps2utc": false,
+      "timescale": "utc",
+      "aliases": [
+        "o",
+        "geo_nogps",
+        "0",
+        "geo",
+        "coe"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "geocenter_gps": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "geo_gps",
+        "coe_gps"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "gmrt": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "gm",
+        "r"
+      ],
+      "tempo_code": "r",
+      "itoa_code": "gm"
+    },
+    "goldstone": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "gs"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "grao": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "grao"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "hamburg": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "hartebeesthoek": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "hart"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "hawc": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "hess": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "hobart": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "ho",
+        "4"
+      ],
+      "tempo_code": "4",
+      "itoa_code": "ho"
+    },
+    "iar1": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "iar2": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "jb_42ft": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "jb42"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "jb_mkii": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "j2",
+        "jbmk2",
+        "h"
+      ],
+      "tempo_code": "h",
+      "itoa_code": "j2"
+    },
+    "jb_mkii_dfb": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "jbmk2dfb"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "jb_mkii_rch": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "jbmk2roach"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "jbafb": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "jboafb"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "jbdfb": {
       "clock_file": [
         "jbdfb2jb.clk",
         "jb2gps.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "jbodfb"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "jbroach": {
       "clock_file": [
         "jbroach2jb.clk",
         "jb2gps.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "jboroach"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "jodrell": {
       "clock_file": [
         "jb2gps.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "8",
+        "jb"
+      ],
+      "tempo_code": "8",
+      "itoa_code": "jb"
     },
     "jodrell_pre_2021": {
       "clock_file": [
         "jb2gps.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "jodrellm4": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "jbm4"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "kagra": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "lcgt",
+        "k1"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "kat-7": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "k7"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "knockin": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "la_palma": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "lapalma",
+        "lap"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "leap": {
       "clock_file": [
         "leap2effix.clk",
         "effix2gps.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "leap"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "lho": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "h1",
+        "hanford"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "llo": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "l1",
+        "livingston"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "lofar": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "lf",
+        "t"
+      ],
+      "tempo_code": "t",
+      "itoa_code": "lf"
+    },
+    "lst": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "lwa1": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "lw",
+        "x"
+      ],
+      "tempo_code": "x",
+      "itoa_code": "lw"
+    },
+    "lwa_sv": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "lwasv",
+        "ls"
+      ],
+      "tempo_code": null,
+      "itoa_code": "ls"
+    },
+    "magic": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "meerkat": {
       "clock_file": [
         "mk2utc_observatory.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "mk",
+        "m"
+      ],
+      "tempo_code": "m",
+      "itoa_code": "mk"
+    },
+    "mkiii": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "jbmk3"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "most": {
       "clock_file": [
         "mo2gps.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "e",
+        "mo"
+      ],
+      "tempo_code": "e",
+      "itoa_code": "mo"
+    },
+    "mwa": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "u",
+        "mw"
+      ],
+      "tempo_code": "u",
+      "itoa_code": "mw"
+    },
+    "nancay": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "ncy",
+        "nc",
+        "f"
+      ],
+      "tempo_code": "f",
+      "itoa_code": "nc"
+    },
+    "nanshan": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "ns"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "narrabri": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "atca"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "ncyobs": {
       "clock_file": [
         "ncyobs2obspm.clk",
         "obspm2gps.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "nuppi",
+        "w"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "nenufar": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "northern_cross": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "bo",
+        "d"
+      ],
+      "tempo_code": "d",
+      "itoa_code": "bo"
+    },
+    "op": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "obspm"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "ort": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "or"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "parkes": {
       "clock_file": [
         "pks2gps.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "7",
+        "pk",
+        "pks"
+      ],
+      "tempo_code": "7",
+      "itoa_code": "pk"
+    },
+    "pico_veleta": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "v",
+        "pv"
+      ],
+      "tempo_code": "v",
+      "itoa_code": "pv"
+    },
+    "princeton": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "5",
+        "pr"
+      ],
+      "tempo_code": "5",
+      "itoa_code": "pr"
+    },
+    "ps1": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "p",
+        "ps"
+      ],
+      "tempo_code": "p",
+      "itoa_code": "ps"
+    },
+    "quabbin": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "qu",
+        "2"
+      ],
+      "tempo_code": "2",
+      "itoa_code": "qu"
+    },
+    "se607": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "onlfr"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "se607hba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "onlfrhba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "se607lba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "onlfrlba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "se607lbh": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "onlfrlbh"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "shao": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "s",
+        "sh"
+      ],
+      "tempo_code": "s",
+      "itoa_code": "sh"
+    },
+    "srt": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "sr",
+        "z"
+      ],
+      "tempo_code": "z",
+      "itoa_code": "sr"
+    },
+    "stl_geo": {
+      "clock_file": [],
+      "apply_gps2utc": false,
+      "timescale": "utc",
+      "aliases": [
+        "stl_geo",
+        "spacecraft"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "tabley": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "pickmere"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "uao": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "ns"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "uk608": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "uklfr"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "uk608hba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "uklfrhba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "uk608lba": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "uklfrlba"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "uk608lbh": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "uklfrlbh"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "utr-2": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "utr2"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "virgo": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "v1"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "vla": {
       "clock_file": [
         "time_vla.dat"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "vl",
+        "6",
+        "jvla"
+      ],
+      "tempo_code": "6",
+      "itoa_code": "vl"
+    },
+    "vla_site": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "c",
+        "v2"
+      ],
+      "tempo_code": "c",
+      "itoa_code": "v2"
+    },
+    "warkworth_12m": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "wark12m"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
+    },
+    "warkworth_30m": {
+      "clock_file": [],
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "wark30m"
+      ],
+      "tempo_code": null,
+      "itoa_code": null
     },
     "wsrt": {
       "clock_file": [
         "wsrt2gps.clk"
       ],
-      "apply_gps2utc": true
+      "apply_gps2utc": true,
+      "timescale": "utc",
+      "aliases": [
+        "i",
+        "ws",
+        "we"
+      ],
+      "tempo_code": "i",
+      "itoa_code": "ws"
     }
   }
 }
