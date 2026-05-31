@@ -20,7 +20,7 @@ set -euo pipefail
 NETID="${1:?usage: bash slurm/stage_ocarina.sh <netid> [local_ocarina_dir]}"
 
 # Default: ocarina_2 lives in the parent of the JaxPINT checkout (jax_pint/ocarina_2).
-DEFAULT_OCARINA="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/ocarina_2"
+DEFAULT_OCARINA="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/ocarina"
 LOCAL_OCARINA="${2:-${DEFAULT_OCARINA}}"
 
 # Mirror the local dataset's directory name on the remote so multiple datasets
