@@ -15,6 +15,8 @@ Positions are km, velocities km/s, matching PINT's table columns.
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 from astropy import units as u
 from astropy.coordinates import (
@@ -23,8 +25,65 @@ from astropy.coordinates import (
     solar_system_ephemeris,
 )
 from astropy.time import Time
+from astropy.utils.data import download_file
 
 from ..constants import PLANETS
+
+# Mirror list for JPL SPK kernels. Order matters: FTP is first so the fallback
+# below skips TLS entirely -- works in HPC containers whose CA bundles are
+# missing, where astropy's default HTTPS URL fails cert verification. (Same
+# trick PINT uses in pint.solar_system_ephemerides.)
+_EPHEMERIS_MIRRORS: tuple[str, ...] = (
+    "ftp://ssd.jpl.nasa.gov/pub/eph/planets/bsp/",
+    "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/a_old_versions/",
+    "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/",
+)
+_LOADED_EPHEMS: dict[str, str] = {}
+
+
+def _ensure_ephemeris(ephem: str) -> str:
+    """Resolve ``ephem`` to a value usable in ``solar_system_ephemeris.set(...)``.
+
+    Tries, in order, returning at the first success:
+
+    1. In-process cache (``_LOADED_EPHEMS``) — repeat calls are O(1).
+    2. ``$JAXPINT_EPHEM_PATH`` — a pre-staged ``.bsp`` file or directory (lets
+       you avoid the network on locked-down nodes).
+    3. astropy's name-based resolver — handles built-in ephemerides without
+       network and reuses astropy's own download cache.
+    4. ``download_file(sources=mirrors)`` with the FTP mirror first, so
+       containers without a working CA bundle still succeed via plain FTP.
+
+    Returns the value to pass to ``solar_system_ephemeris.set(...)`` -- either
+    the original name (when astropy resolved it) or a local file path.
+    """
+    key = ephem.lower()
+    cached = _LOADED_EPHEMS.get(key)
+    if cached is not None:
+        return cached
+
+    local = os.environ.get("JAXPINT_EPHEM_PATH")
+    if local:
+        p = local if os.path.isfile(local) else os.path.join(local, f"{key}.bsp")
+        if os.path.isfile(p):
+            _LOADED_EPHEMS[key] = p
+            return p
+
+    # astropy's own resolver: populates its URL cache as a side effect. The
+    # `with ... : pass` restores the previous global setting once validated, so
+    # we don't leak state if the caller has its own scoping.
+    try:
+        with solar_system_ephemeris.set(ephem):
+            pass
+        _LOADED_EPHEMS[key] = ephem
+        return ephem
+    except (ValueError, OSError):
+        pass
+
+    sources = [f"{m}{key}.bsp" for m in _EPHEMERIS_MIRRORS]
+    p = download_file(sources[0], cache=True, sources=sources)
+    _LOADED_EPHEMS[key] = p
+    return p
 
 
 def _body_ssb_posvel(body: str, tdb: Time):
@@ -71,7 +130,8 @@ def compute_posvels(
     # astropy Time in TDB from the two-part MJD (jd1/jd2 for precision).
     tdb = Time(tdb_int, tdb_frac, format="mjd", scale="tdb")
 
-    with solar_system_ephemeris.set(ephem):
+    resolved = _ensure_ephemeris(ephem)
+    with solar_system_ephemeris.set(resolved):
         earth_pos, earth_vel = _body_ssb_posvel("earth", tdb)
 
         if itrf_xyz is None:
