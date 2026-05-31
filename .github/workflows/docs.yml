@@ -56,13 +56,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Install only what's needed to import jaxpint and run Sphinx.
+      # Install what's needed to import jaxpint AND fully document it with Sphinx.
       #   --extra cpu   -> jax[cpu] (no CUDA wheels on the runner)
       #   --extra docs  -> sphinx, sphinx-copybutton, pydata-sphinx-theme
-      # Base deps (equinox, jaxtyping, pint-pulsar, blackjax) come along automatically.
-      # We deliberately skip `cuda` / `dev` extras -- no CUDA wheels, no pytest, no notebook stack.
+      #   --extra pint  -> pint-pulsar. REQUIRED for the docs build even though
+      #       PINT is an optional *runtime* dependency: autodoc must import
+      #       jaxpint.bridge (the PINT adapters) to document it, and the guides
+      #       cross-reference jaxpint.bridge.* functions. Without PINT those
+      #       targets don't exist and the `-W` build fails on unresolved refs.
+      # Base deps (equinox, jaxtyping, blackjax, astropy, pyerfa, jplephem) come
+      # along automatically. We skip `cuda` / `dev` -- no CUDA wheels, no pytest.
       - name: Install docs dependencies
-        run: uv sync --extra cpu --extra docs
+        run: uv sync --extra cpu --extra docs --extra pint
 
       # Build the HTML site.
       #   -W              -> treat warnings as errors (catches broken cross-refs,
