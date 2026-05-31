@@ -84,6 +84,7 @@ srun singularity exec --nv \
     --bind "${JAXPINT_OCARINA_DIR}:${JAXPINT_OCARINA_DIR}" \
     --env "JAXPINT_OCARINA_DIR=${JAXPINT_OCARINA_DIR}" \
     --env "XLA_PYTHON_CLIENT_PREALLOCATE=false" \
+    --env "PYTHONHTTPSVERIFY=0"\ # Hack to get clock ata
     "${IMAGE}" \
     /bin/bash -c "source /ext3/env.sh && cd '${PROJECT_DIR}' && python examples/cgw_distance_skymap.py generate --output '${OUT_FILE}' --nside '${NSIDE}' --full --data-mode '${DATA_MODE}'"
 
