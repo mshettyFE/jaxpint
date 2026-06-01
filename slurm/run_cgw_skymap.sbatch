@@ -37,10 +37,21 @@ module purge
 # Don't preallocate the GPU (matches local behavior; avoids autotuner OOM).
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
-# Which staged dataset to run, and in which likelihood mode. Override at submit:
-#   sbatch --export=ALL,OCARINA=ocarina,DATA_MODE=real slurm/run_cgw_skymap.sbatch
+# Which staged dataset to run, in which likelihood mode, and whether to
+# marginalize the CGW orientation (cos_inc, psi, phase0). Override at submit:
+#   sbatch --export=ALL,OCARINA=ocarina,DATA_MODE=real,MARGINALIZE=1 slurm/run_cgw_skymap.sbatch
 OCARINA="${OCARINA:-ocarina_2}"
 DATA_MODE="${DATA_MODE:-real}"
+MARGINALIZE="${MARGINALIZE:-0}"
+
+# Derive the conditional CLI flag and filename tag from MARGINALIZE.
+if [ "${MARGINALIZE}" = "1" ]; then
+    MARG_FLAG="--marginalize-orientation"
+    MARG_TAG="-marg"
+else
+    MARG_FLAG=""
+    MARG_TAG=""
+fi
 
 # Ocarina par/tim directory staged by slurm/stage_ocarina.sh (mirrors the local
 # dataset name). The driver reads this via $JAXPINT_OCARINA_DIR.
@@ -51,7 +62,7 @@ IMAGE="/share/apps/images/cuda12.1.1-cudnn8.9.0-devel-ubuntu22.04.2.sif"
 PROJECT_DIR="${SLURM_SUBMIT_DIR}"
 
 OUT_DIR="/scratch/${USER}/jaxpint-out"
-OUT_FILE="${OUT_DIR}/cgw-skymap-${OCARINA}-${DATA_MODE}-${SLURM_JOB_ID}.npz"
+OUT_FILE="${OUT_DIR}/cgw-skymap-${OCARINA}-${DATA_MODE}${MARG_TAG}-${SLURM_JOB_ID}.npz"
 mkdir -p "${OUT_DIR}"
 
 # Resolution / fidelity knobs (override by editing these).
@@ -70,6 +81,7 @@ echo "[sbatch] IMAGE       = ${IMAGE}"
 echo "[sbatch] PROJECT_DIR = ${PROJECT_DIR}"
 echo "[sbatch] OCARINA_DIR = ${JAXPINT_OCARINA_DIR}"
 echo "[sbatch] DATA_MODE   = ${DATA_MODE}"
+echo "[sbatch] MARGINALIZE = ${MARGINALIZE} (orientation: ${MARG_FLAG:-fixed face-on})"
 echo "[sbatch] OUT_FILE    = ${OUT_FILE}"
 echo "[sbatch] NSIDE       = ${NSIDE}"
 
@@ -86,6 +98,6 @@ srun singularity exec --nv \
     --env "XLA_PYTHON_CLIENT_PREALLOCATE=false" \
     --env "PYTHONHTTPSVERIFY=0"\ # Hack to get clock ata
     "${IMAGE}" \
-    /bin/bash -c "source /ext3/env.sh && cd '${PROJECT_DIR}' && python examples/cgw_distance_skymap.py generate --output '${OUT_FILE}' --nside '${NSIDE}' --full --data-mode '${DATA_MODE}'"
+    /bin/bash -c "source /ext3/env.sh && cd '${PROJECT_DIR}' && python examples/cgw_distance_skymap.py generate --output '${OUT_FILE}' --nside '${NSIDE}' --full --data-mode '${DATA_MODE}' ${MARG_FLAG}"
 
 echo "[sbatch] Done. Output at ${OUT_FILE}"
