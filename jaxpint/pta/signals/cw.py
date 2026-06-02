@@ -76,12 +76,25 @@ def fplus_fcross(
     ----------
     .. [cw_esc12] Ellis, Siemens & Creighton (2012), ApJ 756, 175.
     """
+    return _fplus_fcross_costheta(pos, jnp.cos(gwtheta), jnp.sin(gwtheta), gwphi)
+
+
+def _fplus_fcross_costheta(
+    pos: Float[Array, "3"],
+    cos_theta: Float[Array, ""],
+    sin_theta: Float[Array, ""],
+    gwphi: Float[Array, ""],
+) -> tuple[Float[Array, ""], Float[Array, ""]]:
+    """Antenna pattern given pre-computed cos/sin of the source colatitude.
+
+    Same physics as :func:`fplus_fcross`; lets callers avoid an
+    ``arccos(cos_theta)`` → ``cos/sin`` roundtrip that NaNs out 2nd-order
+    autodiff at the boundary ``cos_theta = ±1`` (chain rule produces ``0/0``).
+    """
     x, y, z = pos[0], pos[1], pos[2]
 
     sin_phi = jnp.sin(gwphi)
     cos_phi = jnp.cos(gwphi)
-    sin_theta = jnp.sin(gwtheta)
-    cos_theta = jnp.cos(gwtheta)
 
     m_dot_pos = sin_phi * x - cos_phi * y
     n_dot_pos = (
@@ -262,8 +275,19 @@ class CWInjector(SignalInjector):
         Override default initial values.  Keys must be in this injector's
         parameter set (see ``linear_amplitude`` for the amplitude key).
     earth_term_only : bool
-        Drop the pulsar term (and the pulsar-distance dependence). Standard for
-        sensitivity / upper-limit sky maps.
+        Drop the pulsar term (and the pulsar-distance dependence) globally. Standard
+        for sensitivity / upper-limit sky maps. If True, overrides ``pulsar_term_mask``.
+    pulsar_term_mask : tuple[bool, ...], optional
+        Per-pulsar selectivity for whether the pulsar term enters the residual.
+        Length must equal ``n_psr``. ``True`` for an entry means that pulsar
+        contributes its pulsar term (and so requires a measured ``PX``); ``False``
+        means Earth-term only for that pulsar (no PX dependence). Default ``None``
+        is equivalent to all-``True`` — every pulsar contributes the pulsar term
+        when ``earth_term_only=False``. This is the "anchor pulsar" mechanism: an
+        anchor pulsar has ``True`` (its pegged-PX pulsar-term phase contributes
+        coherently); a non-anchor pulsar has ``False`` (its pulsar-term phase
+        would be effectively uniform on [0, 2pi), so the Fisher-level approximation
+        drops it).
     linear_amplitude : bool
         If True the amplitude parameter is the *linear* strain ``h0`` (named
         ``"h0"``) instead of ``log10(h0)`` (named ``"log10_h"``).  In this mode
@@ -282,12 +306,24 @@ class CWInjector(SignalInjector):
         initial_values: Optional[dict[str, float]] = None,
         earth_term_only: bool = False,
         linear_amplitude: bool = False,
+        pulsar_term_mask: Optional[tuple[bool, ...]] = None,
     ):
         self.positions = pulsar_positions
         self.dist_param = dist_param_name
         self.prefix = prefix
         self.earth_term_only = earth_term_only
         self.linear_amplitude = linear_amplitude
+        n_psr = int(pulsar_positions.shape[0])
+        if pulsar_term_mask is None:
+            pulsar_term_mask = tuple(True for _ in range(n_psr))
+        else:
+            pulsar_term_mask = tuple(bool(b) for b in pulsar_term_mask)
+            if len(pulsar_term_mask) != n_psr:
+                raise ValueError(
+                    f"pulsar_term_mask length {len(pulsar_term_mask)} does not "
+                    f"match n_psr={n_psr}."
+                )
+        self.pulsar_term_mask = pulsar_term_mask
 
         # The amplitude parameter is renamed (and defaults to 0 = no signal) in
         # linear mode; the other six parameters are unchanged.
@@ -349,9 +385,14 @@ class CWInjector(SignalInjector):
         (n_toas,) array
             CW timing residual in seconds.
         """
+        # Per-pulsar effective flag: True if global earth_term_only is set OR if
+        # pulsar p is masked out (non-anchor). Both `self.earth_term_only` and
+        # `self.pulsar_term_mask[p]` are Python bools, so this stays a Python bool
+        # — `cw_delay_from_array` can still branch on it statically.
+        earth_term_only_p = self.earth_term_only or (not self.pulsar_term_mask[p])
         # Earth-term-only has no pulsar-distance dependence, so don't require PX.
         pulsar_dist = (
-            jnp.float64(1.0) if self.earth_term_only
+            jnp.float64(1.0) if earth_term_only_p
             else pulsar_params.param_value(self.dist_param)
         )
         return cw_delay(
@@ -360,7 +401,7 @@ class CWInjector(SignalInjector):
             pulsar_dist,
             global_params,
             prefix=self.prefix,
-            earth_term_only=self.earth_term_only,
+            earth_term_only=earth_term_only_p,
             linear_amplitude=self.linear_amplitude,
             param_names=self.param_names,
         )
@@ -430,15 +471,27 @@ def cw_delay_from_array(
     delay : (n_toas,) array
         CW timing residual in seconds.
     """
+    # Use cos_gwtheta and cos_inc DIRECTLY rather than round-tripping through
+    # arccos → trig. The old code did `gwtheta = arccos(cw_params[1])` then
+    # `sin(gwtheta)/cos(gwtheta)` later. At the boundary cos_gwtheta=±1 (and
+    # cos_inc=±1 — the face-on / edge-on configurations) the chain rule for
+    # the roundtrip is mathematically the identity but evaluates to 0/0 in
+    # autodiff, which NaNs out *higher-order* derivatives (the Hessian over
+    # sky / inclination — used by jaxpint.pta.cw_localization for Fisher
+    # forecasts). Skipping the roundtrip costs nothing and is differentiable
+    # to arbitrary order anywhere except an *exact* hit on the boundary
+    # (HEALPix pixels never land there, and orientation marginalization grids
+    # use midpoints).
     h0 = cw_params[0] if linear_amplitude else 10.0 ** cw_params[0]
-    gwtheta = jnp.arccos(cw_params[1])
+    cos_theta = cw_params[1]                       # cos(gwtheta)
+    sin_theta = jnp.sqrt(jnp.clip(1.0 - cos_theta * cos_theta, 0.0, None))
     gwphi = cw_params[2]
     f0 = 10.0 ** cw_params[3]
-    inc = jnp.arccos(cw_params[4])
+    cos_inc = cw_params[4]                          # already cos(inc)
     psi = cw_params[5]
     phase0 = cw_params[6]
 
-    fp, fc = fplus_fcross(pos, gwtheta, gwphi)
+    fp, fc = _fplus_fcross_costheta(pos, cos_theta, sin_theta, gwphi)
 
     toas_s = (
         toa_data.tdb_int.astype(jnp.float64) * 86400.0
@@ -456,8 +509,6 @@ def cw_delay_from_array(
         delta_sin = jnp.sin(phase_earth)
         delta_cos = jnp.cos(phase_earth)
     else:
-        sin_theta = jnp.sin(gwtheta)
-        cos_theta = jnp.cos(gwtheta)
         omhat = jnp.array([
             -sin_theta * jnp.cos(gwphi),
             -sin_theta * jnp.sin(gwphi),
@@ -482,7 +533,6 @@ def cw_delay_from_array(
         delta_sin = 2.0 * jnp.cos(phi_avg) * jnp.sin(phi_diff)
         delta_cos = -2.0 * jnp.sin(phi_avg) * jnp.sin(phi_diff)
 
-    cos_inc = jnp.cos(inc)
     At = -(1.0 + cos_inc**2) * delta_sin
     Bt = 2.0 * cos_inc * delta_cos
 

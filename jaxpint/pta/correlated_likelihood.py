@@ -377,8 +377,10 @@ def pta_logL_correlated(
         Sigma_inv_z = jax.scipy.linalg.cho_solve(Sigma_cf, z)
         correction = jnp.dot(z, Sigma_inv_z)
 
-        # Log-determinants
-        _, logdet_Phi_gwb = jnp.linalg.slogdet(Phi_gwb)
+        # Log-determinants. Cholesky-diag-log instead of slogdet:
+        # slogdet's sign branch is non-smooth and NaNs out the Hessian.
+        Phi_gwb_cf = jax.scipy.linalg.cho_factor(Phi_gwb)
+        logdet_Phi_gwb = 2.0 * jnp.sum(jnp.log(jnp.abs(jnp.diag(Phi_gwb_cf[0]))))
         # log|Sigma| from Cholesky: 2 * sum(log(diag(L)))
         logdet_Sigma_gwb = 2.0 * jnp.sum(jnp.log(jnp.diag(Sigma_cf[0])))
 
