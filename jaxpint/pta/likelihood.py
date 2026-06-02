@@ -924,7 +924,11 @@ def pta_logL(
         jax.scipy.linalg.cho_solve(Sigma_cf, basis_proj_residual_joint),
     )
 
-    _, logdet_Phi_joint = jnp.linalg.slogdet(Phi_joint)
+    # slogdet breaks 2nd-order autodiff (sign branch is non-smooth, NaNs out
+    # the Hessian even when sign is constantly +1). Use Cholesky-diag-log
+    # instead, matching the pattern in utils.py:434, 612.
+    Phi_joint_cf = jax.scipy.linalg.cho_factor(Phi_joint)
+    logdet_Phi_joint = 2.0 * jnp.sum(jnp.log(jnp.abs(jnp.diag(Phi_joint_cf[0]))))
     logdet_Sigma_joint = 2.0 * jnp.sum(jnp.log(jnp.diag(Sigma_cf[0])))
 
     n_total = sum(td.n_toas for td in config.toa_data_list)

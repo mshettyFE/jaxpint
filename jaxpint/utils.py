@@ -431,7 +431,12 @@ def woodbury_dot(
 
     logdet_N = jnp.sum(jnp.log(Ndiag))
     logdet_Phi = jnp.sum(jnp.log(Phidiag))
-    _, logdet_Sigma = jnp.linalg.slogdet(Sigma)
+    # Use the Cholesky factor (already computed above) instead of jnp.linalg.slogdet:
+    # det(Sigma) = det(L L^T) = (prod diag(L))^2, so logdet = 2 sum log diag(L).
+    # Mathematically identical for our PD Sigma but DOES NOT break higher-order
+    # autodiff — slogdet's sign branch NaNs out the Hessian (needed for sky-Fisher
+    # in cw_localization). See cw_localization.py docstring.
+    logdet_Sigma = 2.0 * jnp.sum(jnp.log(jnp.abs(jnp.diag(Sigma_cf[0]))))
 
     logdet_C = logdet_N + logdet_Phi + logdet_Sigma
 
@@ -609,7 +614,12 @@ def precompute_woodbury_factor(
 
     logdet_N = jnp.sum(jnp.log(Ndiag))
     logdet_Phi = jnp.sum(jnp.log(Phidiag))
-    _, logdet_Sigma = jnp.linalg.slogdet(Sigma)
+    # Use the Cholesky factor (already computed above) instead of jnp.linalg.slogdet:
+    # det(Sigma) = det(L L^T) = (prod diag(L))^2, so logdet = 2 sum log diag(L).
+    # Mathematically identical for our PD Sigma but DOES NOT break higher-order
+    # autodiff — slogdet's sign branch NaNs out the Hessian (needed for sky-Fisher
+    # in cw_localization).
+    logdet_Sigma = 2.0 * jnp.sum(jnp.log(jnp.abs(jnp.diag(Sigma_cf_factor))))
     logdet_C = logdet_N + logdet_Phi + logdet_Sigma
 
     return WoodburyFactor(
