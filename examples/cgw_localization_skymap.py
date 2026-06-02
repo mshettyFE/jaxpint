@@ -63,6 +63,42 @@ FIXED_ORIENTATION = (1.0, 0.0, 0.0)  # cos_inc, psi, phase0
 
 DEFAULT_OUTPUT = Path("cgw_localization_skymap.npz")
 
+# ---------------------------------------------------------------------------
+# Wen et al. 2026 (arXiv:2603.28897) configurations.
+#
+# Wen uses 25 pulsars from PPTA DR3 + EPTA DR2 + NG15 + MeerKAT-4.5yr.  Of those
+# 25, 18 are also in ocarina; the other 7 (J1857+0943, J0636-3044, J1946-5403,
+# J2222-0137, J2241-5236, J0125-2327, J1017-7156) are missing.  Two of Wen's six
+# anchor pulsars (J2222-0137 in the 25-3 set, J0636-3044 in the 25-6 set) are
+# among the missing 7; we substitute the canonical sub-λ-PX MSPs that *are* in
+# ocarina (J1713+0747 and J1640+2224 respectively) — Wen's anchor-selection
+# intent is preserved (sub-wavelength-PX precision on well-timed MSPs).
+# ---------------------------------------------------------------------------
+WEN_OCARINA_18: tuple[str, ...] = (
+    # EPTA+InPTA in ocarina (5 of 6)
+    "J0613-0200", "J1024-0719", "J1600-3053", "J1730-2304", "J1843-1113",
+    # MPTA in ocarina (1 of 5)
+    "J0437-4715",
+    # NANOGrav in ocarina (10 of 10)
+    "J0030+0451", "J1640+2224", "J1741+1351", "J1909-3744", "J1911+1347",
+    "J2017+0603", "J2043+1711", "J2234+0611", "J2234+0944", "J2317+1439",
+    # PPTA in ocarina (2 of 4)
+    "J1713+0747", "J1744-1134",
+)
+
+# Wen's three discrete array configurations (analogs).  Anchor pulsars get the
+# pulsar term included (PX pegged); non-anchors get Earth-term only.
+WEN_CONFIGS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("standard", ()),
+    # 25-3 analog: Wen's = {J0030+0451, J0437-4715, J2222-0137}.
+    # J2222-0137 missing from ocarina → substitute J1713+0747.
+    ("25-3", ("J0437-4715", "J0030+0451", "J1713+0747")),
+    # 25-6 analog: Wen's = above + {J0636-3044, J1744-1134, J1909-3744}.
+    # J0636-3044 missing → substitute J1640+2224.
+    ("25-6", ("J0437-4715", "J0030+0451", "J1713+0747",
+              "J1640+2224", "J1744-1134", "J1909-3744")),
+)
+
 
 def compute_localization_skymap(
     *,
@@ -99,10 +135,31 @@ def compute_localization_skymap(
     Returns
     -------
     results : dict
-        Keys: ``loc_area_deg2`` (HEALPix map, RING ordering), ``nside``,
-        ``snr_target``, ``pulsar_names``, ``anchor_pulsars``,
-        ``pulsar_term_mask``, ``log10_mc``, ``log10_fgw``, orientation,
-        ``pulsar_pos`` (ICRS unit vectors for overlay plotting).
+        Keys: ``loc_area_90_deg2`` and ``loc_area_50_deg2`` (HEALPix maps,
+        RING ordering), ``nside``, ``snr_target``, ``pulsar_names``,
+        ``anchor_pulsars``, ``pulsar_term_mask``, ``log10_mc``, ``log10_fgw``,
+        orientation, ``pulsar_pos`` (ICRS unit vectors for overlay plotting).
+
+    Notes
+    -----
+    **Two-injector data-injection trick.** Uses TWO :class:`CWInjector` in
+    ``PTAConfig.signal_injectors``:
+
+    * ``template_injector`` (prefix ``cwt_``) — the 1-CGW model being fit,
+      varying amplitude ``h_t`` and sky ``sky_t``.
+    * ``data_injector`` (prefix ``cwd_``) — fixed amplitude ``h_d = -h0_target``,
+      fixed sky ``sky_d = sky_pixel``. By the model's ``data − signal``
+      convention, a signal with negative amplitude effectively *adds* its
+      contribution to the residual — i.e., this injector plays the role of an
+      injected CGW signal at the pixel in the data, not a second source in the
+      model. This is Wen et al.'s "simulate data with injected signal" setup
+      expressed through jaxpint's public API.
+
+    With this setup, ``-Hessian_{sky_t}(logL)`` at ``sky_t = sky_pixel`` gives
+    exactly ``h0_target^2 * Gram`` — the proper PSD Fisher information. The
+    ``Curv = (s_hat | partial^2 s_hat)`` term that would otherwise be present
+    in ``0.5 * h0^2 * Hessian(Y)`` is cancelled by the cross-term from the
+    data injection, so every pixel comes out PSD with no "empty"/inf regions.
     """
     import jax
     import jax.numpy as jnp
@@ -148,20 +205,29 @@ def compute_localization_skymap(
 
     positions = jnp.asarray(np.stack([pulsar_unit_vector_icrs(pp) for pp in pp_list]))
 
-    # ---- 3. Injector + config + global params ------------------------------
-    # Linear-amplitude template so logL is quadratic in h0 and quadratic_coeffs
-    # gives us Y for SNR calibration cheaply. earth_term_only=False at the
-    # injector level lets each pulsar decide via pulsar_term_mask.
-    injector = CWInjector(
-        positions, prefix="cw_",
+    # ---- 3. Two injectors + config + global params ------------------------
+    # Template: model template the inference would fit. Variable (h_t, sky_t).
+    template_injector = CWInjector(
+        positions, prefix="cwt_",
         earth_term_only=False, linear_amplitude=True,
         pulsar_term_mask=pulsar_term_mask,
         initial_values={"log10_fgw": LOG10_FGW},
     )
-    gp = injector.register_params(GlobalParams.empty())
+    # Data injection: signal with NEGATIVE amplitude at the pixel adds to the
+    # effective residual via (data − signal). h_d and sky_d are bound at
+    # evaluation time so this acts as data, not a second model source.
+    data_injector = CWInjector(
+        positions, prefix="cwd_",
+        earth_term_only=False, linear_amplitude=True,
+        pulsar_term_mask=pulsar_term_mask,
+        initial_values={"log10_fgw": LOG10_FGW},
+    )
+    gp = template_injector.register_params(GlobalParams.empty())
+    gp = data_injector.register_params(gp)
     config = PTAConfig(
         toa_data_list=toa_list, timing_models=tm_list,
-        noise_models=nm_list, signal_injectors=(injector,),
+        noise_models=nm_list,
+        signal_injectors=(template_injector, data_injector),
     )
 
     # ---- 4. Timing-model marginalization (improper priors) -----------------
@@ -180,44 +246,51 @@ def compute_localization_skymap(
         validate_linearity=validate_linearity, allow_nonlinear=True,
     )
 
-    # ---- 5. logL closures over (h0, sky), orientation fixed at truth -------
+    # ---- 5. logL closure: full (h_t, h_d, sky_t, sky_d) variation ----------
+    # Both injectors carry the same fixed (cos_inc, psi, phase0, log10_fgw).
     cos_inc_fix, psi_fix, phase0_fix = (float(x) for x in orientation)
-    idx = {k: gp._name_to_index[f"cw_{k}"] for k in
-           ("h0", "cos_gwtheta", "gwphi", "cos_inc", "psi", "phase0")}
-    base_vals = gp.values.at[idx["cos_inc"]].set(cos_inc_fix)\
-                         .at[idx["psi"]].set(psi_fix)\
-                         .at[idx["phase0"]].set(phase0_fix)
+    idx_t = {k: gp._name_to_index[f"cwt_{k}"] for k in
+             ("h0", "cos_gwtheta", "gwphi", "cos_inc", "psi", "phase0")}
+    idx_d = {k: gp._name_to_index[f"cwd_{k}"] for k in
+             ("h0", "cos_gwtheta", "gwphi", "cos_inc", "psi", "phase0")}
+    base_vals = (gp.values
+                 .at[idx_t["cos_inc"]].set(cos_inc_fix)
+                 .at[idx_t["psi"]].set(psi_fix)
+                 .at[idx_t["phase0"]].set(phase0_fix)
+                 .at[idx_d["cos_inc"]].set(cos_inc_fix)
+                 .at[idx_d["psi"]].set(psi_fix)
+                 .at[idx_d["phase0"]].set(phase0_fix))
 
-    def logL_at_h0_sky(h0, cos_gwtheta, gwphi):
+    def logL_full(h_t, h_d, sky_t, sky_d):
         v = (base_vals
-             .at[idx["h0"]].set(h0)
-             .at[idx["cos_gwtheta"]].set(cos_gwtheta)
-             .at[idx["gwphi"]].set(gwphi))
+             .at[idx_t["h0"]].set(h_t)
+             .at[idx_t["cos_gwtheta"]].set(sky_t[0])
+             .at[idx_t["gwphi"]].set(sky_t[1])
+             .at[idx_d["h0"]].set(h_d)
+             .at[idx_d["cos_gwtheta"]].set(sky_d[0])
+             .at[idx_d["gwphi"]].set(sky_d[1]))
         gp_new = eqx.tree_at(lambda gg: gg.values, gp, v)
         return g(gp_new, reduced_pp)
 
-    # ---- 6. Pixel loop: Y → h0(SNR=target) → Fisher → area -----------------
+    # ---- 6. Pixel loop: Y → h0(SNR=target) → -Hessian → area --------------
     npix = hp.nside2npix(nside)
     theta, phi = hp.pix2ang(nside, np.arange(npix))
     sky = jnp.stack([jnp.cos(jnp.asarray(theta)), jnp.asarray(phi)], axis=1)  # (npix, 2)
 
-    # Expected Fisher in noise-only ocarina data: F = 0.5 * h0² * Hessian_sky(Y).
-    # Y(sky) is the noise-weighted unit-strain signal power — data-INDEPENDENT.
-    # The observed -Hessian(logL) on null data also contains a noise term
-    # h0*∂²X/∂sky² (zero in expectation but non-zero per realization), which
-    # can flip eigenvalue signs at SNR-20 magnitudes. Computing Hessian of Y
-    # directly bypasses that noise.
-    def Y_of_sky(sky_vec):
-        amp_logL = lambda amp: logL_at_h0_sky(amp, sky_vec[0], sky_vec[1])
-        _X, Y = quadratic_coeffs(amp_logL)
-        return Y
-
     def area_for_pixel(sky_row):
-        Y_pix = Y_of_sky(sky_row)
-        h0 = h0_for_snr(jnp.float64(snr_target), Y_pix)
-        H_Y = jax.hessian(Y_of_sky)(sky_row)
-        F = 0.5 * h0**2 * H_Y
-        return credible_area_deg2(F)
+        # Y(pixel) for SNR calibration: data injector contributes nothing when
+        # h_d=0 (its signal = 0 regardless of sky_d), so quadratic_coeffs on h_t
+        # returns the same Y as the single-injector path would.
+        amp_logL = lambda h: logL_full(h, jnp.float64(0.0), sky_row, sky_row)
+        _X, Y = quadratic_coeffs(amp_logL)
+        h0 = h0_for_snr(jnp.float64(snr_target), Y)
+        # Proper Fisher via data injection: h_t=h0, h_d=-h0, sky_d=pixel, vary sky_t.
+        # The Curv term in 0.5*h_t²*Hess(Y) is cancelled by the cross-term
+        # h_t*h_d*∂²Z/∂sky_t² at sky_t=sky_d=pixel, leaving h0²*Gram (PSD).
+        sky_logL = lambda s: logL_full(h0, -h0, s, sky_row)
+        F = -jax.hessian(sky_logL)(sky_row)
+        return (credible_area_deg2(F, level=0.9),
+                credible_area_deg2(F, level=0.5))
 
     @jax.jit
     def all_areas(sky_arr):
@@ -227,19 +300,25 @@ def compute_localization_skymap(
     # once in eager mode. Without this, the FIRST autodiff call inside
     # area_for_pixel (quadratic_coeffs) caches a *tracer* in the property, which
     # then leaks into the SECOND autodiff call (jax.hessian) → UnexpectedTracerError.
-    # Eager call here stores a concrete jnp.ndarray in the cache instead.
     _ = g(gp, reduced_pp)
 
     _log(f"nside={nside} -> {npix} HEALPix pixels, SNR={snr_target}, "
          f"chunked vmap (batch={pixel_chunk}), compiling...")
-    loc_area = np.asarray(all_areas(sky))
-    finite = loc_area[np.isfinite(loc_area)]
+    area_90, area_50 = all_areas(sky)
+    loc_area_90 = np.asarray(area_90)
+    loc_area_50 = np.asarray(area_50)
+    finite_90 = loc_area_90[np.isfinite(loc_area_90)]
+    finite_50 = loc_area_50[np.isfinite(loc_area_50)]
     _log(f"Done. 90% area min/median/max = "
-         f"{finite.min():.3e}/{np.median(finite):.3e}/{finite.max():.3e} deg^2 "
-         f"({len(finite)}/{npix} finite); n_anchors={n_anchors}")
+         f"{finite_90.min():.3e}/{np.median(finite_90):.3e}/{finite_90.max():.3e} deg^2 "
+         f"({len(finite_90)}/{npix} finite); n_anchors={n_anchors}")
+    _log(f"      50% area min/median/max = "
+         f"{finite_50.min():.3e}/{np.median(finite_50):.3e}/{finite_50.max():.3e} deg^2 "
+         f"({len(finite_50)}/{npix} finite)")
 
     return {
-        "loc_area_deg2": loc_area,
+        "loc_area_90_deg2": loc_area_90,
+        "loc_area_50_deg2": loc_area_50,
         "nside": np.int64(nside),
         "snr_target": np.float64(snr_target),
         "log10_mc": np.float64(LOG10_MC),
@@ -267,11 +346,21 @@ def load_results(path: Path) -> dict:
     return {k: (v.item() if v.ndim == 0 else v) for k, v in data.items()}
 
 
-def plot_results(results: dict, output: str = "cgw_localization_skymap.png") -> None:
+def plot_results(results: dict, output: str = "cgw_localization_skymap.png",
+                 level: str = "90") -> None:
+    """Mollview of the credible area at the given level ("90" or "50")."""
     hp = _import_healpy()
     import matplotlib.pyplot as plt
 
-    area = results["loc_area_deg2"]
+    # Back-compat with older single-area outputs.
+    if level == "90" and "loc_area_90_deg2" in results:
+        area = results["loc_area_90_deg2"]
+    elif level == "50" and "loc_area_50_deg2" in results:
+        area = results["loc_area_50_deg2"]
+    elif "loc_area_deg2" in results:
+        area = results["loc_area_deg2"]   # legacy
+    else:
+        raise KeyError(f"No loc_area_{level}_deg2 in results.")
     n_anchors = int(results["n_anchors"])
     n_psr = int(results["n_pulsars"])
     snr = float(results["snr_target"])
@@ -280,11 +369,11 @@ def plot_results(results: dict, output: str = "cgw_localization_skymap.png") -> 
     log_area = np.log10(np.where(np.isfinite(area) & (area > 0), area, np.nan))
     hp.mollview(
         log_area,
-        title=(f"$\\log_{{10}}$ 90% credible area [deg$^2$]  "
+        title=(f"$\\log_{{10}}$ {level}% credible area [deg$^2$]  "
                f"($\\mathcal{{M}}=5\\times 10^8 M_\\odot$, $f=10^{{-8.4}}$ Hz, "
                f"SNR={snr:.0f})\n"
                f"{n_anchors}/{n_psr} anchor pulsars"),
-        unit="$\\log_{10}$ 90% area [deg$^2$]",
+        unit=f"$\\log_{{10}}$ {level}% area [deg$^2$]",
         cmap="magma_r",
         rot=[180, 0],
     )
@@ -310,83 +399,125 @@ def plot_results(results: dict, output: str = "cgw_localization_skymap.png") -> 
 
 def run_sweep(out_dir: Path, *, nside: int = 4,
               pulsar_subset: tuple[str, ...] | None = None,
+              configs: tuple[tuple[str, tuple[str, ...]], ...] | None = None,
               snr_target: float = SNR_TARGET_DEFAULT,
               pixel_chunk: int = 32) -> None:
-    """Built-in anchor-count sweep + 1-D scaling plot.
+    """Wen et al. 2026 Table 1 analog: per-config 90% / 50% credible areas.
 
-    On the 4-pulsar SMOKE_SUBSET, sweeps over: 0 anchors, then anchors picked
-    in this order: J1909-3744, J1713+0747, J0613-0200, J1744-1134. Produces per-
-    configuration skymaps and a final scaling plot of 90% area (median + min/max
-    across the sky) vs. anchor count.
+    Defaults: ``WEN_OCARINA_18`` array, ``WEN_CONFIGS`` (Standard / 25-3 / 25-6).
+    For each config: per-pixel Fisher → 90% and 50% area maps, summary stats,
+    Mollview plots. The whole sweep emits ``wen_table1_analog.csv`` and a
+    matching ``.txt`` with the per-config min/median/max for both levels.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    subset = list(pulsar_subset) if pulsar_subset is not None else list(SMOKE_SUBSET)
-    # Anchor-add ordering: highest-SNR PTA workhorses first.
-    add_order = ["J1909-3744", "J1713+0747", "J0613-0200", "J1744-1134"]
-    add_order = [p for p in add_order if p in subset]
+    subset = list(pulsar_subset) if pulsar_subset is not None else list(WEN_OCARINA_18)
+    cfgs = configs if configs is not None else WEN_CONFIGS
 
-    sweep = []
-    cumulative_anchors: list[str] = []
-    for k in range(len(add_order) + 1):
-        cumulative_anchors = list(add_order[:k])
-        tag = f"{k:02d}anchors"
-        out_path = out_dir / f"cgw_loc_{tag}.npz"
-        _log(f"\n=== Config: {k} anchors {cumulative_anchors!r} ===")
+    rows: list[dict] = []
+    for name, anchors in cfgs:
+        anchors_in_subset = tuple(a for a in anchors if a in subset)
+        missing = tuple(a for a in anchors if a not in subset)
+        if missing:
+            _log(f"[warn] config {name!r}: dropping anchors not in subset: {missing}")
+        out_path = out_dir / f"cgw_loc_{name}.npz"
+        _log(f"\n=== Config: {name!r}, {len(anchors_in_subset)} anchors: "
+             f"{list(anchors_in_subset)} ===")
         results = compute_localization_skymap(
             pulsar_subset=tuple(subset),
-            anchor_pulsars=tuple(cumulative_anchors),
+            anchor_pulsars=anchors_in_subset,
             nside=nside, snr_target=snr_target, pixel_chunk=pixel_chunk,
         )
         save_results(out_path, results)
-        plot_results(results, output=str(out_dir / f"cgw_loc_{tag}.png"))
-        finite = results["loc_area_deg2"][np.isfinite(results["loc_area_deg2"])]
-        sweep.append({
-            "n_anchors": k,
-            "anchors": list(cumulative_anchors),
-            "median_deg2": float(np.median(finite)),
-            "min_deg2": float(np.min(finite)),
-            "max_deg2": float(np.max(finite)),
-            "p10_deg2": float(np.percentile(finite, 10)),
-            "p90_deg2": float(np.percentile(finite, 90)),
+        # Per-config Mollviews at both levels.
+        plot_results(results, output=str(out_dir / f"cgw_loc_{name}_90pct.png"),
+                     level="90")
+        plot_results(results, output=str(out_dir / f"cgw_loc_{name}_50pct.png"),
+                     level="50")
+
+        a90 = results["loc_area_90_deg2"]
+        a50 = results["loc_area_50_deg2"]
+        f90 = a90[np.isfinite(a90)]
+        f50 = a50[np.isfinite(a50)]
+        rows.append({
+            "config": name,
+            "n_pulsars": int(results["n_pulsars"]),
+            "n_anchors": len(anchors_in_subset),
+            "anchors": " ".join(anchors_in_subset),
+            "missing_anchors": " ".join(missing),
+            "area_90_median": float(np.median(f90)),
+            "area_90_min": float(np.min(f90)),
+            "area_90_max": float(np.max(f90)),
+            "area_90_p10": float(np.percentile(f90, 10)),
+            "area_90_p90": float(np.percentile(f90, 90)),
+            "n_pixels_finite_90": int(len(f90)),
+            "area_50_median": float(np.median(f50)),
+            "area_50_min": float(np.min(f50)),
+            "area_50_max": float(np.max(f50)),
+            "area_50_p10": float(np.percentile(f50, 10)),
+            "area_50_p90": float(np.percentile(f50, 90)),
+            "n_pixels_finite_50": int(len(f50)),
         })
 
-    # 1-D scaling plot
-    import matplotlib.pyplot as plt
-    ks = np.array([s["n_anchors"] for s in sweep])
-    med = np.array([s["median_deg2"] for s in sweep])
-    p10 = np.array([s["p10_deg2"] for s in sweep])
-    p90 = np.array([s["p90_deg2"] for s in sweep])
+    # ---- Table 1 analog: CSV + human-readable .txt ------------------------
+    import csv
+    csv_path = out_dir / "wen_table1_analog.csv"
+    columns = list(rows[0].keys())
+    with open(csv_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=columns)
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+    print(f"Wrote {csv_path}")
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.fill_between(ks, p10, p90, alpha=0.25, label="10–90% across sky")
-    ax.plot(ks, med, marker="o", lw=2, label="median across sky")
+    txt_path = out_dir / "wen_table1_analog.txt"
+    with open(txt_path, "w") as f:
+        f.write("Wen et al. 2026 Table 1 analog\n")
+        f.write(f"  Source: M_c = 5e8 Msun, f_GW = 10^-8.4 Hz, SNR = {snr_target}\n")
+        f.write(f"  Array: {len(subset)}-pulsar ocarina subset\n")
+        f.write(f"  Method: data-injection Fisher via two CWInjectors\n\n")
+        f.write(f"{'config':>10} {'n_psr':>6} {'n_anc':>6} "
+                f"{'90 median':>11} {'90 min':>11} {'90 max':>11} "
+                f"{'50 median':>11} {'50 min':>11} {'50 max':>11}  anchors\n")
+        f.write("-" * 110 + "\n")
+        for r in rows:
+            f.write(f"{r['config']:>10} {r['n_pulsars']:>6} {r['n_anchors']:>6} "
+                    f"{r['area_90_median']:>11.3e} {r['area_90_min']:>11.3e} {r['area_90_max']:>11.3e} "
+                    f"{r['area_50_median']:>11.3e} {r['area_50_min']:>11.3e} {r['area_50_max']:>11.3e}"
+                    f"  {r['anchors']}\n")
+            if r["missing_anchors"]:
+                f.write(f"           [missing/substituted: {r['missing_anchors']}]\n")
+    print(f"Wrote {txt_path}")
+    # Print to stdout too.
+    with open(txt_path) as f:
+        print(f.read())
+
+    # Scaling plot: 90% and 50% median areas vs. config.
+    import matplotlib.pyplot as plt
+    ks = np.arange(len(rows))
+    fig, ax = plt.subplots(figsize=(7, 4))
+    for level, marker, color in [("90", "o", "C0"), ("50", "s", "C1")]:
+        med = np.array([r[f"area_{level}_median"] for r in rows])
+        lo = np.array([r[f"area_{level}_p10"] for r in rows])
+        hi = np.array([r[f"area_{level}_p90"] for r in rows])
+        ax.fill_between(ks, lo, hi, alpha=0.2, color=color)
+        ax.plot(ks, med, marker=marker, lw=2, color=color,
+                label=f"{level}% area (median)")
+    ax.set_xticks(ks)
+    ax.set_xticklabels([r["config"] for r in rows])
     ax.set_yscale("log")
-    ax.set_xlabel("# anchor pulsars")
-    ax.set_ylabel("90% credible localization area [deg$^2$]")
-    ax.set_title(f"CGW localization vs. anchor count "
+    ax.set_xlabel("array configuration")
+    ax.set_ylabel("credible localization area [deg$^2$]")
+    ax.set_title("CGW localization area, Wen et al. 2026 Table 1 analog\n"
                  f"($\\mathcal{{M}}=5\\times 10^8 M_\\odot$, SNR={snr_target:.0f}, "
                  f"{len(subset)}-pulsar ocarina subset)")
     ax.grid(alpha=0.3)
     ax.legend()
     fig.tight_layout()
-    fig.savefig(out_dir / "anchor_scaling.png", dpi=130)
+    fig.savefig(out_dir / "wen_table1_scaling.png", dpi=130)
     plt.close(fig)
-    print(f"Wrote {out_dir / 'anchor_scaling.png'}")
-
-    # Save sweep summary
-    np.savez_compressed(
-        out_dir / "sweep_summary.npz",
-        n_anchors=np.array([s["n_anchors"] for s in sweep]),
-        median_deg2=np.array([s["median_deg2"] for s in sweep]),
-        min_deg2=np.array([s["min_deg2"] for s in sweep]),
-        max_deg2=np.array([s["max_deg2"] for s in sweep]),
-        p10_deg2=np.array([s["p10_deg2"] for s in sweep]),
-        p90_deg2=np.array([s["p90_deg2"] for s in sweep]),
-        anchor_lists=np.array([" ".join(s["anchors"]) for s in sweep]),
-    )
-    print(f"Wrote {out_dir / 'sweep_summary.npz'}")
+    print(f"Wrote {out_dir / 'wen_table1_scaling.png'}")
 
 
 def main() -> None:
@@ -401,12 +532,15 @@ def main() -> None:
     sp.add_argument("--snr", type=float, default=SNR_TARGET_DEFAULT)
     sp.add_argument("--anchor-pulsars", nargs="*", default=[])
     sp.add_argument("--full", action="store_true",
-                    help="Use all pulsars instead of the smoke subset.")
+                    help="Use the Wen-ocarina 18-pulsar subset (--full) instead "
+                         "of the 4-pulsar SMOKE_SUBSET.")
     sp.add_argument("--validate-linearity", action="store_true")
 
     sp = sub.add_parser("plot")
     sp.add_argument("--input", type=Path, default=DEFAULT_OUTPUT)
     sp.add_argument("--output", type=str, default="cgw_localization_skymap.png")
+    sp.add_argument("--level", choices=("90", "50"), default="90",
+                    help="Which credible level to plot from the npz.")
 
     sp = sub.add_parser("sweep")
     sp.add_argument("--out-dir", type=Path, default=Path("cgw_loc_sweep"))
@@ -417,7 +551,7 @@ def main() -> None:
     args = p.parse_args()
     if args.mode == "plot":
         results = load_results(args.input)
-        plot_results(results, output=args.output)
+        plot_results(results, output=args.output, level=args.level)
         return
 
     if args.mode == "sweep":
@@ -425,8 +559,8 @@ def main() -> None:
                   pixel_chunk=args.pixel_chunk)
         return
 
-    # generate
-    subset = None if getattr(args, "full", False) else SMOKE_SUBSET
+    # generate: --full → 18-pulsar Wen-ocarina subset; else → 4-pulsar SMOKE_SUBSET.
+    subset = WEN_OCARINA_18 if getattr(args, "full", False) else SMOKE_SUBSET
     results = compute_localization_skymap(
         pulsar_subset=subset, nside=args.nside,
         anchor_pulsars=tuple(args.anchor_pulsars),
