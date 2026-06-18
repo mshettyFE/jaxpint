@@ -142,24 +142,25 @@ def compute_localization_skymap(
 
     Notes
     -----
-    **Two-injector data-injection trick.** Uses TWO :class:`CWInjector` in
-    ``PTAConfig.signal_injectors``:
+    **Two-injector cross-derivative Gram extraction.** Uses TWO
+    :class:`CWInjector` in ``PTAConfig.signal_injectors`` (prefixes ``cwt_``
+    and ``cwd_``).  Both are *templates* (no data injection); the second
+    exists only to give the autodiff machinery two independent sky parameters
+    to differentiate against.
 
-    * ``template_injector`` (prefix ``cwt_``) — the 1-CGW model being fit,
-      varying amplitude ``h_t`` and sky ``sky_t``.
-    * ``data_injector`` (prefix ``cwd_``) — fixed amplitude ``h_d = -h0_target``,
-      fixed sky ``sky_d = sky_pixel``. By the model's ``data − signal``
-      convention, a signal with negative amplitude effectively *adds* its
-      contribution to the residual — i.e., this injector plays the role of an
-      injected CGW signal at the pixel in the data, not a second source in the
-      model. This is Wen et al.'s "simulate data with injected signal" setup
-      expressed through jaxpint's public API.
+    Per-pixel Fisher comes from :func:`jaxpint.pta.cw_localization.gram_at_pixel`:
+    the bilinear structure of the Gaussian likelihood in
+    ``(h_a, h_b)`` means the mixed amplitude derivative
+    ``-d²logL/dh_a dh_b`` isolates the cross-inner-product
+    ``Z(sky_a, sky_b) = (s_hat(sky_a) | s_hat(sky_b))_N`` exactly.  Taking the
+    mixed sky-Hessian ``d²Z/dsky_a dsky_b`` at ``sky_a = sky_b = pixel`` gives
+    the Gram matrix ``(d_i s_hat | d_j s_hat)_N`` — PSD by construction.
 
-    With this setup, ``-Hessian_{sky_t}(logL)`` at ``sky_t = sky_pixel`` gives
-    exactly ``h0_target^2 * Gram`` — the proper PSD Fisher information. The
-    ``Curv = (s_hat | partial^2 s_hat)`` term that would otherwise be present
-    in ``0.5 * h0^2 * Hessian(Y)`` is cancelled by the cross-term from the
-    data injection, so every pixel comes out PSD with no "empty"/inf regions.
+    ``F = h0_target² * Gram`` is the proper Wen-style sensitivity Fisher.
+    Unlike the data-injection ``-Hessian(logL)`` approach (which equals
+    ``h0² * Gram`` only in expectation over noise), this is exact per
+    realization and noise-independent, so every pixel produces a finite,
+    PSD Fisher and a finite credible area.
     """
     import jax
     import jax.numpy as jnp
@@ -175,7 +176,9 @@ def compute_localization_skymap(
     from jaxpint.bayes import ImproperPrior, marginalize
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import quadratic_coeffs
-    from jaxpint.pta.cw_localization import h0_for_snr, credible_area_deg2
+    from jaxpint.pta.cw_localization import (
+        h0_for_snr, credible_area_deg2, gram_at_pixel,
+    )
 
     # ---- 1. Load + filter --------------------------------------------------
     if not DATA_DIR.is_dir():
@@ -278,17 +281,19 @@ def compute_localization_skymap(
     sky = jnp.stack([jnp.cos(jnp.asarray(theta)), jnp.asarray(phi)], axis=1)  # (npix, 2)
 
     def area_for_pixel(sky_row):
-        # Y(pixel) for SNR calibration: data injector contributes nothing when
-        # h_d=0 (its signal = 0 regardless of sky_d), so quadratic_coeffs on h_t
-        # returns the same Y as the single-injector path would.
+        # Y(pixel) for SNR calibration: with h_d=0 (and h_t free), only the
+        # template injector contributes — quadratic_coeffs on h_t returns the
+        # same Y(sky_pixel) as the single-injector path would.
         amp_logL = lambda h: logL_full(h, jnp.float64(0.0), sky_row, sky_row)
         _X, Y = quadratic_coeffs(amp_logL)
         h0 = h0_for_snr(jnp.float64(snr_target), Y)
-        # Proper Fisher via data injection: h_t=h0, h_d=-h0, sky_d=pixel, vary sky_t.
-        # The Curv term in 0.5*h_t²*Hess(Y) is cancelled by the cross-term
-        # h_t*h_d*∂²Z/∂sky_t² at sky_t=sky_d=pixel, leaving h0²*Gram (PSD).
-        sky_logL = lambda s: logL_full(h0, -h0, s, sky_row)
-        F = -jax.hessian(sky_logL)(sky_row)
+        # Proper Fisher via cross-derivative Gram extraction (noise-free, exact
+        # per realization, PSD by construction).  The likelihood is bilinear in
+        # (h_t, h_d), so the mixed h-derivative isolates Z(sky_t, sky_d); the
+        # mixed sky-Hessian of Z then gives Gram_ij at sky_t = sky_d = pixel.
+        # F = h0**2 * Gram is the proper Wen-style sensitivity Fisher.
+        Gram = gram_at_pixel(logL_full, sky_row)
+        F = h0**2 * Gram
         return (credible_area_deg2(F, level=0.9),
                 credible_area_deg2(F, level=0.5))
 
