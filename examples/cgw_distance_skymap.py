@@ -6,10 +6,13 @@ to a continuous-GW source of fixed chirp mass and frequency from the NANOGrav
 
 Method (see ``jaxpint/pta/cw_upper_limit.py`` for the math):
 
-1. The Earth-term CW residual is exactly linear in the strain ``h0``, so the
-   timing-marginalized Gaussian log-likelihood is exactly quadratic in ``h0``:
+1. The CW residual is exactly linear in the strain ``h0`` (Earth-term only by
+   default, and also when ``--include-pulsar-term`` is passed because pulsar
+   distances are pegged to par-file PX values so the pulsar-term phase is just
+   a per-pulsar constant). The timing-marginalized Gaussian log-likelihood is
+   therefore exactly quadratic in ``h0``:
    ``logL(h0) = logL(0) + h0*X - 0.5*h0**2*Y``.
-2. A single CWInjector(linear_amplitude=True, earth_term_only=True) carries
+2. A single CWInjector(linear_amplitude=True, earth_term_only=...) carries
    the sky position / orientation
    / linear amplitude as global params; ``marginalize(pta_logL, ...)`` analytically
    marginalizes the (linear) timing-model parameters once.  Autodiff of the
@@ -25,15 +28,18 @@ Method (see ``jaxpint/pta/cw_upper_limit.py`` for the math):
    quantile is closed-form-per-component + a 1-D root-find.  Invert to a
    distance lower limit; report ``R_eff = [<D_L^3>]^(1/3)``.
 
-Assumptions: Earth-term only; white noise only (diagonal EFAC/EQUAD; ECORR and
-red noise dropped); ``M = 1e9 Msun``, ``f_GW = 27 nHz``; CGW orientation fixed
-*or* marginalized (``--marginalize-orientation``); timing-model parameters
-marginalized.
+Assumptions: Earth-term only by default, full Earth + pulsar term available via
+``--include-pulsar-term`` (pulsar distances pegged to par-file PX, NOT
+marginalized — see :data:`MARG_PARAMS`); white noise only (diagonal EFAC/EQUAD;
+ECORR and red noise dropped); ``M = 1e9 Msun``, ``f_GW = 27 nHz``; CGW
+orientation fixed *or* marginalized (``--marginalize-orientation``);
+timing-model parameters marginalized.
 
 Usage
 -----
     python examples/cgw_distance_skymap.py generate [--output PATH] [--nside N] \
-        [--full] [--marginalize-orientation] [--n-cosinc N --n-psi N --n-phase0 N]
+        [--full] [--include-pulsar-term] \
+        [--marginalize-orientation] [--n-cosinc N --n-psi N --n-phase0 N]
     python examples/cgw_distance_skymap.py plot     [--input  PATH]
     python examples/cgw_distance_skymap.py both
 
@@ -89,13 +95,19 @@ DROP_PULSARS = {
     "J1903+0327ao", "J1909-3744gbt",
 }
 
-# Small, well-timed default subset for the smoke test (Earth-term needs no PX).
+# Small, well-timed default subset for the smoke test. All four pulsars have
+# measured PX in the ocarina par files, so the subset works in both Earth-term
+# and ``--include-pulsar-term`` modes.
 SMOKE_SUBSET = ["J1909-3744", "J1713+0747", "J0613-0200", "J1744-1134"]
 
 # Linear timing-model params to marginalize analytically (improper priors).
 # The dominant low-frequency degeneracies; all linear in the residuals.
-# Pulsar distance (parallax PX) is deliberately EXCLUDED — it is held fixed at
-# its fiducial/par-file value rather than marginalized (first-pass choice).
+# Pulsar distance (parallax PX) is deliberately EXCLUDED — held fixed at the
+# par-file value. This is a *design invariant* required by --include-pulsar-term:
+# pegging PX is what gives the pulsar-term sinusoid a coherent matched-filter
+# contribution. Marginalizing PX would re-scramble the pulsar-term phase
+# (Delta_p ~ 10^4 rad at 27 nHz; fractional PX errors of ~1e-5 wrap a full cycle)
+# and collapse the result back to the Earth-term limit.
 MARG_PARAMS = {
     "F0", "F1", "RAJ", "DECJ", "ELONG", "ELAT",
     "PMRA", "PMDEC", "PMELONG", "PMELAT",
@@ -141,6 +153,7 @@ def compute_skymap(
     validate_linearity=False,
     data_mode="expected",
     pixel_chunk=64,
+    include_pulsar_term=False,
 ):
     """Compute the 95% distance lower-limit sky map. Returns a results dict.
 
@@ -172,6 +185,18 @@ def compute_skymap(
         (EFAC/EQUAD), so the white-noise model matches and real mode is
         meaningful. (If the data carried unmodeled red noise, X would be
         dominated by it and produce huge spurious "detections".)
+
+    include_pulsar_term:
+      - False (default): Earth-term only — no dependence on pulsar distance.
+      - True: include the full Earth + pulsar term, with each pulsar's distance
+        pegged to its par-file PX value (NOT marginalized; see
+        :data:`MARG_PARAMS`). This is the idealized distance reach when pulsar
+        distances are treated as known; the pulsar term adds an extra ~per-pulsar
+        coherent contribution to the matched filter, so Y typically roughly
+        doubles and ``r_eff_mpc`` rises by roughly sqrt(2). The 4-D orientation
+        decomposition that the F_e basis machinery relies on is preserved
+        (Delta_p is constant per pulsar at fixed PX/f_GW), so both fixed and
+        marginalized orientation paths work unchanged.
 
     pixel_chunk: number of sky pixels vmapped together per chunk (the rest are
     scanned). Trades memory for speed — raise it to go faster if memory allows,
@@ -216,10 +241,13 @@ def compute_skymap(
     positions = jnp.asarray(np.stack([pulsar_unit_vector_icrs(pp) for pp in pp_list]))
 
     # ---- 2. Injector + config + global params ------------------------------
-    # Earth-term-only, linear-amplitude CW template: residual linear in h0 so
-    # logL is exactly quadratic in it (the analytic-UL requirement).
+    # Linear-amplitude CW template: residual linear in h0 so logL is exactly
+    # quadratic in it (the analytic-UL requirement). With pulsar distances
+    # pegged to par values, the pulsar-term phase Delta_p is a per-pulsar
+    # constant, so linearity in h0 is preserved regardless of earth_term_only.
     injector = CWInjector(
-        positions, prefix="cw_", earth_term_only=True, linear_amplitude=True,
+        positions, prefix="cw_",
+        earth_term_only=not include_pulsar_term, linear_amplitude=True,
         initial_values={"log10_fgw": LOG10_FGW},
     )
     gp = injector.register_params(GlobalParams.empty())
@@ -374,6 +402,7 @@ def compute_skymap(
         "pulsar_names": np.array(names), "n_pulsars": np.int64(len(names)),
         "pulsar_pos": np.asarray(positions),
         "data_mode": np.array(data_mode),
+        "include_pulsar_term": np.bool_(include_pulsar_term),
     }
     if fstat_map is not None:
         results["fstat_map"] = fstat_map  # 2F per pixel (marginalized real mode)
@@ -400,10 +429,12 @@ def plot_results(results: dict) -> None:
     import matplotlib.pyplot as plt
 
     dist = results["dist_ll_mpc"]   # HEALPix map, RING ordering
+    # Older .npz files predate include_pulsar_term — default to no tag.
+    mode_tag = " (Earth + pulsar term)" if bool(results.get("include_pulsar_term", False)) else ""
     hp.mollview(
         dist,
         title=(
-            f"95% lower limit on $D_L$  ($\\mathcal{{M}}=10^9 M_\\odot$, $f=27$ nHz)\n"
+            f"95% lower limit on $D_L$  ($\\mathcal{{M}}=10^9 M_\\odot$, $f=27$ nHz){mode_tag}\n"
 #            f"$R_{{eff}}$={float(results['r_eff_mpc']):.1f} Mpc, "
             f"{int(results['n_pulsars'])} pulsars"
         ),
@@ -465,10 +496,12 @@ def plot_results_with_pulsars(results: dict, data_dir=None,
     theta = np.arccos(np.clip(pos[:, 2], -1.0, 1.0))
     phi = np.arctan2(pos[:, 1], pos[:, 0])
 
+    # Older .npz files predate include_pulsar_term — default to no tag.
+    mode_tag = " (Earth + pulsar term)" if bool(results.get("include_pulsar_term", False)) else ""
     hp.mollview(
         dist,
         title=(
-            f"95% lower limit on $D_L$  ($\\mathcal{{M}}=10^9 M_\\odot$, $f=27$ nHz)\n"
+            f"95% lower limit on $D_L$  ($\\mathcal{{M}}=10^9 M_\\odot$, $f=27$ nHz){mode_tag}\n"
 #            f"$R_{{eff}}$={float(results['r_eff_mpc']):.1f} Mpc, "
             f"{int(results['n_pulsars'])} pulsars (red stars)"
         ),
@@ -515,6 +548,10 @@ def main() -> None:
                         help="Orientation grid: psi samples (default 8).")
         sp.add_argument("--n-phase0", type=int, default=8,
                         help="Orientation grid: phase0 samples (default 8).")
+        sp.add_argument("--include-pulsar-term", action="store_true",
+                        help="Include the pulsar term with PX pegged to par-file values "
+                             "(default: Earth-term only). Pulsar distances are NOT "
+                             "marginalized — this is the idealized distance reach.")
     sp = sub.add_parser("plot")
     sp.add_argument("--input", dest="path", type=Path, default=DEFAULT_DATA_PATH)
     sp.add_argument("--pulsars", action="store_true",
@@ -535,6 +572,7 @@ def main() -> None:
         validate_linearity=args.validate_linearity, data_mode=args.data_mode,
         marginalize_orientation=args.marginalize_orientation,
         n_cosinc=args.n_cosinc, n_psi=args.n_psi, n_phase0=args.n_phase0,
+        include_pulsar_term=args.include_pulsar_term,
     )
     save_results(args.path, results)
     if args.mode == "both":
