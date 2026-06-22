@@ -1,5 +1,8 @@
-"""Central registry for ``JAXPINT_CLOCK_*`` environment variables.
+"""Central registry for JaxPINT's environment variables.
 
+Covers the ``JAXPINT_CLOCK_*`` clock-cache knobs plus ``JAXPINT_EPHEM_PATH``
+(pre-staged ephemeris kernels). Every env read in the clock package goes
+through :func:`get` so the lookup stays in one place.
 """
 
 from __future__ import annotations
@@ -44,6 +47,12 @@ OPTIONS: dict[str, _Opt] = {
         7.0,
         "Auto-update cadence in days; the cache is refreshed from IPTA when "
         "older than this (0 = check every run).",
+    ),
+    "JAXPINT_EPHEM_PATH": _Opt(
+        _as_str,
+        None,
+        "Path to a pre-staged ephemeris ``.bsp`` file or a directory of them; "
+        "lets the posvel loader avoid the network on locked-down nodes.",
     ),
 }
 
