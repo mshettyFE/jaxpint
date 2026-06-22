@@ -39,9 +39,7 @@ hypothesis.settings.register_profile(
 hypothesis.settings.register_profile(
     "fuzzing", deadline=None, print_blob=True, max_examples=1000
 )
-default = (
-    "interactive"
-    if os.environ.get("HYPOTHESIS_PROFILE") == "fuzzing"
-    else "interactive"
-)
+_VALID_PROFILES = {"interactive", "ci", "fuzzing"}
+_requested = os.environ.get("HYPOTHESIS_PROFILE", "interactive")
+default = _requested if _requested in _VALID_PROFILES else "interactive"
 hypothesis.settings.load_profile(default)
