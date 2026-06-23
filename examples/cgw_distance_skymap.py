@@ -193,36 +193,39 @@ def compute_skymap(
         :data:`MARG_PARAMS`). This is the idealized distance reach when pulsar
         distances are treated as known; the pulsar term adds an extra ~per-pulsar
         coherent contribution to the matched filter, so Y typically roughly
-        doubles and ``r_eff_mpc`` rises by roughly sqrt(2). NOTE: only the
-        *fixed-orientation* path is valid with the pulsar term. The F_e basis
-        reduction used by ``marginalize_orientation=True`` assumes the
-        Earth-term 4-D decomposition (:func:`orientation_coeffs`); the pulsar
-        term breaks it (Delta_p rotates each pulsar's phase0 quadratures
-        differently, so the signal is no longer rank-4 in those amplitudes), so
-        combining the two is rejected with a ``ValueError`` (see the guard at the
-        top of this function).
+        doubles and ``r_eff_mpc`` rises by roughly sqrt(2). Works with BOTH fixed
+        and marginalized orientation: with known (pegged) Delta_p the earth+pulsar
+        signal is still an exact 4-D quadratic form in the orientation amplitudes
+        (a per-pulsar rotation of :func:`orientation_coeffs`), which the F_e basis
+        reduction recovers. The marginalized path is more sensitive to pulsar-
+        distance quality than the fixed one, so pulsars with non-positive PX are
+        dropped from the pulsar term automatically, and for production marginalized
+        maps a PX-significance cut is recommended (a warning is emitted when
+        marginalizing with the pulsar term).
 
     pixel_chunk: number of sky pixels vmapped together per chunk (the rest are
     scanned). Trades memory for speed — raise it to go faster if memory allows,
     lower it if the per-chunk grad tape OOMs on the full PTA.
     """
-    # The F_e basis reduction (orientation_coeffs / basis_quadratics) assumes the
-    # signal power Y(omega) is an exact 4-D quadratic form in the EARTH-TERM
-    # orientation amplitudes. The pulsar term breaks that: each pulsar's pulsar-
-    # term phase Delta_p rotates the phase0 quadratures by a different angle, so
-    # the earth+pulsar signal no longer lives in the 4-D span of
-    # orientation_coeffs. basis_quadratics would silently force-fit a rank-4 M to
-    # a higher-rank function, inflating Y and producing distances ~100x too large.
-    # The fixed-orientation path (quadratic_coeffs) is exact for either signal, so
-    # only this combination is forbidden.
+    # Marginalized orientation + pulsar term is VALID with well-measured pulsar
+    # distances. With known Delta_p, each pulsar's earth+pulsar signal is a fixed
+    # per-pulsar linear rotation R_a of the same 4 orientation amplitudes, so the
+    # signal power Y(omega) = c.M.c stays an exact 4-D quadratic form
+    # (M = sum_a R_a^T G_a R_a) that basis_quadratics recovers. Verified: on
+    # clean (PX>0) anchors the marginalized pulsar/earth ratio matches the
+    # fixed-orientation one (~1.1x).
+    #
+    # The historical "100x" blow-up came NOT from this combination per se but
+    # from pulsars with non-positive / near-zero PX, whose garbage Delta_p (from
+    # dist = 1/PX) corrupt the summed M. The PX>0 anchor mask above removes the
+    # worst of those. The marginalized path is more sensitive to distance quality
+    # than the fixed one, though, so for production maps prefer a PX-significance
+    # cut over bare PX>0. Hence: warn, don't forbid.
     if marginalize_orientation and include_pulsar_term:
-        raise ValueError(
-            "marginalize_orientation=True is incompatible with "
-            "include_pulsar_term=True: the F_e basis reduction is only valid for "
-            "the Earth-term signal (see orientation_coeffs in cw_upper_limit.py). "
-            "Use fixed orientation (marginalize_orientation=False) for pulsar-term "
-            "maps, or run Earth-term only when marginalizing orientation."
-        )
+        _log("WARNING: marginalize_orientation + include_pulsar_term relies on "
+             "well-measured pulsar distances. Anchors are PX>0, but marginal-PX "
+             "pulsars can still degrade the F_e basis; consider a PX/sigma cut "
+             "for production maps and sanity-check against a fixed-orientation run.")
 
     import jax
     import jax.numpy as jnp
