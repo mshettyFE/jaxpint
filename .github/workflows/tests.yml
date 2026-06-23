@@ -1,0 +1,112 @@
+# Run the pytest suite on every push and pull request.
+#
+# Two jobs:
+#   fast -> the default (fast) suite, on every push + PR. Quick feedback gate.
+#   full -> the complete suite including @slow PINT-validation tests
+#           (--runslow), on pushes to main, on a nightly schedule, and on
+#           manual dispatch. Takes 10+ minutes, so it does NOT block PRs.
+#
+# Both mirror the environment conventions from docs.yml: uv for installs,
+# --extra cpu (no CUDA wheels on the runner), and JAX_PLATFORMS=cpu so JAX
+# never probes for a GPU.
+
+name: Tests
+
+# When this workflow runs.
+#   push to main      -> fast + full on the integration branch
+#   pull_request      -> fast only (the full suite is too slow to gate PRs)
+#   schedule          -> full suite nightly at 06:00 UTC, catches slow-test
+#                        regressions and any network-dependent flakiness
+#                        (clock/ephemeris fetches) without blocking dev
+#   workflow_dispatch -> "Run workflow" button to trigger either job manually
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+# Cancel an in-flight run when a newer commit is pushed to the same ref.
+# Unlike the Pages deploy, losing a superseded test run is fine -- we only
+# care about the latest commit's result.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only: the test jobs only need to check out the repo.
+permissions:
+  contents: read
+
+jobs:
+  # -------------------------------------------------------------------
+  # fast: the default suite (slow tests deselected). Runs on every push
+  # and PR as the primary feedback gate.
+  # -------------------------------------------------------------------
+  fast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install + cache uv, keyed on uv.lock (same as docs.yml).
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # --extra cpu  -> jax[cpu]
+      # --extra dev  -> pytest, pytest-xdist, hypothesis, pint, etc.
+      #   (dev already pulls in [docs], [skymap], [pint], so the bridge and
+      #   skymap-dependent tests can import their optional deps.)
+      - name: Install dependencies
+        run: uv sync --extra cpu --extra dev
+
+      # -n auto      -> parallelize across the runner's cores via pytest-xdist
+      # HYPOTHESIS_PROFILE=ci -> deterministic seeds + reproduction blobs on
+      #   failure (see conftest.py). JAX_PLATFORMS=cpu keeps JAX off the GPU.
+      # The --extra flags are repeated on `uv run` (not just `uv sync` above):
+      # a bare `uv run` re-syncs to the default deps and would uninstall the
+      # dev extra (pytest), so the extras must be named here too.
+      - name: Run fast tests
+        env:
+          JAX_PLATFORMS: cpu
+          HYPOTHESIS_PROFILE: ci
+        run: uv run --extra cpu --extra dev pytest -n auto
+
+  # -------------------------------------------------------------------
+  # full: the complete suite including @slow tests (numerical validation
+  # against PINT). Pushes to main, nightly, and manual only -- never gates
+  # PRs because it takes 10+ minutes.
+  # -------------------------------------------------------------------
+  full:
+    # Skip on pull_request events; run on push(main) / schedule / dispatch.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --extra cpu --extra dev
+
+      # --runslow -> include the @slow PINT-validation / fitting / noise tests.
+      # --extra repeated here for the same reason as the fast job above.
+      - name: Run full test suite
+        env:
+          JAX_PLATFORMS: cpu
+          HYPOTHESIS_PROFILE: ci
+        run: uv run --extra cpu --extra dev pytest --runslow -n auto

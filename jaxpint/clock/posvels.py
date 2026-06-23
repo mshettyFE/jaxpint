@@ -28,6 +28,7 @@ from astropy.time import Time
 from astropy.utils.data import download_file
 
 from ..constants import PLANETS
+from . import config
 
 # Mirror list for JPL SPK kernels. Order matters: FTP is first so the fallback
 # below skips TLS entirely -- works in HPC containers whose CA bundles are
@@ -62,7 +63,7 @@ def _ensure_ephemeris(ephem: str) -> str:
     if cached is not None:
         return cached
 
-    local = os.environ.get("JAXPINT_EPHEM_PATH")
+    local = config.get("JAXPINT_EPHEM_PATH")
     if local:
         p = local if os.path.isfile(local) else os.path.join(local, f"{key}.bsp")
         if os.path.isfile(p):
