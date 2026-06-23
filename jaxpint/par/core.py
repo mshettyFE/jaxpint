@@ -110,6 +110,10 @@ def raw_params_to_result(
     values: list[float] = []
     units: list[str] = []
     frozen_mask: list[bool] = []
+    # 1-sigma fit uncertainty per ParameterVector entry, aligned with ``values``
+    # (NaN where the source reported none). Only FLOAT params carry one today
+    # (e.g. PX); other kinds append NaN to stay index-aligned.
+    uncertainties: list[float] = []
     epoch_int_values: dict[str, float] = {}
 
     metadata: dict[str, str] = {}
@@ -142,15 +146,21 @@ def raw_params_to_result(
                 # EQUAD/ECORR are stored in microseconds; convert to seconds to
                 # match the TOAData.error convention.  All other mask params
                 # (JUMP, EFAC, ...) take the float path (deg->rad is a no-op).
+                # The uncertainty rides the same conversion as the value.
                 if rp.name.startswith("EQUAD") or rp.name.startswith("ECORR"):
                     val = float((rp.value * u.Unit(rp.unit)).to(u.s).value)
                     unit_str = "s"
+                    unc = (math.nan if rp.uncertainty is None
+                           else float((rp.uncertainty * u.Unit(rp.unit)).to(u.s).value))
                 else:
                     val, unit_str = _coerce_float(rp.value, rp.unit)
+                    unc = (math.nan if rp.uncertainty is None
+                           else _coerce_float(rp.uncertainty, rp.unit)[0])
                 names.append(rp.name)
                 values.append(val)
                 units.append(unit_str)
                 frozen_mask.append(rp.frozen)
+                uncertainties.append(unc)
 
             case ParamKind.PAIR:
                 val_a, val_b = rp.value_pair
@@ -159,6 +169,7 @@ def raw_params_to_result(
                     values.append(float(val))
                     units.append(rp.unit)
                     frozen_mask.append(rp.frozen)
+                    uncertainties.append(math.nan)
 
             case ParamKind.MJD:
                 mjd_int, mjd_frac = rp.mjd_split
@@ -167,12 +178,20 @@ def raw_params_to_result(
                 units.append("day")
                 names.append(rp.name)
                 frozen_mask.append(rp.frozen)
+                # Epoch uncertainty is in days (adapter passes it through as-is).
+                uncertainties.append(
+                    math.nan if rp.uncertainty is None else float(rp.uncertainty)
+                )
 
             case ParamKind.ANGLE:
                 values.append(float(rp.value))
                 units.append("rad")
                 names.append(rp.name)
                 frozen_mask.append(rp.frozen)
+                # Adapter already converted the angle uncertainty to radians.
+                uncertainties.append(
+                    math.nan if rp.uncertainty is None else float(rp.uncertainty)
+                )
 
             case ParamKind.FLOAT:
                 val, unit_str = _coerce_float(rp.value, rp.unit)
@@ -180,6 +199,11 @@ def raw_params_to_result(
                 units.append(unit_str)
                 names.append(rp.name)
                 frozen_mask.append(rp.frozen)
+                # Uncertainty rides the same deg->rad coercion as the value.
+                uncertainties.append(
+                    math.nan if rp.uncertainty is None
+                    else _coerce_float(rp.uncertainty, rp.unit)[0]
+                )
 
     # Semantically-integer floats are exposed via int_params in addition to the
     # ParameterVector (mirrors PINT bridge behaviour).
@@ -211,6 +235,7 @@ def raw_params_to_result(
         frozen_mask=tuple(frozen_mask),
         names=tuple(names),
         units=tuple(units),
+        uncertainties=tuple(uncertainties),
         epoch_int_values=epoch_int_values,
     )
 

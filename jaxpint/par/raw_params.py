@@ -61,6 +61,12 @@ class RawParam:
     mjd_split: Optional[tuple[float, float]] = None    # MJD: (int_day, frac_day) -- adapter pre-splits
     value_pair: Optional[tuple[float, float]] = None   # PAIR: (a, b)
 
+    # 1-sigma fit uncertainty in the SAME native unit as ``value`` (core applies the
+    # same unit scaling, e.g. deg->rad / us->s, that it applies to ``value``).
+    # ``None`` when the source did not report one (frozen/value-only line, or a
+    # non-FLOAT kind for which an uncertainty is not tracked).
+    uncertainty: Optional[float] = None
+
     # --- non-numeric payloads ---
     str_value: Optional[str] = None             # STR / metadata-only floats (e.g. TZRFRQ=inf)
     bool_value: Optional[bool] = None           # BOOL

@@ -208,6 +208,10 @@ class ParameterVector(eqx.Module):
     # residuals as-is; marginalized has its prior covariance folded into the noise
     # covariance via Woodbury. Defaults to all-False (no marginalization).
     marginalized_mask: tuple[bool, ...] = eqx.field(static=True, default=())
+    # 1-sigma fit uncertainty per parameter (static metadata, NOT differentiated),
+    # in the same internal unit as ``values``; NaN where the source reported none.
+    # Defaults to all-NaN when omitted. Accessed via :meth:`param_uncertainty`.
+    uncertainties: tuple[float, ...] = eqx.field(static=True, default=())
     # Maps parameter names to values location. Autopopulate in check_init
     _name_to_index: dict[str, int] = eqx.field(static=True, default_factory=dict)
     # Integer indices of free (= not frozen AND not marginalized) parameters.
@@ -237,6 +241,14 @@ class ParameterVector(eqx.Module):
         elif len(self.marginalized_mask) != n:
             raise ValueError(
                 f"len(marginalized_mask) = {len(self.marginalized_mask)}, expected {n}"
+            )
+
+        # Default uncertainties to all-NaN (no reported sigma) if not provided.
+        if len(self.uncertainties) == 0 and n > 0:
+            object.__setattr__(self, "uncertainties", (float("nan"),) * n)
+        elif len(self.uncertainties) != n:
+            raise ValueError(
+                f"len(uncertainties) = {len(self.uncertainties)}, expected {n}"
             )
 
         # Build _name_to_index from names
@@ -293,6 +305,27 @@ class ParameterVector(eqx.Module):
             The parameter's current value.
         """
         return self.values[self._name_to_index[name]]
+
+    def param_uncertainty(self, name: str) -> float:
+        """1-sigma fit uncertainty of a parameter (static metadata, in the same
+        internal unit as :meth:`param_value`).
+
+        Returns ``nan`` when the source par file reported no uncertainty for this
+        parameter (frozen/value-only line, or a kind that does not track one).
+        This is plain Python metadata, not a traced JAX value, so it is meant for
+        host-side use (e.g. building priors), not inside ``jax.jit``.
+
+        Parameters
+        ----------
+        name : str
+            Parameter name.
+
+        Returns
+        -------
+        float
+            The 1-sigma uncertainty, or ``nan`` if not reported.
+        """
+        return self.uncertainties[self._name_to_index[name]]
 
     def param_value_or(self, name: str | None, default: float = 0.0):
         """Value of a parameter if *name* is not None, otherwise *default*.
@@ -453,6 +486,7 @@ class ParameterVector(eqx.Module):
             units=self.units,
             epoch_int_values=self.epoch_int_values,
             marginalized_mask=new_mask,
+            uncertainties=self.uncertainties,
         )
 
     @property

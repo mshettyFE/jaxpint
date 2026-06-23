@@ -189,6 +189,70 @@ def test_fit_flag_vs_uncertainty():
     assert _parse_one("F0 100 5e-9").frozen is True    # uncertainty, no flag
 
 
+def test_uncertainty_extraction():
+    # sigma after a fit flag
+    assert np.isclose(_parse_one("PX 0.5 1 0.12").uncertainty, 0.12)
+    # sigma with no fit flag (the "anything else" branch)
+    assert np.isclose(_parse_one("PX 0.5 0.12").uncertainty, 0.12)
+    # fit flag but no sigma -> None
+    assert _parse_one("PX 0.5 1").uncertainty is None
+    # value only -> None
+    assert _parse_one("PX 0.5").uncertainty is None
+    # fortran-D exponent in the sigma token
+    assert np.isclose(_parse_one("PX 0.5 1 1.2D-2").uncertainty, 0.012)
+    # PINT auto-scaled param: the sigma rides the same scale as the value
+    rp = _parse_one("PBDOT 1.59 1 0.05")
+    assert np.isclose(rp.value, 1.59e-12) and np.isclose(rp.uncertainty, 0.05e-12)
+    # frozen flag (0) with an explicit sigma still keeps the sigma
+    assert np.isclose(_parse_one("PX 0.5 0 0.12").uncertainty, 0.12)
+    # PINT override rule: with two trailing tokens the sigma is the 2nd, even if
+    # the first is a non-0/1 integer (pathological, but matches PINT exactly)
+    assert np.isclose(_parse_one("F0 100 2 0.5").uncertainty, 0.5)
+
+
+def test_param_uncertainty_accessor(tmp_path):
+    import astropy.units as u
+    par_text = (
+        "PSR J0000+0000\n"
+        "RAJ 12:00:00 1 0.001\n"     # HMS angle: sigma in sec-of-time -> rad
+        "DECJ -30:00:00\n"           # value only -> NaN
+        "F0 100 1 5e-9\n"            # fitted float with sigma
+        "PX 0.5 1 0.12\n"           # fitted float with sigma
+        "DM 15 0\n"                  # frozen, no sigma -> NaN
+    )
+    p = tmp_path / "u.par"
+    p.write_text(par_text)
+    pv = par.get_model(str(p)).params
+    assert np.isclose(pv.param_uncertainty("F0"), 5e-9)
+    assert np.isclose(pv.param_uncertainty("PX"), 0.12)
+    # RAJ sigma 0.001 sec-of-time converted to radians
+    assert np.isclose(pv.param_uncertainty("RAJ"),
+                      float((0.001 * u.hourangle / 3600).to(u.rad).value))
+    assert np.isnan(pv.param_uncertainty("DM"))      # frozen / no sigma
+    assert np.isnan(pv.param_uncertainty("DECJ"))    # value only
+    # aligned with values, JIT-traceable (static metadata)
+    assert len(pv.uncertainties) == pv.values.shape[0]
+
+
+def test_uncertainty_all_kinds():
+    import astropy.units as u
+    # ANGLE: HMS RA -> sec-of-time; DMS DEC -> arcsec; decimal -> deg
+    assert np.isclose(_parse_one("RAJ 17:48:52.75 1 0.05").uncertainty,
+                      float((0.05 * u.hourangle / 3600).to(u.rad).value))
+    assert np.isclose(_parse_one("DECJ -20:21:29.0 1 0.4").uncertainty,
+                      float((0.4 * u.arcsec).to(u.rad).value))
+    assert np.isclose(_parse_one("ELONG 286.8634 1 8.4e-9").uncertainty,
+                      float((8.4e-9 * u.deg).to(u.rad).value))
+    # MJD: sigma in days, stored as-is
+    t0 = _parse_one("T0 53113.95509 1 0.00266858")
+    assert t0.kind is ParamKind.MJD and np.isclose(t0.uncertainty, 0.00266858)
+    # MASK: JUMP carries a sigma (seconds)
+    jp = _parse_one("JUMP -fe L-wide -0.000009449 1 0.000009439")
+    assert jp.kind is ParamKind.MASK and np.isclose(jp.uncertainty, 9.439e-6)
+    # PAIR (WAVE): no sigma in the format -> None
+    assert _parse_one("WAVE1 -1.2e-7 3.4e-8").uncertainty is None
+
+
 def test_fortran_float():
     rp = _parse_one("PX 1.5D0")
     assert rp.kind is ParamKind.FLOAT and np.isclose(rp.value, 1.5)

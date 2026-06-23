@@ -37,6 +37,47 @@ def b1855():
 
 
 # ===================================================================
+# parameter uncertainties
+# ===================================================================
+
+
+def test_uncertainty_roundtrips_from_pint(ngc6440e):
+    """PINT's float-parameter uncertainty reaches param_uncertainty()."""
+    model, _ = ngc6440e
+    model.F0.uncertainty_value = 1.234e-10            # known sigma on a float param
+    pv = pint_model_to_params(model).params
+    assert np.isclose(pv.param_uncertainty("F0"), 1.234e-10)
+    assert len(pv.uncertainties) == pv.values.shape[0]
+
+
+def test_uncertainty_native_vs_bridge_parity():
+    """The native parser and the PINT bridge must agree on param_uncertainty for
+    every kind (ANGLE/MJD/MASK/FLOAT), including the 0.0->NaN edge case."""
+    import math
+    from pint.config import examplefile
+    import jaxpint.par as par
+
+    parf = examplefile("B1855+09_NANOGrav_dfg+12_TAI.par")  # RAJ/DECJ/T0/F0/PX/A1/JUMP, all with sigma
+    nat = par.get_model(parf).params
+    brd = pint_model_to_params(models.get_model(parf)).params
+
+    checked = 0
+    for name in nat.names:
+        if name not in brd._name_to_index:
+            continue
+        un, ub = nat.param_uncertainty(name), brd.param_uncertainty(name)
+        if math.isnan(un) and math.isnan(ub):
+            continue
+        assert np.isclose(un, ub, rtol=1e-6, atol=0.0), (name, un, ub)
+        checked += 1
+    # Make sure the par actually exercised several finite uncertainties.
+    assert checked >= 6
+    # Spot-check that the kinds we care about are present and finite.
+    for name in ("RAJ", "DECJ", "T0", "F0", "PX", "A1"):
+        assert np.isfinite(nat.param_uncertainty(name)), name
+
+
+# ===================================================================
 # pint_toas_to_jax
 # ===================================================================
 
