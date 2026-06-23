@@ -37,12 +37,14 @@ module purge
 # Don't preallocate the GPU (matches local behavior; avoids autotuner OOM).
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
-# Which staged dataset to run, in which likelihood mode, and whether to
-# marginalize the CGW orientation (cos_inc, psi, phase0). Override at submit:
-#   sbatch --export=ALL,OCARINA=ocarina,DATA_MODE=real,MARGINALIZE=1 slurm/run_cgw_skymap.sbatch
+# Which staged dataset to run, in which likelihood mode, whether to marginalize
+# the CGW orientation (cos_inc, psi, phase0), and whether to include the pulsar
+# term (pulsar distances pegged to par-file PX). Override at submit:
+#   sbatch --export=ALL,OCARINA=ocarina,DATA_MODE=real,MARGINALIZE=1,PULSAR_TERM=1 slurm/run_cgw_skymap.sbatch
 OCARINA="${OCARINA:-ocarina_2}"
 DATA_MODE="${DATA_MODE:-real}"
 MARGINALIZE="${MARGINALIZE:-0}"
+PULSAR_TERM="${PULSAR_TERM:-0}"
 
 # Derive the conditional CLI flag and filename tag from MARGINALIZE.
 if [ "${MARGINALIZE}" = "1" ]; then
@@ -51,6 +53,17 @@ if [ "${MARGINALIZE}" = "1" ]; then
 else
     MARG_FLAG=""
     MARG_TAG=""
+fi
+
+# Pulsar-term toggle. Default (0) is Earth-term only. Marginalizing orientation
+# stays compatible: it touches cos_inc/psi/phase0, NOT PX, so the pegged-distance
+# invariant the pulsar term relies on is preserved.
+if [ "${PULSAR_TERM}" = "1" ]; then
+    PTERM_FLAG="--include-pulsar-term"
+    PTERM_TAG="-pterm"
+else
+    PTERM_FLAG=""
+    PTERM_TAG=""
 fi
 
 # Ocarina par/tim directory staged by slurm/stage_ocarina.sh (mirrors the local
@@ -62,7 +75,7 @@ IMAGE="/share/apps/images/cuda12.1.1-cudnn8.9.0-devel-ubuntu22.04.2.sif"
 PROJECT_DIR="${SLURM_SUBMIT_DIR}"
 
 OUT_DIR="/scratch/${USER}/jaxpint-out"
-OUT_FILE="${OUT_DIR}/cgw-skymap-${OCARINA}-${DATA_MODE}${MARG_TAG}-${SLURM_JOB_ID}.npz"
+OUT_FILE="${OUT_DIR}/cgw-skymap-${OCARINA}-${DATA_MODE}${MARG_TAG}${PTERM_TAG}-${SLURM_JOB_ID}.npz"
 mkdir -p "${OUT_DIR}"
 
 # Resolution / fidelity knobs (override by editing these).
@@ -82,6 +95,7 @@ echo "[sbatch] PROJECT_DIR = ${PROJECT_DIR}"
 echo "[sbatch] OCARINA_DIR = ${JAXPINT_OCARINA_DIR}"
 echo "[sbatch] DATA_MODE   = ${DATA_MODE}"
 echo "[sbatch] MARGINALIZE = ${MARGINALIZE} (orientation: ${MARG_FLAG:-fixed face-on})"
+echo "[sbatch] PULSAR_TERM = ${PULSAR_TERM} (${PTERM_FLAG:-earth-term only})"
 echo "[sbatch] OUT_FILE    = ${OUT_FILE}"
 echo "[sbatch] NSIDE       = ${NSIDE}"
 
@@ -96,8 +110,8 @@ srun singularity exec --nv \
     --bind "${JAXPINT_OCARINA_DIR}:${JAXPINT_OCARINA_DIR}" \
     --env "JAXPINT_OCARINA_DIR=${JAXPINT_OCARINA_DIR}" \
     --env "XLA_PYTHON_CLIENT_PREALLOCATE=false" \
-    --env "PYTHONHTTPSVERIFY=0"\ # Hack to get clock ata
+    --env "PYTHONHTTPSVERIFY=0" \
     "${IMAGE}" \
-    /bin/bash -c "source /ext3/env.sh && cd '${PROJECT_DIR}' && python examples/cgw_distance_skymap.py generate --output '${OUT_FILE}' --nside '${NSIDE}' --full --data-mode '${DATA_MODE}' ${MARG_FLAG}"
+    /bin/bash -c "source /ext3/env.sh && cd '${PROJECT_DIR}' && python examples/cgw_distance_skymap.py generate --output '${OUT_FILE}' --nside '${NSIDE}' --full --data-mode '${DATA_MODE}' ${MARG_FLAG} ${PTERM_FLAG}"
 
 echo "[sbatch] Done. Output at ${OUT_FILE}"
