@@ -68,6 +68,36 @@ def _split_epoch_jd(quantity) -> tuple[float, float]:
 # ---------------------------------------------------------------------------
 
 
+def _bridge_uncertainty(param) -> Optional[float]:
+    """PINT 1-sigma in the parameter's native unit, or None.
+
+    Maps PINT's ``0.0`` placeholder (which it stores for a fitted/frozen param
+    that has a fit flag but no explicit sigma) to None, so the bridge matches the
+    native parser, where such a line yields "no uncertainty" (NaN). A genuine
+    0.0 sigma is meaningless, so this is safe."""
+    unc = getattr(param, "uncertainty_value", None)
+    try:
+        unc = float(unc) if unc is not None else None
+    except (TypeError, ValueError):
+        return None
+    return None if (unc is None or unc == 0.0) else unc
+
+
+def _bridge_uncertainty_rad(param) -> Optional[float]:
+    """Angle 1-sigma converted to radians (None if unset / 0.0 placeholder).
+
+    The native ANGLE path stores the uncertainty in radians, so the bridge must
+    too -- ``uncertainty_value`` would be in hourangle/deg. Uses the Quantity."""
+    q = getattr(param, "uncertainty", None)
+    if q is None:
+        return None
+    try:
+        val = float(q.to(u.rad).value)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return None if val == 0.0 else val
+
+
 def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
     """Read each set PINT parameter object into an adapter-neutral RawParam.
 
@@ -151,6 +181,7 @@ def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
                 mask_key = str(param.key)
             raw.append(RawParam(
                 pname, ParamKind.MASK, value=float(param.value),
+                uncertainty=_bridge_uncertainty(param),   # native unit; core converts
                 unit=str(param.units), frozen=param.frozen,
                 mask_key=mask_key, mask_key_value=mkv, mask_key_value2=mkv2,
             ))
@@ -160,13 +191,18 @@ def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
             mjd_int, mjd_frac = _split_epoch_jd(param.quantity)
             raw.append(RawParam(
                 pname, ParamKind.MJD, mjd_split=(mjd_int, mjd_frac),
+                uncertainty=_bridge_uncertainty(param),   # days
                 frozen=param.frozen,
             ))
             continue
 
         if isinstance(param, AngleParameter):
             val_rad = float(param.quantity.to(u.rad).value)
-            raw.append(RawParam(pname, ParamKind.ANGLE, value=val_rad, frozen=param.frozen))
+            raw.append(RawParam(
+                pname, ParamKind.ANGLE, value=val_rad,
+                uncertainty=_bridge_uncertainty_rad(param),
+                frozen=param.frozen,
+            ))
             continue
 
         if (
@@ -180,14 +216,18 @@ def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
             mjd_frac = mjd_val - mjd_int
             raw.append(RawParam(
                 pname, ParamKind.MJD, mjd_split=(mjd_int, mjd_frac),
+                uncertainty=_bridge_uncertainty(param),   # days
                 frozen=param.frozen,
             ))
             continue
 
         # floatParameter, non-MJD prefixParameter, etc.  Pass the native unit
         # string through; the core converts deg-based units to radian-based.
+        # _bridge_uncertainty mirrors PINT's 1-sigma (native unit) so the bridge
+        # path matches the native parser (text_adapter).
         raw.append(RawParam(
             pname, ParamKind.FLOAT, value=float(param.value),
+            uncertainty=_bridge_uncertainty(param),
             unit=str(param.units), frozen=param.frozen,
         ))
 

@@ -87,6 +87,48 @@ def _frozen(trailing: tuple[str, ...], default: bool = True) -> bool:
     return default
 
 
+def _uncertainty(trailing: tuple[str, ...]) -> Optional[float]:
+    """The 1-sigma fit uncertainty from the tokens after the value (native unit).
+
+    Layout is ``value [fitflag] [sigma]``: skip an optional leading ``0``/``1``
+    fit flag, and the next token (if any) is the uncertainty.  Returns ``None``
+    when absent or unparseable (frozen/value-only lines have no sigma)."""
+    # Layout is ``value [flag] [sigma]``.  Mirror PINT's rule exactly: with two
+    # or more trailing tokens the sigma is the SECOND (it overrides the flag
+    # position); with a single trailing token it is the sigma unless it is a bare
+    # ``0``/``1`` fit flag.
+    if not trailing:
+        return None
+    if len(trailing) >= 2:
+        tok = trailing[1]
+    elif trailing[0] in ("0", "1"):
+        return None
+    else:
+        tok = trailing[0]
+    try:
+        return _fortran_float(tok)
+    except (ValueError, TypeError):
+        return None
+
+
+def _angle_uncertainty_rad(
+    value_token: str, trailing: tuple[str, ...], unit: str
+) -> Optional[float]:
+    """Angle 1-sigma uncertainty in radians from the trailing tokens.
+
+    Matches PINT's ``AngleParameter`` convention: the sigma of a *sexagesimal*
+    angle is given in the last subdivision -- seconds-of-time for an hourangle RA
+    (``hourangle/3600``), arcsec for a deg DEC (``deg/3600``) -- while a decimal
+    angle's sigma is in the base unit.  The discriminator is whether the *value*
+    token is sexagesimal (contains ``:``).  Returns ``None`` if no sigma."""
+    sig = _uncertainty(trailing)
+    if sig is None:
+        return None
+    base = u.Unit(unit)
+    sub = base / 3600.0 if ":" in value_token else base
+    return float((sig * sub).to(u.rad).value)
+
+
 def _num_key_values(key: str) -> int:
     """How many key-values a mask key takes (mjd/freq are inclusive ranges)."""
     return 2 if key in ("mjd", "freq") else 1
@@ -178,6 +220,7 @@ def _emit(canonical: str, spec: dict, tokens: tuple[str, ...]) -> Optional[RawPa
             kv2 = (str(float(kvs[1])) if numeric else kvs[1]) if nkv == 2 else None
             return RawParam(
                 canonical, ParamKind.MASK, value=_fortran_float(tokens[1 + nkv]),
+                uncertainty=_uncertainty(trailing),   # native unit; core converts
                 unit=unit, frozen=_frozen(trailing, fd),
                 mask_key=key, mask_key_value=kv1, mask_key_value2=kv2,
             )
@@ -193,11 +236,16 @@ def _emit(canonical: str, spec: dict, tokens: tuple[str, ...]) -> Optional[RawPa
 
         case "angle":
             rad = float(Angle(tokens[0], unit=u.Unit(unit)).to(u.rad).value)
-            return RawParam(canonical, ParamKind.ANGLE, value=rad, frozen=_frozen(tokens[1:], fd))
+            return RawParam(
+                canonical, ParamKind.ANGLE, value=rad,
+                uncertainty=_angle_uncertainty_rad(tokens[0], tokens[1:], unit),
+                frozen=_frozen(tokens[1:], fd),
+            )
 
         case "mjd":
             return RawParam(
                 canonical, ParamKind.MJD, mjd_split=_split_mjd_string(tokens[0]),
+                uncertainty=_uncertainty(tokens[1:]),   # in days
                 frozen=_frozen(tokens[1:], fd),
             )
 
@@ -213,13 +261,17 @@ def _emit(canonical: str, spec: dict, tokens: tuple[str, ...]) -> Optional[RawPa
         case _:  # "float" (incl. semantically-int floats like TNREDC; the core
                  # dual-exposes them to int_params)
             val = _fortran_float(tokens[0])
+            sigma = _uncertainty(tokens[1:])
             scale = spec.get("scale")
             if scale is not None and abs(val) > spec.get("scale_threshold", 0.0):
                 # PINT auto-scaling: "PBDOT 1.59" -> 1.59e-12 (applied only above
-                # the threshold, so an already-small literal passes through).
+                # the threshold, so an already-small literal passes through). The
+                # uncertainty rides the same scale (it is in the same literal unit).
                 val *= scale
+                if sigma is not None:
+                    sigma *= scale
             return RawParam(
-                canonical, ParamKind.FLOAT, value=val,
+                canonical, ParamKind.FLOAT, value=val, uncertainty=sigma,
                 unit=unit, frozen=_frozen(tokens[1:], fd),
             )
 
