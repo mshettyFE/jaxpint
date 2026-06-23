@@ -20,6 +20,7 @@ dependencies = [
     "astropy>=6.0",
     "pyerfa>=2.0",
     "jplephem>=2.21",
+    "loguru>=0.7"
 ]
 
 [project.optional-dependencies]

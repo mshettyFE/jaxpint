@@ -851,6 +851,7 @@ dependencies = [
     { name = "equinox" },
     { name = "jaxtyping" },
     { name = "jplephem" },
+    { name = "loguru" },
     { name = "pyerfa" },
 ]
 
@@ -907,6 +908,7 @@ requires-dist = [
     { name = "jaxpint", extras = ["skymap"], marker = "extra == 'dev'" },
     { name = "jaxtyping", specifier = ">=0.3.9" },
     { name = "jplephem", specifier = ">=2.21" },
+    { name = "loguru", specifier = ">=0.7" },
     { name = "matplotlib", marker = "extra == 'skymap'", specifier = ">=3.7" },
     { name = "nbconvert", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pint-pulsar", marker = "extra == 'pint'", specifier = ">=1.0" },

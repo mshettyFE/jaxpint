@@ -193,15 +193,37 @@ def compute_skymap(
         :data:`MARG_PARAMS`). This is the idealized distance reach when pulsar
         distances are treated as known; the pulsar term adds an extra ~per-pulsar
         coherent contribution to the matched filter, so Y typically roughly
-        doubles and ``r_eff_mpc`` rises by roughly sqrt(2). The 4-D orientation
-        decomposition that the F_e basis machinery relies on is preserved
-        (Delta_p is constant per pulsar at fixed PX/f_GW), so both fixed and
-        marginalized orientation paths work unchanged.
+        doubles and ``r_eff_mpc`` rises by roughly sqrt(2). NOTE: only the
+        *fixed-orientation* path is valid with the pulsar term. The F_e basis
+        reduction used by ``marginalize_orientation=True`` assumes the
+        Earth-term 4-D decomposition (:func:`orientation_coeffs`); the pulsar
+        term breaks it (Delta_p rotates each pulsar's phase0 quadratures
+        differently, so the signal is no longer rank-4 in those amplitudes), so
+        combining the two is rejected with a ``ValueError`` (see the guard at the
+        top of this function).
 
     pixel_chunk: number of sky pixels vmapped together per chunk (the rest are
     scanned). Trades memory for speed — raise it to go faster if memory allows,
     lower it if the per-chunk grad tape OOMs on the full PTA.
     """
+    # The F_e basis reduction (orientation_coeffs / basis_quadratics) assumes the
+    # signal power Y(omega) is an exact 4-D quadratic form in the EARTH-TERM
+    # orientation amplitudes. The pulsar term breaks that: each pulsar's pulsar-
+    # term phase Delta_p rotates the phase0 quadratures by a different angle, so
+    # the earth+pulsar signal no longer lives in the 4-D span of
+    # orientation_coeffs. basis_quadratics would silently force-fit a rank-4 M to
+    # a higher-rank function, inflating Y and producing distances ~100x too large.
+    # The fixed-orientation path (quadratic_coeffs) is exact for either signal, so
+    # only this combination is forbidden.
+    if marginalize_orientation and include_pulsar_term:
+        raise ValueError(
+            "marginalize_orientation=True is incompatible with "
+            "include_pulsar_term=True: the F_e basis reduction is only valid for "
+            "the Earth-term signal (see orientation_coeffs in cw_upper_limit.py). "
+            "Use fixed orientation (marginalize_orientation=False) for pulsar-term "
+            "maps, or run Earth-term only when marginalizing orientation."
+        )
+
     import jax
     import jax.numpy as jnp
     import equinox as eqx
@@ -240,6 +262,26 @@ def compute_skymap(
 
     positions = jnp.asarray(np.stack([pulsar_unit_vector_icrs(pp) for pp in pp_list]))
 
+    # Pulsar-term anchor mask: a pulsar may carry the pulsar term only if its
+    # pegged distance is physical, i.e. it has a measured PX > 0. The pulsar-term
+    # phase uses dist = 1/PX (cw.py), so PX <= 0 gives a negative distance and a
+    # wrong-sign phase; PX-less pulsars have no distance at all. Those fall back
+    # to Earth-term only. On the curated WEN_OCARINA_18 array every pulsar has
+    # PX > 0, so the mask is all-True and results are unchanged; it only bites on
+    # the full array, where ~8/76 ocarina pulsars inherit non-positive real-data
+    # parallaxes. Ignored when earth_term_only (CWInjector lets earth_term_only
+    # override the mask).
+    def _is_anchor(pp):
+        try:
+            return bool(float(pp.param_value("PX")) > 0.0)
+        except KeyError:
+            return False  # no PX -> no distance info -> Earth-term only
+    pulsar_term_mask = tuple(_is_anchor(pp) for pp in pp_list)
+    n_anchors = int(sum(pulsar_term_mask))
+    if include_pulsar_term:
+        _log(f"Pulsar term: {n_anchors}/{len(names)} pulsars are anchors "
+             f"(PX > 0); the rest fall back to Earth-term only.")
+
     # ---- 2. Injector + config + global params ------------------------------
     # Linear-amplitude CW template: residual linear in h0 so logL is exactly
     # quadratic in it (the analytic-UL requirement). With pulsar distances
@@ -248,6 +290,7 @@ def compute_skymap(
     injector = CWInjector(
         positions, prefix="cw_",
         earth_term_only=not include_pulsar_term, linear_amplitude=True,
+        pulsar_term_mask=pulsar_term_mask,
         initial_values={"log10_fgw": LOG10_FGW},
     )
     gp = injector.register_params(GlobalParams.empty())
@@ -403,6 +446,14 @@ def compute_skymap(
         "pulsar_pos": np.asarray(positions),
         "data_mode": np.array(data_mode),
         "include_pulsar_term": np.bool_(include_pulsar_term),
+        # Which pulsars actually carried the pulsar term (PX > 0). For Earth-term
+        # runs this is all-False in effect (earth_term_only overrides), but the
+        # mask is recorded either way so the comparison plot can mark anchors.
+        "pulsar_term_mask": np.asarray(pulsar_term_mask),
+        "n_anchors": np.int64(n_anchors),
+        "anchor_pulsars": np.array(
+            [n for n, m in zip(names, pulsar_term_mask) if m]
+        ),
     }
     if fstat_map is not None:
         results["fstat_map"] = fstat_map  # 2F per pixel (marginalized real mode)
