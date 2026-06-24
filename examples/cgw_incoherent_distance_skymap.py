@@ -114,7 +114,13 @@ def compute_skymap(*, pulsar_subset=SMOKE_SUBSET, nside=8, k=5.0, n_phase=256,
                                    (len(names), n_phase))
     A = _A_of_phase(flat_phase_grid(n_phase))            # (n_phase, 2)
 
-    b_j = jnp.asarray(b_all); M_j = jnp.asarray(M_all)   # (n_psr, npix, 2[,2])
+    # Move pixels to the leading axis so the per-pixel UL can be chunked the same
+    # way the extraction is. A plain vmap over all pixels materializes
+    # ~(npix * n_h0 * n_psr * n_phase) intermediates and OOMs the GPU; lax.map with
+    # batch_size keeps only `pixel_chunk` pixels live at once. (The transpose is on
+    # tiny ~MB arrays.)
+    b_pix = jnp.transpose(jnp.asarray(b_all), (1, 0, 2))       # (npix, n_psr, 2)
+    M_pix = jnp.transpose(jnp.asarray(M_all), (1, 0, 2, 3))    # (npix, n_psr, 2, 2)
 
     def dist_at_pixel(b_px, M_px):                       # b_px (n_psr,2), M_px (n_psr,2,2)
         # adaptive h0_max from the phase-averaged Gaussian proxy (over-covers ~10x)
@@ -122,10 +128,10 @@ def compute_skymap(*, pulsar_subset=SMOKE_SUBSET, nside=8, k=5.0, n_phase=256,
         Ybar = jnp.mean(jax.vmap(lambda Ma: jnp.einsum("ni,ij,nj->n", A, Ma, A))(M_px), axis=1)
         SX, SY = jnp.sum(Xbar), jnp.clip(jnp.sum(Ybar), 1e-300, None)
         h0_max = 10.0 * (jnp.abs(SX) / SY + 5.0 / jnp.sqrt(SY))
-        h0_95 = h0_95_grid(b_px, M_px, phase_grids, h0_max)
-        return h0_95
+        return h0_95_grid(b_px, M_px, phase_grids, h0_max)
 
-    h0_95 = jax.vmap(dist_at_pixel, in_axes=(1, 1))(b_j, M_j)   # (npix,)
+    h0_95 = jax.lax.map(lambda bm: dist_at_pixel(bm[0], bm[1]),
+                        (b_pix, M_pix), batch_size=pixel_chunk)   # (npix,)
     dist_ll = np.asarray(h0_to_distance(h0_95, LOG10_MC, LOG10_FGW))
     r_eff = float(np.mean(dist_ll ** 3) ** (1.0 / 3.0))
     _log(f"Done. D_L lower limit min/median/max = "
