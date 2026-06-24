@@ -194,4 +194,5 @@ class WLSFitter(BaseFitter):
         for _ in range(safe_maxiter):
             params, covariance = self._iteration(params, threshold)
 
+        assert covariance is not None  # safe_maxiter >= 1, so the loop always runs
         return self._build_result(params, covariance)

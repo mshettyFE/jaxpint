@@ -11,6 +11,8 @@ PINT ``binary_generic.py``, ``binary_orbits.py``.
 
 from __future__ import annotations
 
+from typing import Optional
+
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 from jaxtyping import Array, Float
@@ -29,7 +31,7 @@ from jaxpint.types import ParameterVector
 def compute_tt0(
     tdb: DualFloat,
     epoch: DualFloat,
-    delay: Float[Array, " n_toas"] = None,
+    delay: Optional[Float[Array, " n_toas"]] = None,
 ) -> Float[Array, " n_toas"]:
     """Time from epoch to each TOA in seconds, using DualFloat precision.
 
@@ -112,7 +114,7 @@ def compute_orbital_phase(
     pb_d: ArrayLike,
     pbdot: ArrayLike = 0.0,
     xpbdot: ArrayLike = 0.0,
-    delay: Float[Array, " n_toas"] = None,
+    delay: Optional[Float[Array, " n_toas"]] = None,
 ) -> Float[Array, " n_toas"]:
     """Orbital phase in [0, 2*pi) using DualFloat precision.
 
@@ -381,7 +383,7 @@ def compute_omega_dd(
     nu: Float[Array, " n_toas"],
     pb_d: ArrayLike,
     pbdot: ArrayLike = 0.0,
-    tt0_s: Float[Array, " n_toas"] = None,
+    tt0_s: Optional[Float[Array, " n_toas"]] = None,
 ) -> Float[Array, " n_toas"]:
     """Longitude of periastron for DD model: ``omega = OM + nu * k``.
 
@@ -622,15 +624,18 @@ def get_sini_m2(
         sini = params.param_value_or(sini_name)
         m2 = params.param_value_or(m2_name)
     elif shapiro_mode == "shapmax":
+        assert shapmax_name is not None
         shapmax = params.param_value(shapmax_name)
         sini = 1.0 - jnp.exp(-shapmax)
         m2 = params.param_value_or(m2_name)
     elif shapiro_mode == "h3stigma":
+        assert h3_name is not None and stigma_name is not None
         h3 = params.param_value(h3_name)
         stigma = params.param_value(stigma_name)
         sini = 2.0 * stigma / (1.0 + stigma ** 2)
         m2 = h3 / (stigma ** 3 * TSUN)
     elif shapiro_mode == "h3h4":
+        assert h3_name is not None and h4_name is not None
         h3 = params.param_value(h3_name)
         h4 = params.param_value(h4_name)
         stigma = h4 / h3

@@ -204,6 +204,7 @@ class NoiseModel(eqx.Module):
         """Return noise-scaled DM uncertainties in pc/cm³."""
         if self.dm_white_noise is not None:
             return self.dm_white_noise.scaled_dm_sigma(toa_data, params)
+        assert toa_data.dm_errors is not None  # wideband data always carries DM
         return toa_data.dm_errors
 
     def wideband_covariance(

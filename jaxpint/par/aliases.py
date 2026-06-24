@@ -56,6 +56,7 @@ def synthesize_tnredamp_from_rnamp(raw: list[RawParam]) -> None:
     if _has(raw, "TNREDAMP") or _has(raw, "TNREDGAM"):
         return
 
+    assert rnamp.value is not None and rnidx.value is not None
     tnredamp = float(jnp.log10(float(rnamp.value) / _RNAMP_FAC))
     tnredgam = -float(rnidx.value)
     raw.append(RawParam(

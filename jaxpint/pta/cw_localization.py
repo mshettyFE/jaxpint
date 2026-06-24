@@ -23,7 +23,7 @@ no-anchor regime, prefer sampling-based methods.
 """
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, cast
 
 import jax
 import jax.numpy as jnp
@@ -297,7 +297,7 @@ def per_source_credible_areas_deg2(
         det_Sigma_k = jnp.linalg.det(Sigma_k)
         # Direct: area = pi * Delta_chi2 * sqrt(det Sigma_k) * (180/pi)^2.
         dchi2 = -2.0 * jnp.log(1.0 - level)
-        det_safe = jnp.where(det_Sigma_k > 0.0, det_Sigma_k, jnp.inf)
+        det_safe = cast(Array, jnp.where(det_Sigma_k > 0.0, det_Sigma_k, jnp.inf))
         area_str = jnp.pi * dchi2 * jnp.sqrt(det_safe)
         out.append(area_str * _STR_TO_DEG2)
     return jnp.stack(out)
@@ -327,6 +327,6 @@ def credible_area_deg2(
     dchi2 = -2.0 * jnp.log(1.0 - level)
     det_F = jnp.linalg.det(F)
     # det Sigma = 1 / det F; det F <= 0 → unphysical (non-positive-definite).
-    det_sigma = jnp.where(det_F > 0.0, 1.0 / det_F, jnp.inf)
+    det_sigma = cast(Array, jnp.where(det_F > 0.0, 1.0 / det_F, jnp.inf))
     area_str = jnp.pi * dchi2 * jnp.sqrt(det_sigma)
     return area_str * _STR_TO_DEG2

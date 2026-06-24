@@ -80,7 +80,9 @@ def single_pulsar_logL(
 
     # 3. Noise covariance, optionally augmented with external (U, Φ) blocks
     Ndiag, U_noise, Phi_noise = noise_model.covariance(toa_data, params)
-    U, Phi = concat_woodbury_blocks((U_noise, Phi_noise), external_cov)
+    woodbury = concat_woodbury_blocks((U_noise, Phi_noise), external_cov)
+    assert woodbury is not None  # first block is always non-None
+    U, Phi = woodbury
 
     # 5. Evaluate via Woodbury
     rCr, logdetC = woodbury_dot(Ndiag, U, Phi, r, r)

@@ -61,6 +61,7 @@ class ScaleDmError(eqx.Module):
         sigma_scaled : (n_toas,)
             Scaled DM uncertainties in pc/cm³.
         """
+        assert toa_data.dm_errors is not None  # DM white noise requires DM data
         sigma_sq = toa_data.dm_errors ** 2
 
         for dmequad_name in self.dmequad_names:

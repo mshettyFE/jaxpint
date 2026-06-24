@@ -147,6 +147,7 @@ def raw_params_to_result(
                 # match the TOAData.error convention.  All other mask params
                 # (JUMP, EFAC, ...) take the float path (deg->rad is a no-op).
                 # The uncertainty rides the same conversion as the value.
+                assert rp.value is not None
                 if rp.name.startswith("EQUAD") or rp.name.startswith("ECORR"):
                     val = float((rp.value * u.Unit(rp.unit)).to(u.s).value)
                     unit_str = "s"
@@ -163,6 +164,7 @@ def raw_params_to_result(
                 uncertainties.append(unc)
 
             case ParamKind.PAIR:
+                assert rp.value_pair is not None
                 val_a, val_b = rp.value_pair
                 for suffix, val in (("_A", val_a), ("_B", val_b)):
                     names.append(rp.name + suffix)
@@ -172,6 +174,7 @@ def raw_params_to_result(
                     uncertainties.append(math.nan)
 
             case ParamKind.MJD:
+                assert rp.mjd_split is not None
                 mjd_int, mjd_frac = rp.mjd_split
                 epoch_int_values[rp.name] = float(mjd_int)
                 values.append(float(mjd_frac))
@@ -184,6 +187,7 @@ def raw_params_to_result(
                 )
 
             case ParamKind.ANGLE:
+                assert rp.value is not None
                 values.append(float(rp.value))
                 units.append("rad")
                 names.append(rp.name)
@@ -194,6 +198,7 @@ def raw_params_to_result(
                 )
 
             case ParamKind.FLOAT:
+                assert rp.value is not None
                 val, unit_str = _coerce_float(rp.value, rp.unit)
                 values.append(val)
                 units.append(unit_str)

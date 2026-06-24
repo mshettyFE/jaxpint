@@ -196,7 +196,7 @@ def _trust_radius_for_prior(
     fisher_diag = float(jnp.sum(M_full[:, idx] ** 2 * Ninv))
     if fisher_diag <= 0.0:
         return float("inf")  # degenerate — let the check fire loudly
-    return 1.0 / jnp.sqrt(fisher_diag)
+    return float(1.0 / jnp.sqrt(fisher_diag))
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +462,8 @@ def _marginalize_single_pulsar(
 
     # --- 6. Linearity check  -------------------------------
     if validate_linearity and len(over_indices) > 0:
+        # len(over_indices) > 0 means the Jacobian branch above ran.
+        assert J_full is not None and M_marg is not None
         # Trust radii for each marginalized param.
         Ndiag = noise_model.scaled_sigma(toa_data, fiducial_params) ** 2
         trust_radii = jnp.asarray(
