@@ -39,6 +39,7 @@ Usage
 `.npz` and draws the figures with no JAX/GPU import on the path. `both` is the
 end-to-end behaviour the script had before this CLI was added.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -64,14 +65,14 @@ DATA_DIR = Path(
 
 # CW injection (Earth-frame). Picked to fall inside the PTA band.
 TRUE_LOG10_H = -14.0
-TRUE_LOG10_FGW = -8.0          # 10 nHz
+TRUE_LOG10_FGW = -8.0  # 10 nHz
 TRUE_COS_GWTHETA = 0.3
 TRUE_GWPHI = 1.7
 SEED = 0
 
 # 2D sweep grid (kpc, half-widths around each truth).
 HALF_WINDOW_KPC = 1e-3
-N_GRID = 400                   # 400 x 400 = 160k logL evals
+N_GRID = 400  # 400 x 400 = 160k logL evals
 
 DEFAULT_DATA_PATH = Path("nanograv_two_pulsar_distance_scan.npz")
 
@@ -92,11 +93,13 @@ def pulsar_unit_vector_icrs(pp):
     if "RAJ" in pp.names and "DECJ" in pp.names:
         ra = float(pp.param_value("RAJ"))
         dec = float(pp.param_value("DECJ"))
-        return np.array([
-            np.cos(dec) * np.cos(ra),
-            np.cos(dec) * np.sin(ra),
-            np.sin(dec),
-        ])
+        return np.array(
+            [
+                np.cos(dec) * np.cos(ra),
+                np.cos(dec) * np.sin(ra),
+                np.sin(dec),
+            ]
+        )
     if "ELONG" in pp.names and "ELAT" in pp.names:
         elong = float(pp.param_value("ELONG"))
         elat = float(pp.param_value("ELAT"))
@@ -104,7 +107,9 @@ def pulsar_unit_vector_icrs(pp):
         x = np.cos(elat) * np.cos(elong)
         y_ec = np.cos(elat) * np.sin(elong)
         z_ec = np.sin(elat)
-        return np.array([x, COS_EPS * y_ec - SIN_EPS * z_ec, SIN_EPS * y_ec + COS_EPS * z_ec])
+        return np.array(
+            [x, COS_EPS * y_ec - SIN_EPS * z_ec, SIN_EPS * y_ec + COS_EPS * z_ec]
+        )
     raise KeyError(
         f"Pulsar params lack both (RAJ, DECJ) and (ELONG, ELAT); names={pp.names}"
     )
@@ -162,6 +167,7 @@ def _attach_log_file(log_path: Path) -> None:
     # file to avoid two writers fighting over the same fd.
     loguru_path = log_path.with_name(log_path.name + ".loguru")
     from loguru import logger
+
     logger.add(str(loguru_path), enqueue=True, level="DEBUG")
     print(f"[crash-logging] stdout/stderr -> {log_path}, loguru -> {loguru_path}")
 
@@ -174,6 +180,7 @@ def _phase_cm(records: list, gpu_device, enabled: bool):
     that doesn't push either watermark higher reports a zero — the cost
     showed up in an earlier phase.
     """
+
     @contextmanager
     def _phase(name: str):
         if not enabled:
@@ -182,18 +189,32 @@ def _phase_cm(records: list, gpu_device, enabled: bool):
         wall0 = time.perf_counter()
         cpu0 = time.process_time()
         rss0 = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        gpu0 = gpu_device.memory_stats()["peak_bytes_in_use"] if gpu_device is not None else 0
+        gpu0 = (
+            gpu_device.memory_stats()["peak_bytes_in_use"]
+            if gpu_device is not None
+            else 0
+        )
         try:
             yield
         finally:
-            gpu1 = gpu_device.memory_stats()["peak_bytes_in_use"] if gpu_device is not None else 0
-            records.append({
-                "name": name,
-                "wall_s": time.perf_counter() - wall0,
-                "cpu_s": time.process_time() - cpu0,
-                "rss_delta_mb": (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - rss0) / 1024.0,
-                "gpu_peak_delta_mb": (gpu1 - gpu0) / 1e6,
-            })
+            gpu1 = (
+                gpu_device.memory_stats()["peak_bytes_in_use"]
+                if gpu_device is not None
+                else 0
+            )
+            records.append(
+                {
+                    "name": name,
+                    "wall_s": time.perf_counter() - wall0,
+                    "cpu_s": time.process_time() - cpu0,
+                    "rss_delta_mb": (
+                        resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - rss0
+                    )
+                    / 1024.0,
+                    "gpu_peak_delta_mb": (gpu1 - gpu0) / 1e6,
+                }
+            )
+
     return _phase
 
 
@@ -207,17 +228,21 @@ def _print_phase_summary(records: list) -> None:
     print(sep)
     tot_wall = tot_cpu = tot_rss = tot_gpu = 0.0
     for r in records:
-        print(f"{r['name']:<16} "
-              f"{r['wall_s']:>8.2f}s {r['cpu_s']:>8.2f}s "
-              f"{r['rss_delta_mb']:>8.1f} MB {r['gpu_peak_delta_mb']:>9.1f} MB")
+        print(
+            f"{r['name']:<16} "
+            f"{r['wall_s']:>8.2f}s {r['cpu_s']:>8.2f}s "
+            f"{r['rss_delta_mb']:>8.1f} MB {r['gpu_peak_delta_mb']:>9.1f} MB"
+        )
         tot_wall += r["wall_s"]
         tot_cpu += r["cpu_s"]
         tot_rss += r["rss_delta_mb"]
         tot_gpu += r["gpu_peak_delta_mb"]
     print(sep)
-    print(f"{'total':<16} "
-          f"{tot_wall:>8.2f}s {tot_cpu:>8.2f}s "
-          f"{tot_rss:>8.1f} MB {tot_gpu:>9.1f} MB")
+    print(
+        f"{'total':<16} "
+        f"{tot_wall:>8.2f}s {tot_cpu:>8.2f}s "
+        f"{tot_rss:>8.1f} MB {tot_gpu:>9.1f} MB"
+    )
 
 
 def compute_logL_2d(debug: bool = False, profile: bool = False) -> dict:
@@ -247,6 +272,7 @@ def compute_logL_2d(debug: bool = False, profile: bool = False) -> dict:
     import jax.numpy as jnp
 
     from loguru import logger
+
     logger.disable("pint")
 
     from jaxpint import load_nanograv_pta
@@ -298,7 +324,9 @@ def compute_logL_2d(debug: bool = False, profile: bool = False) -> dict:
 
     # ---- 3. Inject one CW source and build the `PTAConfig` ----------------
     with phase("build_config"):
-        positions_np = np.stack([pulsar_unit_vector_icrs(pp) for pp in psrs.pulsar_params_list])
+        positions_np = np.stack(
+            [pulsar_unit_vector_icrs(pp) for pp in psrs.pulsar_params_list]
+        )
         positions = jnp.asarray(positions_np)
 
         n_eq = sum("RAJ" in pp.names for pp in psrs.pulsar_params_list)
@@ -334,24 +362,36 @@ def compute_logL_2d(debug: bool = False, profile: bool = False) -> dict:
     true_dist_a = 1.0 / true_px_a
     true_dist_b = 1.0 / true_px_b
 
-    dist_a_grid = np.linspace(true_dist_a - HALF_WINDOW_KPC, true_dist_a + HALF_WINDOW_KPC, N_GRID)
-    dist_b_grid = np.linspace(true_dist_b - HALF_WINDOW_KPC, true_dist_b + HALF_WINDOW_KPC, N_GRID)
+    dist_a_grid = np.linspace(
+        true_dist_a - HALF_WINDOW_KPC, true_dist_a + HALF_WINDOW_KPC, N_GRID
+    )
+    dist_b_grid = np.linspace(
+        true_dist_b - HALF_WINDOW_KPC, true_dist_b + HALF_WINDOW_KPC, N_GRID
+    )
     px_a_mas_grid = jnp.asarray(1.0 / dist_a_grid)
     px_b_mas_grid = jnp.asarray(1.0 / dist_b_grid)
 
-    print(f"Computing {N_GRID} x {N_GRID} = {N_GRID*N_GRID} log-likelihood "
-          f"values via dependency-aware scan_logL...")
-    print(f"  pulsar A = {psrs.pulsar_names[PULSAR_A]}, "
-          f"pulsar B = {psrs.pulsar_names[PULSAR_B]}")
+    print(
+        f"Computing {N_GRID} x {N_GRID} = {N_GRID * N_GRID} log-likelihood "
+        f"values via dependency-aware scan_logL..."
+    )
+    print(
+        f"  pulsar A = {psrs.pulsar_names[PULSAR_A]}, "
+        f"pulsar B = {psrs.pulsar_names[PULSAR_B]}"
+    )
     print(f"  Other {len(pp_tuple) - 2} pulsars contribute constants computed once.")
     with phase("scan"):
         logL_2d = scan_logL(
-            gp, pp_tuple, config,
+            gp,
+            pp_tuple,
+            config,
             axes=[
-                PerPulsarScanAxis(pulsar_idx=PULSAR_A, param_name="PX",
-                                  values=px_a_mas_grid),
-                PerPulsarScanAxis(pulsar_idx=PULSAR_B, param_name="PX",
-                                  values=px_b_mas_grid),
+                PerPulsarScanAxis(
+                    pulsar_idx=PULSAR_A, param_name="PX", values=px_a_mas_grid
+                ),
+                PerPulsarScanAxis(
+                    pulsar_idx=PULSAR_B, param_name="PX", values=px_b_mas_grid
+                ),
             ],
             indexing="xy",  # -> shape (N_GRID, N_GRID) = (n_b, n_a)
             chunk_size=25,
@@ -453,14 +493,18 @@ def plot_results(results: dict) -> None:
     fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(12, 4.5))
 
     ax0.plot(np.asarray(dist_a_grid)[::-1], delta_a[::-1], lw=1.2)
-    ax0.axvline(true_dist_a, color="r", ls="--", lw=1, label=f"truth = {true_dist_a:.4f} kpc")
+    ax0.axvline(
+        true_dist_a, color="r", ls="--", lw=1, label=f"truth = {true_dist_a:.4f} kpc"
+    )
     ax0.set_xlabel(f"{name_a} distance (kpc)")
     ax0.set_ylabel(r"$\Delta$ log-likelihood")
     ax0.set_title(f"{name_a} (slice at {name_b} truth)")
     ax0.legend()
 
     ax1.plot(np.asarray(dist_b_grid)[::-1], delta_b[::-1], lw=1.2)
-    ax1.axvline(true_dist_b, color="r", ls="--", lw=1, label=f"truth = {true_dist_b:.4f} kpc")
+    ax1.axvline(
+        true_dist_b, color="r", ls="--", lw=1, label=f"truth = {true_dist_b:.4f} kpc"
+    )
     ax1.set_xlabel(f"{name_b} distance (kpc)")
     ax1.set_ylabel(r"$\Delta$ log-likelihood")
     ax1.set_title(f"{name_b} (slice at {name_a} truth)")
@@ -493,14 +537,20 @@ def main() -> None:
     faulthandler.enable()
     # Surface the loader's per-pulsar `log.info("Loading %s ...")` so that
     # if construction fails we can see which pulsar was in flight.
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
+    )
 
     parser = argparse.ArgumentParser(
         description="NANOGrav 2-pulsar distance scan: compute, save, and/or plot."
     )
     # Default when no subcommand is given: run the full pipeline (`both`).
     parser.set_defaults(
-        func=cmd_both, path=DEFAULT_DATA_PATH, debug=False, profile=False, log=None,
+        func=cmd_both,
+        path=DEFAULT_DATA_PATH,
+        debug=False,
+        profile=False,
+        log=None,
     )
     subparsers = parser.add_subparsers(dest="mode")
 

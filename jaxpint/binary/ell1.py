@@ -36,6 +36,7 @@ from jaxpint.binary.common import (
 # ELL1 Roemer delay expansion (O(e^3))
 # ---------------------------------------------------------------------------
 
+
 def _ell1_roemer_da1(Phi, eps1, eps2):
     """ELL1 Roemer delay / a1, including 3rd-order eccentricity corrections.
 
@@ -52,7 +53,8 @@ def _ell1_roemer_da1(Phi, eps1, eps2):
     return (
         sin_Phi
         + 0.5 * (eps2 * sin_2Phi - eps1 * cos_2Phi)
-        - (1.0 / 8) * (
+        - (1.0 / 8)
+        * (
             5 * eps2**2 * sin_Phi
             - 3 * eps2**2 * sin_3Phi
             - 2 * eps2 * eps1 * jnp.cos(Phi)
@@ -60,7 +62,8 @@ def _ell1_roemer_da1(Phi, eps1, eps2):
             + 3 * eps1**2 * sin_Phi
             + 3 * eps1**2 * sin_3Phi
         )
-        - (1.0 / 12) * (
+        - (1.0 / 12)
+        * (
             5 * eps2**3 * sin_2Phi
             + 3 * eps1**2 * eps2 * sin_2Phi
             - 6 * eps1 * eps2**2 * cos_2Phi
@@ -77,9 +80,11 @@ def _ell1_roemer_da1(Phi, eps1, eps2):
 # jax.grad operates on scalar-output functions, so we define the Roemer
 # delay at a single orbital phase and vmap over the TOA axis.
 
+
 def _roemer_scalar(Phi, eps1, eps2):
     """Roemer delay / a1 at a single Phi (scalar)."""
     return _ell1_roemer_da1(Phi, eps1, eps2)
+
 
 _droemer_dPhi_scalar = jax.grad(_roemer_scalar, argnums=0)
 _d2roemer_dPhi2_scalar = jax.grad(_droemer_dPhi_scalar, argnums=0)
@@ -153,7 +158,9 @@ class BinaryELL1(DelayComponent):
 
         if self.omdot_name is not None and self.lnedot_name is not None:
             # ELL1k model: Susobhanan et al. 2018, Eq. 15
-            omdot_rad_per_s = params.param_value(self.omdot_name)  # rad/s (bridge converts)
+            omdot_rad_per_s = params.param_value(
+                self.omdot_name
+            )  # rad/s (bridge converts)
             lnedot = params.param_value(self.lnedot_name)  # 1/yr
             lnedot_per_s = lnedot / (365.25 * 86400.0)
             dt = ttasc_s
@@ -207,8 +214,12 @@ class BinaryELL1(DelayComponent):
         a1dot = params.param_value_or(self.a1dot_name)
 
         sini, m2 = get_sini_m2(
-            params, self.shapiro_mode, self.sini_name, self.m2_name,
-            h3_name=self.h3_name, stigma_name=self.stigma_name,
+            params,
+            self.shapiro_mode,
+            self.sini_name,
+            self.m2_name,
+            h3_name=self.h3_name,
+            stigma_name=self.stigma_name,
             h4_name=self.h4_name,
         )
 
@@ -222,8 +233,11 @@ class BinaryELL1(DelayComponent):
         # --- Orbital phase (precision-preserving via int/frac day split) ---
         pb_prime_s = pb_d * SECS_PER_DAY + pbdot * ttasc_s
         Phi = compute_orbital_phase(
-            toa_data.tdb, tasc,
-            pb_d, pbdot, delay=delay,
+            toa_data.tdb,
+            tasc,
+            pb_d,
+            pbdot,
+            delay=delay,
         )
 
         # --- ELL1 Roemer delay (O(e^3) expansion) ---
@@ -236,9 +250,7 @@ class BinaryELL1(DelayComponent):
         # --- Inverse timing (simpler than DD: no e*sinE/(1-e*cosE) term) ---
         nhat = 2.0 * jnp.pi / pb_prime_s
         delay_inverse = Dre * (
-            1.0 - nhat * Drep
-            + (nhat * Drep) ** 2
-            + 0.5 * nhat ** 2 * Dre * Drepp
+            1.0 - nhat * Drep + (nhat * Drep) ** 2 + 0.5 * nhat**2 * Dre * Drepp
         )
 
         # --- Shapiro delay ---

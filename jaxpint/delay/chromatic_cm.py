@@ -70,13 +70,9 @@ class ChromaticCM(DelayComponent):
         dt_days = (toa_data.tdb - epoch).total
         return dt_days / DAYS_PER_JULIAN_YEAR
 
-    def _get_cm_coeffs(
-        self, params: ParameterVector
-    ) -> Float[Array, " n_terms"]:
+    def _get_cm_coeffs(self, params: ParameterVector) -> Float[Array, " n_terms"]:
         """Assemble ``[CM, CM1, CM2, ...]`` for :func:`taylor_horner`."""
-        return jnp.array(
-            [params.param_value(name) for name in self.cm_param_names]
-        )
+        return jnp.array([params.param_value(name) for name in self.cm_param_names])
 
     def __call__(
         self,

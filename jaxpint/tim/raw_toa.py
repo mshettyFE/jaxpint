@@ -42,11 +42,11 @@ class RawTOA:
     ``apply_clock_corrections`` / ``compute_TDBs`` / ``compute_posvels``.
     """
 
-    mjd_int: float            # integer MJD day (UTC/site scale, pre-correction)
-    mjd_frac: float           # fractional day in [0, 1)
-    error_s: float            # seconds, AFTER EFAC/EQUAD applied at read time
-    freq_mhz: float           # MHz (0 -> inf convention, matching PINT)
-    obs: str                  # raw observatory token as written (no canonicalisation)
+    mjd_int: float  # integer MJD day (UTC/site scale, pre-correction)
+    mjd_frac: float  # fractional day in [0, 1)
+    error_s: float  # seconds, AFTER EFAC/EQUAD applied at read time
+    freq_mhz: float  # MHz (0 -> inf convention, matching PINT)
+    obs: str  # raw observatory token as written (no canonicalisation)
     flags: dict[str, str] = field(default_factory=dict)
     delta_pulse_number: float = 0.0  # populated downstream from the 'phase' flag
 
@@ -76,11 +76,11 @@ class KnownFlag(str, Enum):
     enumerated here -- they stay opaque strings in :attr:`RawTOA.flags`.
     """
 
-    TO = "to"               # cumulative TIME offset (seconds), -> clock chain
-    PHASE = "phase"         # cumulative integer pulse turns, -> delta_pulse_number
-    JUMP = "jump"           # phase-jump block index
-    TIM_JUMP = "tim_jump"   # alias of JUMP that PINT also writes
-    INFO = "info"           # INFO-command string tag
+    TO = "to"  # cumulative TIME offset (seconds), -> clock chain
+    PHASE = "phase"  # cumulative integer pulse turns, -> delta_pulse_number
+    JUMP = "jump"  # phase-jump block index
+    TIM_JUMP = "tim_jump"  # alias of JUMP that PINT also writes
+    INFO = "info"  # INFO-command string tag
 
 
 def normalize_flag_key(key: str) -> str:

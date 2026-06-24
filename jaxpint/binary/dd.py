@@ -136,8 +136,13 @@ class BinaryDD(DelayComponent):
         B0 = params.param_value_or(self.b0_name)
 
         sini, m2 = get_sini_m2(
-            params, self.shapiro_mode, self.sini_name, self.m2_name,
-            self.shapmax_name, self.h3_name, self.stigma_name,
+            params,
+            self.shapiro_mode,
+            self.sini_name,
+            self.m2_name,
+            self.shapmax_name,
+            self.h3_name,
+            self.stigma_name,
         )
 
         # --- Compute time since periastron (corrected for accumulated delay) ---
@@ -150,8 +155,12 @@ class BinaryDD(DelayComponent):
         # --- Solve Kepler's equation ---
         # Use int/frac split for precision-preserving mean anomaly.
         M = compute_orbital_phase(
-            toa_data.tdb, t0,
-            pb_d, pbdot, xpbdot, delay=delay,
+            toa_data.tdb,
+            t0,
+            pb_d,
+            pbdot,
+            xpbdot,
+            delay=delay,
         )
         E = compute_eccentric_anomaly(ecc, M)
         # Full orbit count still needed for cumulative true anomaly.
@@ -162,6 +171,19 @@ class BinaryDD(DelayComponent):
         omega = compute_omega_dd(om_rad, omdot, nu, pb_d, pbdot, tt0_s)
 
         return dd_core_delay(
-            E, ecc, omega, nu, a1, tt0_s, pb_d, pbdot,
-            gamma, dr, dth, A0, B0, sini, m2,
+            E,
+            ecc,
+            omega,
+            nu,
+            a1,
+            tt0_s,
+            pb_d,
+            pbdot,
+            gamma,
+            dr,
+            dth,
+            A0,
+            B0,
+            sini,
+            m2,
         )

@@ -59,17 +59,30 @@ def synthesize_tnredamp_from_rnamp(raw: list[RawParam]) -> None:
     assert rnamp.value is not None and rnidx.value is not None
     tnredamp = float(jnp.log10(float(rnamp.value) / _RNAMP_FAC))
     tnredgam = -float(rnidx.value)
-    raw.append(RawParam(
-        name="TNREDAMP", kind=ParamKind.FLOAT, value=tnredamp, unit="",
-        frozen=bool(rnamp.frozen),
-    ))
-    raw.append(RawParam(
-        name="TNREDGAM", kind=ParamKind.FLOAT, value=tnredgam, unit="",
-        frozen=bool(rnidx.frozen),
-    ))
+    raw.append(
+        RawParam(
+            name="TNREDAMP",
+            kind=ParamKind.FLOAT,
+            value=tnredamp,
+            unit="",
+            frozen=bool(rnamp.frozen),
+        )
+    )
+    raw.append(
+        RawParam(
+            name="TNREDGAM",
+            kind=ParamKind.FLOAT,
+            value=tnredgam,
+            unit="",
+            frozen=bool(rnidx.frozen),
+        )
+    )
     log.info(
         "Synthesized TNREDAMP=%.6f, TNREDGAM=%.6f from RNAMP=%g, RNIDX=%g",
-        tnredamp, tnredgam, float(rnamp.value), float(rnidx.value),
+        tnredamp,
+        tnredgam,
+        float(rnamp.value),
+        float(rnidx.value),
     )
 
 
@@ -97,22 +110,35 @@ def synthesize_pb_from_fb(raw: list[RawParam]) -> None:
 
     fb0_hz = float(fb0.value)
     pb_days = 1.0 / (fb0_hz * 86400.0)
-    raw.append(RawParam(
-        name="PB", kind=ParamKind.FLOAT, value=pb_days, unit="d",
-        frozen=bool(fb0.frozen),
-    ))
+    raw.append(
+        RawParam(
+            name="PB",
+            kind=ParamKind.FLOAT,
+            value=pb_days,
+            unit="d",
+            frozen=bool(fb0.frozen),
+        )
+    )
 
     fb1 = _find(raw, "FB1")
     if fb1 is not None and fb1.value is not None and not _has(raw, "PBDOT"):
         fb1_val = float(fb1.value)
         pbdot = -fb1_val / (fb0_hz * fb0_hz)
-        raw.append(RawParam(
-            name="PBDOT", kind=ParamKind.FLOAT, value=pbdot, unit="s / s",
-            frozen=bool(fb1.frozen),
-        ))
+        raw.append(
+            RawParam(
+                name="PBDOT",
+                kind=ParamKind.FLOAT,
+                value=pbdot,
+                unit="s / s",
+                frozen=bool(fb1.frozen),
+            )
+        )
         log.info(
             "Synthesized PB=%.9f d, PBDOT=%.6e from FB0=%g Hz, FB1=%g Hz/s",
-            pb_days, pbdot, fb0_hz, fb1_val,
+            pb_days,
+            pbdot,
+            fb0_hz,
+            fb1_val,
         )
     else:
         log.info("Synthesized PB=%.9f d from FB0=%g Hz", pb_days, fb0_hz)

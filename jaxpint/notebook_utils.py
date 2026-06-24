@@ -161,12 +161,14 @@ def generate_random_par(
     if include_dm:
         dm = rng.uniform(10, 50)
         lines.append(f"DM            {dm:.4f}{fit}")
-    lines.extend([
-        f"PX            {px_mas:.6f}{fit}",
-        "EPHEM         DE440",
-        "CLK           TT(BIPM2019)",
-        "UNITS         TDB",
-    ])
+    lines.extend(
+        [
+            f"PX            {px_mas:.6f}{fit}",
+            "EPHEM         DE440",
+            "CLK           TT(BIPM2019)",
+            "UNITS         TDB",
+        ]
+    )
 
     par = "\n".join(lines) + "\n"
 
@@ -327,11 +329,13 @@ def _pulsar_positions_from_models(pint_models: list) -> Float[Array, "n_psr 3"]:
         ra_rad = model.RAJ.quantity.to(u.rad).value
         dec_rad = model.DECJ.quantity.to(u.rad).value
         positions.append(
-            np.array([
-                np.cos(dec_rad) * np.cos(ra_rad),
-                np.cos(dec_rad) * np.sin(ra_rad),
-                np.sin(dec_rad),
-            ])
+            np.array(
+                [
+                    np.cos(dec_rad) * np.cos(ra_rad),
+                    np.cos(dec_rad) * np.sin(ra_rad),
+                    np.sin(dec_rad),
+                ]
+            )
         )
     return jnp.array(np.array(positions))
 
@@ -445,8 +449,8 @@ def sweep_1d_logL(
     The caller supplies ``eval_fn(x) -> scalar`` as a closure over the PTA
     state (global params, per-pulsar params, config, which param to vary).
     This helper just removes the JIT/vmap/warmup/``block_until_ready``
-    boilerplate. NOTE: ensure that large constant blocks of data are passed as 
-    inputs to eval_fn and not by closure; This prevents the memory footprint from 
+    boilerplate. NOTE: ensure that large constant blocks of data are passed as
+    inputs to eval_fn and not by closure; This prevents the memory footprint from
     blowing up!
 
     Parameters
@@ -634,7 +638,8 @@ def plot_2d_delta_logL(
     )
     if true_xy is not None:
         ax.plot(
-            true_xy[0], true_xy[1],
+            true_xy[0],
+            true_xy[1],
             "r*",
             markersize=15,
             label=f"True = ({true_xy[0]:.3g}, {true_xy[1]:.3g})",

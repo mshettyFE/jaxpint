@@ -46,6 +46,7 @@ Usage
 Requires the optional 'skymap' extra (healpy + matplotlib):
     uv pip install 'jaxpint[skymap]'
 """
+
 from __future__ import annotations
 
 import argparse
@@ -72,6 +73,7 @@ def _import_healpy():
         ) from e
     return hp
 
+
 # ---- Configuration ---------------------------------------------------------
 # Ocarina par/tim directory. Override via $JAXPINT_OCARINA_DIR (the SLURM job
 # points this at the staged /scratch copy); falls back to the local path.
@@ -80,8 +82,8 @@ DATA_DIR = Path(
 ).expanduser()
 
 # Fixed CGW source (matches Fig. 8).
-LOG10_MC = 9.0                      # chirp mass 1e9 Msun
-F_GW = 27e-9                        # 27 nHz
+LOG10_MC = 9.0  # chirp mass 1e9 Msun
+F_GW = 27e-9  # 27 nHz
 LOG10_FGW = float(np.log10(F_GW))
 
 # Six pulsars appear as a combined file plus per-telescope (ao/gbt) splits; the
@@ -89,10 +91,14 @@ LOG10_FGW = float(np.log10(F_GW))
 # are in no split), so keep only the combined one and drop the splits to avoid
 # double-counting (worst for J1713/J1909, the most sensitive pulsars).
 DROP_PULSARS = {
-    "B1937+21ao", "B1937+21gbt",
-    "J1600-3053gbt", "J1643-1224gbt",
-    "J1713+0747ao", "J1713+0747gbt",
-    "J1903+0327ao", "J1909-3744gbt",
+    "B1937+21ao",
+    "B1937+21gbt",
+    "J1600-3053gbt",
+    "J1643-1224gbt",
+    "J1713+0747ao",
+    "J1713+0747gbt",
+    "J1903+0327ao",
+    "J1909-3744gbt",
 }
 
 # Small, well-timed default subset for the smoke test. All four pulsars have
@@ -109,8 +115,16 @@ SMOKE_SUBSET = ["J1909-3744", "J1713+0747", "J0613-0200", "J1744-1134"]
 # (Delta_p ~ 10^4 rad at 27 nHz; fractional PX errors of ~1e-5 wrap a full cycle)
 # and collapse the result back to the Earth-term limit.
 MARG_PARAMS = {
-    "F0", "F1", "RAJ", "DECJ", "ELONG", "ELAT",
-    "PMRA", "PMDEC", "PMELONG", "PMELAT",
+    "F0",
+    "F1",
+    "RAJ",
+    "DECJ",
+    "ELONG",
+    "ELAT",
+    "PMRA",
+    "PMDEC",
+    "PMELONG",
+    "PMELAT",
 }
 
 DEFAULT_DATA_PATH = Path("cgw_distance_skymap.npz")
@@ -124,12 +138,16 @@ def pulsar_unit_vector_icrs(pp):
     """ICRS Cartesian unit vector from RAJ/DECJ or ELONG/ELAT (PINT convention)."""
     if "RAJ" in pp.names and "DECJ" in pp.names:
         ra, dec = float(pp.param_value("RAJ")), float(pp.param_value("DECJ"))
-        return np.array([np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)])
+        return np.array(
+            [np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)]
+        )
     if "ELONG" in pp.names and "ELAT" in pp.names:
         elong, elat = float(pp.param_value("ELONG")), float(pp.param_value("ELAT"))
         x = np.cos(elat) * np.cos(elong)
         y_ec, z_ec = np.cos(elat) * np.sin(elong), np.sin(elat)
-        return np.array([x, _COS_EPS * y_ec - _SIN_EPS * z_ec, _SIN_EPS * y_ec + _COS_EPS * z_ec])
+        return np.array(
+            [x, _COS_EPS * y_ec - _SIN_EPS * z_ec, _SIN_EPS * y_ec + _COS_EPS * z_ec]
+        )
     raise KeyError(f"Pulsar lacks (RAJ,DECJ) and (ELONG,ELAT): {pp.names}")
 
 
@@ -222,10 +240,12 @@ def compute_skymap(
     # than the fixed one, though, so for production maps prefer a PX-significance
     # cut over bare PX>0. Hence: warn, don't forbid.
     if marginalize_orientation and include_pulsar_term:
-        _log("WARNING: marginalize_orientation + include_pulsar_term relies on "
-             "well-measured pulsar distances. Anchors are PX>0, but marginal-PX "
-             "pulsars can still degrade the F_e basis; consider a PX/sigma cut "
-             "for production maps and sanity-check against a fixed-orientation run.")
+        _log(
+            "WARNING: marginalize_orientation + include_pulsar_term relies on "
+            "well-measured pulsar distances. Anchors are PX>0, but marginal-PX "
+            "pulsars can still degrade the F_e basis; consider a PX/sigma cut "
+            "for production maps and sanity-check against a fixed-orientation run."
+        )
 
     import jax
     import jax.numpy as jnp
@@ -241,8 +261,13 @@ def compute_skymap(
     from jaxpint.bayes import ImproperPrior, marginalize
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import (
-        quadratic_coeffs, h0_95_closed_form, h0_to_distance,
-        orientation_coeffs, basis_quadratics, h0_95_marginalized, fstat,
+        quadratic_coeffs,
+        h0_95_closed_form,
+        h0_to_distance,
+        orientation_coeffs,
+        basis_quadratics,
+        h0_95_marginalized,
+        fstat,
     )
 
     # ---- 1. Load + filter --------------------------------------------------
@@ -279,11 +304,14 @@ def compute_skymap(
             return bool(float(pp.param_value("PX")) > 0.0)
         except KeyError:
             return False  # no PX -> no distance info -> Earth-term only
+
     pulsar_term_mask = tuple(_is_anchor(pp) for pp in pp_list)
     n_anchors = int(sum(pulsar_term_mask))
     if include_pulsar_term:
-        _log(f"Pulsar term: {n_anchors}/{len(names)} pulsars are anchors "
-             f"(PX > 0); the rest fall back to Earth-term only.")
+        _log(
+            f"Pulsar term: {n_anchors}/{len(names)} pulsars are anchors "
+            f"(PX > 0); the rest fall back to Earth-term only."
+        )
 
     # ---- 2. Injector + config + global params ------------------------------
     # Linear-amplitude CW template: residual linear in h0 so logL is exactly
@@ -291,15 +319,19 @@ def compute_skymap(
     # pegged to par values, the pulsar-term phase Delta_p is a per-pulsar
     # constant, so linearity in h0 is preserved regardless of earth_term_only.
     injector = CWInjector(
-        positions, prefix="cw_",
-        earth_term_only=not include_pulsar_term, linear_amplitude=True,
+        positions,
+        prefix="cw_",
+        earth_term_only=not include_pulsar_term,
+        linear_amplitude=True,
         pulsar_term_mask=pulsar_term_mask,
         initial_values={"log10_fgw": LOG10_FGW},
     )
     gp = injector.register_params(GlobalParams.empty())
     config = PTAConfig(
-        toa_data_list=toa_list, timing_models=tm_list,
-        noise_models=nm_list, signal_injectors=(injector,),
+        toa_data_list=toa_list,
+        timing_models=tm_list,
+        noise_models=nm_list,
+        signal_injectors=(injector,),
     )
 
     # ---- 3. Timing-model marginalization (improper priors) -----------------
@@ -312,39 +344,57 @@ def compute_skymap(
                 priors[fqn] = ImproperPrior()
     _log(f"Marginalizing {len(over)} timing params across {len(names)} pulsars...")
     g, _, reduced_pp = marginalize(
-        pta_logL, over=over, priors=priors, config=config,
+        pta_logL,
+        over=over,
+        priors=priors,
+        config=config,
         pulsar_names=tuple(names),
-        fiducial_pulsar_params=pp_list, fiducial_global_params=gp,
-        validate_linearity=validate_linearity, allow_nonlinear=True,
+        fiducial_pulsar_params=pp_list,
+        fiducial_global_params=gp,
+        validate_linearity=validate_linearity,
+        allow_nonlinear=True,
     )
 
     # ---- 4. logL(amp) closure with sky/orientation as globals --------------
-    idx = {k: gp._name_to_index[f"cw_{k}"] for k in
-           ("h0", "cos_gwtheta", "gwphi", "cos_inc", "psi", "phase0")}
+    idx = {
+        k: gp._name_to_index[f"cw_{k}"]
+        for k in ("h0", "cos_gwtheta", "gwphi", "cos_inc", "psi", "phase0")
+    }
     base_vals = gp.values
 
     def logL_at(amp, cos_gwtheta, gwphi, cos_inc, psi, phase0):
-        v = (base_vals
-             .at[idx["h0"]].set(amp)
-             .at[idx["cos_gwtheta"]].set(cos_gwtheta)
-             .at[idx["gwphi"]].set(gwphi)
-             .at[idx["cos_inc"]].set(cos_inc)
-             .at[idx["psi"]].set(psi)
-             .at[idx["phase0"]].set(phase0))
+        v = (
+            base_vals.at[idx["h0"]]
+            .set(amp)
+            .at[idx["cos_gwtheta"]]
+            .set(cos_gwtheta)
+            .at[idx["gwphi"]]
+            .set(gwphi)
+            .at[idx["cos_inc"]]
+            .set(cos_inc)
+            .at[idx["psi"]]
+            .set(psi)
+            .at[idx["phase0"]]
+            .set(phase0)
+        )
         gp_new = eqx.tree_at(lambda gg: gg.values, gp, v)
         return g(gp_new, reduced_pp)
 
     # ---- 5. HEALPix sky grid (RING ordering, exactly equal-area) -----------
     npix = hp.nside2npix(nside)
-    theta, phi = hp.pix2ang(nside, np.arange(npix))   # colatitude, longitude
-    sky = jnp.stack([jnp.cos(jnp.asarray(theta)), jnp.asarray(phi)], axis=1)  # (npix, 2)
+    theta, phi = hp.pix2ang(nside, np.arange(npix))  # colatitude, longitude
+    sky = jnp.stack(
+        [jnp.cos(jnp.asarray(theta)), jnp.asarray(phi)], axis=1
+    )  # (npix, 2)
 
     # Chunked vmap over pixels: lax.map(batch_size=...) vectorizes `pixel_chunk`
     # pixels at a time and scans over the chunks, so the grad-of-likelihood tape
     # is replicated only chunk-wide (bounds memory) while removing per-pixel
     # dispatch. A plain vmap over all npix would OOM on the full PTA.
     fstat_map = None  # set only in marginalized real mode
-    X_map = Y_map = None  # per-pixel matched filter / signal power (fixed-orientation diagnostic)
+    X_map = Y_map = (
+        None  # per-pixel matched filter / signal power (fixed-orientation diagnostic)
+    )
 
     if marginalize_orientation:
         # Per pixel the only heavy step is building the F_e basis quadratics
@@ -352,23 +402,28 @@ def compute_skymap(
         # algebra. basis_quadratics scans its probe orientations internally, so
         # memory stays one-orientation-wide times pixel_chunk.
         def mb_for_pixel(cos_gwtheta, gwphi):
-            logL_pix = lambda amp, ci, ps, ph: logL_at(amp, cos_gwtheta, gwphi, ci, ps, ph)
+            logL_pix = lambda amp, ci, ps, ph: logL_at(
+                amp, cos_gwtheta, gwphi, ci, ps, ph
+            )
             return basis_quadratics(logL_pix)
 
         @jax.jit
         def all_mb(sky_arr):
             return jax.lax.map(
                 lambda row: mb_for_pixel(row[0], row[1]),
-                sky_arr, batch_size=pixel_chunk,
+                sky_arr,
+                batch_size=pixel_chunk,
             )
 
-        _log(f"nside={nside} -> {npix} HEALPix pixels, MARGINALIZING orientation "
-             f"({n_cosinc}x{n_psi}x{n_phase0} grid), data_mode={data_mode}; "
-             f"chunked vmap (batch={pixel_chunk}), compiling...")
+        _log(
+            f"nside={nside} -> {npix} HEALPix pixels, MARGINALIZING orientation "
+            f"({n_cosinc}x{n_psi}x{n_phase0} grid), data_mode={data_mode}; "
+            f"chunked vmap (batch={pixel_chunk}), compiling..."
+        )
 
-        Ms, bs = all_mb(sky)                          # (npix,4,4), (npix,4)
+        Ms, bs = all_mb(sky)  # (npix,4,4), (npix,4)
         if data_mode == "expected":
-            bs = jnp.zeros_like(bs)                   # X(omega)=0: noise-only sensitivity
+            bs = jnp.zeros_like(bs)  # X(omega)=0: noise-only sensitivity
 
         # Uniform-prior orientation grid (midpoint rule -> equal weights):
         # cos_inc in [-1,1], psi in [0,pi), phase0 in [0,2pi).
@@ -376,51 +431,60 @@ def compute_skymap(
         ps = jnp.pi * (jnp.arange(n_psi) + 0.5) / n_psi
         ph = 2.0 * jnp.pi * (jnp.arange(n_phase0) + 0.5) / n_phase0
         CI, PS, PH = jnp.meshgrid(ci, ps, ph, indexing="ij")
-        grid = jnp.stack([CI.ravel(), PS.ravel(), PH.ravel()], axis=1)          # (N,3)
+        grid = jnp.stack([CI.ravel(), PS.ravel(), PH.ravel()], axis=1)  # (N,3)
         Cgrid = jax.vmap(lambda o: orientation_coeffs(o[0], o[1], o[2]))(grid)  # (N,4)
 
         def limit_pixel(M, b):
-            Xk = Cgrid @ b                                     # (N,) matched filter per omega
-            Yk = jnp.einsum("na,ab,nb->n", Cgrid, M, Cgrid)    # (N,) signal power per omega
+            Xk = Cgrid @ b  # (N,) matched filter per omega
+            Yk = jnp.einsum(
+                "na,ab,nb->n", Cgrid, M, Cgrid
+            )  # (N,) signal power per omega
             return h0_95_marginalized(Xk, Yk)
 
-        h0_95 = jax.vmap(limit_pixel)(Ms, bs)                  # (npix,)
+        h0_95 = jax.vmap(limit_pixel)(Ms, bs)  # (npix,)
         if data_mode == "real":
-            fstat_map = np.asarray(jax.vmap(fstat)(Ms, bs))    # 2F detection statistic
+            fstat_map = np.asarray(jax.vmap(fstat)(Ms, bs))  # 2F detection statistic
     else:
         cos_inc_fix, psi_fix, phase0_fix = (float(x) for x in orientation)
 
         def xy_for_pixel(cos_gwtheta, gwphi):
-            f = lambda amp: logL_at(amp, cos_gwtheta, gwphi, cos_inc_fix, psi_fix, phase0_fix)
+            f = lambda amp: logL_at(
+                amp, cos_gwtheta, gwphi, cos_inc_fix, psi_fix, phase0_fix
+            )
             return quadratic_coeffs(f)  # scalar X, Y at the fixed orientation
 
         @jax.jit
         def all_xy(sky_arr):
             return jax.lax.map(
                 lambda row: xy_for_pixel(row[0], row[1]),
-                sky_arr, batch_size=pixel_chunk,
+                sky_arr,
+                batch_size=pixel_chunk,
             )
 
-        _log(f"nside={nside} -> {npix} HEALPix pixels, fixed orientation "
-             f"(cos_inc={cos_inc_fix}, psi={psi_fix}, phase0={phase0_fix}), "
-             f"data_mode={data_mode}; chunked vmap (batch={pixel_chunk}), compiling...")
+        _log(
+            f"nside={nside} -> {npix} HEALPix pixels, fixed orientation "
+            f"(cos_inc={cos_inc_fix}, psi={psi_fix}, phase0={phase0_fix}), "
+            f"data_mode={data_mode}; chunked vmap (batch={pixel_chunk}), compiling..."
+        )
 
-        Xs, Ys = all_xy(sky)                              # (npix,), (npix,) on device
+        Xs, Ys = all_xy(sky)  # (npix,), (npix,) on device
         # Capture raw (X, Y) before any expected-mode zeroing: Y=(s_hat|s_hat) is
         # the noise-independent signal power; dist_ll=0 pixels are exactly Y~0.
         X_map, Y_map = np.asarray(Xs), np.asarray(Ys)
         if data_mode == "expected":
-            Xs = jnp.zeros_like(Xs)                       # X=0: noise-only sensitivity
-        h0_95 = h0_95_closed_form(Xs, Ys)                 # elementwise truncated-Gaussian UL
+            Xs = jnp.zeros_like(Xs)  # X=0: noise-only sensitivity
+        h0_95 = h0_95_closed_form(Xs, Ys)  # elementwise truncated-Gaussian UL
 
     # ---- 6. Distances, vectorized over the whole map -----------------------
     dist_ll = np.asarray(h0_to_distance(h0_95, LOG10_MC, LOG10_FGW))
 
     # HEALPix pixels are exactly equal-area, so R_eff = <D_L^3>^(1/3) is exact.
-    r_eff = float(np.mean(dist_ll ** 3) ** (1.0 / 3.0))
-    _log(f"Done. D_L lower limit min/median/max = "
-         f"{dist_ll.min():.1f}/{np.median(dist_ll):.1f}/{dist_ll.max():.1f} Mpc; "
-         f"R_eff = {r_eff:.2f} Mpc (nside={nside}, data_mode={data_mode})")
+    r_eff = float(np.mean(dist_ll**3) ** (1.0 / 3.0))
+    _log(
+        f"Done. D_L lower limit min/median/max = "
+        f"{dist_ll.min():.1f}/{np.median(dist_ll):.1f}/{dist_ll.max():.1f} Mpc; "
+        f"R_eff = {r_eff:.2f} Mpc (nside={nside}, data_mode={data_mode})"
+    )
 
     # The fixed-orientation fields are NaN when marginalizing (no single orientation).
     if marginalize_orientation:
@@ -436,16 +500,21 @@ def compute_skymap(
     # pulsar_pos (ICRS unit vectors) lets plot_results_with_pulsars overlay them.
     results = {
         "dist_ll_mpc": dist_ll,
-        "nside": np.int64(nside), "r_eff_mpc": np.float64(r_eff),
+        "nside": np.int64(nside),
+        "r_eff_mpc": np.float64(r_eff),
         # Fixed CGW source parameters (for plot annotation), in handy units:
-        "chirp_mass_msun": np.float64(10.0 ** LOG10_MC),
+        "chirp_mass_msun": np.float64(10.0**LOG10_MC),
         "log10_mc": np.float64(LOG10_MC),
-        "f_gw": np.float64(F_GW), "log10_fgw": np.float64(LOG10_FGW),
-        "cos_inc": cos_inc_out, "psi": psi_out,
-        "phase0": phase0_out, "orientation": orientation_out,
+        "f_gw": np.float64(F_GW),
+        "log10_fgw": np.float64(LOG10_FGW),
+        "cos_inc": cos_inc_out,
+        "psi": psi_out,
+        "phase0": phase0_out,
+        "orientation": orientation_out,
         "marginalize_orientation": np.bool_(marginalize_orientation),
         "orient_grid": np.array([n_cosinc, n_psi, n_phase0]),
-        "pulsar_names": np.array(names), "n_pulsars": np.int64(len(names)),
+        "pulsar_names": np.array(names),
+        "n_pulsars": np.int64(len(names)),
         "pulsar_pos": np.asarray(positions),
         "data_mode": np.array(data_mode),
         "include_pulsar_term": np.bool_(include_pulsar_term),
@@ -454,9 +523,7 @@ def compute_skymap(
         # mask is recorded either way so the comparison plot can mark anchors.
         "pulsar_term_mask": np.asarray(pulsar_term_mask),
         "n_anchors": np.int64(n_anchors),
-        "anchor_pulsars": np.array(
-            [n for n, m in zip(names, pulsar_term_mask) if m]
-        ),
+        "anchor_pulsars": np.array([n for n, m in zip(names, pulsar_term_mask) if m]),
     }
     if fstat_map is not None:
         results["fstat_map"] = fstat_map  # 2F per pixel (marginalized real mode)
@@ -482,14 +549,18 @@ def plot_results(results: dict) -> None:
     hp = _import_healpy()
     import matplotlib.pyplot as plt
 
-    dist = results["dist_ll_mpc"]   # HEALPix map, RING ordering
+    dist = results["dist_ll_mpc"]  # HEALPix map, RING ordering
     # Older .npz files predate include_pulsar_term — default to no tag.
-    mode_tag = " (Earth + pulsar term)" if bool(results.get("include_pulsar_term", False)) else ""
+    mode_tag = (
+        " (Earth + pulsar term)"
+        if bool(results.get("include_pulsar_term", False))
+        else ""
+    )
     hp.mollview(
         dist,
         title=(
             f"95% lower limit on $D_L$  ($\\mathcal{{M}}=10^9 M_\\odot$, $f=27$ nHz){mode_tag}\n"
-#            f"$R_{{eff}}$={float(results['r_eff_mpc']):.1f} Mpc, "
+            #            f"$R_{{eff}}$={float(results['r_eff_mpc']):.1f} Mpc, "
             f"{int(results['n_pulsars'])} pulsars"
         ),
         unit="$D_L$ lower limit [Mpc]",
@@ -518,8 +589,11 @@ def _positions_from_par(names, data_dir=DATA_DIR):
     for name in names:
         # Match the par whose stem (before the first '_') equals the pulsar name,
         # mirroring the loader's keying so B1937+21 doesn't grab its variants.
-        cands = [p for p in sorted(par_dir.glob(f"{name}*.par"))
-                 if p.stem.split("_", 1)[0] == name]
+        cands = [
+            p
+            for p in sorted(par_dir.glob(f"{name}*.par"))
+            if p.stem.split("_", 1)[0] == name
+        ]
         if not cands:
             raise FileNotFoundError(f"no par file for {name!r} under {par_dir}")
         pp = pint_model_to_params(pm.get_model(str(cands[0]))).params
@@ -527,8 +601,9 @@ def _positions_from_par(names, data_dir=DATA_DIR):
     return np.stack(out)
 
 
-def plot_results_with_pulsars(results: dict, data_dir=None,
-                              output: str = "cgw_distance_skymap_pulsars.png") -> None:
+def plot_results_with_pulsars(
+    results: dict, data_dir=None, output: str = "cgw_distance_skymap_pulsars.png"
+) -> None:
     """Like :func:`plot_results`, but overlays each pulsar as a red star.
 
     Pulsar positions come from ``results['pulsar_pos']`` when present (saved by
@@ -539,7 +614,7 @@ def plot_results_with_pulsars(results: dict, data_dir=None,
     hp = _import_healpy()
     import matplotlib.pyplot as plt
 
-    dist = results["dist_ll_mpc"]   # HEALPix map, RING ordering
+    dist = results["dist_ll_mpc"]  # HEALPix map, RING ordering
     if "pulsar_pos" in results:
         pos = np.atleast_2d(np.asarray(results["pulsar_pos"]))
     else:
@@ -551,12 +626,16 @@ def plot_results_with_pulsars(results: dict, data_dir=None,
     phi = np.arctan2(pos[:, 1], pos[:, 0])
 
     # Older .npz files predate include_pulsar_term — default to no tag.
-    mode_tag = " (Earth + pulsar term)" if bool(results.get("include_pulsar_term", False)) else ""
+    mode_tag = (
+        " (Earth + pulsar term)"
+        if bool(results.get("include_pulsar_term", False))
+        else ""
+    )
     hp.mollview(
         dist,
         title=(
             f"95% lower limit on $D_L$  ($\\mathcal{{M}}=10^9 M_\\odot$, $f=27$ nHz){mode_tag}\n"
-#            f"$R_{{eff}}$={float(results['r_eff_mpc']):.1f} Mpc, "
+            #            f"$R_{{eff}}$={float(results['r_eff_mpc']):.1f} Mpc, "
             f"{int(results['n_pulsars'])} pulsars (red stars)"
         ),
         unit="$D_L$ lower limit [Mpc]",
@@ -567,8 +646,16 @@ def plot_results_with_pulsars(results: dict, data_dir=None,
     )
     hp.graticule()
     # projscatter draws onto the current mollview projection (theta/phi in rad).
-    hp.projscatter(theta, phi, marker="*", s=120, color="red",
-                   edgecolors="black", linewidths=0.5, zorder=5)
+    hp.projscatter(
+        theta,
+        phi,
+        marker="*",
+        s=120,
+        color="red",
+        edgecolors="black",
+        linewidths=0.5,
+        zorder=5,
+    )
     plt.savefig(output, dpi=130, bbox_inches="tight")
     print(f"Wrote {output}")
 
@@ -580,36 +667,70 @@ def main() -> None:
     for name in ("generate", "both"):
         sp = sub.add_parser(name)
         sp.add_argument("--output", dest="path", type=Path, default=DEFAULT_DATA_PATH)
-        sp.add_argument("--nside", type=int, default=8,
-                        help="HEALPix nside (npix = 12*nside^2; default 8 -> 768 pixels).")
-        sp.add_argument("--pixel-chunk", type=int, default=64,
-                        help="Pixels vmapped per chunk (memory<->speed; default 64).")
-        sp.add_argument("--full", action="store_true",
-                        help="Use all pulsars (drop B1937+21 variants) instead of the smoke subset.")
+        sp.add_argument(
+            "--nside",
+            type=int,
+            default=8,
+            help="HEALPix nside (npix = 12*nside^2; default 8 -> 768 pixels).",
+        )
+        sp.add_argument(
+            "--pixel-chunk",
+            type=int,
+            default=64,
+            help="Pixels vmapped per chunk (memory<->speed; default 64).",
+        )
+        sp.add_argument(
+            "--full",
+            action="store_true",
+            help="Use all pulsars (drop B1937+21 variants) instead of the smoke subset.",
+        )
         sp.add_argument("--validate-linearity", action="store_true")
-        sp.add_argument("--data-mode", choices=("expected", "real"), default="expected",
-                        help="'expected': X=(d|s_hat)=0, noise-realization-independent "
-                             "sensitivity (array geometry only). "
-                             "'real': matched filter from residuals; valid for the "
-                             "white-only ocarina datasets (model matches data).")
-        sp.add_argument("--marginalize-orientation", action="store_true",
-                        help="Marginalize the CGW orientation (cos_inc, psi, phase0) with "
-                             "uniform priors (matches Fig. 8) instead of the fixed face-on "
-                             "optimum. Uses the F_e basis reduction (no MCMC).")
-        sp.add_argument("--n-cosinc", type=int, default=11,
-                        help="Orientation grid: cos_inc samples (default 11).")
-        sp.add_argument("--n-psi", type=int, default=8,
-                        help="Orientation grid: psi samples (default 8).")
-        sp.add_argument("--n-phase0", type=int, default=8,
-                        help="Orientation grid: phase0 samples (default 8).")
-        sp.add_argument("--include-pulsar-term", action="store_true",
-                        help="Include the pulsar term with PX pegged to par-file values "
-                             "(default: Earth-term only). Pulsar distances are NOT "
-                             "marginalized — this is the idealized distance reach.")
+        sp.add_argument(
+            "--data-mode",
+            choices=("expected", "real"),
+            default="expected",
+            help="'expected': X=(d|s_hat)=0, noise-realization-independent "
+            "sensitivity (array geometry only). "
+            "'real': matched filter from residuals; valid for the "
+            "white-only ocarina datasets (model matches data).",
+        )
+        sp.add_argument(
+            "--marginalize-orientation",
+            action="store_true",
+            help="Marginalize the CGW orientation (cos_inc, psi, phase0) with "
+            "uniform priors (matches Fig. 8) instead of the fixed face-on "
+            "optimum. Uses the F_e basis reduction (no MCMC).",
+        )
+        sp.add_argument(
+            "--n-cosinc",
+            type=int,
+            default=11,
+            help="Orientation grid: cos_inc samples (default 11).",
+        )
+        sp.add_argument(
+            "--n-psi",
+            type=int,
+            default=8,
+            help="Orientation grid: psi samples (default 8).",
+        )
+        sp.add_argument(
+            "--n-phase0",
+            type=int,
+            default=8,
+            help="Orientation grid: phase0 samples (default 8).",
+        )
+        sp.add_argument(
+            "--include-pulsar-term",
+            action="store_true",
+            help="Include the pulsar term with PX pegged to par-file values "
+            "(default: Earth-term only). Pulsar distances are NOT "
+            "marginalized — this is the idealized distance reach.",
+        )
     sp = sub.add_parser("plot")
     sp.add_argument("--input", dest="path", type=Path, default=DEFAULT_DATA_PATH)
-    sp.add_argument("--pulsars", action="store_true",
-                    help="Overlay pulsar locations as red stars.")
+    sp.add_argument(
+        "--pulsars", action="store_true", help="Overlay pulsar locations as red stars."
+    )
 
     args = p.parse_args()
     if args.mode == "plot":
@@ -622,10 +743,15 @@ def main() -> None:
 
     subset = None if getattr(args, "full", False) else SMOKE_SUBSET
     results = compute_skymap(
-        pulsar_subset=subset, nside=args.nside, pixel_chunk=args.pixel_chunk,
-        validate_linearity=args.validate_linearity, data_mode=args.data_mode,
+        pulsar_subset=subset,
+        nside=args.nside,
+        pixel_chunk=args.pixel_chunk,
+        validate_linearity=args.validate_linearity,
+        data_mode=args.data_mode,
         marginalize_orientation=args.marginalize_orientation,
-        n_cosinc=args.n_cosinc, n_psi=args.n_psi, n_phase0=args.n_phase0,
+        n_cosinc=args.n_cosinc,
+        n_psi=args.n_psi,
+        n_phase0=args.n_phase0,
         include_pulsar_term=args.include_pulsar_term,
     )
     save_results(args.path, results)

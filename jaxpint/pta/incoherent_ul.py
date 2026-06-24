@@ -35,6 +35,7 @@ Gaussian, so the 95% upper limit is taken numerically (:func:`h0_95_grid`), then
 converted to a luminosity-distance lower limit via
 :func:`jaxpint.pta.cw_upper_limit.h0_to_distance`.
 """
+
 from __future__ import annotations
 
 from typing import Callable
@@ -64,11 +65,11 @@ def bM2_coeffs(
     grad = jax.grad(logL2, argnums=(0, 1))
     z = jnp.float64(0.0)
     o = jnp.float64(1.0)
-    b = jnp.asarray(grad(z, z))                  # (2,) = b
-    col0 = b - jnp.asarray(grad(o, z))           # M[:,0]
-    col1 = b - jnp.asarray(grad(z, o))           # M[:,1]
+    b = jnp.asarray(grad(z, z))  # (2,) = b
+    col0 = b - jnp.asarray(grad(o, z))  # M[:,0]
+    col1 = b - jnp.asarray(grad(z, o))  # M[:,1]
     M = jnp.stack([col0, col1], axis=1)
-    return b, 0.5 * (M + M.T)                     # symmetrize tiny numerical asymmetry
+    return b, 0.5 * (M + M.T)  # symmetrize tiny numerical asymmetry
 
 
 def extract_pulsar_bM(
@@ -86,8 +87,10 @@ def extract_pulsar_bM(
     external delay makes ``g`` exactly quadratic in ``(Ae, As)``; differentiating
     the *actual* ``g`` inherits the correct real-mode matched-filter sign.
     """
+
     def logL2(Ae, As):
         return g(reduced_params, external_delay=Ae * e + As * ps)
+
     return bM2_coeffs(logL2)
 
 
@@ -99,7 +102,11 @@ def flat_phase_grid(n_phase: int = 256) -> Float[Array, " n_phase"]:
 
 
 def distance_phase_grid(
-    L0_kpc: float, sigma_L_kpc: float, k: float, cos_mu: float, f_gw: float,
+    L0_kpc: float,
+    sigma_L_kpc: float,
+    k: float,
+    cos_mu: float,
+    f_gw: float,
     n_dist: int,
 ) -> Float[Array, " n_dist"]:
     """Pulsar-term phases ``Δ_p(L_i)`` for ``L_i`` uniform in
@@ -141,15 +148,15 @@ def mixed_phase_A(
     to the exact flat-phase limit (a loose "tight" prior is effectively incoherent).
     Note ``L0`` cancels out of ``N_wrap``.
     """
-    flat = flat_phase_grid(n_phase)                                   # (n_phase,)
+    flat = flat_phase_grid(n_phase)  # (n_phase,)
     dist = jax.vmap(
         lambda L0, cm: distance_phase_grid(L0, sigma_L_kpc, k, cm, f_gw, n_phase),
         in_axes=(0, 0),
-    )(L0_kpc, cos_mu)                                                 # (n_psr, n_phase)
+    )(L0_kpc, cos_mu)  # (n_psr, n_phase)
     n_wrap = 2.0 * k * sigma_L_kpc * f_gw * _KPC_TO_M * (1.0 + cos_mu) / _C
     use_dist = is_tight & (n_wrap <= n_phase / min_pts_per_cycle)
-    grids = jnp.where(use_dist[:, None], dist, flat[None, :])         # (n_psr, n_phase)
-    return _A_of_phase(grids)                                         # (n_psr, n_phase, 2)
+    grids = jnp.where(use_dist[:, None], dist, flat[None, :])  # (n_psr, n_phase)
+    return _A_of_phase(grids)  # (n_psr, n_phase, 2)
 
 
 # ------------------------------------------------------------------- marginal logL
@@ -181,8 +188,8 @@ def logL_pulsar_marg(
     phase grid for the distance-marginalized case, or :func:`earth_only_A` (a
     singleton ``(1,0)``) for the Earth-term-only baseline.
     """
-    bA = A @ b                                         # (n,)
-    AMA = jnp.einsum("ni,ij,nj->n", A, M, A)          # (n,)
+    bA = A @ b  # (n,)
+    AMA = jnp.einsum("ni,ij,nj->n", A, M, A)  # (n,)
     logL = h0 * bA - 0.5 * h0**2 * AMA
     return logsumexp(logL) - jnp.log(A.shape[0])
 
@@ -223,10 +230,10 @@ def h0_95_grid(
     (singleton ``A``) is a plain truncated Gaussian and proper for any ``N``.
     """
     h0 = jnp.linspace(0.0, h0_max, n_h0)
-    logpost = jax.vmap(
-        total_logL_marg, in_axes=(0, None, None, None)
-    )(h0, b_stack, M_stack, A_stack)
-    w = jnp.exp(logpost - jnp.max(logpost))           # uniform prior on h0>=0
+    logpost = jax.vmap(total_logL_marg, in_axes=(0, None, None, None))(
+        h0, b_stack, M_stack, A_stack
+    )
+    w = jnp.exp(logpost - jnp.max(logpost))  # uniform prior on h0>=0
     cdf = jnp.cumsum(w)
     cdf = cdf / cdf[-1]
     return jnp.interp(jnp.float64(level), cdf, h0)

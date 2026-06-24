@@ -59,6 +59,7 @@ from jaxpint.dual_float import DualFloat
 # Parameter declaration
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ParamDecl:
     """Static declaration of a parameter a component models.
@@ -117,6 +118,7 @@ class ParamDecl:
 # ---------------------------------------------------------------------------
 # Shared introspection helper
 # ---------------------------------------------------------------------------
+
 
 def _make_component_names(components: tuple) -> tuple[str, ...]:
     """Generate unique names for components from their class names.

@@ -119,7 +119,9 @@ def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
             continue
         if isinstance(param, boolParameter):
             if param.value is not None:
-                raw.append(RawParam(pname, ParamKind.BOOL, bool_value=bool(param.value)))
+                raw.append(
+                    RawParam(pname, ParamKind.BOOL, bool_value=bool(param.value))
+                )
             continue
         if isinstance(param, intParameter):
             if param.value is not None:
@@ -148,13 +150,22 @@ def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
             pair = param.quantity
             if not isinstance(pair, (list, tuple)) or len(pair) != 2:
                 continue
-            val_a = float(pair[0].value) if hasattr(pair[0], "value") else float(pair[0])
-            val_b = float(pair[1].value) if hasattr(pair[1], "value") else float(pair[1])
+            val_a = (
+                float(pair[0].value) if hasattr(pair[0], "value") else float(pair[0])
+            )
+            val_b = (
+                float(pair[1].value) if hasattr(pair[1], "value") else float(pair[1])
+            )
             unit_str = str(param.units) if param.units is not None else ""
-            raw.append(RawParam(
-                pname, ParamKind.PAIR, value_pair=(val_a, val_b),
-                unit=unit_str, frozen=param.frozen,
-            ))
+            raw.append(
+                RawParam(
+                    pname,
+                    ParamKind.PAIR,
+                    value_pair=(val_a, val_b),
+                    unit=unit_str,
+                    frozen=param.frozen,
+                )
+            )
             continue
 
         # Mask parameters (JUMP/EFAC/EQUAD/ECORR/...): carry both the scalar
@@ -179,30 +190,47 @@ def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
                 else:
                     mkv = ""
                 mask_key = str(param.key)
-            raw.append(RawParam(
-                pname, ParamKind.MASK, value=float(cast(float, param.value)),
-                uncertainty=_bridge_uncertainty(param),   # native unit; core converts
-                unit=str(param.units), frozen=param.frozen,
-                mask_key=mask_key, mask_key_value=mkv, mask_key_value2=mkv2,
-            ))
+            raw.append(
+                RawParam(
+                    pname,
+                    ParamKind.MASK,
+                    value=float(cast(float, param.value)),
+                    uncertainty=_bridge_uncertainty(
+                        param
+                    ),  # native unit; core converts
+                    unit=str(param.units),
+                    frozen=param.frozen,
+                    mask_key=mask_key,
+                    mask_key_value=mkv,
+                    mask_key_value2=mkv2,
+                )
+            )
             continue
 
         if isinstance(param, MJDParameter):
             mjd_int, mjd_frac = _split_epoch_jd(param.quantity)
-            raw.append(RawParam(
-                pname, ParamKind.MJD, mjd_split=(mjd_int, mjd_frac),
-                uncertainty=_bridge_uncertainty(param),   # days
-                frozen=param.frozen,
-            ))
+            raw.append(
+                RawParam(
+                    pname,
+                    ParamKind.MJD,
+                    mjd_split=(mjd_int, mjd_frac),
+                    uncertainty=_bridge_uncertainty(param),  # days
+                    frozen=param.frozen,
+                )
+            )
             continue
 
         if isinstance(param, AngleParameter):
             val_rad = float(param.quantity.to(u.rad).value)
-            raw.append(RawParam(
-                pname, ParamKind.ANGLE, value=val_rad,
-                uncertainty=_bridge_uncertainty_rad(param),
-                frozen=param.frozen,
-            ))
+            raw.append(
+                RawParam(
+                    pname,
+                    ParamKind.ANGLE,
+                    value=val_rad,
+                    uncertainty=_bridge_uncertainty_rad(param),
+                    frozen=param.frozen,
+                )
+            )
             continue
 
         if (
@@ -214,22 +242,31 @@ def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
             mjd_val = float(param.value)
             mjd_int = float(int(mjd_val))
             mjd_frac = mjd_val - mjd_int
-            raw.append(RawParam(
-                pname, ParamKind.MJD, mjd_split=(mjd_int, mjd_frac),
-                uncertainty=_bridge_uncertainty(param),   # days
-                frozen=param.frozen,
-            ))
+            raw.append(
+                RawParam(
+                    pname,
+                    ParamKind.MJD,
+                    mjd_split=(mjd_int, mjd_frac),
+                    uncertainty=_bridge_uncertainty(param),  # days
+                    frozen=param.frozen,
+                )
+            )
             continue
 
         # floatParameter, non-MJD prefixParameter, etc.  Pass the native unit
         # string through; the core converts deg-based units to radian-based.
         # _bridge_uncertainty mirrors PINT's 1-sigma (native unit) so the bridge
         # path matches the native parser (text_adapter).
-        raw.append(RawParam(
-            pname, ParamKind.FLOAT, value=float(cast(float, param.value)),
-            uncertainty=_bridge_uncertainty(param),
-            unit=str(param.units), frozen=param.frozen,
-        ))
+        raw.append(
+            RawParam(
+                pname,
+                ParamKind.FLOAT,
+                value=float(cast(float, param.value)),
+                uncertainty=_bridge_uncertainty(param),
+                unit=str(param.units),
+                frozen=param.frozen,
+            )
+        )
 
     return raw
 
@@ -273,7 +310,8 @@ def _pint_detect_components(
         else:
             log.warning(
                 "Unknown PINT component %r (%s) — skipping for component_set",
-                comp_name, type(comp).__name__,
+                comp_name,
+                type(comp).__name__,
             )
 
     return component_set, binary_model, metadata_extra
@@ -358,10 +396,7 @@ def params_to_pint_model(
             full_mjd = params.epoch_int_values[pname] + val
             param.value = full_mjd
 
-        elif (
-            isinstance(param, prefixParameter)
-            and pname in params.epoch_int_values
-        ):
+        elif isinstance(param, prefixParameter) and pname in params.epoch_int_values:
             # MJD-type prefix parameters: reconstruct full MJD
             param.value = params.epoch_int_values[pname] + val
 
@@ -385,9 +420,9 @@ def params_to_pint_model(
             if native_unit is not None and stored_unit_str != str(native_unit):
                 stored_unit = u.Unit(stored_unit_str)
                 native_value = float(
-                    (val * stored_unit).to(
-                        native_unit, equivalencies=u.dimensionless_angles()
-                    ).value
+                    (val * stored_unit)
+                    .to(native_unit, equivalencies=u.dimensionless_angles())
+                    .value
                 )
                 param.value = native_value
             else:

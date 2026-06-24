@@ -161,17 +161,17 @@ class BinaryDDK(DelayComponent):
         m2 = params.param_value_or(self.m2_name)
 
         # --- DDK-specific parameters ---
-        kin = params.param_value(self.kin_name)   # radians
-        kom = params.param_value(self.kom_name)   # radians
+        kin = params.param_value(self.kin_name)  # radians
+        kom = params.param_value(self.kom_name)  # radians
         px_mas = params.param_value(self.px_name)  # mas
 
         # --- Compute pulsar direction (unit vector) ---
-        ra = params.param_value(self.raj_name)    # radians
+        ra = params.param_value(self.raj_name)  # radians
         dec = params.param_value(self.decj_name)  # radians
 
         # Apply proper motion correction to position if available
         if self.pmra_name and self.pmdec_name and self.posepoch_name:
-            pmra = params.param_value(self.pmra_name)    # mas/yr
+            pmra = params.param_value(self.pmra_name)  # mas/yr
             pmdec = params.param_value(self.pmdec_name)  # mas/yr
 
             posepoch = params.epoch_dual(self.posepoch_name)
@@ -209,7 +209,9 @@ class BinaryDDK(DelayComponent):
 
         if self.k96:
             # delta_kin (Kopeikin 1996, Eq 10)
-            delta_kin = (-pm_long_rad_per_s * sin_KOM + pm_lat_rad_per_s * cos_KOM) * tt0_s
+            delta_kin = (
+                -pm_long_rad_per_s * sin_KOM + pm_lat_rad_per_s * cos_KOM
+            ) * tt0_s
             kin_eff = kin + delta_kin
 
             # delta_a1 from proper motion (Eq 8)
@@ -218,7 +220,8 @@ class BinaryDDK(DelayComponent):
             # delta_omega from proper motion (Eq 9)
             delta_omega_pm = (
                 (pm_long_rad_per_s * cos_KOM + pm_lat_rad_per_s * sin_KOM)
-                / jnp.sin(kin_eff) * tt0_s
+                / jnp.sin(kin_eff)
+                * tt0_s
             )
         else:
             kin_eff = kin
@@ -239,20 +242,21 @@ class BinaryDDK(DelayComponent):
         )
 
         # Distance from parallax: PX in mas → d in kpc → d_km
-        d_kpc = 1.0 / px_mas   # kpc
+        d_kpc = 1.0 / px_mas  # kpc
         d_km = d_kpc * KPC_TO_KM
 
         # delta_a1 from parallax (Eq 18)
         a1_for_parallax = a1_base + delta_a1_pm if self.k96 else a1_base
         delta_a1_par = (
-            a1_for_parallax / jnp.tan(kin_eff) / d_km
+            a1_for_parallax
+            / jnp.tan(kin_eff)
+            / d_km
             * (delta_I0 * sin_KOM - delta_J0 * cos_KOM)
         )
 
         # delta_omega from parallax (Eq 19)
         delta_omega_par = (
-            -1.0 / jnp.sin(kin_eff) / d_km
-            * (delta_I0 * cos_KOM + delta_J0 * sin_KOM)
+            -1.0 / jnp.sin(kin_eff) / d_km * (delta_I0 * cos_KOM + delta_J0 * sin_KOM)
         )
 
         # --- Apply corrections ---
@@ -264,8 +268,12 @@ class BinaryDDK(DelayComponent):
 
         # --- Solve Kepler's equation ---
         M = compute_orbital_phase(
-            toa_data.tdb, t0,
-            pb_d, pbdot, xpbdot, delay=delay,
+            toa_data.tdb,
+            t0,
+            pb_d,
+            pbdot,
+            xpbdot,
+            delay=delay,
         )
         E = compute_eccentric_anomaly(ecc, M)
         orbits = compute_orbits_pb(tt0_s, pb_d, pbdot, xpbdot)
@@ -276,6 +284,19 @@ class BinaryDDK(DelayComponent):
         omega = omega_dd + delta_omega_pm + delta_omega_par
 
         return dd_core_delay(
-            E, ecc, omega, nu, a1, tt0_s, pb_d, pbdot,
-            gamma, dr, dth, A0, B0, sini, m2,
+            E,
+            ecc,
+            omega,
+            nu,
+            a1,
+            tt0_s,
+            pb_d,
+            pbdot,
+            gamma,
+            dr,
+            dth,
+            A0,
+            B0,
+            sini,
+            m2,
         )

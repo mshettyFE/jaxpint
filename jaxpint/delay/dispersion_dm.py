@@ -82,13 +82,9 @@ class DispersionDM(DispersionDelayComponent):
         dt_days = (toa_data.tdb - epoch).total
         return dt_days / DAYS_PER_JULIAN_YEAR
 
-    def _get_dm_coeffs(
-        self, params: ParameterVector
-    ) -> Float[Array, " n_terms"]:
+    def _get_dm_coeffs(self, params: ParameterVector) -> Float[Array, " n_terms"]:
         """Assemble ``[DM, DM1, DM2, ...]`` for :func:`taylor_horner`."""
-        return jnp.array(
-            [params.param_value(name) for name in self.dm_param_names]
-        )
+        return jnp.array([params.param_value(name) for name in self.dm_param_names])
 
     # ------------------------------------------------------------------
     # Public API
@@ -145,4 +141,4 @@ class DispersionDM(DispersionDelayComponent):
             Dispersion delay in **seconds**.
         """
         dm = self.compute_dm(toa_data, params, delay)
-        return dm * DMCONST / toa_data.freq ** 2
+        return dm * DMCONST / toa_data.freq**2

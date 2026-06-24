@@ -23,6 +23,7 @@ This is the no-MCMC building block for the CGW distance-reach sky map
 (``examples/cgw_distance_skymap.py``), approximating the Bayesian limit of
 Fig. 8 in the NANOGrav 15-yr individual-SMBHB paper (arXiv:2306.16222).
 """
+
 from __future__ import annotations
 
 from typing import Callable
@@ -91,6 +92,7 @@ def quadratic_coeffs(
     Y = g_a - g_a1
     return X, Y
 
+
 def h0_95_closed_form(
     X: Float[Array, ""],
     Y: Float[Array, ""],
@@ -140,7 +142,7 @@ def h0_95_closed_form(
     Y = jnp.maximum(Y, jnp.finfo(jnp.float64).tiny)
     mu = X / Y
     sigma = 1.0 / jnp.sqrt(Y)
-    phi_lo = ndtr(-mu / sigma)                # Phi(-mu/sigma): mass below the h0=0 wall
+    phi_lo = ndtr(-mu / sigma)  # Phi(-mu/sigma): mass below the h0=0 wall
     # q uses the prior's UPPER edge Phi((h_max-mu)/sigma) at its h_max->inf limit
     # of 1 (see Notes "Upper-bound gotcha"); exact while the data constrain h0.
     q = level + (1.0 - level) * phi_lo
@@ -181,7 +183,7 @@ def h0_to_distance(
     # decreasing in h0 (smaller strain -> larger D_L), so feeding in a 95% upper
     # limit on h0 yields a 95% lower limit on D_L.
     log10_dist_mpc = log10_h0_at_1mpc - jnp.log10(h0)
-    return 10.0 ** log10_dist_mpc
+    return 10.0**log10_dist_mpc
 
 
 # ---------------------------------------------------------------------------
@@ -238,12 +240,14 @@ def orientation_coeffs(
     ss2 = jnp.sin(2.0 * psi)
     cp = jnp.cos(phase0)
     sp = jnp.sin(phase0)
-    return jnp.stack([
-        a_i * cc2 * cp - b_i * ss2 * sp,
-        a_i * cc2 * sp + b_i * ss2 * cp,
-        -a_i * ss2 * cp - b_i * cc2 * sp,
-        -a_i * ss2 * sp + b_i * cc2 * cp,
-    ])
+    return jnp.stack(
+        [
+            a_i * cc2 * cp - b_i * ss2 * sp,
+            a_i * cc2 * sp + b_i * ss2 * cp,
+            -a_i * ss2 * cp - b_i * cc2 * sp,
+            -a_i * ss2 * sp + b_i * cc2 * cp,
+        ]
+    )
 
 
 def _default_extraction_orientations(n: int = 16, seed: int = 0) -> Float[Array, "n 3"]:
@@ -273,7 +277,7 @@ def basis_quadratics(
     Evaluates the (heavy) likelihood only at the ``k`` probe ``orientations``,
     reusing :func:`quadratic_coeffs`, then solves the small linear systems
     ``X_k = c_k . b`` and ``Y_k = c_k . M c_k`` for ``b`` and the symmetric
-    ``M``. 
+    ``M``.
 
     Parameters
     ----------
@@ -296,21 +300,22 @@ def basis_quadratics(
         satisfy ``X(omega) = c(omega) . b`` and ``Y(omega) = c(omega) . M c(omega)``
         for any orientation.
     """
+
     def xy_one(orient):
         f = lambda amp: logL_at_orientation(amp, orient[0], orient[1], orient[2])
         return quadratic_coeffs(f)
 
-    Xs, Ys = jax.lax.map(xy_one, orientations)               # (k,), (k,)
+    Xs, Ys = jax.lax.map(xy_one, orientations)  # (k,), (k,)
     C = jax.vmap(lambda o: orientation_coeffs(o[0], o[1], o[2]))(orientations)  # (k,4)
 
     # b: X(omega) = c(omega) . b is linear in the 4-vector b -> stacked solve.
     b = jnp.linalg.pinv(C) @ Xs
 
-    # We want to solve for the matrix M which satisfies: Y = c M c^T. So we have 10 variables we need to solve for 
-    # This part pulls out the 10 independent elements of that equation (re: upper triangular) 
+    # We want to solve for the matrix M which satisfies: Y = c M c^T. So we have 10 variables we need to solve for
+    # This part pulls out the 10 independent elements of that equation (re: upper triangular)
     # We are double counting the off diagonal elements since they repeat  in the lower half
     iu, ju = jnp.triu_indices(4)
-    design = C[:, iu] * C[:, ju] * jnp.where(iu == ju, 1.0, 2.0)   
+    design = C[:, iu] * C[:, ju] * jnp.where(iu == ju, 1.0, 2.0)
     m = jnp.linalg.pinv(design) @ Ys
     # After solving the independent components, we shove them back into the full matrix (first upper, then lower half)
     M = jnp.zeros((4, 4), dtype=m.dtype).at[iu, ju].set(m).at[ju, iu].set(m)
@@ -355,8 +360,8 @@ def h0_95_marginalized(
     # log weight per component, up to a common additive constant; subtract max.
     log_w = 0.5 * Xs * Xs / Ys + jnp.log(sigma)
     w = jnp.exp(log_w - jnp.max(log_w))
-    phi_lo = ndtr(-mu / sigma)        # mass below the h0=0 wall, per component
-    phi_hi = ndtr(mu / sigma)         # component mass over [0, inf)
+    phi_lo = ndtr(-mu / sigma)  # mass below the h0=0 wall, per component
+    phi_hi = ndtr(mu / sigma)  # component mass over [0, inf)
     denom = jnp.sum(w * phi_hi)
 
     def cdf(H):

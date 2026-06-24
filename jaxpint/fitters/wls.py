@@ -1,4 +1,5 @@
 """Weighted Least Squares fitter."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -121,8 +122,11 @@ class WLSFitter(BaseFitter):
         (new_params, covariance)
         """
         new_values, covariance = _wls_iteration_core(
-            self.model, self.toa_data, params,
-            self.noise_model, threshold,
+            self.model,
+            self.toa_data,
+            params,
+            self.noise_model,
+            threshold,
         )
         new_params = eqx.tree_at(lambda pv: pv.values, params, new_values)
         return new_params, covariance
@@ -141,9 +145,7 @@ class WLSFitter(BaseFitter):
         """
         sigma = self._get_sigma(params)
 
-        final_resid = compute_time_residuals(
-            self.model, self.toa_data, params
-        )
+        final_resid = compute_time_residuals(self.model, self.toa_data, params)
         final_resid = _subtract_weighted_mean(final_resid, sigma)
         chi2_val = float(compute_chi2(final_resid, sigma))
 
@@ -189,7 +191,7 @@ class WLSFitter(BaseFitter):
 
         params = self.params
         covariance = None
-        safe_maxiter =  1 if maxiter < 1 else maxiter
+        safe_maxiter = 1 if maxiter < 1 else maxiter
 
         for _ in range(safe_maxiter):
             params, covariance = self._iteration(params, threshold)

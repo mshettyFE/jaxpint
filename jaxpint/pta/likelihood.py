@@ -130,9 +130,7 @@ class SignalInjector(ABC):
         toa_data: TOAData,
         pulsar_params: ParameterVector,
         global_params: GlobalParams,
-    ) -> Optional[
-        tuple[Float[Array, "n_toas n_basis"], Float[Array, " n_basis"]]
-    ]:
+    ) -> Optional[tuple[Float[Array, "n_toas n_basis"], Float[Array, " n_basis"]]]:
         """Return ``(U, Phi)`` covariance contribution for pulsar *p*, or ``None``.
 
         Override for stochastic signals.  The default returns ``None``
@@ -326,8 +324,7 @@ def _collect_per_pulsar_external_inputs(
     per-pulsar injector dispatch lives in one place.
     """
     delays = [
-        inj.delay(p, toa_data, pulsar_params, global_params)
-        for inj in signal_injectors
+        inj.delay(p, toa_data, pulsar_params, global_params) for inj in signal_injectors
     ]
     delays = [d for d in delays if d is not None]
     # sum() of a non-empty list of arrays is an Array; the Literal[0] empty-sum
@@ -427,12 +424,12 @@ def _per_pulsar_intermediates(
     #    Combine into one solve: B = [r[:, None], F_corr]
     B = jnp.concatenate([r[:, None], F_corr], axis=1)  # (n_toas, 1 + n_basis)
     Cinv_B = woodbury_solve(Ndiag, U, Phi, B)
-    Cinv_r = Cinv_B[:, 0]                              # (n_toas,)
-    Cinv_F = Cinv_B[:, 1:]                              # (n_toas, n_basis)
+    Cinv_r = Cinv_B[:, 0]  # (n_toas,)
+    Cinv_F = Cinv_B[:, 1:]  # (n_toas, n_basis)
 
     # 5. Project onto the correlated-signal Fourier basis
-    basis_proj_residual_p = F_corr.T @ Cinv_r          # (n_basis,)
-    basis_overlap_p = F_corr.T @ Cinv_F                # (n_basis, n_basis)
+    basis_proj_residual_p = F_corr.T @ Cinv_r  # (n_basis,)
+    basis_overlap_p = F_corr.T @ Cinv_F  # (n_basis, n_basis)
 
     return rCr_p, logdetC_p, basis_proj_residual_p, basis_overlap_p
 
@@ -505,8 +502,7 @@ def _n_basis_per_injector(
     dataset.
     """
     return tuple(
-        cinj.get_fourier_basis(toa_data_0).shape[1]
-        for cinj in correlated_injectors
+        cinj.get_fourier_basis(toa_data_0).shape[1] for cinj in correlated_injectors
     )
 
 
@@ -530,9 +526,7 @@ def _phi_and_phi_inv_joint(
         Gamma = cinj.get_orf_matrix()
         S = cinj.get_psd(global_params)
         Phi_blocks.append(jnp.kron(Gamma, jnp.diag(S)))
-        Phi_inv_blocks.append(
-            jnp.kron(jnp.linalg.inv(Gamma), jnp.diag(1.0 / S))
-        )
+        Phi_inv_blocks.append(jnp.kron(jnp.linalg.inv(Gamma), jnp.diag(1.0 / S)))
     return (
         jax.scipy.linalg.block_diag(*Phi_blocks),
         jax.scipy.linalg.block_diag(*Phi_inv_blocks),
@@ -566,16 +560,22 @@ def _assemble_basis_overlap_joint_kpb(
         local_slices.append(slice(offset, offset + nb))
         offset += nb
     K = len(n_basis_per_k)
-    return jnp.block([
+    return jnp.block(
         [
-            jax.scipy.linalg.block_diag(*[
-                basis_overlap_per_pulsar[p][local_slices[k_a], local_slices[k_b]]
-                for p in range(n_psr)
-            ])
-            for k_b in range(K)
+            [
+                jax.scipy.linalg.block_diag(
+                    *[
+                        basis_overlap_per_pulsar[p][
+                            local_slices[k_a], local_slices[k_b]
+                        ]
+                        for p in range(n_psr)
+                    ]
+                )
+                for k_b in range(K)
+            ]
+            for k_a in range(K)
         ]
-        for k_a in range(K)
-    ])
+    )
 
 
 def _assemble_basis_proj_residual_joint_kpb(
@@ -601,13 +601,17 @@ def _assemble_basis_proj_residual_joint_kpb(
     for nb in n_basis_per_k:
         local_slices.append(slice(offset, offset + nb))
         offset += nb
-    return jnp.concatenate([
-        jnp.concatenate([
-            basis_proj_residual_per_pulsar[p][local_slices[k]]
-            for p in range(n_psr)
-        ])
-        for k in range(len(n_basis_per_k))
-    ])
+    return jnp.concatenate(
+        [
+            jnp.concatenate(
+                [
+                    basis_proj_residual_per_pulsar[p][local_slices[k]]
+                    for p in range(n_psr)
+                ]
+            )
+            for k in range(len(n_basis_per_k))
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -770,10 +774,17 @@ def precompute_single_pulsar_pta_factor(
     toa_data_p = config.toa_data_list[p]
     noise_model_p = config.noise_models[p]
     ext_cov = _collect_injector_ext_cov(
-        p, toa_data_p, pulsar_params_p, global_params, config.signal_injectors,
+        p,
+        toa_data_p,
+        pulsar_params_p,
+        global_params,
+        config.signal_injectors,
     )
     return precompute_single_pulsar_factor(
-        toa_data_p, noise_model_p, pulsar_params_p, external_cov=ext_cov,
+        toa_data_p,
+        noise_model_p,
+        pulsar_params_p,
+        external_cov=ext_cov,
     )
 
 
@@ -803,7 +814,11 @@ def single_pulsar_pta_logL_with_factor(
     toa_data_p = config.toa_data_list[p]
     timing_model_p = config.timing_models[p]
     ext_delay = _collect_injector_ext_delay(
-        p, toa_data_p, pulsar_params_p, global_params, config.signal_injectors,
+        p,
+        toa_data_p,
+        pulsar_params_p,
+        global_params,
+        config.signal_injectors,
     )
     return single_pulsar_logL_with_factor(
         toa_data_p,
@@ -886,16 +901,18 @@ def pta_logL(
     sum_rCr = jnp.float64(0.0)
     sum_logdetC = jnp.float64(0.0)
     # Per-pulsar slabs in (k, b) layout from the inner tier.
-    basis_proj_residual_per_pulsar = []   # each (n_basis_total,)
-    basis_overlap_per_pulsar = []          # each (n_basis_total, n_basis_total)
+    basis_proj_residual_per_pulsar = []  # each (n_basis_total,)
+    basis_overlap_per_pulsar = []  # each (n_basis_total, n_basis_total)
 
     for p in range(n_psr):
         F_stack_p = _stacked_fourier_basis(
             config.correlated_injectors, config.toa_data_list[p]
         )
         (
-            rCr_p, logdetC_p,
-            basis_proj_residual_p, basis_overlap_p,
+            rCr_p,
+            logdetC_p,
+            basis_proj_residual_p,
+            basis_overlap_p,
         ) = _per_pulsar_intermediates(
             config.toa_data_list[p],
             config.timing_models[p],
@@ -915,10 +932,14 @@ def pta_logL(
         config.correlated_injectors, global_params
     )
     basis_overlap_joint = _assemble_basis_overlap_joint_kpb(
-        basis_overlap_per_pulsar, n_basis_per_k, n_psr,
+        basis_overlap_per_pulsar,
+        n_basis_per_k,
+        n_psr,
     )
     basis_proj_residual_joint = _assemble_basis_proj_residual_joint_kpb(
-        basis_proj_residual_per_pulsar, n_basis_per_k, n_psr,
+        basis_proj_residual_per_pulsar,
+        n_basis_per_k,
+        n_psr,
     )
 
     Sigma_joint = Phi_joint_inv + basis_overlap_joint

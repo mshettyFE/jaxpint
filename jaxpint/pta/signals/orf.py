@@ -16,9 +16,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 
-def hd_orf(
-    pos1: Float[Array, "3"], pos2: Float[Array, "3"]
-) -> Float[Array, ""]:
+def hd_orf(pos1: Float[Array, "3"], pos2: Float[Array, "3"]) -> Float[Array, ""]:
     """Hellings-Downs overlap reduction function.
 
     Implements Eq. 2 of Hellings & Downs (1983) [orf_hd83]_:
@@ -47,9 +45,7 @@ def hd_orf(
     return 1.5 * omc2 * jnp.log(omc2) - 0.25 * omc2 + 0.5
 
 
-def monopole_orf(
-    pos1: Float[Array, "3"], pos2: Float[Array, "3"]
-) -> Float[Array, ""]:
+def monopole_orf(pos1: Float[Array, "3"], pos2: Float[Array, "3"]) -> Float[Array, ""]:
     """Monopole ORF (isotropic, unit correlation for all pairs).
 
     Returns 1.0 for every pulsar pair regardless of angular separation.
@@ -67,9 +63,7 @@ def monopole_orf(
     return jnp.where(jnp.allclose(pos1, pos2), 1.0, 1.0)
 
 
-def dipole_orf(
-    pos1: Float[Array, "3"], pos2: Float[Array, "3"]
-) -> Float[Array, ""]:
+def dipole_orf(pos1: Float[Array, "3"], pos2: Float[Array, "3"]) -> Float[Array, ""]:
     """Dipole ORF (correlation proportional to cos(angle)).
 
     Returns the cosine of the angular separation between the two pulsars,

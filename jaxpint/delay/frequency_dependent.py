@@ -35,9 +35,7 @@ class FrequencyDependent(DelayComponent):
         If no FD terms are provided (``fd_param_names`` is empty).
     """
 
-    PARAMS = (
-        ParamDecl("FD1", unit="s", prefix="FD"),
-    )
+    PARAMS = (ParamDecl("FD1", unit="s", prefix="FD"),)
 
     fd_param_names: tuple[str, ...] = eqx.field(static=True)
 

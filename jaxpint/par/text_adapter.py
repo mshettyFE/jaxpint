@@ -36,9 +36,12 @@ _BOOL_FALSE = {"N", "NO", "F", "FALSE", "0"}
 @dataclass
 class ParsedPar:
     """Result of the text adapter."""
+
     raw_params: list[RawParam] = field(default_factory=list)
-    templates: set[str] = field(default_factory=set)   # canonical first-init names present
-    binary_value: Optional[str] = None                  # the BINARY line's value, if any
+    templates: set[str] = field(
+        default_factory=set
+    )  # canonical first-init names present
+    binary_value: Optional[str] = None  # the BINARY line's value, if any
 
 
 # ---------------------------------------------------------------------------
@@ -215,24 +218,31 @@ def _emit(canonical: str, spec: dict, tokens: tuple[str, ...]) -> Optional[RawPa
             nkv = _num_key_values(key)
             if len(tokens) < 1 + nkv + 1:
                 return None
-            kvs = tokens[1:1 + nkv]
-            trailing = tokens[2 + nkv:]
+            kvs = tokens[1 : 1 + nkv]
+            trailing = tokens[2 + nkv :]
             # mjd/freq ranges are numeric in PINT (str(float(...))); flags stay raw.
             numeric = key in ("mjd", "freq")
             kv1 = str(float(kvs[0])) if numeric else kvs[0]
             kv2 = (str(float(kvs[1])) if numeric else kvs[1]) if nkv == 2 else None
             return RawParam(
-                canonical, ParamKind.MASK, value=_fortran_float(tokens[1 + nkv]),
-                uncertainty=_uncertainty(trailing),   # native unit; core converts
-                unit=unit, frozen=_frozen(trailing, fd),
-                mask_key=key, mask_key_value=kv1, mask_key_value2=kv2,
+                canonical,
+                ParamKind.MASK,
+                value=_fortran_float(tokens[1 + nkv]),
+                uncertainty=_uncertainty(trailing),  # native unit; core converts
+                unit=unit,
+                frozen=_frozen(trailing, fd),
+                mask_key=key,
+                mask_key_value=kv1,
+                mask_key_value2=kv2,
             )
 
         case "str":
             return RawParam(canonical, ParamKind.STR, str_value=tokens[0])
 
         case "bool":
-            return RawParam(canonical, ParamKind.BOOL, bool_value=_parse_bool(tokens[0]))
+            return RawParam(
+                canonical, ParamKind.BOOL, bool_value=_parse_bool(tokens[0])
+            )
 
         case "int":
             return RawParam(canonical, ParamKind.INT, int_value=int(float(tokens[0])))
@@ -240,15 +250,19 @@ def _emit(canonical: str, spec: dict, tokens: tuple[str, ...]) -> Optional[RawPa
         case "angle":
             rad = float(Angle(tokens[0], unit=u.Unit(unit)).to(u.rad).value)
             return RawParam(
-                canonical, ParamKind.ANGLE, value=rad,
+                canonical,
+                ParamKind.ANGLE,
+                value=rad,
                 uncertainty=_angle_uncertainty_rad(tokens[0], tokens[1:], unit),
                 frozen=_frozen(tokens[1:], fd),
             )
 
         case "mjd":
             return RawParam(
-                canonical, ParamKind.MJD, mjd_split=_split_mjd_string(tokens[0]),
-                uncertainty=_uncertainty(tokens[1:]),   # in days
+                canonical,
+                ParamKind.MJD,
+                mjd_split=_split_mjd_string(tokens[0]),
+                uncertainty=_uncertainty(tokens[1:]),  # in days
                 frozen=_frozen(tokens[1:], fd),
             )
 
@@ -256,13 +270,15 @@ def _emit(canonical: str, spec: dict, tokens: tuple[str, ...]) -> Optional[RawPa
             if len(tokens) < 2:
                 return None
             return RawParam(
-                canonical, ParamKind.PAIR,
+                canonical,
+                ParamKind.PAIR,
                 value_pair=(_fortran_float(tokens[0]), _fortran_float(tokens[1])),
-                unit=unit, frozen=_frozen(tokens[2:], fd),
+                unit=unit,
+                frozen=_frozen(tokens[2:], fd),
             )
 
         case _:  # "float" (incl. semantically-int floats like TNREDC; the core
-                 # dual-exposes them to int_params)
+            # dual-exposes them to int_params)
             val = _fortran_float(tokens[0])
             sigma = _uncertainty(tokens[1:])
             scale = spec.get("scale")
@@ -274,8 +290,12 @@ def _emit(canonical: str, spec: dict, tokens: tuple[str, ...]) -> Optional[RawPa
                 if sigma is not None:
                     sigma *= scale
             return RawParam(
-                canonical, ParamKind.FLOAT, value=val, uncertainty=sigma,
-                unit=unit, frozen=_frozen(tokens[1:], fd),
+                canonical,
+                ParamKind.FLOAT,
+                value=val,
+                uncertainty=sigma,
+                unit=unit,
+                frozen=_frozen(tokens[1:], fd),
             )
 
 

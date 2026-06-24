@@ -35,6 +35,7 @@ from jaxpint.utils import compute_pulsar_direction, compute_pulsar_direction_ecl
 # Shared geometric delay computation
 # ---------------------------------------------------------------------------
 
+
 def _geometric_delay(
     L_hat: Float[Array, "n_toas 3"],
     toa_data: TOAData,
@@ -69,12 +70,14 @@ def _geometric_delay(
         px_mas = params.param_value(px_name)
         # Distance in km: 1/PX_mas gives kpc (1 mas parallax = 1 kpc distance)
         L_km = (1.0 / px_mas) * KPC_TO_KM
-        re_sqr = jnp.sum(toa_data.ssb_obs_pos ** 2, axis=1)  # km^2
+        re_sqr = jnp.sum(toa_data.ssb_obs_pos**2, axis=1)  # km^2
         # Guard against 0/0 for barycentric TOAs (ssb_obs_pos == 0) like TZR.
         # Using 1.0 as safe denominator is fine: re_sqr==0 implies re_dot_L==0,
         # so the numerator (re_sqr / L_km) is also 0 and the term vanishes.
         re_sqr_safe = jnp.where(re_sqr == 0.0, 1.0, re_sqr)
-        result += 0.5 * (re_sqr_safe / L_km) * (1.0 - re_dot_L ** 2 / re_sqr_safe) / C_KM_PER_S
+        result += (
+            0.5 * (re_sqr_safe / L_km) * (1.0 - re_dot_L**2 / re_sqr_safe) / C_KM_PER_S
+        )
 
     return result
 
@@ -126,7 +129,8 @@ class AstrometryEquatorial(DelayComponent):
         a linear correction is applied per TOA.
         """
         return compute_pulsar_direction(
-            toa_data, params,
+            toa_data,
+            params,
             raj_name=self.raj_name,
             decj_name=self.decj_name,
             pmra_name=self.pmra_name,
@@ -221,7 +225,8 @@ class AstrometryEcliptic(DelayComponent):
         optional proper-motion correction), then rotates to ICRS.
         """
         return compute_pulsar_direction_ecl(
-            toa_data, params,
+            toa_data,
+            params,
             elong_name=self.elong_name,
             elat_name=self.elat_name,
             pmelong_name=self.pmelong_name,

@@ -21,6 +21,7 @@ likelihood is genuinely multi-modal (mostly the "no anchors" limit). For
 order-of-magnitude scaling studies that's fine; for absolute numbers in the
 no-anchor regime, prefer sampling-based methods.
 """
+
 from __future__ import annotations
 
 from typing import Callable, cast
@@ -142,6 +143,7 @@ def gram_at_pixel(
         The 2x2 Gram matrix at ``sky_pixel``.  Multiply by ``h0_target**2`` to
         get the sky Fisher information.
     """
+
     def Z(sky_a, sky_b):
         # Bilinear in (h_a, h_b) ⇒ ∂²/∂h_a∂h_b extracts -Z exactly.  Evaluate at
         # (0, 0) for convenience; any (h_a, h_b) gives the same constant.
@@ -199,6 +201,7 @@ def gram_block_at_pair(
         The cross Gram block.  Multiply by ``h_a_target * h_b_target`` to
         get the Fisher-information contribution to the joint Fisher matrix.
     """
+
     def Z(sky_a, sky_b):
         f = lambda h_a, h_b: logL_2sky(h_a, h_b, sky_a, sky_b)
         return -jax.grad(jax.grad(f, argnums=0), argnums=1)(

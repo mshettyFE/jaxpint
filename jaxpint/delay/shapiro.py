@@ -30,6 +30,7 @@ from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
 # Helper
 # ---------------------------------------------------------------------------
 
+
 def _ss_obj_shapiro_delay(
     obj_pos: Float[Array, "n_toas 3"],
     psr_dir: Float[Array, "n_toas 3"],
@@ -51,7 +52,7 @@ def _ss_obj_shapiro_delay(
     array, shape (n_toas,)
         Shapiro delay contribution in seconds.
     """
-    r = jnp.sqrt(jnp.sum(obj_pos ** 2, axis=1))
+    r = jnp.sqrt(jnp.sum(obj_pos**2, axis=1))
     rcostheta = jnp.sum(obj_pos * psr_dir, axis=1)
     # Guard against log(0) when pulsar is directly behind the body.
     arg = jnp.maximum((r - rcostheta) / AU_KM, 1e-100)
@@ -63,6 +64,7 @@ def _ss_obj_shapiro_delay(
 # ---------------------------------------------------------------------------
 # SolarSystemShapiroDelay
 # ---------------------------------------------------------------------------
+
 
 class SolarSystemShapiroDelay(DelayComponent):
     """Solar system Shapiro delay (Sun + optional planets).
@@ -84,9 +86,7 @@ class SolarSystemShapiroDelay(DelayComponent):
         coordinates and rotated to ICRS using this obliquity (arcseconds).
     """
 
-    PARAMS = (
-        ParamDecl("PLANET_SHAPIRO", kind="bool"),
-    )
+    PARAMS = (ParamDecl("PLANET_SHAPIRO", kind="bool"),)
 
     raj_name: str = eqx.field(static=True, default="RAJ")
     decj_name: str = eqx.field(static=True, default="DECJ")
@@ -119,7 +119,8 @@ class SolarSystemShapiroDelay(DelayComponent):
             Shapiro delay in seconds.
         """
         psr_dir = compute_pulsar_direction(
-            toa_data, params,
+            toa_data,
+            params,
             raj_name=self.raj_name,
             decj_name=self.decj_name,
             pmra_name=self.pmra_name,
@@ -136,14 +137,14 @@ class SolarSystemShapiroDelay(DelayComponent):
 
         # Planet contributions (static field -> plain if is JIT-safe).
         if self.planet_shapiro:
-            if(toa_data.planet_positions is None):
+            if toa_data.planet_positions is None:
                 raise ValueError(
-                        "planet_shapiro=True but toa_data.planet_positions is None"
-                        )
+                    "planet_shapiro=True but toa_data.planet_positions is None"
+                )
             for pl in PLANET_NAMES:
                 col = f"obs_{pl}_pos"
                 if col not in toa_data.planet_positions:
-                  raise KeyError(f"Missing planet position '{col}' in toa_data")
+                    raise KeyError(f"Missing planet position '{col}' in toa_data")
                 result = result + _ss_obj_shapiro_delay(
                     toa_data.planet_positions[col], psr_dir, PLANET_MASSES[pl]
                 )

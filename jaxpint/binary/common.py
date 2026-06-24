@@ -23,10 +23,10 @@ from jaxpint.dual_float import DualFloat
 from jaxpint.types import ParameterVector
 
 
-
 # ---------------------------------------------------------------------------
 # Time since epoch  (precision-preserving)
 # ---------------------------------------------------------------------------
+
 
 def compute_tt0(
     tdb: DualFloat,
@@ -62,6 +62,7 @@ def compute_tt0(
 # Orbit phase (OrbitPB parameterization)
 # ---------------------------------------------------------------------------
 
+
 def compute_orbits_pb(
     tt0_s: Float[Array, " n_toas"],
     pb_d: ArrayLike,
@@ -88,7 +89,7 @@ def compute_orbits_pb(
     """
     pb_s = pb_d * SECS_PER_DAY
     ratio = tt0_s / pb_s
-    return ratio - 0.5 * (pbdot + xpbdot) * ratio ** 2
+    return ratio - 0.5 * (pbdot + xpbdot) * ratio**2
 
 
 def compute_mean_anomaly(orbits: Float[Array, " n_toas"]) -> Float[Array, " n_toas"]:
@@ -146,8 +147,8 @@ def compute_orbital_phase(
         Orbital phase (mean anomaly) in [0, 2*pi), in radians.
     """
     dt = tdb - epoch
-    dt_int_days = dt.int      # exact integer days
-    dt_frac_days = dt.frac    # fractional day, full precision
+    dt_int_days = dt.int  # exact integer days
+    dt_frac_days = dt.frac  # fractional day, full precision
 
     # Subtract accumulated delay (convert seconds → days) from fractional part.
     if delay is not None:
@@ -173,7 +174,7 @@ def compute_orbital_phase(
     tt0_s = (dt_int_days + dt_frac_days) * SECS_PER_DAY
     pb_s = pb_d * SECS_PER_DAY
     ratio = tt0_s / pb_s
-    pbdot_corr = -0.5 * (pbdot + xpbdot) * ratio ** 2
+    pbdot_corr = -0.5 * (pbdot + xpbdot) * ratio**2
 
     frac_total = frac_orbit + pbdot_corr
     frac_total = frac_total - jnp.floor(frac_total)
@@ -185,7 +186,10 @@ def compute_orbital_phase(
 # Time-dependent orbital elements
 # ---------------------------------------------------------------------------
 
-def compute_ecc(ecc0: ArrayLike, edot: ArrayLike, tt0_s: Float[Array, " n_toas"]) -> Float[Array, " n_toas"]:
+
+def compute_ecc(
+    ecc0: ArrayLike, edot: ArrayLike, tt0_s: Float[Array, " n_toas"]
+) -> Float[Array, " n_toas"]:
     """Time-dependent eccentricity: ``ecc(t) = ECC + EDOT * tt0``.
 
     Parameters
@@ -205,7 +209,9 @@ def compute_ecc(ecc0: ArrayLike, edot: ArrayLike, tt0_s: Float[Array, " n_toas"]
     return jnp.asarray(ecc0 + edot * tt0_s)
 
 
-def compute_a1(a1_0: ArrayLike, a1dot: ArrayLike, tt0_s: Float[Array, " n_toas"]) -> Float[Array, " n_toas"]:
+def compute_a1(
+    a1_0: ArrayLike, a1dot: ArrayLike, tt0_s: Float[Array, " n_toas"]
+) -> Float[Array, " n_toas"]:
     """Time-dependent projected semi-major axis: ``a1(t) = A1 + A1DOT * tt0``.
 
     Parameters
@@ -292,7 +298,7 @@ def _bt_delay_formula(
     cosE = jnp.cos(E)
     sin_omega = jnp.sin(omega)
     cos_omega = jnp.cos(omega)
-    sqrt_1me2 = jnp.sqrt(1.0 - ecc ** 2)
+    sqrt_1me2 = jnp.sqrt(1.0 - ecc**2)
 
     L1 = a1 * sin_omega * (cosE - ecc)
     L2 = (a1 * cos_omega * sqrt_1me2 + gamma) * sinE
@@ -308,6 +314,7 @@ def _bt_delay_formula(
 # ---------------------------------------------------------------------------
 # Eccentric and true anomaly
 # ---------------------------------------------------------------------------
+
 
 def compute_eccentric_anomaly(
     ecc: Float[Array, " n_toas"],
@@ -377,6 +384,7 @@ def compute_true_anomaly(
 # DD-specific omega
 # ---------------------------------------------------------------------------
 
+
 def compute_omega_dd(
     om_rad: ArrayLike,
     omdot_rad_per_s: ArrayLike,
@@ -418,13 +426,14 @@ def compute_omega_dd(
     else:
         pb_prime_s = pb_s
     n = 2.0 * jnp.pi / pb_prime_s  # mean motion (rad/s)
-    k = omdot_rad_per_s / n   # advance of periastron per orbit (rad/rad)
+    k = omdot_rad_per_s / n  # advance of periastron per orbit (rad/rad)
     return jnp.asarray(om_rad + nu * k)
 
 
 # ---------------------------------------------------------------------------
 # DD inverse timing formula
 # ---------------------------------------------------------------------------
+
 
 def dd_inverse_timing(
     Dre: Float[Array, " n_toas"],
@@ -462,8 +471,8 @@ def dd_inverse_timing(
         1.0
         - nhat * Drep
         + (nhat * Drep) ** 2
-        + 0.5 * nhat ** 2 * Dre * Drepp
-        - 0.5 * ecc * sinE / (1.0 - ecc * cosE) * nhat ** 2 * Dre * Drep
+        + 0.5 * nhat**2 * Dre * Drepp
+        - 0.5 * ecc * sinE / (1.0 - ecc * cosE) * nhat**2 * Dre * Drep
     )
     return Dre * brace
 
@@ -471,6 +480,7 @@ def dd_inverse_timing(
 # ---------------------------------------------------------------------------
 # Shapiro delay helpers
 # ---------------------------------------------------------------------------
+
 
 def dd_shapiro_delay(
     ecc: Float[Array, " n_toas"],
@@ -500,9 +510,10 @@ def dd_shapiro_delay(
         Shapiro delay in seconds.
     """
     TM2 = m2_msun * TSUN
-    arg = 1.0 - ecc * cosE - sini * (
-        sin_omega * (cosE - ecc)
-        + jnp.sqrt(1.0 - ecc ** 2) * cos_omega * sinE
+    arg = (
+        1.0
+        - ecc * cosE
+        - sini * (sin_omega * (cosE - ecc) + jnp.sqrt(1.0 - ecc**2) * cos_omega * sinE)
     )
     return -2.0 * TM2 * jnp.log(arg)
 
@@ -546,6 +557,7 @@ def dd_aberration_delay(
 # ---------------------------------------------------------------------------
 # Shapiro delay parameterization dispatch
 # ---------------------------------------------------------------------------
+
 
 def ell1h_fourier_shapiro(h3, stigma, phi, nharms: int):
     """Freire & Wex (2010) Eq. 19 — approximate Shapiro delay for ELL1H.
@@ -632,15 +644,15 @@ def get_sini_m2(
         assert h3_name is not None and stigma_name is not None
         h3 = params.param_value(h3_name)
         stigma = params.param_value(stigma_name)
-        sini = 2.0 * stigma / (1.0 + stigma ** 2)
-        m2 = h3 / (stigma ** 3 * TSUN)
+        sini = 2.0 * stigma / (1.0 + stigma**2)
+        m2 = h3 / (stigma**3 * TSUN)
     elif shapiro_mode == "h3h4":
         assert h3_name is not None and h4_name is not None
         h3 = params.param_value(h3_name)
         h4 = params.param_value(h4_name)
         stigma = h4 / h3
-        sini = 2.0 * stigma / (1.0 + stigma ** 2)
-        m2 = h3 / (stigma ** 3 * TSUN)
+        sini = 2.0 * stigma / (1.0 + stigma**2)
+        m2 = h3 / (stigma**3 * TSUN)
     else:
         sini = 0.0
         m2 = 0.0
@@ -650,6 +662,7 @@ def get_sini_m2(
 # ---------------------------------------------------------------------------
 # DD core delay computation (shared by DD, DDK, DDGR)
 # ---------------------------------------------------------------------------
+
 
 def dd_core_delay(
     E: Float[Array, " n_toas"],
@@ -717,7 +730,7 @@ def dd_core_delay(
 
     # DD intermediate quantities (D&D eqs. [46]-[47])
     alpha = a1 * sin_omega
-    beta = a1 * jnp.sqrt(1.0 - eTheta ** 2) * cos_omega
+    beta = a1 * jnp.sqrt(1.0 - eTheta**2) * cos_omega
 
     # Roemer + Einstein delay (Dre, eq. [48])
     Dre = alpha * (cosE - er) + (beta + gamma) * sinE

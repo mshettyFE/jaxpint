@@ -140,7 +140,9 @@ def raw_params_to_result(
                     mask_info[rp.name] = MaskInfo(
                         name=rp.name,
                         key=rp.mask_key,
-                        key_value=rp.mask_key_value if rp.mask_key_value is not None else "",
+                        key_value=rp.mask_key_value
+                        if rp.mask_key_value is not None
+                        else "",
                         key_value2=rp.mask_key_value2,
                     )
                 # EQUAD/ECORR are stored in microseconds; convert to seconds to
@@ -151,12 +153,18 @@ def raw_params_to_result(
                 if rp.name.startswith("EQUAD") or rp.name.startswith("ECORR"):
                     val = float((rp.value * u.Unit(rp.unit)).to(u.s).value)
                     unit_str = "s"
-                    unc = (math.nan if rp.uncertainty is None
-                           else float((rp.uncertainty * u.Unit(rp.unit)).to(u.s).value))
+                    unc = (
+                        math.nan
+                        if rp.uncertainty is None
+                        else float((rp.uncertainty * u.Unit(rp.unit)).to(u.s).value)
+                    )
                 else:
                     val, unit_str = _coerce_float(rp.value, rp.unit)
-                    unc = (math.nan if rp.uncertainty is None
-                           else _coerce_float(rp.uncertainty, rp.unit)[0])
+                    unc = (
+                        math.nan
+                        if rp.uncertainty is None
+                        else _coerce_float(rp.uncertainty, rp.unit)[0]
+                    )
                 names.append(rp.name)
                 values.append(val)
                 units.append(unit_str)
@@ -206,7 +214,8 @@ def raw_params_to_result(
                 frozen_mask.append(rp.frozen)
                 # Uncertainty rides the same deg->rad coercion as the value.
                 uncertainties.append(
-                    math.nan if rp.uncertainty is None
+                    math.nan
+                    if rp.uncertainty is None
                     else _coerce_float(rp.uncertainty, rp.unit)[0]
                 )
 

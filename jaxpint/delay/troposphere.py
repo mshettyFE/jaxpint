@@ -42,6 +42,7 @@ from jaxpint.types import TOAData, ParameterVector
 # Pure helper functions
 # ---------------------------------------------------------------------------
 
+
 def _herring_map(
     sin_alt: Float[Array, " n"],
     a: Float[Array, " n"],
@@ -124,9 +125,9 @@ def _year_fraction(
 ) -> Float[Array, " n"]:
     """Fractional year from TDB MJD, with southern hemisphere offset."""
     season_offset = jnp.where(lat_rad < 0.0, 0.5, 0.0)
-    # NIELL_DOY_OFFSET due to seasonal variation of troposphere. 
+    # NIELL_DOY_OFFSET due to seasonal variation of troposphere.
     # Shifting "start of year" so that troposphere model aligns with the peak in this variation
-    days_since_J2000  =  (tdb_mjd - 51544.5 + NIELL_DOY_OFFSET)
+    days_since_J2000 = tdb_mjd - 51544.5 + NIELL_DOY_OFFSET
     # Convert to years, then add back in year 2000, plus have a year offset if in southern hemisphere
     return jnp.mod(
         2000.0 + days_since_J2000 / 365.25 + season_offset,
@@ -140,7 +141,9 @@ def _pressure_from_height_km(H_km: Float[Array, " n"]) -> Float[Array, " n"]:
     Valid for heights below ~11 km.
     """
     H_m = H_km * 1000.0
-    T = 288.15 - 0.0065 * H_m  # temperature lapse (uses geometric height, matching PINT)
+    T = (
+        288.15 - 0.0065 * H_m
+    )  # temperature lapse (uses geometric height, matching PINT)
     return 101.325 * (288.15 / T) ** (-5.25575)
 
 
@@ -150,7 +153,9 @@ def _zenith_hydrostatic_delay(
 ) -> Float[Array, " n"]:
     """Davis zenith hydrostatic delay in seconds."""
     p_kpa = _pressure_from_height_km(H_km)
-    return (p_kpa / 43.921) / (C_M_PER_S * (1.0 - 0.00266 * jnp.cos(2.0 * lat_rad) - 0.00028 * H_km))
+    return (p_kpa / 43.921) / (
+        C_M_PER_S * (1.0 - 0.00266 * jnp.cos(2.0 * lat_rad) - 0.00028 * H_km)
+    )
 
 
 def _hydrostatic_mapping(
@@ -197,6 +202,7 @@ def _wet_mapping(
 # TroposphereDelay component
 # ---------------------------------------------------------------------------
 
+
 class TroposphereDelay(DelayComponent):
     """Troposphere delay for topocentric TOAs.
 
@@ -208,9 +214,7 @@ class TroposphereDelay(DelayComponent):
     the bridge level (if False, this component is not added to the model).
     """
 
-    PARAMS = (
-        ParamDecl("CORRECT_TROPOSPHERE", kind="bool"),
-    )
+    PARAMS = (ParamDecl("CORRECT_TROPOSPHERE", kind="bool"),)
 
     def __call__(
         self,
@@ -252,8 +256,12 @@ class TroposphereDelay(DelayComponent):
         year_frac = _year_fraction(tdb_mjd, toa_data.obs_geodetic_lat)
 
         # Hydrostatic: zenith delay * mapping function
-        zenith = _zenith_hydrostatic_delay(toa_data.obs_geodetic_lat, toa_data.obs_height_km)
-        hydro_map = _hydrostatic_mapping(sin_alt, abs_lat, toa_data.obs_height_km, year_frac)
+        zenith = _zenith_hydrostatic_delay(
+            toa_data.obs_geodetic_lat, toa_data.obs_height_km
+        )
+        hydro_map = _hydrostatic_mapping(
+            sin_alt, abs_lat, toa_data.obs_height_km, year_frac
+        )
 
         # Wet: currently zero (matching PINT default)
         wet_zenith = 0.0

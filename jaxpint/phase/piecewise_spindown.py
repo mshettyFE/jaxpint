@@ -76,8 +76,13 @@ class PiecewiseSpindown(PhaseComponent):
         if self.n_pieces < 1:
             raise ValueError("PiecewiseSpindown requires at least one piece")
         for attr in (
-            "pwstart_names", "pwstop_names", "pwep_names",
-            "pwph_names", "pwf0_names", "pwf1_names", "pwf2_names",
+            "pwstart_names",
+            "pwstop_names",
+            "pwep_names",
+            "pwph_names",
+            "pwf0_names",
+            "pwf1_names",
+            "pwf2_names",
         ):
             if len(getattr(self, attr)) != self.n_pieces:
                 raise ValueError(

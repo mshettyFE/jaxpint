@@ -75,7 +75,9 @@ class PLRedNoise(NoiseComponent):
         # ``jnparray()``-in-closure pattern).
         if not isinstance(self.fourier_basis, np.ndarray):
             object.__setattr__(
-                self, "fourier_basis", np.asarray(self.fourier_basis),
+                self,
+                "fourier_basis",
+                np.asarray(self.fourier_basis),
             )
 
     @functools.cached_property
@@ -117,14 +119,9 @@ class PLRedNoise(NoiseComponent):
         """
         log10_A = params.param_value(self.tnredamp_name)
         gamma = params.param_value(self.tnredgam_name)
-        A = 10.0 ** log10_A
+        A = 10.0**log10_A
 
-        psd = (
-            A ** 2
-            / (12.0 * jnp.pi ** 2)
-            * FYR ** (gamma - 3.0)
-            * self.freqs ** (-gamma)
-        )
+        psd = A**2 / (12.0 * jnp.pi**2) * FYR ** (gamma - 3.0) * self.freqs ** (-gamma)
         # weight = PSD(f) * Δf, repeated for sin and cos
         return jnp.repeat(psd * self.freq_bin_widths, 2)
 

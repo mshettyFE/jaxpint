@@ -60,7 +60,9 @@ class IFunc(PhaseComponent):
 
     def __check_init__(self):
         if self.interp_type not in (0, 2):
-            raise ValueError(f"IFunc interp_type must be 0 or 2, got {self.interp_type}")
+            raise ValueError(
+                f"IFunc interp_type must be 0 or 2, got {self.interp_type}"
+            )
         if len(self.control_mjds) < 1:
             raise ValueError("IFunc requires at least one control point")
 

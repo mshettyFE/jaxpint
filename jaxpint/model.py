@@ -60,11 +60,16 @@ class TimingModel(eqx.Module):
         ParamDecl("START", kind="mjd"),
         ParamDecl("FINISH", kind="mjd"),
         ParamDecl("TZRMJD", kind="mjd"),
-        ParamDecl("TZRFRQ", kind="str"),    # metadata (may be inf); never in the JAX vector
+        ParamDecl(
+            "TZRFRQ", kind="str"
+        ),  # metadata (may be inf); never in the JAX vector
         ParamDecl("TZRSITE", kind="str"),
-        ParamDecl("PHOFF"),                  # triggers PHASE_OFFSET (see par.spec)
-        ParamDecl("RM"), ParamDecl("CHI2"), ParamDecl("CHI2R"),
-        ParamDecl("TRES"), ParamDecl("DMRES"),
+        ParamDecl("PHOFF"),  # triggers PHASE_OFFSET (see par.spec)
+        ParamDecl("RM"),
+        ParamDecl("CHI2"),
+        ParamDecl("CHI2R"),
+        ParamDecl("TRES"),
+        ParamDecl("DMRES"),
     )
 
     delay_components: tuple[DelayComponent, ...] = eqx.field(static=True)
@@ -127,7 +132,12 @@ class TimingModel(eqx.Module):
         )
 
         binary_types = (
-            BinaryBT, BinaryBTPiecewise, BinaryDD, BinaryDDGR, BinaryDDK, BinaryELL1,
+            BinaryBT,
+            BinaryBTPiecewise,
+            BinaryDD,
+            BinaryDDGR,
+            BinaryDDK,
+            BinaryELL1,
         )
         delay = jnp.zeros(toa_data.n_toas)
         for comp in self.delay_components:
@@ -297,14 +307,10 @@ class TimingModel(eqx.Module):
             for i, name in enumerate(names):
                 if name == key:
                     return comps[i]
-            raise KeyError(
-                f"{key!r} not found. Available components: {names}"
-            )
+            raise KeyError(f"{key!r} not found. Available components: {names}")
         elif isinstance(key, (int, slice)):
             return self.components[key]
-        raise TypeError(
-            f"indices must be str, int, or slice, not {type(key).__name__}"
-        )
+        raise TypeError(f"indices must be str, int, or slice, not {type(key).__name__}")
 
     # ------------------------------------------------------------------
     # Per-component decomposition (diagnostic / inspection only)
@@ -420,7 +426,11 @@ def _build_tzr_toa_data(toa_data: TOAData) -> TOAData:
     tdb_int = jnp.array([toa_data.tzr_tdb_int])
     tdb_frac = jnp.array([toa_data.tzr_tdb_frac])
 
-    freq = jnp.array([toa_data.tzr_freq]) if toa_data.tzr_freq is not None else jnp.inf * one
+    freq = (
+        jnp.array([toa_data.tzr_freq])
+        if toa_data.tzr_freq is not None
+        else jnp.inf * one
+    )
 
     ssb_obs_pos = (
         toa_data.tzr_ssb_obs_pos[None, :]

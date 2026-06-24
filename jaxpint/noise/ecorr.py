@@ -47,8 +47,14 @@ class EcorrNoise(NoiseComponent):
     """
 
     PARAMS = (
-        ParamDecl("ECORR1", kind="mask", unit="us", prefix="ECORR",
-                  aliases=("ECORR", "TNECORR", "TNECORR1"), prefix_aliases=("TNECORR",)),
+        ParamDecl(
+            "ECORR1",
+            kind="mask",
+            unit="us",
+            prefix="ECORR",
+            aliases=("ECORR", "TNECORR", "TNECORR1"),
+            prefix_aliases=("TNECORR",),
+        ),
     )
 
     ecorr_names: tuple[str, ...] = eqx.field(static=True)
@@ -60,7 +66,8 @@ class EcorrNoise(NoiseComponent):
         # truth). See PLRedNoise for the rationale.
         if not isinstance(self.quantization_matrix, np.ndarray):
             object.__setattr__(
-                self, "quantization_matrix",
+                self,
+                "quantization_matrix",
                 np.asarray(self.quantization_matrix),
             )
 
@@ -89,11 +96,9 @@ class EcorrNoise(NoiseComponent):
         """
         n_epochs = self.quantization_matrix.shape[1]
         weights = jnp.zeros(n_epochs)
-        for name, (start, end) in zip(
-            self.ecorr_names, self.ecorr_epoch_slices
-        ):
+        for name, (start, end) in zip(self.ecorr_names, self.ecorr_epoch_slices):
             ecorr_val = params.param_value(name)
-            weights = weights.at[start:end].set(ecorr_val ** 2)
+            weights = weights.at[start:end].set(ecorr_val**2)
         return weights
 
     def static_basis(self) -> Float[Array, "n_toas n_epochs"]:

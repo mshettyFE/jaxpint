@@ -38,9 +38,7 @@ def flatten_params(
         Concatenated parameter values, where
         ``n_total = n_global + sum(n_pp_i)``.
     """
-    return jnp.concatenate(
-        [global_params.values] + [pp.values for pp in pulsar_params]
-    )
+    return jnp.concatenate([global_params.values] + [pp.values for pp in pulsar_params])
 
 
 def unflatten_params(
@@ -89,9 +87,7 @@ def unflatten_params(
     pp_list = []
     for template in pulsar_templates:
         n = template.n_params
-        new_pp = eqx.tree_at(
-            lambda t: t.values, template, flat[offset : offset + n]
-        )
+        new_pp = eqx.tree_at(lambda t: t.values, template, flat[offset : offset + n])
         pp_list.append(new_pp)
         offset += n
 

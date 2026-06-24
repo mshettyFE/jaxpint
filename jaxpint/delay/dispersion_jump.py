@@ -26,9 +26,7 @@ class DispersionJump(DispersionDelayComponent):
         ``toa_data.flag_masks``.
     """
 
-    PARAMS = (
-        ParamDecl("DMJUMP1", kind="mask", aliases=("DMJUMP",), prefix="DMJUMP"),
-    )
+    PARAMS = (ParamDecl("DMJUMP1", kind="mask", aliases=("DMJUMP",), prefix="DMJUMP"),)
 
     dmjump_names: tuple[str, ...] = eqx.field(static=True)
 

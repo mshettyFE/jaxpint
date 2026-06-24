@@ -63,7 +63,12 @@ from .model_builder import build_model
 from .likelihood import single_pulsar_logL
 from . import native
 from .loaders import NanogravPTA, load_nanograv_pta, native_toas_to_jax
-from .simulation import apply_delay_to_toas, make_fake_toas, simulate_noise, zero_residuals
+from .simulation import (
+    apply_delay_to_toas,
+    make_fake_toas,
+    simulate_noise,
+    zero_residuals,
+)
 from .utils import (
     fourier_sum,
     normalize_designmatrix,

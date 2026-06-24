@@ -53,10 +53,32 @@ class ExponentialDip(DelayComponent):
     """
 
     PARAMS = (
-        ParamDecl("EXPDIPEP_1", kind="mjd", prefix="EXPDIPEP_", aliases=("EXPEP_1",), prefix_aliases=("EXPEP_",)),
-        ParamDecl("EXPDIPAMP_1", unit="s", prefix="EXPDIPAMP_", aliases=("EXPPH_1",), prefix_aliases=("EXPPH_",)),
-        ParamDecl("EXPDIPIDX_1", prefix="EXPDIPIDX_", aliases=("EXPINDEX_1",), prefix_aliases=("EXPINDEX_",)),
-        ParamDecl("EXPDIPTAU_1", prefix="EXPDIPTAU_", aliases=("EXPTAU_1",), prefix_aliases=("EXPTAU_",)),
+        ParamDecl(
+            "EXPDIPEP_1",
+            kind="mjd",
+            prefix="EXPDIPEP_",
+            aliases=("EXPEP_1",),
+            prefix_aliases=("EXPEP_",),
+        ),
+        ParamDecl(
+            "EXPDIPAMP_1",
+            unit="s",
+            prefix="EXPDIPAMP_",
+            aliases=("EXPPH_1",),
+            prefix_aliases=("EXPPH_",),
+        ),
+        ParamDecl(
+            "EXPDIPIDX_1",
+            prefix="EXPDIPIDX_",
+            aliases=("EXPINDEX_1",),
+            prefix_aliases=("EXPINDEX_",),
+        ),
+        ParamDecl(
+            "EXPDIPTAU_1",
+            prefix="EXPDIPTAU_",
+            aliases=("EXPTAU_1",),
+            prefix_aliases=("EXPTAU_",),
+        ),
         ParamDecl("EXPDIPEPS"),
         ParamDecl("EXPDIPFREF"),
     )
@@ -72,7 +94,12 @@ class ExponentialDip(DelayComponent):
     def __check_init__(self):
         if self.n_dips < 1:
             raise ValueError("ExponentialDip requires at least one dip event")
-        for attr in ("expdipep_names", "expdipamp_names", "expdipidx_names", "expdiptau_names"):
+        for attr in (
+            "expdipep_names",
+            "expdipamp_names",
+            "expdipidx_names",
+            "expdiptau_names",
+        ):
             if len(getattr(self, attr)) != self.n_dips:
                 raise ValueError(
                     f"Length of {attr} ({len(getattr(self, attr))}) "
@@ -101,7 +128,7 @@ class ExponentialDip(DelayComponent):
         array, shape (n_toas,)
             Exponential dip delay in seconds.
         """
-        eps = params.param_value(self.expdipeps_name)   # days
+        eps = params.param_value(self.expdipeps_name)  # days
         fref = params.param_value(self.expdipfref_name)  # MHz
         ffac = toa_data.freq / fref
 
@@ -113,21 +140,25 @@ class ExponentialDip(DelayComponent):
             T = params.epoch_dual(self.expdipep_names[i]).total
             dt = toa_tdb - T  # days
 
-            A = params.param_value(self.expdipamp_names[i])      # seconds
+            A = params.param_value(self.expdipamp_names[i])  # seconds
             gamma = params.param_value(self.expdipidx_names[i])  # dimensionless
-            tau = params.param_value(self.expdiptau_names[i])    # days
+            tau = params.param_value(self.expdiptau_names[i])  # days
 
             # Normalization so extremum = A
-            norm = (tau / eps) ** (eps / tau) * (tau / (tau - eps)) ** ((tau - eps) / tau)
+            norm = (tau / eps) ** (eps / tau) * (tau / (tau - eps)) ** (
+                (tau - eps) / tau
+            )
 
             # Exponential factor with smooth logistic transition.
             # For dt >= 0: exp(-dt/tau) / (1 + exp(-dt/eps))
             # For dt < 0:  exp(dt*(tau-eps)/(tau*eps)) / (1 + exp(dt/eps))
             # Use jnp.where for JIT compatibility.
             expfac_pos = jnp.exp(-dt / tau) / (1.0 + jnp.exp(-dt / eps))
-            expfac_neg = jnp.exp(dt * (tau - eps) / (tau * eps)) / (1.0 + jnp.exp(dt / eps))
+            expfac_neg = jnp.exp(dt * (tau - eps) / (tau * eps)) / (
+                1.0 + jnp.exp(dt / eps)
+            )
             expfac = jnp.where(dt >= 0.0, expfac_pos, expfac_neg)
 
-            total = total + (-A * ffac ** gamma * norm * expfac)
+            total = total + (-A * ffac**gamma * norm * expfac)
 
         return total

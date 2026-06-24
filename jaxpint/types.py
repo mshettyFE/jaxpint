@@ -25,6 +25,7 @@ from jaxpint.dual_float import DualFloat
 # TOAData
 # ---------------------------------------------------------------------------
 
+
 class TOAData(eqx.Module):
     """Pre-extracted TOA data as JAX arrays.
 
@@ -48,14 +49,14 @@ class TOAData(eqx.Module):
     mjd_int: Float[Array, " n_toas"]
     mjd_frac: Float[Array, " n_toas"]
     # Same timestamp as MJD, but converted to Barycentric Dynamic Time (TDB)
-    # Timing model oeprates on these values. 
+    # Timing model oeprates on these values.
     # MJD is kept around for matching to original data
     tdb_int: Float[Array, " n_toas"]
     tdb_frac: Float[Array, " n_toas"]
     error: Float[Array, " n_toas"]
     freq: Float[Array, " n_toas"]
     # Offset to add to cycle number in phase computation.
-    # Needed to break degeneracy of which cycle number you are on 
+    # Needed to break degeneracy of which cycle number you are on
     # For well-timed pulsars, these should all be zero
     delta_pulse_number: Float[Array, " n_toas"]
 
@@ -115,12 +116,15 @@ class TOAData(eqx.Module):
     tzr_ssb_obs_pos: Optional[Float[Array, " 3"]] = eqx.field(default=None)
     tzr_obs_sun_pos: Optional[Float[Array, " 3"]] = eqx.field(default=None)
     # Populated when the model enables PLANET_SHAPIRO; None otherwise.
-    tzr_planet_positions: Optional[dict[str, Float[Array, " 3"]]] = eqx.field(default=None)
+    tzr_planet_positions: Optional[dict[str, Float[Array, " 3"]]] = eqx.field(
+        default=None
+    )
 
 
 # ---------------------------------------------------------------------------
 # ParameterVector
 # ---------------------------------------------------------------------------
+
 
 class ParameterVector(eqx.Module):
     """Timing model parameters as a flat JAX array with metadata.
@@ -190,8 +194,8 @@ class ParameterVector(eqx.Module):
 
     # Static metadata
     frozen_mask: tuple[bool, ...] = eqx.field(static=True)
-    # Names of parameters which map to values 
-    # Not a dictionary with values to avoi equinox warning, as well as allow 
+    # Names of parameters which map to values
+    # Not a dictionary with values to avoi equinox warning, as well as allow
     # ifferentiability of parameters in jax
     names: tuple[str, ...] = eqx.field(static=True)
     # Purely for documentation. JAX has a preset unit system that it will assume as mentioned above
@@ -226,9 +230,7 @@ class ParameterVector(eqx.Module):
                 )
 
         if self.values.shape[0] != n:
-            raise ValueError(
-                f"values.shape[0] = {self.values.shape[0]}, expected {n}"
-            )
+            raise ValueError(f"values.shape[0] = {self.values.shape[0]}, expected {n}")
 
         # Default marginalized_mask to all-False if not provided. Setting via
         # object.__setattr__ is the standard equinox/dataclass pattern for
@@ -250,7 +252,8 @@ class ParameterVector(eqx.Module):
 
         # Build _name_to_index from names
         object.__setattr__(
-            self, "_name_to_index",
+            self,
+            "_name_to_index",
             {name: i for i, name in enumerate(self.names)},
         )
 
@@ -258,18 +261,18 @@ class ParameterVector(eqx.Module):
         # used by JIT-compiled fitter code. Boolean indexing is not supported
         # inside jax.jit; integer indices are.
         object.__setattr__(
-            self, "_free_indices",
+            self,
+            "_free_indices",
             tuple(
-                i for i in range(n)
+                i
+                for i in range(n)
                 if not self.frozen_mask[i] and not self.marginalized_mask[i]
             ),
         )
 
         extra = set(self.epoch_int_values) - set(self.names)
         if extra:
-            raise ValueError(
-                f"epoch_int_values keys {extra} are not in names"
-            )
+            raise ValueError(f"epoch_int_values keys {extra} are not in names")
 
     # -- Lookup helpers --
 
@@ -393,7 +396,8 @@ class ParameterVector(eqx.Module):
         """Names of free parameters (= not frozen AND not marginalized).
         Python-level, not JIT-compatible."""
         return tuple(
-            self.names[i] for i in range(len(self.names))
+            self.names[i]
+            for i in range(len(self.names))
             if not self.frozen_mask[i] and not self.marginalized_mask[i]
         )
 
@@ -401,8 +405,7 @@ class ParameterVector(eqx.Module):
         """Names of parameters that have been analytically marginalized out.
         Python-level, not JIT-compatible."""
         return tuple(
-            self.names[i] for i in range(len(self.names))
-            if self.marginalized_mask[i]
+            self.names[i] for i in range(len(self.names)) if self.marginalized_mask[i]
         )
 
     def with_free_values(self, new_free: Float[Array, " n_free"]) -> ParameterVector:

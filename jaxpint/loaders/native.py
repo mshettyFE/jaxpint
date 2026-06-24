@@ -46,7 +46,7 @@ class _Core:
     tdb_int: np.ndarray
     tdb_frac: np.ndarray
     error_s: np.ndarray
-    freq_mhz: np.ndarray          # topocentric
+    freq_mhz: np.ndarray  # topocentric
     delta_pulse_number: np.ndarray
     ssb_obs_pos: np.ndarray
     ssb_obs_vel: np.ndarray
@@ -68,7 +68,9 @@ def _flag_floats(toas, key):
     vals = [t.flags.get(key) for t in toas]
     if all(v is None for v in vals):
         return None
-    return np.array([float(v) if v is not None else np.nan for v in vals], dtype=np.float64)
+    return np.array(
+        [float(v) if v is not None else np.nan for v in vals], dtype=np.float64
+    )
 
 
 def topocentric_core(
@@ -98,7 +100,9 @@ def topocentric_core(
     cfgs = {tok: resolve_observatory(tok) for tok in set(obs_tokens)}
     xyz_rows = np.array(
         [
-            cfgs[tok].itrf_xyz if cfgs[tok].itrf_xyz is not None else (np.nan, np.nan, np.nan)
+            cfgs[tok].itrf_xyz
+            if cfgs[tok].itrf_xyz is not None
+            else (np.nan, np.nan, np.nan)
             for tok in obs_tokens
         ],
         dtype=np.float64,
@@ -120,8 +124,11 @@ def topocentric_core(
     for tok, idx in groups.items():
         idx_a = np.array(idx)
         pv = compute_posvels(
-            tdb_int[idx_a], tdb_frac[idx_a], cfgs[tok].itrf_xyz,
-            ephem=ephem, planets=planets,
+            tdb_int[idx_a],
+            tdb_frac[idx_a],
+            cfgs[tok].itrf_xyz,
+            ephem=ephem,
+            planets=planets,
         )
         ssb_obs_pos[idx_a] = pv["ssb_obs_pos"]
         ssb_obs_vel[idx_a] = pv["ssb_obs_vel"]
@@ -145,13 +152,24 @@ def topocentric_core(
     obs_indices = np.array([idx_of[c] for c in obs_canon], dtype=np.int32)
 
     return _Core(
-        mjd_int=corrected.mjd_int, mjd_frac=corrected.mjd_frac,
-        tdb_int=tdb_int, tdb_frac=tdb_frac,
-        error_s=error_s, freq_mhz=freq_mhz, delta_pulse_number=dpn,
-        ssb_obs_pos=ssb_obs_pos, ssb_obs_vel=ssb_obs_vel, obs_sun_pos=obs_sun_pos,
-        planet_positions=planet_positions, dm_values=dm_values, dm_errors=dm_errors,
-        obs_names=uniq, obs_indices=obs_indices, n_toas=n,
-        raw_toas=toas, obs_canonical=obs_canon,
+        mjd_int=corrected.mjd_int,
+        mjd_frac=corrected.mjd_frac,
+        tdb_int=tdb_int,
+        tdb_frac=tdb_frac,
+        error_s=error_s,
+        freq_mhz=freq_mhz,
+        delta_pulse_number=dpn,
+        ssb_obs_pos=ssb_obs_pos,
+        ssb_obs_vel=ssb_obs_vel,
+        obs_sun_pos=obs_sun_pos,
+        planet_positions=planet_positions,
+        dm_values=dm_values,
+        dm_errors=dm_errors,
+        obs_names=uniq,
+        obs_indices=obs_indices,
+        n_toas=n,
+        raw_toas=toas,
+        obs_canonical=obs_canon,
     )
 
 
@@ -179,22 +197,31 @@ def native_toas_to_jax(
         bipm_version = "BIPM2023"
 
     core = topocentric_core(
-        tim_path, ephem=ephem, include_bipm=include_bipm,
-        bipm_version=bipm_version, planets=planets, limits=limits,
+        tim_path,
+        ephem=ephem,
+        include_bipm=include_bipm,
+        bipm_version=bipm_version,
+        planets=planets,
+        limits=limits,
     )
 
     to_jnp = lambda a: jnp.asarray(np.asarray(a), dtype=jnp.float64)  # noqa: E731
 
     freq = core.freq_mhz
     if par_result is not None and _has_astrometry(par_result):
-        toa_data_topo = _assemble(core, freq, to_jnp, planet_positions=core.planet_positions)
+        toa_data_topo = _assemble(
+            core, freq, to_jnp, planet_positions=core.planet_positions
+        )
         ecl = Component.ASTROMETRY_ECLIPTIC in par_result.component_set
         freq = np.asarray(
             barycentric_radio_freq(
-                toa_data_topo, par_result.params,
+                toa_data_topo,
+                par_result.params,
                 ecliptic=ecl,
-                pmra_name=_opt(par_result, "PMRA"), pmdec_name=_opt(par_result, "PMDEC"),
-                pmelong_name=_opt(par_result, "PMELONG"), pmelat_name=_opt(par_result, "PMELAT"),
+                pmra_name=_opt(par_result, "PMRA"),
+                pmdec_name=_opt(par_result, "PMDEC"),
+                pmelong_name=_opt(par_result, "PMELONG"),
+                pmelat_name=_opt(par_result, "PMELAT"),
                 posepoch_name=_posepoch(par_result),
                 obliquity_arcsec=_obliquity(par_result),
             )
@@ -202,16 +229,26 @@ def native_toas_to_jax(
 
     flag_masks = _build_flag_masks(core, par_result)
     tzr = (
-        None if par_result is None
+        None
+        if par_result is None
         else _build_tzr_fields(
-            core, par_result, ephem=ephem, include_bipm=include_bipm,
-            bipm_version=bipm_version, planets=planets,
+            core,
+            par_result,
+            ephem=ephem,
+            include_bipm=include_bipm,
+            bipm_version=bipm_version,
+            planets=planets,
         )
     )
     tropo = None if par_result is None else _build_tropo_fields(core, par_result)
     return _assemble(
-        core, freq, to_jnp, planet_positions=core.planet_positions,
-        flag_masks=flag_masks, tzr=tzr, tropo=tropo,
+        core,
+        freq,
+        to_jnp,
+        planet_positions=core.planet_positions,
+        flag_masks=flag_masks,
+        tzr=tzr,
+        tropo=tropo,
     )
 
 
@@ -227,7 +264,8 @@ def _build_flag_masks(core, par_result: Optional[ParResult]) -> dict:
     mjd_corrected = core.mjd_int + core.mjd_frac
     return {
         name: select_toa_mask(
-            info, core.raw_toas,
+            info,
+            core.raw_toas,
             obs_canonical=core.obs_canonical,
             mjd_corrected=mjd_corrected,
         )
@@ -235,14 +273,17 @@ def _build_flag_masks(core, par_result: Optional[ParResult]) -> dict:
     }
 
 
-def _assemble(core, freq, to_jnp, *, planet_positions, flag_masks=None, tzr=None,
-              tropo=None):
+def _assemble(
+    core, freq, to_jnp, *, planet_positions, flag_masks=None, tzr=None, tropo=None
+):
     jnp_planets = (
-        None if planet_positions is None
+        None
+        if planet_positions is None
         else {k: to_jnp(v) for k, v in planet_positions.items()}
     )
     tzr_planets = (
-        None if tzr is None or tzr["tzr_planet_positions"] is None
+        None
+        if tzr is None or tzr["tzr_planet_positions"] is None
         else {k: to_jnp(v) for k, v in tzr["tzr_planet_positions"].items()}
     )
     return TOAData(
@@ -254,7 +295,8 @@ def _assemble(core, freq, to_jnp, *, planet_positions, flag_masks=None, tzr=None
         freq=to_jnp(freq),
         delta_pulse_number=to_jnp(core.delta_pulse_number),
         flag_masks=(
-            {} if not flag_masks
+            {}
+            if not flag_masks
             else {k: jnp.asarray(v, dtype=jnp.bool_) for k, v in flag_masks.items()}
         ),
         ssb_obs_pos=to_jnp(core.ssb_obs_pos),
@@ -267,7 +309,8 @@ def _assemble(core, freq, to_jnp, *, planet_positions, flag_masks=None, tzr=None
         # PINT, which leaves these unset otherwise).
         tropo_alt=(None if tropo is None else to_jnp(tropo["tropo_alt"])),
         tropo_alt_valid=(
-            None if tropo is None
+            None
+            if tropo is None
             else jnp.asarray(tropo["tropo_alt_valid"], dtype=jnp.bool_)
         ),
         obs_geodetic_lat=(None if tropo is None else to_jnp(tropo["obs_geodetic_lat"])),
@@ -342,16 +385,26 @@ def _build_tzr_fields(
         planet_positions = None
     else:
         raw = RawTOA(
-            mjd_int=tzr_int, mjd_frac=tzr_frac, error_s=1.0,
-            freq_mhz=tzr_frq, obs=tzr_site, flags={},
+            mjd_int=tzr_int,
+            mjd_frac=tzr_frac,
+            error_s=1.0,
+            freq_mhz=tzr_frq,
+            obs=tzr_site,
+            flags={},
         )
         corrected = correct(
-            [raw], include_bipm=include_bipm, bipm_version=bipm_version,
+            [raw],
+            include_bipm=include_bipm,
+            bipm_version=bipm_version,
         )
         xyz = np.array([cfg.itrf_xyz], dtype=np.float64)
         tdb_int_a, tdb_frac_a = to_tdb(corrected.mjd_int, corrected.mjd_frac, xyz)
         pv = compute_posvels(
-            tdb_int_a, tdb_frac_a, cfg.itrf_xyz, ephem=ephem, planets=planets,
+            tdb_int_a,
+            tdb_frac_a,
+            cfg.itrf_xyz,
+            ephem=ephem,
+            planets=planets,
         )
         tdb_int = float(tdb_int_a[0])
         tdb_frac = float(tdb_frac_a[0])
@@ -359,8 +412,12 @@ def _build_tzr_fields(
         ssb_obs_vel = np.asarray(pv["ssb_obs_vel"][0], dtype=np.float64)
         obs_sun_pos = np.asarray(pv["obs_sun_pos"][0], dtype=np.float64)
         planet_positions = (
-            {k: np.asarray(v[0], dtype=np.float64) for k, v in pv["planet_positions"].items()}
-            if planets else None
+            {
+                k: np.asarray(v[0], dtype=np.float64)
+                for k, v in pv["planet_positions"].items()
+            }
+            if planets
+            else None
         )
 
     # --- barycentric TZR frequency (Doppler applied once, at build) ---------
@@ -368,31 +425,44 @@ def _build_tzr_fields(
     if _has_astrometry(par_result) and np.isfinite(tzr_frq):
         to_jnp = lambda a: jnp.asarray(np.asarray(a), dtype=jnp.float64)  # noqa: E731
         tzr_topo = TOAData(
-            mjd_int=to_jnp([tdb_int]), mjd_frac=to_jnp([tdb_frac]),
-            tdb_int=to_jnp([tdb_int]), tdb_frac=to_jnp([tdb_frac]),
-            error=to_jnp([1.0]), freq=to_jnp([tzr_frq]),
+            mjd_int=to_jnp([tdb_int]),
+            mjd_frac=to_jnp([tdb_frac]),
+            tdb_int=to_jnp([tdb_int]),
+            tdb_frac=to_jnp([tdb_frac]),
+            error=to_jnp([1.0]),
+            freq=to_jnp([tzr_frq]),
             delta_pulse_number=to_jnp([0.0]),
             flag_masks={},
             ssb_obs_pos=to_jnp(ssb_obs_pos[None, :]),
             ssb_obs_vel=to_jnp(ssb_obs_vel[None, :]),
             obs_sun_pos=to_jnp(obs_sun_pos[None, :]),
             planet_positions=None,
-            dm_values=None, dm_errors=None,
-            tropo_alt=None, tropo_alt_valid=None,
-            obs_geodetic_lat=None, obs_height_km=None,
-            n_toas=1, obs_names=("",),
+            dm_values=None,
+            dm_errors=None,
+            tropo_alt=None,
+            tropo_alt_valid=None,
+            obs_geodetic_lat=None,
+            obs_height_km=None,
+            n_toas=1,
+            obs_names=("",),
             obs_indices=jnp.zeros(1, dtype=jnp.int32),
         )
         ecl = Component.ASTROMETRY_ECLIPTIC in par_result.component_set
-        tzr_freq = float(np.asarray(
-            barycentric_radio_freq(
-                tzr_topo, par_result.params, ecliptic=ecl,
-                pmra_name=_opt(par_result, "PMRA"), pmdec_name=_opt(par_result, "PMDEC"),
-                pmelong_name=_opt(par_result, "PMELONG"), pmelat_name=_opt(par_result, "PMELAT"),
-                posepoch_name=_posepoch(par_result),
-                obliquity_arcsec=_obliquity(par_result),
-            )
-        )[0])
+        tzr_freq = float(
+            np.asarray(
+                barycentric_radio_freq(
+                    tzr_topo,
+                    par_result.params,
+                    ecliptic=ecl,
+                    pmra_name=_opt(par_result, "PMRA"),
+                    pmdec_name=_opt(par_result, "PMDEC"),
+                    pmelong_name=_opt(par_result, "PMELONG"),
+                    pmelat_name=_opt(par_result, "PMELAT"),
+                    posepoch_name=_posepoch(par_result),
+                    obliquity_arcsec=_obliquity(par_result),
+                )
+            )[0]
+        )
 
     return {
         "tzr_tdb_int": float(tdb_int),

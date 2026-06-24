@@ -121,14 +121,9 @@ class PLSWNoise(NoiseComponent):
         """
         log10_A = params.param_value(self.tnswamp_name)
         gamma = params.param_value(self.tnswgam_name)
-        A = 10.0 ** log10_A
+        A = 10.0**log10_A
 
-        psd = (
-            A ** 2
-            / (12.0 * jnp.pi ** 2)
-            * FYR ** (gamma - 3.0)
-            * self.freqs ** (-gamma)
-        )
+        psd = A**2 / (12.0 * jnp.pi**2) * FYR ** (gamma - 3.0) * self.freqs ** (-gamma)
         return jnp.repeat(psd * self.freq_bin_widths, 2)
 
     def _sw_scaling(
@@ -143,7 +138,8 @@ class PLSWNoise(NoiseComponent):
         """
         # 1. Pulsar direction (unit vector, ICRS).
         psr_dir = compute_pulsar_direction(
-            toa_data, params,
+            toa_data,
+            params,
             raj_name=self.raj_name,
             decj_name=self.decj_name,
             pmra_name=self.pmra_name,
@@ -165,7 +161,7 @@ class PLSWNoise(NoiseComponent):
             geometry_pc = _solar_wind_geometry_swm1(theta, r_km, p)
 
         # 4. Solar wind DM scaling (same as PINT: geometry * DMconst / freq^2).
-        return geometry_pc * DMCONST / toa_data.freq ** 2
+        return geometry_pc * DMCONST / toa_data.freq**2
 
     def _scaled_basis(
         self,

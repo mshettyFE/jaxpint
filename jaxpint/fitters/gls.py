@@ -1,4 +1,5 @@
 """Generalised Least Squares fitter."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -90,13 +91,13 @@ def gls_step_fullcov(
         Column norms used for normalisation (diagnostic).
     """
     # C^{-1} M  and  C^{-1} r  via Woodbury (never forms n_toas×n_toas)
-    Mr = jnp.column_stack([M, residuals[:, None]])          # (n, n_free+1)
-    Cinv_Mr = woodbury_solve(Ndiag, U, Phidiag, Mr)         # (n, n_free+1)
-    Cinv_M = Cinv_Mr[:, :-1]                                # (n, n_free)
-    Cinv_r = Cinv_Mr[:, -1]                                 # (n,)
+    Mr = jnp.column_stack([M, residuals[:, None]])  # (n, n_free+1)
+    Cinv_Mr = woodbury_solve(Ndiag, U, Phidiag, Mr)  # (n, n_free+1)
+    Cinv_M = Cinv_Mr[:, :-1]  # (n, n_free)
+    Cinv_r = Cinv_Mr[:, -1]  # (n,)
 
-    mtcm = M.T @ Cinv_M                                     # (n_free, n_free)
-    mtcy = M.T @ Cinv_r                                     # (n_free,)
+    mtcm = M.T @ Cinv_M  # (n_free, n_free)
+    mtcy = M.T @ Cinv_r  # (n_free,)
 
     # Normalize for numerical stability
     # normalize_designmatrix works on (n, p) — we want column norms of mtcm
@@ -166,7 +167,7 @@ def gls_step_augmented(
     n_free = M.shape[1]
 
     # Augmented design matrix
-    M_aug = jnp.concatenate([M, U], axis=1)                 # (n_toas, n_aug)
+    M_aug = jnp.concatenate([M, U], axis=1)  # (n_toas, n_aug)
 
     # Diagonal weighting
     Ninv = 1.0 / Ndiag
@@ -174,14 +175,16 @@ def gls_step_augmented(
     M_w = M_aug * Ninv[:, None]
 
     # M_aug^T N^{-1} M_aug
-    mtcm = M_aug.T @ M_w                                    # (n_aug, n_aug)
-    mtcy = M_aug.T @ r_w                                    # (n_aug,)
+    mtcm = M_aug.T @ M_w  # (n_aug, n_aug)
+    mtcy = M_aug.T @ r_w  # (n_aug,)
 
     # Add prior: uninformative (1e-40) on timing cols, 1/Phi on noise cols
-    prior_inv = jnp.concatenate([
-        jnp.full(n_free, 1e-40),
-        1.0 / Phidiag,
-    ])
+    prior_inv = jnp.concatenate(
+        [
+            jnp.full(n_free, 1e-40),
+            1.0 / Phidiag,
+        ]
+    )
     mtcm = mtcm + jnp.diag(prior_inv)
 
     # Normalize columns
@@ -260,7 +263,7 @@ def _gls_iteration_core(
 
     Returns updated parameter values, covariance, and noise realizations.
 
-   """
+    """
     free_indices = params.free_indices_array()
 
     if noise_model is not None:
@@ -268,7 +271,7 @@ def _gls_iteration_core(
         Ndiag, U, Phidiag = noise_model.covariance(toa_data, params)
     else:
         sigma = toa_data.error
-        Ndiag = sigma ** 2
+        Ndiag = sigma**2
         U = jnp.zeros((toa_data.n_toas, 0))
         Phidiag = jnp.zeros(0)
 
@@ -295,15 +298,11 @@ def _gls_iteration_core(
             time_resid, Ndiag, U, Phidiag, M, threshold
         )
     elif n_basis > 0:
-        dpars, covariance, _norms, noise_realizations = (
-            gls_step_augmented(
-                time_resid, Ndiag, U, Phidiag, M, threshold
-            )
+        dpars, covariance, _norms, noise_realizations = gls_step_augmented(
+            time_resid, Ndiag, U, Phidiag, M, threshold
         )
     else:
-        dpars, covariance, _norms = wls_step(
-            time_resid, sigma, M, threshold
-        )
+        dpars, covariance, _norms = wls_step(time_resid, sigma, M, threshold)
 
     if include_offset:
         param_updates = dpars[1:]
@@ -359,12 +358,10 @@ class GLSFitter(BaseFitter):
         """Return (sigma, Ndiag, U, Phidiag) for the given parameters."""
         if self.noise_model is not None:
             sigma = self.noise_model.scaled_sigma(self.toa_data, params)
-            Ndiag, U, Phidiag = self.noise_model.covariance(
-                self.toa_data, params
-            )
+            Ndiag, U, Phidiag = self.noise_model.covariance(self.toa_data, params)
         else:
             sigma = self.toa_data.error
-            Ndiag = sigma ** 2
+            Ndiag = sigma**2
             U = jnp.zeros((self.toa_data.n_toas, 0))
             Phidiag = jnp.zeros(0)
 
@@ -387,8 +384,12 @@ class GLSFitter(BaseFitter):
         (new_params, covariance, noise_realizations)
         """
         new_values, covariance, noise_real = _gls_iteration_core(
-            self.model, self.toa_data, params,
-            self.noise_model, threshold, full_cov,
+            self.model,
+            self.toa_data,
+            params,
+            self.noise_model,
+            threshold,
+            full_cov,
         )
         new_params = eqx.tree_at(lambda pv: pv.values, params, new_values)
         noise_realizations = noise_real if noise_real.size > 0 else None
@@ -409,13 +410,9 @@ class GLSFitter(BaseFitter):
         sigma, Ndiag, U, Phidiag = self._get_noise(params)
         n_basis = U.shape[1]
 
-        final_resid = compute_time_residuals(
-            self.model, self.toa_data, params
-        )
+        final_resid = compute_time_residuals(self.model, self.toa_data, params)
         if n_basis > 0:
-            final_resid = _subtract_gls_weighted_mean(
-                final_resid, Ndiag, U, Phidiag
-            )
+            final_resid = _subtract_gls_weighted_mean(final_resid, Ndiag, U, Phidiag)
         else:
             final_resid = _subtract_weighted_mean(final_resid, sigma)
 
@@ -482,7 +479,7 @@ class GLSFitter(BaseFitter):
                 dim = self.params.n_free + n_basis
             threshold = 1e-14 * max(n_toas, dim)
 
-        safe_maxiter =  1 if maxiter < 1 else maxiter
+        safe_maxiter = 1 if maxiter < 1 else maxiter
         params = self.params
         covariance = None
         noise_realizations = None

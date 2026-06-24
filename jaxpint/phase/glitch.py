@@ -69,8 +69,13 @@ class Glitch(PhaseComponent):
         if self.n_glitches < 1:
             raise ValueError("Glitch requires at least one glitch")
         for attr in (
-            "glep_names", "glph_names", "glf0_names", "glf1_names",
-            "glf2_names", "glf0d_names", "gltd_names",
+            "glep_names",
+            "glph_names",
+            "glf0_names",
+            "glf1_names",
+            "glf2_names",
+            "glf0d_names",
+            "gltd_names",
         ):
             if len(getattr(self, attr)) != self.n_glitches:
                 raise ValueError(
@@ -115,10 +120,7 @@ class Glitch(PhaseComponent):
             gltd = params.param_value(self.gltd_names[i]) * SECS_PER_DAY
 
             glitch_phase = (
-                glph
-                + glf0 * dt
-                + 0.5 * glf1 * dt ** 2
-                + (1.0 / 6.0) * glf2 * dt ** 3
+                glph + glf0 * dt + 0.5 * glf1 * dt**2 + (1.0 / 6.0) * glf2 * dt**3
             )
 
             # Exponential decay term (safe against gltd == 0)

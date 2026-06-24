@@ -51,19 +51,19 @@ nitpick_ignore_regex: list[tuple[str, str]] = [
     ("py:class", r"jaxtyping\..*"),
     ("py:class", r"Array\s*"),
     ("py:class", r"Float Array\s*"),
-    ("py:class", r"'.*"),                 # opens of quoted shape strings
-    ("py:class", r".*\]\s*"),             # trailing ``]`` from bracketed shapes
-    ("py:class", r"\(.*"),                # ``(n_toas`` etc.
-    ("py:class", r".*\)\s*"),             # ``..)`` etc.
+    ("py:class", r"'.*"),  # opens of quoted shape strings
+    ("py:class", r".*\]\s*"),  # trailing ``]`` from bracketed shapes
+    ("py:class", r"\(.*"),  # ``(n_toas`` etc.
+    ("py:class", r".*\)\s*"),  # ``..)`` etc.
     ("py:class", r"shape .*"),
-    ("py:class", r"\d+ \* .*"),           # ``2 * n_freqs)``
+    ("py:class", r"\d+ \* .*"),  # ``2 * n_freqs)``
     # JAX private import path; the public re-export is ``jax.random.PRNGKey``.
     ("py:class", r"jax\._src\..*"),
     ("py:class", r"JAX PRNG key\s*"),
     # Generic Python descriptors that show up bare in NumPy-style docstrings
     ("py:class", r"tuple\s*"),
     ("py:class", r"dict\s*"),
-    ("py:class", r"tuple\[.*"),           # ``tuple[str, ...]`` tokenizes as ``tuple[str``
+    ("py:class", r"tuple\[.*"),  # ``tuple[str, ...]`` tokenizes as ``tuple[str``
     ("py:class", r"dict\[.*"),
     ("py:class", r"array\s*"),
     ("py:class", r"scalar\s*"),
@@ -72,9 +72,9 @@ nitpick_ignore_regex: list[tuple[str, str]] = [
     ("py:class", r"\d-D arrays?\s*"),
     ("py:class", r"same shape as .*"),
     ("py:class", r"optional .*"),
-    ("py:class", r"Float\s*"),            # bare jaxtyping Float
-    ("py:class", r"Float\[.*"),           # ``Float[Array, ...]`` tokenizes as ``Float[Array``
-    ("py:class", r".* array\s*"),         # ``(n_toas, n_basis) array`` etc.
+    ("py:class", r"Float\s*"),  # bare jaxtyping Float
+    ("py:class", r"Float\[.*"),  # ``Float[Array, ...]`` tokenizes as ``Float[Array``
+    ("py:class", r".* array\s*"),  # ``(n_toas, n_basis) array`` etc.
     # Project-internal types referenced by bare name in docstrings
     ("py:class", r"ParameterVector\s*"),
     ("py:class", r"TOAData\s*"),

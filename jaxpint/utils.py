@@ -18,13 +18,19 @@ from jaxtyping import Array, Float, Bool
 if TYPE_CHECKING:
     from jaxpint.types import TOAData, ParameterVector
 
-from jaxpint.constants import ARCSEC_TO_RAD, DAYS_PER_JULIAN_YEAR, RAD_PER_MAS, SECS_PER_DAY
+from jaxpint.constants import (
+    ARCSEC_TO_RAD,
+    DAYS_PER_JULIAN_YEAR,
+    RAD_PER_MAS,
+    SECS_PER_DAY,
+)
 from jaxpint.dual_float import DualFloat
 
 
 # ---------------------------------------------------------------------------
 # Longdouble MJD split
 # ---------------------------------------------------------------------------
+
 
 def split_longdouble_days(
     ld_array: np.ndarray | np.longdouble,
@@ -44,6 +50,7 @@ def split_longdouble_days(
 # ---------------------------------------------------------------------------
 # Taylor polynomial evaluation
 # ---------------------------------------------------------------------------
+
 
 def taylor_horner(
     x: Float[Array, " *batch"],
@@ -161,7 +168,7 @@ def taylor_horner_phase(
     delay = jnp.asarray(delay, dtype=jnp.float64)
     coeffs = jnp.asarray(coeffs, dtype=jnp.float64)
 
-    x_int_s = dt_int_days * SECS_PER_DAY            # exact integer seconds
+    x_int_s = dt_int_days * SECS_PER_DAY  # exact integer seconds
     x_frac_s = dt_frac_days * SECS_PER_DAY - delay  # fractional seconds
 
     n_coeffs = coeffs.shape[0]
@@ -180,9 +187,7 @@ def taylor_horner_phase(
         # Multiply by x = x_int_s + x_frac_s. With c_int integer-valued
         # and the product below 2^53, c_int * x_int_s is exact.
         new_int_base = c_int * x_int_s
-        base_frac = (c_int * x_frac_s
-                     + pf_rem * x_int_s
-                     + pf_rem * x_frac_s)
+        base_frac = c_int * x_frac_s + pf_rem * x_int_s + pf_rem * x_frac_s
 
         # The polynomial accumulator gets multiplied by x at each step, so
         # the compensation carried from the previous iteration must scale
@@ -202,7 +207,7 @@ def taylor_horner_phase(
         # The optimization_barrier prevents XLA from algebraically folding
         # the (s - t) and (y - t) subexpressions back to zero — those
         # subtractions are exact by Sterbenz only if `t` is treated as an
-        # opaque rounded value. 
+        # opaque rounded value.
         t_pinned = jax.lax.optimization_barrier(t)
         new_comp = jnp.where(
             jnp.abs(base_frac) >= jnp.abs(y),
@@ -219,7 +224,10 @@ def taylor_horner_phase(
 
     z = jnp.zeros_like(dt_int_days)
     result_int, result_frac, result_comp = jax.lax.fori_loop(
-        0, n_coeffs, body, (z, z, z),
+        0,
+        n_coeffs,
+        body,
+        (z, z, z),
     )
     # Fold the residual compensation back into the frac before normalization.
     return DualFloat.cycles(result_int, result_frac + result_comp)
@@ -228,6 +236,7 @@ def taylor_horner_phase(
 # ---------------------------------------------------------------------------
 # Weighted statistics
 # ---------------------------------------------------------------------------
+
 
 def weighted_mean(
     arrin: Float[Array, " n"],
@@ -261,7 +270,7 @@ def weighted_mean(
         wmean = jnp.asarray(inputmean, dtype=jnp.float64)
 
     if calcerr:
-        werr = jnp.sqrt(jnp.sum(weights_in ** 2 * (arrin - wmean) ** 2)) / wtot
+        werr = jnp.sqrt(jnp.sum(weights_in**2 * (arrin - wmean) ** 2)) / wtot
     else:
         werr = 1.0 / jnp.sqrt(wtot)
 
@@ -310,6 +319,7 @@ def weighted_mean_sdev(
 # Design matrix normalization
 # ---------------------------------------------------------------------------
 
+
 def normalize_designmatrix(
     M: Float[Array, "n_toas n_params"],
 ) -> tuple[
@@ -340,7 +350,7 @@ def normalize_designmatrix(
         ``True`` for columns with zero norm — parameters that have no
         effect on the residuals.
     """
-    norm = jnp.sqrt(jnp.sum(M ** 2, axis=0))
+    norm = jnp.sqrt(jnp.sum(M**2, axis=0))
     degenerate = norm == 0.0
     norm = jnp.where(degenerate, 1.0, norm)
     return M / norm, norm, degenerate
@@ -349,6 +359,7 @@ def normalize_designmatrix(
 # ---------------------------------------------------------------------------
 # Sherman–Morrison / Woodbury inner products
 # ---------------------------------------------------------------------------
+
 
 def sherman_morrison_dot(
     Ndiag: Float[Array, " n"],
@@ -419,15 +430,13 @@ def woodbury_dot(
     Ninv = 1.0 / Ndiag
 
     x_Ninv_y = jnp.sum(x * y * Ninv)
-    x_Ninv_U = (x * Ninv) @ U          # (k,)
-    y_Ninv_U = (y * Ninv) @ U          # (k,)
+    x_Ninv_U = (x * Ninv) @ U  # (k,)
+    y_Ninv_U = (y * Ninv) @ U  # (k,)
 
     Sigma = jnp.diag(1.0 / Phidiag) + (U.T * Ninv) @ U  # (k, k)
     Sigma_cf = jax.scipy.linalg.cho_factor(Sigma)
 
-    x_Cinv_y = x_Ninv_y - x_Ninv_U @ jax.scipy.linalg.cho_solve(
-        Sigma_cf, y_Ninv_U
-    )
+    x_Cinv_y = x_Ninv_y - x_Ninv_U @ jax.scipy.linalg.cho_solve(Sigma_cf, y_Ninv_U)
 
     logdet_N = jnp.sum(jnp.log(Ndiag))
     logdet_Phi = jnp.sum(jnp.log(Phidiag))
@@ -474,23 +483,21 @@ def woodbury_solve(
         The product :math:`C^{-1} B`.
     """
     Ninv = 1.0 / Ndiag
-    Ninv_B = Ninv[:, None] * B              # (n, m)
-    Ninv_U = Ninv[:, None] * U              # (n, k)
+    Ninv_B = Ninv[:, None] * B  # (n, m)
+    Ninv_U = Ninv[:, None] * U  # (n, k)
 
-    Sigma = jnp.diag(1.0 / Phidiag) + U.T @ Ninv_U   # (k, k)
+    Sigma = jnp.diag(1.0 / Phidiag) + U.T @ Ninv_U  # (k, k)
     Sigma_cf = jax.scipy.linalg.cho_factor(Sigma)
 
     # Σ^{-1} (U^T N^{-1} B)
-    UtNinvB = U.T @ Ninv_B                  # (k, m)
+    UtNinvB = U.T @ Ninv_B  # (k, m)
     Sigma_inv_UtNinvB = jax.scipy.linalg.cho_solve(Sigma_cf, UtNinvB)  # (k, m)
 
     return Ninv_B - Ninv_U @ Sigma_inv_UtNinvB
 
 
 def concat_woodbury_blocks(
-    *blocks: Optional[
-        tuple[Float[Array, "n_toas _k"], Float[Array, " _k"]]
-    ],
+    *blocks: Optional[tuple[Float[Array, "n_toas _k"], Float[Array, " _k"]]],
 ) -> Optional[tuple[Float[Array, "n_toas k"], Float[Array, " k"]]]:
     r"""Concatenate one or more low-rank Woodbury :math:`(U, \Phi)` blocks.
 
@@ -663,10 +670,11 @@ def apply_woodbury_dot_factor(
     """
     Ninv = 1.0 / factor.Ndiag
     x_Ninv_y = jnp.sum(x * y * Ninv)
-    x_Ninv_U = (x * Ninv) @ factor.U          # (k,)
-    y_Ninv_U = (y * Ninv) @ factor.U          # (k,)
+    x_Ninv_U = (x * Ninv) @ factor.U  # (k,)
+    y_Ninv_U = (y * Ninv) @ factor.U  # (k,)
     x_Cinv_y = x_Ninv_y - x_Ninv_U @ jax.scipy.linalg.cho_solve(
-        factor.Sigma_cf, y_Ninv_U,
+        factor.Sigma_cf,
+        y_Ninv_U,
     )
     return x_Cinv_y, factor.logdet_C
 
@@ -687,16 +695,19 @@ def ecl_to_icrs_rotation(obliquity_arcsec: float) -> Float[Array, "3 3"]:
     obl_rad = obliquity_arcsec * ARCSEC_TO_RAD
     c = jnp.cos(obl_rad)
     s = jnp.sin(obl_rad)
-    return jnp.array([
-        [1.0, 0.0, 0.0],
-        [0.0, c, s],
-        [0.0, -s, c],
-    ])
+    return jnp.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, c, s],
+            [0.0, -s, c],
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
 # Pulsar direction (shared by astrometry and Shapiro delay)
 # ---------------------------------------------------------------------------
+
 
 def compute_pulsar_direction(
     toa_data: "TOAData",
@@ -789,7 +800,8 @@ def compute_pulsar_direction_ecl(
         Obliquity of the ecliptic in arcseconds.
     """
     L_hat_ecl = compute_pulsar_direction(
-        toa_data, params,
+        toa_data,
+        params,
         raj_name=elong_name,
         decj_name=elat_name,
         pmra_name=pmelong_name,

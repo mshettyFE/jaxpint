@@ -24,10 +24,12 @@ class ObsClockConfig:
     """Everything the clock + time/geometry stages need about one observatory."""
 
     canonical: str
-    clock_files: tuple[str, ...]   # site clock-file names (may be empty, e.g. chime)
+    clock_files: tuple[str, ...]  # site clock-file names (may be empty, e.g. chime)
     apply_gps2utc: bool
-    timescale: str                 # "utc" | "tdb" (tdb gates BIPM off, e.g. barycenter)
-    itrf_xyz: tuple[float, float, float] | None = None  # geocentric metres; None for barycenter
+    timescale: str  # "utc" | "tdb" (tdb gates BIPM off, e.g. barycenter)
+    itrf_xyz: tuple[float, float, float] | None = (
+        None  # geocentric metres; None for barycenter
+    )
 
 
 @functools.cache

@@ -37,11 +37,21 @@ class ScaleToaError(NoiseComponent):
     """
 
     PARAMS = (
-        ParamDecl("EFAC1", kind="mask", prefix="EFAC",
-                  aliases=("EFAC", "T2EFAC", "T2EFAC1", "TNEF", "TNEF1"),
-                  prefix_aliases=("T2EFAC", "TNEF")),
-        ParamDecl("EQUAD1", kind="mask", unit="us", prefix="EQUAD",
-                  aliases=("EQUAD", "T2EQUAD", "T2EQUAD1"), prefix_aliases=("T2EQUAD",)),
+        ParamDecl(
+            "EFAC1",
+            kind="mask",
+            prefix="EFAC",
+            aliases=("EFAC", "T2EFAC", "T2EFAC1", "TNEF", "TNEF1"),
+            prefix_aliases=("T2EFAC", "TNEF"),
+        ),
+        ParamDecl(
+            "EQUAD1",
+            kind="mask",
+            unit="us",
+            prefix="EQUAD",
+            aliases=("EQUAD", "T2EQUAD", "T2EQUAD1"),
+            prefix_aliases=("T2EQUAD",),
+        ),
     )
 
     efac_names: tuple[str, ...] = eqx.field(static=True)
@@ -70,12 +80,12 @@ class ScaleToaError(NoiseComponent):
         sigma_scaled : (n_toas,)
             Scaled uncertainties in seconds.
         """
-        sigma_sq = toa_data.error ** 2
+        sigma_sq = toa_data.error**2
 
         for equad_name in self.equad_names:
             mask = toa_data.flag_masks[equad_name]
             equad_val = params.param_value(equad_name)
-            sigma_sq = jnp.where(mask, sigma_sq + equad_val ** 2, sigma_sq)
+            sigma_sq = jnp.where(mask, sigma_sq + equad_val**2, sigma_sq)
 
         sigma = jnp.sqrt(sigma_sq)
 
@@ -118,7 +128,7 @@ class ScaleToaError(NoiseComponent):
         """
         sigma = self.scaled_sigma(toa_data, params)
         return (
-            sigma ** 2,
+            sigma**2,
             jnp.zeros((toa_data.n_toas, 0)),
             jnp.zeros(0),
         )

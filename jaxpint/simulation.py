@@ -24,6 +24,7 @@ from jaxpint.model import TimingModel
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.constants import SECS_PER_DAY
 
+
 def apply_delay_to_toas(
     toa_data: TOAData,
     delays_seconds: Float[Array, " n_toas"],
