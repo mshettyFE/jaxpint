@@ -27,7 +27,7 @@ from jaxpint.dual_float import DualFloat
 # ---------------------------------------------------------------------------
 
 def split_longdouble_days(
-    ld_array: np.ndarray,
+    ld_array: np.ndarray | np.longdouble,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Split a longdouble day value into float64 ``(int_day, frac_day)``.
 
@@ -729,6 +729,7 @@ def compute_pulsar_direction(
     dec0 = params.param_value(decj_name)
 
     if pmra_name is not None or pmdec_name is not None:
+        assert posepoch_name is not None  # POSEPOCH is set whenever PM is present
         posepoch = params.epoch_dual(posepoch_name)
         dt_yr = (toa_data.tdb - posepoch).total / DAYS_PER_JULIAN_YEAR
 

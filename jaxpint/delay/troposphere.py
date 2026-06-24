@@ -242,6 +242,10 @@ class TroposphereDelay(DelayComponent):
         """
         if toa_data.tropo_alt is None:
             return jnp.zeros(toa_data.n_toas)
+        # These geodetic fields are populated together with tropo_alt.
+        assert toa_data.obs_geodetic_lat is not None
+        assert toa_data.obs_height_km is not None
+        assert toa_data.tropo_alt_valid is not None
 
         tdb_mjd = toa_data.tdb.total
         sin_alt = jnp.sin(toa_data.tropo_alt)

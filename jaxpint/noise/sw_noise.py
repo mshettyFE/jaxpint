@@ -160,6 +160,7 @@ class PLSWNoise(NoiseComponent):
         if self.swm == 0:
             geometry_pc = _solar_wind_geometry_swm0(theta, r_km)
         else:  # swm == 1
+            assert self.swp_name is not None
             p = params.param_value(self.swp_name)
             geometry_pc = _solar_wind_geometry_swm1(theta, r_km, p)
 

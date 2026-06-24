@@ -47,6 +47,13 @@ def _has_param(par: ParResult, name: str) -> bool:
     return name in par.params._name_to_index
 
 
+def _match_group1(pattern: str, s: str) -> str:
+    """First capture group of ``pattern`` against ``s`` (caller guarantees a match)."""
+    m = re.match(pattern, s)
+    assert m is not None
+    return m.group(1)
+
+
 def _collect_prefix_indices(par: ParResult, prefix: str) -> list[int]:
     """Collect sorted integer indices for a prefix family (e.g. 'DMX_')."""
     indices = set()
@@ -811,12 +818,12 @@ def build_model(
                         if re.match(r"^WAVE\d+_A$", n)
                     ),
                     key=lambda n: int(
-                        re.match(r"WAVE(\d+)_A", n).group(1)
+                        _match_group1(r"WAVE(\d+)_A", n)
                     ),
                 )
                 if wave_a_names:
                     wave_indices = [
-                        int(re.match(r"WAVE(\d+)_A", n).group(1))
+                        int(_match_group1(r"WAVE(\d+)_A", n))
                         for n in wave_a_names
                     ]
                     waveepoch_name = (
@@ -845,7 +852,7 @@ def build_model(
                         if re.match(r"^IFUNC\d+_A$", n)
                     ),
                     key=lambda n: int(
-                        re.match(r"IFUNC(\d+)_A", n).group(1)
+                        _match_group1(r"IFUNC(\d+)_A", n)
                     ),
                 )
                 if ifunc_a_names:

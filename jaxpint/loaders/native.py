@@ -127,6 +127,7 @@ def topocentric_core(
         ssb_obs_vel[idx_a] = pv["ssb_obs_vel"]
         obs_sun_pos[idx_a] = pv["obs_sun_pos"]
         if planets:
+            assert planet_positions is not None
             for k, v in pv["planet_positions"].items():
                 planet_positions[k][idx_a] = v
 
@@ -452,7 +453,8 @@ def _build_tropo_fields(core, par_result: ParResult) -> Optional[dict]:
         xyz = np.asarray(cfg.itrf_xyz, dtype=np.float64)
         loc = EarthLocation.from_geocentric(xyz[0] * u.m, xyz[1] * u.m, xyz[2] * u.m)
         obstime = Time(mjd[idx], format="mjd", scale="utc")
-        a = radec.transform_to(AltAz(location=loc, obstime=obstime)).alt.to_value(u.rad)
+        # astropy SkyCoord / transform_to are under-typed (return Optional in stubs).
+        a = radec.transform_to(AltAz(location=loc, obstime=obstime)).alt.to_value(u.rad)  # pyright: ignore[reportCallIssue, reportOptionalCall, reportOptionalMemberAccess]
         idx_a = np.asarray(idx)
         alt[idx_a] = a
         lat[idx_a] = loc.lat.to_value(u.rad)

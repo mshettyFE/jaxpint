@@ -245,6 +245,7 @@ class BinaryELL1(DelayComponent):
         if self.shapiro_mode == "none":
             delay_shapiro = 0.0
         elif self.shapiro_mode == "h3nharms":
+            assert self.h3_name is not None
             h3 = params.param_value(self.h3_name)
             delay_shapiro = ell1h_fourier_shapiro(h3, 0.0, Phi, self.nharms)
         else:

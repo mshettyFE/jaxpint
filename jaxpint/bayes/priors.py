@@ -100,7 +100,7 @@ class Prior(eqx.Module):
 
     def sample(
         self,
-        key: jr.PRNGKey,
+        key: Array,
         shape: Tuple[int, ...] = (),
     ) -> Float[Array, "..."]:
         """Draw a sample from the prior.
@@ -189,7 +189,7 @@ class Uniform(Prior):
 
     def sample(
         self,
-        key: jr.PRNGKey,
+        key: Array,
         shape: Tuple[int, ...] = (),
     ) -> Float[Array, "..."]:
         return jr.uniform(key, shape=shape, minval=self.low, maxval=self.high)
@@ -244,7 +244,7 @@ class Gaussian(Prior):
 
     def sample(
         self,
-        key: jr.PRNGKey,
+        key: Array,
         shape: Tuple[int, ...] = (),
     ) -> Float[Array, "..."]:
         return self.mu + self.sigma * jr.normal(key, shape=shape)

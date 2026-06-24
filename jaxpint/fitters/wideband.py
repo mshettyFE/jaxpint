@@ -41,6 +41,7 @@ def compute_dm_residuals(
 ) -> Float[Array, " n_toas"]:
     """Compute DM residuals: measured DM - model DM (pc/cm³)."""
     model_dm = model.compute_dm(toa_data, params)
+    assert toa_data.dm_values is not None  # wideband data always carries DM
     return toa_data.dm_values - model_dm
 
 
@@ -147,6 +148,7 @@ def _wideband_iteration_core(
         Ndiag_toa = sigma_toa ** 2
         U_toa = jnp.zeros((n, 0))
         Phi_toa = jnp.zeros(0)
+        assert toa_data.dm_errors is not None  # wideband data always carries DM
         Ndiag_dm = toa_data.dm_errors ** 2
 
     Ndiag = jnp.concatenate([Ndiag_toa, Ndiag_dm])
@@ -255,6 +257,7 @@ class WidebandGLSFitter(BaseFitter):
             Ndiag_toa = sigma_toa ** 2
             U_toa = jnp.zeros((n, 0))
             Phi_toa = jnp.zeros(0)
+            assert self.toa_data.dm_errors is not None  # wideband data always carries DM
             Ndiag_dm = self.toa_data.dm_errors ** 2
             sigma_dm = self.toa_data.dm_errors
 
@@ -362,7 +365,7 @@ class WidebandGLSFitter(BaseFitter):
         n_toas = self.toa_data.n_toas
 
         if self.noise_model is not None and self.noise_model.has_correlated:
-            _, _, U_init, _ = self.noise_model.covariance(
+            _, U_init, _ = self.noise_model.covariance(
                 self.toa_data, self.params
             )
             n_basis = U_init.shape[1]
@@ -385,4 +388,5 @@ class WidebandGLSFitter(BaseFitter):
                 params, threshold, full_cov
             )
 
+        assert covariance is not None  # safe_maxiter >= 1, so the loop always runs
         return self._build_result(params, covariance, noise_realizations)

@@ -236,13 +236,18 @@ def load_clock_file(
     friendly_name: str | None = None,
 ) -> ClockFile:
     """Dispatch to the TEMPO/TEMPO2 reader by format string."""
-    kwargs = dict(
-        bogus_last_correction=bogus_last_correction,
-        valid_beyond_ends=valid_beyond_ends,
-        friendly_name=friendly_name,
-    )
     if fmt == "tempo2":
-        return read_tempo2_clock_file(path, **kwargs)
+        return read_tempo2_clock_file(
+            path,
+            bogus_last_correction=bogus_last_correction,
+            valid_beyond_ends=valid_beyond_ends,
+            friendly_name=friendly_name,
+        )
     if fmt == "tempo":
-        return read_tempo_clock_file(path, **kwargs)
+        return read_tempo_clock_file(
+            path,
+            bogus_last_correction=bogus_last_correction,
+            valid_beyond_ends=valid_beyond_ends,
+            friendly_name=friendly_name,
+        )
     raise ValueError(f"unknown clock-file format {fmt!r} (expected tempo/tempo2)")

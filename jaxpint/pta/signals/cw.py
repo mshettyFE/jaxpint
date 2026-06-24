@@ -24,8 +24,11 @@ from __future__ import annotations
 
 from typing import Optional
 
+from typing import Optional
+
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 from jaxtyping import Array, Float
 
 from jaxpint.types import TOAData, ParameterVector
@@ -128,7 +131,7 @@ def cw_delay(
     prefix: str = "cw0_",
     earth_term_only: bool = False,
     linear_amplitude: bool = False,
-    param_names: tuple[str, ...] = None,
+    param_names: Optional[tuple[str, ...]] = None,
 ) -> Float[Array, " n_toas"]:
     """CW-induced timing delay for one pulsar (Earth + pulsar term).
 
@@ -203,9 +206,9 @@ CW_LINEAR_AMP_DEFAULT: float = 10.0 ** CW_PARAM_DEFAULTS["log10_h"]
 
 
 def log10_strain_from_binary(
-    log10_mc: Float[Array, ""],
-    log10_dist: Float[Array, ""],
-    log10_fgw: Float[Array, ""],
+    log10_mc: ArrayLike,
+    log10_dist: ArrayLike,
+    log10_fgw: ArrayLike,
 ) -> Float[Array, ""]:
     r"""``log10`` GW strain ``h0`` of a circular SMBH binary (Earth-term amplitude).
 

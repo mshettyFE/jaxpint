@@ -97,14 +97,15 @@ def _uncertainty(trailing: tuple[str, ...]) -> Optional[float]:
     # or more trailing tokens the sigma is the SECOND (it overrides the flag
     # position); with a single trailing token it is the sigma unless it is a bare
     # ``0``/``1`` fit flag.
-    if not trailing:
+    toks = list(trailing)
+    if not toks:
         return None
-    if len(trailing) >= 2:
-        tok = trailing[1]
-    elif trailing[0] in ("0", "1"):
+    if len(toks) >= 2:
+        tok = toks[1]
+    elif toks[0] in ("0", "1"):
         return None
     else:
-        tok = trailing[0]
+        tok = toks[0]
     try:
         return _fortran_float(tok)
     except (ValueError, TypeError):
@@ -150,7 +151,9 @@ def _next_family_index(template: str, counters: dict[str, int]) -> str:
     """Next sequential canonical name for a repeatable family written by its bare
     base (e.g. repeated ``EQUAD`` -> EQUAD1, EQUAD2; ``JUMP`` -> JUMP1, ...)."""
     prefix = S.CANONICAL_PREFIX[template]
-    base = _split_trailing_int(template)[1]
+    split = _split_trailing_int(template)
+    assert split is not None
+    base = split[1]
     n = counters.get(template, 0)
     counters[template] = n + 1
     return f"{prefix}{base + n}"
@@ -287,6 +290,7 @@ def to_raw_params(parlines: list[ParLine]) -> ParsedPar:
             log.debug("Skipping unrecognized .par parameter %r", pl.name)
             continue
         canonical, template, spec = resolved
+        assert spec is not None  # a resolved param always carries a spec dict
 
         if canonical == "BINARY" and pl.tokens:
             out.binary_value = pl.tokens[0]

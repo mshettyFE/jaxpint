@@ -16,7 +16,7 @@ PINT model; it is PINT-specific and not shared.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Optional, cast
 
 import astropy.units as u
 from pint.models.parameter import (
@@ -180,7 +180,7 @@ def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
                     mkv = ""
                 mask_key = str(param.key)
             raw.append(RawParam(
-                pname, ParamKind.MASK, value=float(param.value),
+                pname, ParamKind.MASK, value=float(cast(float, param.value)),
                 uncertainty=_bridge_uncertainty(param),   # native unit; core converts
                 unit=str(param.units), frozen=param.frozen,
                 mask_key=mask_key, mask_key_value=mkv, mask_key_value2=mkv2,
@@ -226,7 +226,7 @@ def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
         # _bridge_uncertainty mirrors PINT's 1-sigma (native unit) so the bridge
         # path matches the native parser (text_adapter).
         raw.append(RawParam(
-            pname, ParamKind.FLOAT, value=float(param.value),
+            pname, ParamKind.FLOAT, value=float(cast(float, param.value)),
             uncertainty=_bridge_uncertainty(param),
             unit=str(param.units), frozen=param.frozen,
         ))

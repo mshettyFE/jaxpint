@@ -283,6 +283,7 @@ def setup_synthetic_pta(
                 freq=freq_mhz * u.MHz,
             )
         else:
+            assert start_mjd is not None and end_mjd is not None and n_toas is not None
             toas = psim.make_fake_toas_uniform(
                 start_mjd,
                 end_mjd,

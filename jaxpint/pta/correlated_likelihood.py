@@ -25,7 +25,7 @@ References
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, cast
 
 import jax
 import jax.numpy as jnp
@@ -304,7 +304,9 @@ def pta_logL_correlated(
             for inj in config.signal_injectors
         ]
         delays = [d for d in delays if d is not None]
-        per_pulsar_delays.append(sum(delays) if delays else None)
+        per_pulsar_delays.append(
+            cast(Float[Array, " n_toas"], sum(delays)) if delays else None
+        )
 
         covs = [
             inj.covariance(

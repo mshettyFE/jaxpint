@@ -32,7 +32,7 @@ References
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, cast
 
 import jax
 import jax.numpy as jnp
@@ -330,7 +330,9 @@ def _collect_per_pulsar_external_inputs(
         for inj in signal_injectors
     ]
     delays = [d for d in delays if d is not None]
-    ext_delay = sum(delays) if delays else None
+    # sum() of a non-empty list of arrays is an Array; the Literal[0] empty-sum
+    # case is guarded by `if delays`.
+    ext_delay = cast(Float[Array, " n_toas"], sum(delays)) if delays else None
 
     covs = [
         inj.covariance(p, toa_data, pulsar_params, global_params)
@@ -414,7 +416,9 @@ def _per_pulsar_intermediates(
 
     # 2. Per-pulsar noise covariance (optionally augmented with external_cov)
     Ndiag, U_noise, Phi_noise = noise_model.covariance(toa_data, params)
-    U, Phi = concat_woodbury_blocks((U_noise, Phi_noise), external_cov)
+    woodbury = concat_woodbury_blocks((U_noise, Phi_noise), external_cov)
+    assert woodbury is not None  # first block is always non-None
+    U, Phi = woodbury
 
     # 3. Inner tier: per-pulsar Woodbury
     rCr_p, logdetC_p = woodbury_dot(Ndiag, U, Phi, r, r)
@@ -658,7 +662,9 @@ def single_pulsar_pta_logL(
         for inj in config.signal_injectors
     ]
     delays = [d for d in delays if d is not None]
-    ext_delay = sum(delays) if delays else None
+    # sum() of a non-empty list of arrays is an Array; the Literal[0] empty-sum
+    # case is guarded by `if delays`.
+    ext_delay = cast(Float[Array, " n_toas"], sum(delays)) if delays else None
 
     covs = [
         inj.covariance(p, toa_data_p, pulsar_params_p, global_params)
@@ -713,7 +719,7 @@ def _collect_injector_ext_delay(
     pulsar_params_p: ParameterVector,
     global_params: GlobalParams,
     signal_injectors,
-):
+) -> Optional[Float[Array, " n_toas"]]:
     """Sum per-pulsar deterministic-delay contributions from injectors.
 
     Returns the summed delay or ``None`` (if no injector contributes).
@@ -723,7 +729,7 @@ def _collect_injector_ext_delay(
         for inj in signal_injectors
     ]
     delays = [d for d in delays if d is not None]
-    return sum(delays) if delays else None
+    return cast(Float[Array, " n_toas"], sum(delays)) if delays else None
 
 
 def precompute_single_pulsar_pta_factor(

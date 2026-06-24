@@ -493,4 +493,5 @@ class GLSFitter(BaseFitter):
                 params, threshold, full_cov
             )
 
+        assert covariance is not None  # safe_maxiter >= 1, so the loop always runs
         return self._build_result(params, covariance, noise_realizations)

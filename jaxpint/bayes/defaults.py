@@ -41,6 +41,7 @@ from typing import (
     Optional,
     Sequence,
     Union,
+    cast,
 )
 
 import jax.numpy as jnp
@@ -134,7 +135,7 @@ def collect_param_names(
     return out
 
 
-def _resolve_pulsars(psrs):
+def _resolve_pulsars(psrs) -> tuple[tuple[str, ...], tuple[ParameterVector, ...]]:
     """Return ``(names, params_list)`` tuples from a NanogravPTA-like input.
 
     Accepts either:
@@ -155,7 +156,7 @@ def _resolve_pulsars(psrs):
 
 def timing_priors(
     psrs,
-    prior: Prior = None,
+    prior: Optional[Prior] = None,
 ) -> dict[str, Prior]:
     """Assign ``prior`` to every timing-model parameter of every pulsar.
 
@@ -325,7 +326,7 @@ def _maybe_par_uncert(pp: "ParameterVector", name: str) -> Optional[float]:
             continue
         try:
             if callable(meth):
-                return float(meth(name))
+                return float(cast(float, meth(name)))
             # Attribute access (mapping or array)
             if hasattr(meth, "__getitem__"):
                 if isinstance(meth, dict):

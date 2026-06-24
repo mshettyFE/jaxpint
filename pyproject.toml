@@ -68,3 +68,9 @@ markers = [
 include = ["jaxpint"]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
+# Dominated by astropy/numpy stub weakness: .value/.unit on Quantity, .jd1/.jd2
+# on Time, .colnames on Table all resolve to numpy unions that "lack" the
+# attribute. These are not bugs (the code is correct), so keep them as
+# non-blocking warnings rather than scattering casts. Promote to error if
+# upstream typing improves.
+reportAttributeAccessIssue = "warning"
