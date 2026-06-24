@@ -137,7 +137,6 @@ def _wideband_iteration_core(
     free_indices = params.free_indices_array()
     n = toa_data.n_toas
 
-    # Noise
     if noise_model is not None:
         sigma_toa = noise_model.scaled_sigma(toa_data, params)
         Ndiag_toa, U_toa, Phi_toa, Ndiag_dm = (
@@ -155,12 +154,10 @@ def _wideband_iteration_core(
     Phidiag = Phi_toa
     n_basis = U.shape[1]
 
-    # Residuals 
     time_resid = compute_time_residuals(model, toa_data, params)
     dm_resid = compute_dm_residuals(model, toa_data, params)
     residuals = jnp.concatenate([time_resid, dm_resid])
 
-    # Design matrix
     def combined_resid_fn(all_values: Float[Array, " n_params"]):
         p = eqx.tree_at(lambda pv: pv.values, params, all_values)
         return compute_wideband_residuals(model, toa_data, p)
@@ -178,7 +175,6 @@ def _wideband_iteration_core(
         )[:, None]
         M = jnp.concatenate([offset_col, M], axis=1)
 
-    # Solve
     noise_realizations = jnp.zeros(0)
     if full_cov:
         dpars, covariance, _norms = gls_step_fullcov(

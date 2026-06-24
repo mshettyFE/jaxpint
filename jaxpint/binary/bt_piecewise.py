@@ -129,7 +129,6 @@ class BinaryBTPiecewise(DelayComponent):
         toa_mjd = toa_data.tdb.total
 
         # --- Build per-TOA T0 and A1 from piecewise intervals ---
-        # Start with global values
         t0_int_per_toa = jnp.full(n_toas, t0.int)
         t0_frac_per_toa = jnp.full(n_toas, t0.frac)
         a1_per_toa = jnp.full(n_toas, a1_ls)
@@ -158,7 +157,6 @@ class BinaryBTPiecewise(DelayComponent):
         omega = compute_omega_bt(om_rad, omdot, tt0_s)
 
         # --- Solve Kepler's equation ---
-        # Use the piecewise T0 for orbital phase computation
         t0_per_toa = DualFloat(int=t0_int_per_toa, frac=t0_frac_per_toa)
         M = _compute_orbital_phase_piecewise(
             toa_data.tdb, t0_per_toa,

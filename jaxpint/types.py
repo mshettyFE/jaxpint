@@ -51,9 +51,7 @@ class TOAData(eqx.Module):
     # MJD is kept around for matching to original data
     tdb_int: Float[Array, " n_toas"]
     tdb_frac: Float[Array, " n_toas"]
-    # Error in timing from MJD
     error: Float[Array, " n_toas"]
-    # Observational frequency of data
     freq: Float[Array, " n_toas"]
     # Offset to add to cycle number in phase computation.
     # Needed to break degeneracy of which cycle number you are on 
@@ -190,13 +188,11 @@ class ParameterVector(eqx.Module):
     values: Float[Array, " n_params"]
 
     # Static metadata
-    # Which fitting parameters to ignore while fitting
     frozen_mask: tuple[bool, ...] = eqx.field(static=True)
     # Names of parameters which map to values 
     # Not a dictionary with values to avoi equinox warning, as well as allow 
     # ifferentiability of parameters in jax
     names: tuple[str, ...] = eqx.field(static=True)
-    # Units assigned to each name
     # Purely for documentation. JAX has a preset unit system that it will assume as mentioned above
     units: tuple[str, ...] = eqx.field(static=True)
     # Storing the integer portions of the epoch values tacitly assumes that these don't change drastically while you are fitting

@@ -119,7 +119,6 @@ class Wave(PhaseComponent):
             arg = (k + 1) * base_phase
             time_delay = time_delay + wave_a * jnp.sin(arg) + wave_b * jnp.cos(arg)
 
-        # Convert to phase: seconds * Hz = cycles
         phase = time_delay * f0
 
         return DualFloat.cycles(jnp.zeros(toa_data.n_toas), phase)

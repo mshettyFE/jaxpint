@@ -28,10 +28,6 @@ from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
 
 
-# ---------------------------------------------------------------------------
-# DispersionDM
-# ---------------------------------------------------------------------------
-
 class DispersionDM(DispersionDelayComponent):
     """DM dispersion delay using a Taylor expansion about DMEPOCH.
 

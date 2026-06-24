@@ -114,7 +114,6 @@ class Glitch(PhaseComponent):
             glf0d = params.param_value(self.glf0d_names[i])
             gltd = params.param_value(self.gltd_names[i]) * SECS_PER_DAY
 
-            # Polynomial terms
             glitch_phase = (
                 glph
                 + glf0 * dt

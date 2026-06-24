@@ -79,10 +79,6 @@ def _geometric_delay(
     return result
 
 
-# ---------------------------------------------------------------------------
-# AstrometryEquatorial
-# ---------------------------------------------------------------------------
-
 class AstrometryEquatorial(DelayComponent):
     """Geometric delay for equatorial (ICRS) sky coordinates.
 
@@ -167,10 +163,6 @@ class AstrometryEquatorial(DelayComponent):
         L_hat = self._compute_L_hat(toa_data, params)
         return _geometric_delay(L_hat, toa_data, params, self.px_name)
 
-
-# ---------------------------------------------------------------------------
-# AstrometryEcliptic
-# ---------------------------------------------------------------------------
 
 class AstrometryEcliptic(DelayComponent):
     """Geometric delay for ecliptic sky coordinates.

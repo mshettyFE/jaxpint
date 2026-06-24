@@ -493,11 +493,11 @@ def cw_delay_from_array(
     # (HEALPix pixels never land there, and orientation marginalization grids
     # use midpoints).
     h0 = cw_params[0] if linear_amplitude else 10.0 ** cw_params[0]
-    cos_theta = cw_params[1]                       # cos(gwtheta)
+    cos_theta = cw_params[1]
     sin_theta = jnp.sqrt(jnp.clip(1.0 - cos_theta * cos_theta, 0.0, None))
     gwphi = cw_params[2]
     f0 = 10.0 ** cw_params[3]
-    cos_inc = cw_params[4]                          # already cos(inc)
+    cos_inc = cw_params[4]
     psi = cw_params[5]
     phase0 = cw_params[6]
 

@@ -29,10 +29,6 @@ def _two_bin_component():
     return _make_dmx_component(2)
 
 
-# ===========================================================================
-# Construction tests
-# ===========================================================================
-
 class TestConstruction:
     def test_single_bin(self):
         c = _single_bin_component()
@@ -59,10 +55,6 @@ class TestConstruction:
             )
 
 
-# ===========================================================================
-# Pytree tests
-# ===========================================================================
-
 class TestPytree:
     def test_zero_dynamic_leaves(self):
         c = _single_bin_component()
@@ -76,10 +68,6 @@ class TestPytree:
         assert c2.n_bins == c.n_bins
         assert c2.dmx_names == c.dmx_names
 
-
-# ===========================================================================
-# Delay computation tests
-# ===========================================================================
 
 class TestDelay:
     @pytest.mark.parametrize("toa_mjd, bins, dmx_values, expected_idx", [
@@ -185,10 +173,6 @@ class TestDelay:
         assert jnp.isclose(r_no_delay[0], r_with_delay[0])
 
 
-# ===========================================================================
-# JIT tests
-# ===========================================================================
-
 class TestJIT:
     def test_jit_call(self):
         comp = _single_bin_component()
@@ -212,10 +196,6 @@ class TestJIT:
         r2 = jitted(toa_data, params2, jnp.zeros(1))
         assert not jnp.array_equal(r1, r2)
 
-
-# ===========================================================================
-# Gradient tests
-# ===========================================================================
 
 class TestGrad:
     def test_grad_wrt_dmx_in_bin(self):

@@ -10,10 +10,6 @@ from jaxpint.delay.dispersion_dm import DispersionDM
 from tests.helpers import make_gbt_toa_data, make_dispersion_dm_params
 
 
-# ===========================================================================
-# Construction tests
-# ===========================================================================
-
 class TestConstruction:
     def test_dm_only(self):
         d = DispersionDM(dm_param_names=("DM",))
@@ -37,10 +33,6 @@ class TestConstruction:
         assert d.dmepoch_name == "MYEPOCH"
 
 
-# ===========================================================================
-# Pytree tests
-# ===========================================================================
-
 class TestPytree:
     def test_zero_dynamic_leaves(self):
         d = DispersionDM(dm_param_names=("DM", "DM1"))
@@ -54,10 +46,6 @@ class TestPytree:
         assert d2.dm_param_names == d.dm_param_names
         assert d2.dmepoch_name == d.dmepoch_name
 
-
-# ===========================================================================
-# Delay computation tests
-# ===========================================================================
 
 class TestDispersionDelay:
     @pytest.mark.parametrize("dm_names, coeffs, dt_yr, dm_expected_fn", [
@@ -146,10 +134,6 @@ class TestDispersionDelay:
         assert jnp.isclose(result_no_delay[0], result_with_delay[0])
 
 
-# ===========================================================================
-# Precision tests
-# ===========================================================================
-
 class TestPrecision:
     def test_dt_precision_large_baseline(self):
         """Over a 20-year baseline, dt_yr should be precise."""
@@ -176,10 +160,6 @@ class TestPrecision:
         expected = dm_expected * DMCONST / freq ** 2
         assert jnp.isclose(result[0], expected, rtol=1e-12)
 
-
-# ===========================================================================
-# JIT tests
-# ===========================================================================
 
 class TestJIT:
     def test_jit_call(self):
@@ -208,10 +188,6 @@ class TestJIT:
 
         assert not jnp.array_equal(r1, r2)
 
-
-# ===========================================================================
-# Gradient tests
-# ===========================================================================
 
 class TestGrad:
     @pytest.mark.parametrize("dm_names, coeffs, param_name, freqs, dt_days, expected_grad_fn, rtol", [

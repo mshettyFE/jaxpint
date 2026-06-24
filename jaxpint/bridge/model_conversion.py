@@ -334,7 +334,6 @@ def params_to_pint_model(
         parameter values (angles converted back to degrees, epochs
         reconstructed from integer + fractional day, etc.).
     """
-    # Collect pair parameter halves (_A / _B) for recombination
     pair_halves: dict[str, dict[str, float]] = {}  # base_name → {"_A": val, "_B": val}
 
     for i, pname in enumerate(params.names):

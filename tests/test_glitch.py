@@ -40,10 +40,6 @@ def _make_single_glitch(
     return comp, params
 
 
-# ===========================================================================
-# Construction tests
-# ===========================================================================
-
 class TestConstruction:
     def test_single_glitch(self):
         g = Glitch(
@@ -97,10 +93,6 @@ class TestPytree:
         leaves, _ = jax.tree.flatten(g)
         assert len(leaves) == 0
 
-
-# ===========================================================================
-# Phase computation tests
-# ===========================================================================
 
 class TestPhaseComputation:
     @pytest.mark.parametrize("glitch_kwargs, dt_days, expected_fn", [
@@ -223,10 +215,6 @@ class TestMultipleGlitches:
         np.testing.assert_allclose(phase[1], 0.1, atol=1e-12)    # after glitch 1 only
         np.testing.assert_allclose(phase[2], 0.3, atol=1e-12)    # after both
 
-
-# ===========================================================================
-# JIT and gradient tests
-# ===========================================================================
 
 class TestJitAndGrad:
     def test_jit(self):
