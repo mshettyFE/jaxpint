@@ -126,7 +126,7 @@ def _fplus_fcross_costheta(
 def cw_delay(
     toa_data: TOAData,
     pos: Float[Array, "3"],
-    pulsar_dist: Float[Array, ""],
+    pulsar_dist: ArrayLike,
     global_params,
     prefix: str = "cw0_",
     earth_term_only: bool = False,
@@ -424,7 +424,7 @@ _N_CW_PARAMS: int = len(_CW_PARAM_NAMES)
 def cw_delay_from_array(
     toa_data: TOAData,
     pos: Float[Array, "3"],
-    pulsar_dist: Float[Array, ""],
+    pulsar_dist: ArrayLike,
     cw_params: Float[Array, " 7"],
     earth_term_only: bool = False,
     linear_amplitude: bool = False,
@@ -574,7 +574,7 @@ def cw_delay_from_array(
 def sum_cw_delays(
     toa_data: TOAData,
     pos: Float[Array, "3"],
-    pulsar_dist: Float[Array, ""],
+    pulsar_dist: ArrayLike,
     cw_params_stack: Float[Array, "n_cw 7"],
     earth_term_only: bool = False,
 ) -> Float[Array, " n_toas"]:
