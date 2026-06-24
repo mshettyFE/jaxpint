@@ -77,18 +77,18 @@ __all__ = [
 
 NANOGRAV_NOISE_DEFAULTS: dict[str, Prior] = {
     # White-noise scaling (per-backend in real analyses; see noise_priors_simple).
-    "efac":             Uniform(0.1, 10.0),
-    "t2equad":          Uniform(-8.5, -5.0),
-    "log10_ecorr":      Uniform(-8.5, -5.0),
+    "efac": Uniform(0.1, 10.0),
+    "t2equad": Uniform(-8.5, -5.0),
+    "log10_ecorr": Uniform(-8.5, -5.0),
     # Per-pulsar power-law red noise.
     "rednoise_log10_A": Uniform(-20.0, -11.0),
-    "rednoise_gamma":   Uniform(0.0, 7.0),
+    "rednoise_gamma": Uniform(0.0, 7.0),
     # Common (uncorrelated) red noise across the array.
-    "crn_log10_A":      Uniform(-18.0, -11.0),
-    "crn_gamma":        Uniform(0.0, 7.0),
+    "crn_log10_A": Uniform(-18.0, -11.0),
+    "crn_gamma": Uniform(0.0, 7.0),
     # Hellings-Downs gravitational-wave background.
-    "gw_log10_A":       Uniform(-18.0, -11.0),
-    "gw_gamma":         Uniform(0.0, 7.0),
+    "gw_log10_A": Uniform(-18.0, -11.0),
+    "gw_gamma": Uniform(0.0, 7.0),
 }
 
 
@@ -314,6 +314,7 @@ def _par_file_gaussian_args(
         )
     return mu, n_sigma * sigma
 
+
 def _maybe_par_uncert(pp: "ParameterVector", name: str) -> Optional[float]:
     """Best-effort per-parameter uncertainty extraction from a ParameterVector.
 
@@ -377,14 +378,11 @@ def from_par_file(
     out: dict[str, Prior] = {}
     for psr_name, params in parameter_values.items():
         if psr_name not in valid_pulsars:
-            raise KeyError(
-                f"from_par_file: pulsar name {psr_name!r} not in `psrs`."
-            )
+            raise KeyError(f"from_par_file: pulsar name {psr_name!r} not in `psrs`.")
         for param_name, (mu, sigma) in params.items():
             if not bool(jnp.isfinite(sigma)) or sigma <= 0:
                 raise ValueError(
-                    f"from_par_file: bad sigma {sigma} for "
-                    f"{psr_name!r}.{param_name!r}"
+                    f"from_par_file: bad sigma {sigma} for {psr_name!r}.{param_name!r}"
                 )
             out[f"{psr_name}_{param_name}"] = Gaussian(
                 mu=float(mu), sigma=n_sigma * float(sigma)
@@ -432,13 +430,13 @@ def cw_priors(prefix: str = "cw_") -> dict[str, Prior]:
         ``{prefix + name: Prior}`` for the seven canonical CW parameters.
     """
     return {
-        f"{prefix}log10_h":     Uniform(-18.0, -11.0),
-        f"{prefix}log10_fgw":   Uniform(-9.0, -7.0),
+        f"{prefix}log10_h": Uniform(-18.0, -11.0),
+        f"{prefix}log10_fgw": Uniform(-9.0, -7.0),
         f"{prefix}cos_gwtheta": Uniform(-1.0, 1.0),
-        f"{prefix}gwphi":       Uniform(0.0, 2.0 * jnp.pi),
-        f"{prefix}cos_inc":     Uniform(-1.0, 1.0),
-        f"{prefix}psi":         Uniform(0.0, jnp.pi),
-        f"{prefix}phase0":      Uniform(0.0, 2.0* jnp.pi),
+        f"{prefix}gwphi": Uniform(0.0, 2.0 * jnp.pi),
+        f"{prefix}cos_inc": Uniform(-1.0, 1.0),
+        f"{prefix}psi": Uniform(0.0, jnp.pi),
+        f"{prefix}phase0": Uniform(0.0, 2.0 * jnp.pi),
     }
 
 
@@ -467,8 +465,7 @@ def cw_phi_psr_priors(psrs, *, prefix: str = "cw_") -> dict[str, Prior]:
     """
     names, _ = _resolve_pulsars(psrs)
     return {
-        f"{psr_name}_{prefix}phi_psr": Uniform(0.0, 2.0 * jnp.pi)
-        for psr_name in names
+        f"{psr_name}_{prefix}phi_psr": Uniform(0.0, 2.0 * jnp.pi) for psr_name in names
     }
 
 

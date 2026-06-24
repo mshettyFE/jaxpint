@@ -87,7 +87,7 @@ def validate_priors(
 
     expected_set = set(expected)
     have_set = set(priors.keys())
-    
+
     # Sort errors for reproducibility
     missing = sorted(expected_set - have_set)
     extras = sorted(have_set - expected_set)
@@ -110,6 +110,7 @@ def validate_priors(
 
     if extras and extras_warn:
         import warnings
+
         head = extras[:10]
         warnings.warn(
             f"validate_priors: {len(extras)} extra prior name(s) not in "

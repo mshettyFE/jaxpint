@@ -30,6 +30,7 @@ Usage
     python examples/cgw_multi_source_localization.py plot \
         [--input PATH] [--source IDX] [--level 90|50]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,9 +40,19 @@ import numpy as np
 
 # Reuse loader / drop list / Wen subset + configs / fixed-source constants from Level 1.
 from examples.cgw_localization_skymap import (
-    DATA_DIR, DROP_PULSARS, SMOKE_SUBSET, WEN_OCARINA_18, WEN_CONFIGS,
-    MARG_PARAMS, FIXED_ORIENTATION, LOG10_MC, LOG10_FGW, SNR_TARGET_DEFAULT,
-    pulsar_unit_vector_icrs, _log, _import_healpy,
+    DATA_DIR,
+    DROP_PULSARS,
+    SMOKE_SUBSET,
+    WEN_OCARINA_18,
+    WEN_CONFIGS,
+    MARG_PARAMS,
+    FIXED_ORIENTATION,
+    LOG10_MC,
+    LOG10_FGW,
+    SNR_TARGET_DEFAULT,
+    pulsar_unit_vector_icrs,
+    _log,
+    _import_healpy,
 )
 
 
@@ -55,11 +66,11 @@ def _gal_cluster_dir(ra_deg: float, dec_deg: float) -> tuple[float, float]:
 
 
 GALAXY_CLUSTER_DIRECTIONS: dict[str, tuple[float, float]] = {
-    "Coma":     _gal_cluster_dir(194.95, 27.98),
-    "Fornax":   _gal_cluster_dir( 54.62, -35.45),
+    "Coma": _gal_cluster_dir(194.95, 27.98),
+    "Fornax": _gal_cluster_dir(54.62, -35.45),
     "Hercules": _gal_cluster_dir(241.31, 17.73),
-    "Norma":    _gal_cluster_dir(243.55, -60.50),
-    "Virgo":    _gal_cluster_dir(187.70, 12.39),
+    "Norma": _gal_cluster_dir(243.55, -60.50),
+    "Virgo": _gal_cluster_dir(187.70, 12.39),
 }
 
 
@@ -106,8 +117,10 @@ def compute_multi_source_localization_skymap(
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import quadratic_coeffs
     from jaxpint.pta.cw_localization import (
-        h0_for_snr, gram_block_at_pair,
-        assemble_joint_fisher, per_source_credible_areas_deg2,
+        h0_for_snr,
+        gram_block_at_pair,
+        assemble_joint_fisher,
+        per_source_credible_areas_deg2,
     )
 
     K = 1 + len(fixed_source_skies)
@@ -137,8 +150,10 @@ def compute_multi_source_localization_skymap(
         )
     pulsar_term_mask = tuple(name in anchor_set for name in names)
     n_anchors = sum(pulsar_term_mask)
-    _log(f"K={K} sources. Anchor pulsars ({n_anchors}/{len(names)}): "
-         f"{sorted(anchor_set) if anchor_set else '(none — all Earth-term-only)'}")
+    _log(
+        f"K={K} sources. Anchor pulsars ({n_anchors}/{len(names)}): "
+        f"{sorted(anchor_set) if anchor_set else '(none — all Earth-term-only)'}"
+    )
 
     positions = jnp.asarray(np.stack([pulsar_unit_vector_icrs(pp) for pp in pp_list]))
 
@@ -147,19 +162,25 @@ def compute_multi_source_localization_skymap(
     injectors = []
     for k in range(K):
         for tag in ("t", "d"):
-            injectors.append(CWInjector(
-                positions, prefix=f"cw{k}{tag}_",
-                earth_term_only=False, linear_amplitude=True,
-                pulsar_term_mask=pulsar_term_mask,
-                initial_values={"log10_fgw": LOG10_FGW},
-            ))
+            injectors.append(
+                CWInjector(
+                    positions,
+                    prefix=f"cw{k}{tag}_",
+                    earth_term_only=False,
+                    linear_amplitude=True,
+                    pulsar_term_mask=pulsar_term_mask,
+                    initial_values={"log10_fgw": LOG10_FGW},
+                )
+            )
 
     gp = GlobalParams.empty()
     for inj in injectors:
         gp = inj.register_params(gp)
     config = PTAConfig(
-        toa_data_list=toa_list, timing_models=tm_list,
-        noise_models=nm_list, signal_injectors=tuple(injectors),
+        toa_data_list=toa_list,
+        timing_models=tm_list,
+        noise_models=nm_list,
+        signal_injectors=tuple(injectors),
     )
 
     # ---- 4. Marginalize timing params --------------------------------------
@@ -172,10 +193,15 @@ def compute_multi_source_localization_skymap(
                 priors[fqn] = ImproperPrior()
     _log(f"Marginalizing {len(over)} timing params across {len(names)} pulsars...")
     g, _, reduced_pp = marginalize(
-        pta_logL, over=over, priors=priors, config=config,
+        pta_logL,
+        over=over,
+        priors=priors,
+        config=config,
         pulsar_names=tuple(names),
-        fiducial_pulsar_params=pp_list, fiducial_global_params=gp,
-        validate_linearity=validate_linearity, allow_nonlinear=True,
+        fiducial_pulsar_params=pp_list,
+        fiducial_global_params=gp,
+        validate_linearity=validate_linearity,
+        allow_nonlinear=True,
     )
 
     # ---- 5. Index map + base values ----------------------------------------
@@ -196,17 +222,24 @@ def compute_multi_source_localization_skymap(
     base_vals = gp.values
     for k in range(K):
         for tag in ("t", "d"):
-            base_vals = (base_vals
-                .at[idx[k][tag]["cos_inc"]].set(cos_inc_fix)
-                .at[idx[k][tag]["psi"]].set(psi_fix)
-                .at[idx[k][tag]["phase0"]].set(phase0_fix))
+            base_vals = (
+                base_vals.at[idx[k][tag]["cos_inc"]]
+                .set(cos_inc_fix)
+                .at[idx[k][tag]["psi"]]
+                .set(psi_fix)
+                .at[idx[k][tag]["phase0"]]
+                .set(phase0_fix)
+            )
     # Bind fixed-source skies.
     for k in range(1, K):
         cgt, gphi = fixed_source_skies[k - 1]
         for tag in ("t", "d"):
-            base_vals = (base_vals
-                .at[idx[k][tag]["cos_gwtheta"]].set(float(cgt))
-                .at[idx[k][tag]["gwphi"]].set(float(gphi)))
+            base_vals = (
+                base_vals.at[idx[k][tag]["cos_gwtheta"]]
+                .set(float(cgt))
+                .at[idx[k][tag]["gwphi"]]
+                .set(float(gphi))
+            )
 
     # ---- 6. Closure factory: logL pair with source 0 sky bound -------------
     # Returns a function logL(h_a, h_b, sky_a, sky_b) that activates one specific
@@ -218,22 +251,34 @@ def compute_multi_source_localization_skymap(
         # pair's amplitudes and skies to be set in the closure).
         v_s0 = base_vals
         for tag in ("t", "d"):
-            v_s0 = (v_s0
-                .at[idx[0][tag]["cos_gwtheta"]].set(source_0_sky[0])
-                .at[idx[0][tag]["gwphi"]].set(source_0_sky[1]))
+            v_s0 = (
+                v_s0.at[idx[0][tag]["cos_gwtheta"]]
+                .set(source_0_sky[0])
+                .at[idx[0][tag]["gwphi"]]
+                .set(source_0_sky[1])
+            )
 
         def make_pair(a_idx: int, tag_a: str, b_idx: int, tag_b: str):
             def logL_pair(h_a, h_b, sky_a, sky_b):
-                v = (v_s0
-                    .at[idx[a_idx][tag_a]["h0"]].set(h_a)
-                    .at[idx[a_idx][tag_a]["cos_gwtheta"]].set(sky_a[0])
-                    .at[idx[a_idx][tag_a]["gwphi"]].set(sky_a[1])
-                    .at[idx[b_idx][tag_b]["h0"]].set(h_b)
-                    .at[idx[b_idx][tag_b]["cos_gwtheta"]].set(sky_b[0])
-                    .at[idx[b_idx][tag_b]["gwphi"]].set(sky_b[1]))
+                v = (
+                    v_s0.at[idx[a_idx][tag_a]["h0"]]
+                    .set(h_a)
+                    .at[idx[a_idx][tag_a]["cos_gwtheta"]]
+                    .set(sky_a[0])
+                    .at[idx[a_idx][tag_a]["gwphi"]]
+                    .set(sky_a[1])
+                    .at[idx[b_idx][tag_b]["h0"]]
+                    .set(h_b)
+                    .at[idx[b_idx][tag_b]["cos_gwtheta"]]
+                    .set(sky_b[0])
+                    .at[idx[b_idx][tag_b]["gwphi"]]
+                    .set(sky_b[1])
+                )
                 gp_new = eqx.tree_at(lambda gg: gg.values, gp, v)
                 return g(gp_new, reduced_pp)
+
             return logL_pair
+
         return make_pair
 
     # ---- 7. Per-pixel area function ----------------------------------------
@@ -290,9 +335,11 @@ def compute_multi_source_localization_skymap(
     # Warmup: same PLRedNoise cached_property pattern as Level 1.
     _ = g(gp, reduced_pp)
 
-    _log(f"nside={nside} -> {npix} HEALPix pixels, K={K}, SNR={snr_target}; "
-         f"K(K+1)/2={K*(K+1)//2} gram blocks per pixel; chunked vmap "
-         f"(batch={pixel_chunk}), compiling...")
+    _log(
+        f"nside={nside} -> {npix} HEALPix pixels, K={K}, SNR={snr_target}; "
+        f"K(K+1)/2={K * (K + 1) // 2} gram blocks per pixel; chunked vmap "
+        f"(batch={pixel_chunk}), compiling..."
+    )
     areas_90, areas_50 = all_pixels(sky)
     areas_90_np = np.asarray(areas_90)
     areas_50_np = np.asarray(areas_50)
@@ -303,15 +350,17 @@ def compute_multi_source_localization_skymap(
         finite = a[np.isfinite(a)]
         n_fin = len(finite)
         if n_fin > 0:
-            _log(f"  source {k}: 90% area finite {n_fin}/{npix} "
-                 f"(min/med/max = {finite.min():.3e}/{np.median(finite):.3e}/"
-                 f"{finite.max():.3e} deg^2)")
+            _log(
+                f"  source {k}: 90% area finite {n_fin}/{npix} "
+                f"(min/med/max = {finite.min():.3e}/{np.median(finite):.3e}/"
+                f"{finite.max():.3e} deg^2)"
+            )
         else:
             _log(f"  source {k}: 90% area finite 0/{npix} — all degenerate")
 
     return {
-        "areas_90_deg2": areas_90_np,    # (npix, K)
-        "areas_50_deg2": areas_50_np,    # (npix, K)
+        "areas_90_deg2": areas_90_np,  # (npix, K)
+        "areas_50_deg2": areas_50_np,  # (npix, K)
         "nside": np.int64(nside),
         "K": np.int64(K),
         "snr_target": np.float64(snr_target),
@@ -322,7 +371,9 @@ def compute_multi_source_localization_skymap(
         "phase0": np.float64(phase0_fix),
         "fixed_source_skies": np.asarray(fixed_source_skies, dtype=np.float64),
         "pulsar_names": np.array(names),
-        "anchor_pulsars": np.array(sorted(anchor_set)) if anchor_set else np.array([], dtype="<U1"),
+        "anchor_pulsars": np.array(sorted(anchor_set))
+        if anchor_set
+        else np.array([], dtype="<U1"),
         "pulsar_term_mask": np.array(pulsar_term_mask, dtype=bool),
         "n_anchors": np.int64(n_anchors),
         "n_pulsars": np.int64(len(names)),
@@ -383,34 +434,47 @@ def run_multi_source_sweep(
             _log(f"[warn] config {name!r}: dropping anchors not in subset: {missing}")
 
         out_path = out_dir / f"cgw_loc_multi_K{K}_{name}.npz"
-        _log(f"\n=== Config: {name!r}, {len(anchors_in_subset)} anchors: "
-             f"{list(anchors_in_subset)} ===")
+        _log(
+            f"\n=== Config: {name!r}, {len(anchors_in_subset)} anchors: "
+            f"{list(anchors_in_subset)} ==="
+        )
         results = compute_multi_source_localization_skymap(
             pulsar_subset=tuple(subset),
             anchor_pulsars=anchors_in_subset,
             fixed_source_skies=fixed,
-            nside=nside, snr_target=snr_target, pixel_chunk=pixel_chunk,
+            nside=nside,
+            snr_target=snr_target,
+            pixel_chunk=pixel_chunk,
         )
         save_results(out_path, results)
 
-        a90 = results["areas_90_deg2"]    # (npix, K)
+        a90 = results["areas_90_deg2"]  # (npix, K)
         a50 = results["areas_50_deg2"]
-        row = {"config": name, "anchors": " ".join(anchors_in_subset),
-               "K": K, "fixed_sources": " ".join(fixed_source_names),
-               "missing_anchors": " ".join(missing)}
+        row = {
+            "config": name,
+            "anchors": " ".join(anchors_in_subset),
+            "K": K,
+            "fixed_sources": " ".join(fixed_source_names),
+            "missing_anchors": " ".join(missing),
+        }
         for k in range(K):
             f90 = a90[:, k][np.isfinite(a90[:, k])]
             f50 = a50[:, k][np.isfinite(a50[:, k])]
             label = "src0" if k == 0 else fixed_source_names[k - 1]
             row[f"{label}_n_finite_90"] = int(len(f90))
-            row[f"{label}_90_median"] = float(np.median(f90)) if len(f90) else float("inf")
+            row[f"{label}_90_median"] = (
+                float(np.median(f90)) if len(f90) else float("inf")
+            )
             row[f"{label}_90_min"] = float(np.min(f90)) if len(f90) else float("inf")
             row[f"{label}_90_max"] = float(np.max(f90)) if len(f90) else float("inf")
-            row[f"{label}_50_median"] = float(np.median(f50)) if len(f50) else float("inf")
+            row[f"{label}_50_median"] = (
+                float(np.median(f50)) if len(f50) else float("inf")
+            )
         rows.append(row)
 
     # CSV
     import csv
+
     csv_path = out_dir / "wen_table1_multi_source_analog.csv"
     columns = list(rows[0].keys())
     with open(csv_path, "w", newline="") as f:
@@ -428,15 +492,21 @@ def run_multi_source_sweep(
         f.write(f"  Array: {len(subset)}-pulsar ocarina subset\n")
         f.write(f"  Source 0: scanned over HEALPix nside={nside}\n")
         f.write(f"  Sources 1..K-1: {fixed_source_names}\n")
-        f.write(f"  Method: cross-derivative Gram joint Fisher via {2*K} CWInjectors\n\n")
+        f.write(
+            f"  Method: cross-derivative Gram joint Fisher via {2 * K} CWInjectors\n\n"
+        )
         for r in rows:
-            f.write(f"\n  Config {r['config']!r} (anchors: {r['anchors'] or '(none)'})\n")
+            f.write(
+                f"\n  Config {r['config']!r} (anchors: {r['anchors'] or '(none)'})\n"
+            )
             for k in range(K):
                 label = "src0(scan)" if k == 0 else fixed_source_names[k - 1]
-                f.write(f"    {label:>18}  90% med {r[f'{label.split('(')[0]}_90_median']:.3e}  "
-                        f"min {r[f'{label.split('(')[0]}_90_min']:.3e}  "
-                        f"max {r[f'{label.split('(')[0]}_90_max']:.3e}  "
-                        f"(finite {r[f'{label.split('(')[0]}_n_finite_90']})\n")
+                f.write(
+                    f"    {label:>18}  90% med {r[f'{label.split("(")[0]}_90_median']:.3e}  "
+                    f"min {r[f'{label.split("(")[0]}_90_min']:.3e}  "
+                    f"max {r[f'{label.split("(")[0]}_90_max']:.3e}  "
+                    f"(finite {r[f'{label.split("(")[0]}_n_finite_90']})\n"
+                )
     print(f"Wrote {txt_path}")
     with open(txt_path) as f:
         print(f.read())
@@ -453,13 +523,21 @@ def main() -> None:
     sp.add_argument("--pixel-chunk", type=int, default=8)
     sp.add_argument("--snr", type=float, default=SNR_TARGET_DEFAULT)
     sp.add_argument("--anchor-pulsars", nargs="*", default=[])
-    sp.add_argument("--K", type=int, default=2,
-                    help="Number of CGW sources (default 2).")
-    sp.add_argument("--fixed-source-names", nargs="*", default=["Coma"],
-                    help="Galaxy-cluster names from GALAXY_CLUSTER_DIRECTIONS "
-                         "to use as held-fixed source positions for sources 1..K-1.")
-    sp.add_argument("--full", action="store_true",
-                    help="Use WEN_OCARINA_18 instead of SMOKE_SUBSET.")
+    sp.add_argument(
+        "--K", type=int, default=2, help="Number of CGW sources (default 2)."
+    )
+    sp.add_argument(
+        "--fixed-source-names",
+        nargs="*",
+        default=["Coma"],
+        help="Galaxy-cluster names from GALAXY_CLUSTER_DIRECTIONS "
+        "to use as held-fixed source positions for sources 1..K-1.",
+    )
+    sp.add_argument(
+        "--full",
+        action="store_true",
+        help="Use WEN_OCARINA_18 instead of SMOKE_SUBSET.",
+    )
     sp.add_argument("--validate-linearity", action="store_true")
 
     # Sweep subparser (mirrors Level 1's run_sweep flow but for multi-source).
@@ -477,11 +555,14 @@ def main() -> None:
         if args.K != 1 + len(args.fixed_source_names):
             raise SystemExit(
                 f"--K={args.K} but --fixed-source-names has "
-                f"{len(args.fixed_source_names)} entries; need K-1.")
+                f"{len(args.fixed_source_names)} entries; need K-1."
+            )
         run_multi_source_sweep(
-            args.out_dir, K=args.K,
+            args.out_dir,
+            K=args.K,
             fixed_source_names=tuple(args.fixed_source_names),
-            nside=args.nside, snr_target=args.snr,
+            nside=args.nside,
+            snr_target=args.snr,
             pixel_chunk=args.pixel_chunk,
         )
         return
@@ -496,10 +577,12 @@ def main() -> None:
 
     subset = WEN_OCARINA_18 if args.full else SMOKE_SUBSET
     results = compute_multi_source_localization_skymap(
-        pulsar_subset=subset, nside=args.nside,
+        pulsar_subset=subset,
+        nside=args.nside,
         anchor_pulsars=tuple(args.anchor_pulsars),
         fixed_source_skies=fixed,
-        snr_target=args.snr, pixel_chunk=args.pixel_chunk,
+        snr_target=args.snr,
+        pixel_chunk=args.pixel_chunk,
         validate_linearity=args.validate_linearity,
     )
     save_results(args.output, results)

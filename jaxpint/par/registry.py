@@ -16,6 +16,7 @@ from enum import Enum
 
 class BinaryModel(Enum):
     """Supported binary orbital models."""
+
     BT = "BT"
     DD = "DD"
     DDS = "DDS"
@@ -30,6 +31,7 @@ class BinaryModel(Enum):
 
 class Component(Enum):
     """JaxPINT timing model component that owns a parameter."""
+
     NONE = ""
     SPINDOWN = "Spindown"
     PHASE_OFFSET = "PhaseOffset"

@@ -36,8 +36,8 @@ _TT_TAI_US = 32.184e6
 class CorrectedTOAs:
     """Result of the clock chain: corrected MJD (int/frac) + the clkcorr it added."""
 
-    mjd_int: np.ndarray          # float64, integer MJD day (TT(BIPM))
-    mjd_frac: np.ndarray         # float64, fractional day in [0, 1)
+    mjd_int: np.ndarray  # float64, integer MJD day (TT(BIPM))
+    mjd_frac: np.ndarray  # float64, fractional day in [0, 1)
     clkcorr_seconds: np.ndarray  # float64, total correction (incl. -to), seconds
 
 
@@ -56,6 +56,7 @@ def _load_named(name: str) -> ClockFile:
         valid_beyond_ends=bool(meta.get("valid_beyond_ends", False)),
         friendly_name=name,
     )
+
 
 def _gps_clock() -> ClockFile:
     return _load_named("gps2utc.clk")

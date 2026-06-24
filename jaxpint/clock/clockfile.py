@@ -46,8 +46,8 @@ _CLKCORR_RE = re.compile(
 class ClockFile:
     """A parsed clock file: a piecewise-linear correction (µs) vs MJD."""
 
-    mjd: np.ndarray              # float64, ascending; the file's UTC/pulsar MJD axis
-    clock_us: np.ndarray         # float64, microseconds
+    mjd: np.ndarray  # float64, ascending; the file's UTC/pulsar MJD axis
+    clock_us: np.ndarray  # float64, microseconds
     valid_beyond_ends: bool = False
     friendly_name: str = ""
 
@@ -120,6 +120,7 @@ def _trim(mjd: list, clk: list, *, bogus_last_correction: bool):
     while mjd and mjd[0] == 0:
         mjd, clk = mjd[1:], clk[1:]
     return mjd, clk
+
 
 def read_tempo2_clock_file(
     path,

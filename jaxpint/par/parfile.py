@@ -21,9 +21,9 @@ class ParLine:
     """One parsed ``.par`` line: the (upper-cased) parameter name and the
     whitespace-separated tokens that follow it."""
 
-    name: str                  # upper-cased, as PINT does
-    tokens: tuple[str, ...]     # everything after the name
-    raw: str                    # the original line (stripped), for diagnostics
+    name: str  # upper-cased, as PINT does
+    tokens: tuple[str, ...]  # everything after the name
+    raw: str  # the original line (stripped), for diagnostics
 
 
 _COMMENT_PREFIXES = ("#", "C ", "c ")

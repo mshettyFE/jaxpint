@@ -34,9 +34,7 @@ class GlobalParams(eqx.Module):
         """Create an empty GlobalParams with no parameters."""
         return GlobalParams(jnp.array([]), (), {})
 
-    def add_params(
-        self, names: list[str], values: list[float]
-    ) -> GlobalParams:
+    def add_params(self, names: list[str], values: list[float]) -> GlobalParams:
         """Append new parameters, returning a new GlobalParams.
 
         Parameters

@@ -30,9 +30,31 @@ log = logging.getLogger(__name__)
 
 # Recognised command keywords (mirrors PINT's ``toa_commands``, ``toa.py:68``).
 TOA_COMMANDS = (
-    "DITHER", "EFAC", "EMAX", "EMAP", "EMIN", "EQUAD", "FMAX", "FMIN",
-    "INCLUDE", "INFO", "JUMP", "MODE", "NOSKIP", "PHA1", "PHA2", "PHASE",
-    "SEARCH", "SIGMA", "SIM", "SKIP", "TIME", "TRACK", "ZAWGT", "FORMAT", "END",
+    "DITHER",
+    "EFAC",
+    "EMAX",
+    "EMAP",
+    "EMIN",
+    "EQUAD",
+    "FMAX",
+    "FMIN",
+    "INCLUDE",
+    "INFO",
+    "JUMP",
+    "MODE",
+    "NOSKIP",
+    "PHA1",
+    "PHA2",
+    "PHASE",
+    "SEARCH",
+    "SIGMA",
+    "SIM",
+    "SKIP",
+    "TIME",
+    "TRACK",
+    "ZAWGT",
+    "FORMAT",
+    "END",
 )
 
 # Flag keys that would collide with TOA parameters; rejected, as in PINT
@@ -114,9 +136,7 @@ def _parse_tempo2_line(line: str):
 
     rest = fields[5:]
     if len(rest) % 2 != 0:
-        raise ValueError(
-            f"flags must come in -key value pairs: {' '.join(rest)!r}"
-        )
+        raise ValueError(f"flags must come in -key value pairs: {' '.join(rest)!r}")
     line_flags: dict[str, str] = {}
     for i in range(0, len(rest), 2):
         k = normalize_flag_key(rest[i])
@@ -172,9 +192,9 @@ def read_tim(
             elif cmd in ("TIME", "PHASE"):
                 cdict[cmd] += float(tokens[1])
             elif cmd in ("EMIN", "EMAX", "EQUAD"):
-                cdict[cmd] = float(tokens[1])          # microseconds
+                cdict[cmd] = float(tokens[1])  # microseconds
             elif cmd in ("FMIN", "FMAX"):
-                cdict[cmd] = float(tokens[1])          # MHz
+                cdict[cmd] = float(tokens[1])  # MHz
             elif cmd in ("EFAC", "PHA1", "PHA2"):
                 cdict[cmd] = float(tokens[1])
             elif cmd == "INFO":
@@ -218,7 +238,9 @@ def read_tim(
             )
 
         # Tempo2 TOA line.
-        mjd_int, mjd_frac, freq_mhz, error_us, obs, line_flags = _parse_tempo2_line(line)
+        mjd_int, mjd_frac, freq_mhz, error_us, obs, line_flags = _parse_tempo2_line(
+            line
+        )
         if freq_mhz == 0.0:
             freq_mhz = math.inf  # PINT's 0 -> inf convention
 

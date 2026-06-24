@@ -59,12 +59,13 @@ def _collect_prefix_indices(par: ParResult, prefix: str) -> list[int]:
     indices = set()
     for pname in par.params.names:
         if pname.startswith(prefix):
-            suffix = pname[len(prefix):]
+            suffix = pname[len(prefix) :]
             try:
                 indices.add(int(suffix))
             except ValueError:
                 pass
     return sorted(indices)
+
 
 # ---------------------------------------------------------------------------
 # Binary model construction
@@ -73,8 +74,11 @@ def _collect_prefix_indices(par: ParResult, prefix: str) -> list[int]:
 
 def _dd_common_kwargs(par: ParResult) -> dict:
     return dict(
-        pb_name="PB", t0_name="T0", a1_name="A1",
-        ecc_name="ECC", om_name="OM",
+        pb_name="PB",
+        t0_name="T0",
+        a1_name="A1",
+        ecc_name="ECC",
+        om_name="OM",
         pbdot_name=_opt_name(par, "PBDOT"),
         omdot_name=_opt_name(par, "OMDOT"),
         edot_name=_opt_name(par, "EDOT"),
@@ -90,8 +94,11 @@ def _dd_common_kwargs(par: ParResult) -> dict:
 
 def _ell1_common_kwargs(par: ParResult) -> dict:
     return dict(
-        pb_name="PB", tasc_name="TASC", a1_name="A1",
-        eps1_name="EPS1", eps2_name="EPS2",
+        pb_name="PB",
+        tasc_name="TASC",
+        a1_name="A1",
+        eps1_name="EPS1",
+        eps2_name="EPS2",
         pbdot_name=_opt_name(par, "PBDOT"),
         a1dot_name=_opt_name(par, "A1DOT"),
         xpbdot_name=_opt_name(par, "XPBDOT"),
@@ -113,8 +120,11 @@ def _build_binary(par: ParResult, astro_info: dict) -> object:
 
     if bname is BinaryModel.BT:
         return BinaryBT(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
+            pb_name="PB",
+            t0_name="T0",
+            a1_name="A1",
+            ecc_name="ECC",
+            om_name="OM",
             pbdot_name=_opt_name(par, "PBDOT"),
             omdot_name=_opt_name(par, "OMDOT"),
             edot_name=_opt_name(par, "EDOT"),
@@ -193,7 +203,8 @@ def _build_binary(par: ParResult, astro_info: dict) -> object:
         return BinaryDDK(
             **_dd_common_kwargs(par),
             m2_name=_opt_name(par, "M2"),
-            kin_name="KIN", kom_name="KOM",
+            kin_name="KIN",
+            kom_name="KOM",
             px_name="PX",
             raj_name=astro_info.get("raj_name", "RAJ"),
             decj_name=astro_info.get("decj_name", "DECJ"),
@@ -205,9 +216,13 @@ def _build_binary(par: ParResult, astro_info: dict) -> object:
 
     elif bname is BinaryModel.DDGR:
         return BinaryDDGR(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
-            mtot_name="MTOT", m2_name="M2",
+            pb_name="PB",
+            t0_name="T0",
+            a1_name="A1",
+            ecc_name="ECC",
+            om_name="OM",
+            mtot_name="MTOT",
+            m2_name="M2",
             edot_name=_opt_name(par, "EDOT"),
             a1dot_name=_opt_name(par, "A1DOT"),
             xomdot_name=_opt_name(par, "XOMDOT"),
@@ -224,8 +239,11 @@ def _build_binary(par: ParResult, astro_info: dict) -> object:
         n_pieces = len(xr1_names)
 
         return BinaryBTPiecewise(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
+            pb_name="PB",
+            t0_name="T0",
+            a1_name="A1",
+            ecc_name="ECC",
+            om_name="OM",
             pbdot_name=_opt_name(par, "PBDOT"),
             omdot_name=_opt_name(par, "OMDOT"),
             edot_name=_opt_name(par, "EDOT"),
@@ -375,14 +393,16 @@ def build_model(
                         "POSEPOCH" if _has_param(par, "POSEPOCH") else "PEPOCH"
                     )
 
-                delay_components.append(AstrometryEquatorial(
-                    raj_name=_astro_raj,
-                    decj_name=_astro_decj,
-                    pmra_name=_astro_pmra,
-                    pmdec_name=_astro_pmdec,
-                    px_name=px_name,
-                    posepoch_name=_astro_posepoch,
-                ))
+                delay_components.append(
+                    AstrometryEquatorial(
+                        raj_name=_astro_raj,
+                        decj_name=_astro_decj,
+                        pmra_name=_astro_pmra,
+                        pmdec_name=_astro_pmdec,
+                        px_name=px_name,
+                        posepoch_name=_astro_posepoch,
+                    )
+                )
 
             # ---- Astrometry Ecliptic ----
             case Component.ASTROMETRY_ECLIPTIC:
@@ -406,15 +426,17 @@ def build_model(
                 ecl_name = par.metadata.get("ECL", "IERS2010")
                 _astro_obliquity_arcsec = OBLIQUITY_ARCSEC[ecl_name]
 
-                delay_components.append(AstrometryEcliptic(
-                    elong_name=_astro_raj,
-                    elat_name=_astro_decj,
-                    pmelong_name=_astro_pmra,
-                    pmelat_name=_astro_pmdec,
-                    px_name=px_name,
-                    posepoch_name=_astro_posepoch,
-                    obliquity_arcsec=_astro_obliquity_arcsec,
-                ))
+                delay_components.append(
+                    AstrometryEcliptic(
+                        elong_name=_astro_raj,
+                        elat_name=_astro_decj,
+                        pmelong_name=_astro_pmra,
+                        pmelat_name=_astro_pmdec,
+                        px_name=px_name,
+                        posepoch_name=_astro_posepoch,
+                        obliquity_arcsec=_astro_obliquity_arcsec,
+                    )
+                )
 
             # ---- TroposphereDelay ----
             case Component.TROPOSPHERE_DELAY:
@@ -423,24 +445,24 @@ def build_model(
             # ---- SolarSystemShapiro ----
             case Component.SOLAR_SYSTEM_SHAPIRO:
                 planet_shapiro = par.bool_params.get("PLANET_SHAPIRO", False)
-                delay_components.append(SolarSystemShapiroDelay(
-                    raj_name=_astro_raj,
-                    decj_name=_astro_decj,
-                    pmra_name=_astro_pmra,
-                    pmdec_name=_astro_pmdec,
-                    posepoch_name=_astro_posepoch,
-                    planet_shapiro=planet_shapiro,
-                    obliquity_arcsec=_astro_obliquity_arcsec,
-                ))
+                delay_components.append(
+                    SolarSystemShapiroDelay(
+                        raj_name=_astro_raj,
+                        decj_name=_astro_decj,
+                        pmra_name=_astro_pmra,
+                        pmdec_name=_astro_pmdec,
+                        posepoch_name=_astro_posepoch,
+                        planet_shapiro=planet_shapiro,
+                        obliquity_arcsec=_astro_obliquity_arcsec,
+                    )
+                )
 
             # ---- SolarWindDispersion ----
             case Component.SOLAR_WIND_DISPERSION:
                 ne_sw_names = ["NE_SW"]
                 for pname in par.params.names:
                     if pname.startswith("NE_SW") and pname != "NE_SW":
-                        val = float(
-                            par.params.values[par.params._name_to_index[pname]]
-                        )
+                        val = float(par.params.values[par.params._name_to_index[pname]])
                         if val != 0.0:
                             ne_sw_names.append(pname)
                 ne_sw_names.sort()
@@ -450,23 +472,23 @@ def build_model(
                 )
                 if len(ne_sw_names) > 1 or ne_sw_val != 0.0:
                     swm = par.int_params.get("SWM", 0)
-                    swepoch_name = (
-                        "SWEPOCH" if _has_param(par, "SWEPOCH") else "PEPOCH"
-                    )
+                    swepoch_name = "SWEPOCH" if _has_param(par, "SWEPOCH") else "PEPOCH"
                     swp_name = "SWP" if swm == 1 else None
 
-                    delay_components.append(SolarWindDispersion(
-                        ne_sw_param_names=tuple(ne_sw_names),
-                        swepoch_name=swepoch_name,
-                        swm=swm,
-                        swp_name=swp_name,
-                        raj_name=_astro_raj,
-                        decj_name=_astro_decj,
-                        pmra_name=_astro_pmra,
-                        pmdec_name=_astro_pmdec,
-                        posepoch_name=_astro_posepoch,
-                        obliquity_arcsec=_astro_obliquity_arcsec,
-                    ))
+                    delay_components.append(
+                        SolarWindDispersion(
+                            ne_sw_param_names=tuple(ne_sw_names),
+                            swepoch_name=swepoch_name,
+                            swm=swm,
+                            swp_name=swp_name,
+                            raj_name=_astro_raj,
+                            decj_name=_astro_decj,
+                            pmra_name=_astro_pmra,
+                            pmdec_name=_astro_pmdec,
+                            posepoch_name=_astro_posepoch,
+                            obliquity_arcsec=_astro_obliquity_arcsec,
+                        )
+                    )
 
             # ---- SolarWindDispersionX ----
             case Component.SOLAR_WIND_DISPERSION_X:
@@ -481,68 +503,54 @@ def build_model(
                             "SolarWindDispersionX theta0 not available — using 0.0"
                         )
 
-                    delay_components.append(SolarWindDispersionX(
-                        n_bins=len(swx_indices),
-                        swxdm_names=tuple(
-                            f"SWXDM_{i:04d}" for i in swx_indices
-                        ),
-                        swxp_names=tuple(
-                            f"SWXP_{i:04d}" for i in swx_indices
-                        ),
-                        swxr1_names=tuple(
-                            f"SWXR1_{i:04d}" for i in swx_indices
-                        ),
-                        swxr2_names=tuple(
-                            f"SWXR2_{i:04d}" for i in swx_indices
-                        ),
-                        theta0=theta0_rad,
-                        raj_name=_astro_raj,
-                        decj_name=_astro_decj,
-                        pmra_name=_astro_pmra,
-                        pmdec_name=_astro_pmdec,
-                        posepoch_name=_astro_posepoch,
-                        obliquity_arcsec=_astro_obliquity_arcsec,
-                    ))
+                    delay_components.append(
+                        SolarWindDispersionX(
+                            n_bins=len(swx_indices),
+                            swxdm_names=tuple(f"SWXDM_{i:04d}" for i in swx_indices),
+                            swxp_names=tuple(f"SWXP_{i:04d}" for i in swx_indices),
+                            swxr1_names=tuple(f"SWXR1_{i:04d}" for i in swx_indices),
+                            swxr2_names=tuple(f"SWXR2_{i:04d}" for i in swx_indices),
+                            theta0=theta0_rad,
+                            raj_name=_astro_raj,
+                            decj_name=_astro_decj,
+                            pmra_name=_astro_pmra,
+                            pmdec_name=_astro_pmdec,
+                            posepoch_name=_astro_posepoch,
+                            obliquity_arcsec=_astro_obliquity_arcsec,
+                        )
+                    )
 
             # ---- DispersionDM ----
             case Component.DISPERSION_DM:
                 dm_names = ["DM"]
                 for pname in par.params.names:
-                    if (
-                        pname.startswith("DM")
-                        and pname != "DM"
-                        and pname != "DMEPOCH"
-                    ):
+                    if pname.startswith("DM") and pname != "DM" and pname != "DMEPOCH":
                         suffix = pname[2:]
                         if suffix.isdigit():
                             dm_names.append(pname)
                 dm_names.sort(key=lambda n: int(n[2:]) if n != "DM" else 0)
 
-                dmepoch_name = (
-                    "DMEPOCH" if _has_param(par, "DMEPOCH") else "PEPOCH"
-                )
+                dmepoch_name = "DMEPOCH" if _has_param(par, "DMEPOCH") else "PEPOCH"
 
-                delay_components.append(DispersionDM(
-                    dm_param_names=tuple(dm_names),
-                    dmepoch_name=dmepoch_name,
-                ))
+                delay_components.append(
+                    DispersionDM(
+                        dm_param_names=tuple(dm_names),
+                        dmepoch_name=dmepoch_name,
+                    )
+                )
 
             # ---- DispersionDMX ----
             case Component.DISPERSION_DMX:
                 dmx_indices = _collect_prefix_indices(par, "DMX_")
                 if dmx_indices:
-                    delay_components.append(DispersionDMX(
-                        n_bins=len(dmx_indices),
-                        dmx_names=tuple(
-                            f"DMX_{i:04d}" for i in dmx_indices
-                        ),
-                        dmxr1_names=tuple(
-                            f"DMXR1_{i:04d}" for i in dmx_indices
-                        ),
-                        dmxr2_names=tuple(
-                            f"DMXR2_{i:04d}" for i in dmx_indices
-                        ),
-                    ))
+                    delay_components.append(
+                        DispersionDMX(
+                            n_bins=len(dmx_indices),
+                            dmx_names=tuple(f"DMX_{i:04d}" for i in dmx_indices),
+                            dmxr1_names=tuple(f"DMXR1_{i:04d}" for i in dmx_indices),
+                            dmxr2_names=tuple(f"DMXR2_{i:04d}" for i in dmx_indices),
+                        )
+                    )
 
             # ---- DispersionJump ----
             case Component.DISPERSION_JUMP:
@@ -550,9 +558,7 @@ def build_model(
                     n for n in par.params.names if n.startswith("DMJUMP")
                 )
                 if dmjump_names:
-                    delay_components.append(
-                        DispersionJump(dmjump_names=dmjump_names)
-                    )
+                    delay_components.append(DispersionJump(dmjump_names=dmjump_names))
 
             # ---- Binary ----
             case Component.BINARY | Component.BINARY_BT_PIECEWISE:
@@ -587,52 +593,46 @@ def build_model(
                         fdjump_indices.append(int(m.group(1)))
                 use_log = par.bool_params.get("FDJUMPLOG", True)
                 if fdjump_names:
-                    delay_components.append(FDJump(
-                        fdjump_param_names=tuple(fdjump_names),
-                        fdjump_fd_indices=tuple(fdjump_indices),
-                        use_log=use_log,
-                    ))
+                    delay_components.append(
+                        FDJump(
+                            fdjump_param_names=tuple(fdjump_names),
+                            fdjump_fd_indices=tuple(fdjump_indices),
+                            use_log=use_log,
+                        )
+                    )
 
             # ---- ChromaticCM ----
             case Component.CHROMATIC_CM:
                 cm_names = ["CM"]
                 for pname in par.params.names:
-                    if (
-                        pname.startswith("CM")
-                        and pname != "CM"
-                        and pname != "CMEPOCH"
-                    ):
+                    if pname.startswith("CM") and pname != "CM" and pname != "CMEPOCH":
                         suffix = pname[2:]
                         if suffix.isdigit():
                             cm_names.append(pname)
                 cm_names.sort(key=lambda n: int(n[2:]) if n != "CM" else 0)
 
-                cmepoch_name = (
-                    "CMEPOCH" if _has_param(par, "CMEPOCH") else "PEPOCH"
+                cmepoch_name = "CMEPOCH" if _has_param(par, "CMEPOCH") else "PEPOCH"
+                delay_components.append(
+                    ChromaticCM(
+                        cm_param_names=tuple(cm_names),
+                        cmepoch_name=cmepoch_name,
+                        tnchromidx_name="TNCHROMIDX",
+                    )
                 )
-                delay_components.append(ChromaticCM(
-                    cm_param_names=tuple(cm_names),
-                    cmepoch_name=cmepoch_name,
-                    tnchromidx_name="TNCHROMIDX",
-                ))
 
             # ---- ChromaticCMX ----
             case Component.CHROMATIC_CMX:
                 cmx_indices = _collect_prefix_indices(par, "CMX_")
                 if cmx_indices:
-                    delay_components.append(ChromaticCMX(
-                        n_bins=len(cmx_indices),
-                        cmx_names=tuple(
-                            f"CMX_{i:04d}" for i in cmx_indices
-                        ),
-                        cmxr1_names=tuple(
-                            f"CMXR1_{i:04d}" for i in cmx_indices
-                        ),
-                        cmxr2_names=tuple(
-                            f"CMXR2_{i:04d}" for i in cmx_indices
-                        ),
-                        tnchromidx_name="TNCHROMIDX",
-                    ))
+                    delay_components.append(
+                        ChromaticCMX(
+                            n_bins=len(cmx_indices),
+                            cmx_names=tuple(f"CMX_{i:04d}" for i in cmx_indices),
+                            cmxr1_names=tuple(f"CMXR1_{i:04d}" for i in cmx_indices),
+                            cmxr2_names=tuple(f"CMXR2_{i:04d}" for i in cmx_indices),
+                            tnchromidx_name="TNCHROMIDX",
+                        )
+                    )
 
             # ---- ExponentialDip ----
             case Component.EXPONENTIAL_DIP:
@@ -640,220 +640,163 @@ def build_model(
                 if not dip_indices:
                     dip_indices = _collect_prefix_indices(par, "EXPDIPEP_")
                 if dip_indices:
-                    delay_components.append(ExponentialDip(
-                        n_dips=len(dip_indices),
-                        expdipeps_name="EXPDIPEPS",
-                        expdipfref_name="EXPDIPFREF",
-                        expdipep_names=tuple(
-                            f"EXPDIPEP_{i}" for i in dip_indices
-                        ),
-                        expdipamp_names=tuple(
-                            f"EXPDIPAMP_{i}" for i in dip_indices
-                        ),
-                        expdipidx_names=tuple(
-                            f"EXPDIPIDX_{i}" for i in dip_indices
-                        ),
-                        expdiptau_names=tuple(
-                            f"EXPDIPTAU_{i}" for i in dip_indices
-                        ),
-                    ))
+                    delay_components.append(
+                        ExponentialDip(
+                            n_dips=len(dip_indices),
+                            expdipeps_name="EXPDIPEPS",
+                            expdipfref_name="EXPDIPFREF",
+                            expdipep_names=tuple(f"EXPDIPEP_{i}" for i in dip_indices),
+                            expdipamp_names=tuple(
+                                f"EXPDIPAMP_{i}" for i in dip_indices
+                            ),
+                            expdipidx_names=tuple(
+                                f"EXPDIPIDX_{i}" for i in dip_indices
+                            ),
+                            expdiptau_names=tuple(
+                                f"EXPDIPTAU_{i}" for i in dip_indices
+                            ),
+                        )
+                    )
 
             # ---- WaveX ----
             case Component.WAVE_X:
                 wx_indices = _collect_prefix_indices(par, "WXFREQ_")
                 if wx_indices:
-                    wxepoch_name = (
-                        "WXEPOCH" if _has_param(par, "WXEPOCH") else "PEPOCH"
+                    wxepoch_name = "WXEPOCH" if _has_param(par, "WXEPOCH") else "PEPOCH"
+                    delay_components.append(
+                        WaveX(
+                            n_components=len(wx_indices),
+                            wxepoch_name=wxepoch_name,
+                            wxfreq_names=tuple(f"WXFREQ_{i:04d}" for i in wx_indices),
+                            wxsin_names=tuple(f"WXSIN_{i:04d}" for i in wx_indices),
+                            wxcos_names=tuple(f"WXCOS_{i:04d}" for i in wx_indices),
+                        )
                     )
-                    delay_components.append(WaveX(
-                        n_components=len(wx_indices),
-                        wxepoch_name=wxepoch_name,
-                        wxfreq_names=tuple(
-                            f"WXFREQ_{i:04d}" for i in wx_indices
-                        ),
-                        wxsin_names=tuple(
-                            f"WXSIN_{i:04d}" for i in wx_indices
-                        ),
-                        wxcos_names=tuple(
-                            f"WXCOS_{i:04d}" for i in wx_indices
-                        ),
-                    ))
 
             # ---- DMWaveX ----
             case Component.DM_WAVE_X:
                 dmwx_indices = _collect_prefix_indices(par, "DMWXFREQ_")
                 if dmwx_indices:
                     dmwxepoch_name = (
-                        "DMWXEPOCH"
-                        if _has_param(par, "DMWXEPOCH")
-                        else "PEPOCH"
+                        "DMWXEPOCH" if _has_param(par, "DMWXEPOCH") else "PEPOCH"
                     )
-                    delay_components.append(DMWaveX(
-                        n_components=len(dmwx_indices),
-                        dmwxepoch_name=dmwxepoch_name,
-                        dmwxfreq_names=tuple(
-                            f"DMWXFREQ_{i:04d}" for i in dmwx_indices
-                        ),
-                        dmwxsin_names=tuple(
-                            f"DMWXSIN_{i:04d}" for i in dmwx_indices
-                        ),
-                        dmwxcos_names=tuple(
-                            f"DMWXCOS_{i:04d}" for i in dmwx_indices
-                        ),
-                    ))
+                    delay_components.append(
+                        DMWaveX(
+                            n_components=len(dmwx_indices),
+                            dmwxepoch_name=dmwxepoch_name,
+                            dmwxfreq_names=tuple(
+                                f"DMWXFREQ_{i:04d}" for i in dmwx_indices
+                            ),
+                            dmwxsin_names=tuple(
+                                f"DMWXSIN_{i:04d}" for i in dmwx_indices
+                            ),
+                            dmwxcos_names=tuple(
+                                f"DMWXCOS_{i:04d}" for i in dmwx_indices
+                            ),
+                        )
+                    )
 
             # ---- CMWaveX ----
             case Component.CM_WAVE_X:
                 cmwx_indices = _collect_prefix_indices(par, "CMWXFREQ_")
                 if cmwx_indices:
                     cmwxepoch_name = (
-                        "CMWXEPOCH"
-                        if _has_param(par, "CMWXEPOCH")
-                        else "PEPOCH"
+                        "CMWXEPOCH" if _has_param(par, "CMWXEPOCH") else "PEPOCH"
                     )
-                    delay_components.append(CMWaveX(
-                        n_components=len(cmwx_indices),
-                        cmwxepoch_name=cmwxepoch_name,
-                        cmwxfreq_names=tuple(
-                            f"CMWXFREQ_{i:04d}" for i in cmwx_indices
-                        ),
-                        cmwxsin_names=tuple(
-                            f"CMWXSIN_{i:04d}" for i in cmwx_indices
-                        ),
-                        cmwxcos_names=tuple(
-                            f"CMWXCOS_{i:04d}" for i in cmwx_indices
-                        ),
-                        tnchromidx_name="TNCHROMIDX",
-                    ))
+                    delay_components.append(
+                        CMWaveX(
+                            n_components=len(cmwx_indices),
+                            cmwxepoch_name=cmwxepoch_name,
+                            cmwxfreq_names=tuple(
+                                f"CMWXFREQ_{i:04d}" for i in cmwx_indices
+                            ),
+                            cmwxsin_names=tuple(
+                                f"CMWXSIN_{i:04d}" for i in cmwx_indices
+                            ),
+                            cmwxcos_names=tuple(
+                                f"CMWXCOS_{i:04d}" for i in cmwx_indices
+                            ),
+                            tnchromidx_name="TNCHROMIDX",
+                        )
+                    )
 
             # ---- Spindown ----
             case Component.SPINDOWN:
                 spin_names = ["F0"]
                 for pname in par.params.names:
-                    if (
-                        pname.startswith("F")
-                        and pname != "F0"
-                        and pname[1:].isdigit()
-                    ):
+                    if pname.startswith("F") and pname != "F0" and pname[1:].isdigit():
                         spin_names.append(pname)
                 spin_names.sort(key=lambda n: int(n[1:]))
-                phase_components.append(
-                    Spindown(spin_param_names=tuple(spin_names))
-                )
+                phase_components.append(Spindown(spin_param_names=tuple(spin_names)))
 
             # ---- Glitch ----
             case Component.GLITCH:
                 glep_indices = _collect_prefix_indices(par, "GLEP_")
                 if glep_indices:
-                    phase_components.append(Glitch(
-                        n_glitches=len(glep_indices),
-                        glep_names=tuple(
-                            f"GLEP_{i}" for i in glep_indices
-                        ),
-                        glph_names=tuple(
-                            f"GLPH_{i}" for i in glep_indices
-                        ),
-                        glf0_names=tuple(
-                            f"GLF0_{i}" for i in glep_indices
-                        ),
-                        glf1_names=tuple(
-                            f"GLF1_{i}" for i in glep_indices
-                        ),
-                        glf2_names=tuple(
-                            f"GLF2_{i}" for i in glep_indices
-                        ),
-                        glf0d_names=tuple(
-                            f"GLF0D_{i}" for i in glep_indices
-                        ),
-                        gltd_names=tuple(
-                            f"GLTD_{i}" for i in glep_indices
-                        ),
-                    ))
+                    phase_components.append(
+                        Glitch(
+                            n_glitches=len(glep_indices),
+                            glep_names=tuple(f"GLEP_{i}" for i in glep_indices),
+                            glph_names=tuple(f"GLPH_{i}" for i in glep_indices),
+                            glf0_names=tuple(f"GLF0_{i}" for i in glep_indices),
+                            glf1_names=tuple(f"GLF1_{i}" for i in glep_indices),
+                            glf2_names=tuple(f"GLF2_{i}" for i in glep_indices),
+                            glf0d_names=tuple(f"GLF0D_{i}" for i in glep_indices),
+                            gltd_names=tuple(f"GLTD_{i}" for i in glep_indices),
+                        )
+                    )
 
             # ---- PiecewiseSpindown ----
             case Component.PIECEWISE_SPINDOWN:
                 pw_indices = _collect_prefix_indices(par, "PWEP_")
                 if pw_indices:
-                    phase_components.append(PiecewiseSpindown(
-                        n_pieces=len(pw_indices),
-                        pwstart_names=tuple(
-                            f"PWSTART_{i}" for i in pw_indices
-                        ),
-                        pwstop_names=tuple(
-                            f"PWSTOP_{i}" for i in pw_indices
-                        ),
-                        pwep_names=tuple(
-                            f"PWEP_{i}" for i in pw_indices
-                        ),
-                        pwph_names=tuple(
-                            f"PWPH_{i}" for i in pw_indices
-                        ),
-                        pwf0_names=tuple(
-                            f"PWF0_{i}" for i in pw_indices
-                        ),
-                        pwf1_names=tuple(
-                            f"PWF1_{i}" for i in pw_indices
-                        ),
-                        pwf2_names=tuple(
-                            f"PWF2_{i}" for i in pw_indices
-                        ),
-                    ))
+                    phase_components.append(
+                        PiecewiseSpindown(
+                            n_pieces=len(pw_indices),
+                            pwstart_names=tuple(f"PWSTART_{i}" for i in pw_indices),
+                            pwstop_names=tuple(f"PWSTOP_{i}" for i in pw_indices),
+                            pwep_names=tuple(f"PWEP_{i}" for i in pw_indices),
+                            pwph_names=tuple(f"PWPH_{i}" for i in pw_indices),
+                            pwf0_names=tuple(f"PWF0_{i}" for i in pw_indices),
+                            pwf1_names=tuple(f"PWF1_{i}" for i in pw_indices),
+                            pwf2_names=tuple(f"PWF2_{i}" for i in pw_indices),
+                        )
+                    )
 
             # ---- PhaseJump ----
             case Component.PHASE_JUMP:
-                jump_names = tuple(
-                    n for n in par.params.names if n.startswith("JUMP")
-                )
+                jump_names = tuple(n for n in par.params.names if n.startswith("JUMP"))
                 if jump_names:
-                    phase_components.append(
-                        PhaseJump(jump_param_names=jump_names)
-                    )
+                    phase_components.append(PhaseJump(jump_param_names=jump_names))
 
             # ---- Wave ----
             case Component.WAVE:
                 wave_a_names = sorted(
-                    (
-                        n
-                        for n in par.params.names
-                        if re.match(r"^WAVE\d+_A$", n)
-                    ),
-                    key=lambda n: int(
-                        _match_group1(r"WAVE(\d+)_A", n)
-                    ),
+                    (n for n in par.params.names if re.match(r"^WAVE\d+_A$", n)),
+                    key=lambda n: int(_match_group1(r"WAVE(\d+)_A", n)),
                 )
                 if wave_a_names:
                     wave_indices = [
-                        int(_match_group1(r"WAVE(\d+)_A", n))
-                        for n in wave_a_names
+                        int(_match_group1(r"WAVE(\d+)_A", n)) for n in wave_a_names
                     ]
                     waveepoch_name = (
-                        "WAVEEPOCH"
-                        if _has_param(par, "WAVEEPOCH")
-                        else "PEPOCH"
+                        "WAVEEPOCH" if _has_param(par, "WAVEEPOCH") else "PEPOCH"
                     )
-                    phase_components.append(Wave(
-                        n_terms=len(wave_indices),
-                        waveepoch_name=waveepoch_name,
-                        wave_om_name="WAVE_OM",
-                        wave_sin_names=tuple(
-                            f"WAVE{i}_A" for i in wave_indices
-                        ),
-                        wave_cos_names=tuple(
-                            f"WAVE{i}_B" for i in wave_indices
-                        ),
-                    ))
+                    phase_components.append(
+                        Wave(
+                            n_terms=len(wave_indices),
+                            waveepoch_name=waveepoch_name,
+                            wave_om_name="WAVE_OM",
+                            wave_sin_names=tuple(f"WAVE{i}_A" for i in wave_indices),
+                            wave_cos_names=tuple(f"WAVE{i}_B" for i in wave_indices),
+                        )
+                    )
 
             # ---- IFunc ----
             case Component.IFUNC:
                 ifunc_a_names = sorted(
-                    (
-                        n
-                        for n in par.params.names
-                        if re.match(r"^IFUNC\d+_A$", n)
-                    ),
-                    key=lambda n: int(
-                        _match_group1(r"IFUNC(\d+)_A", n)
-                    ),
+                    (n for n in par.params.names if re.match(r"^IFUNC\d+_A$", n)),
+                    key=lambda n: int(_match_group1(r"IFUNC(\d+)_A", n)),
                 )
                 if ifunc_a_names:
                     interp_type = par.int_params.get("SIFUNC", 0)
@@ -862,45 +805,31 @@ def build_model(
                     for a_name in ifunc_a_names:
                         b_name = a_name.replace("_A", "_B")
                         mjd_val = float(
-                            par.params.values[
-                                par.params._name_to_index[a_name]
-                            ]
+                            par.params.values[par.params._name_to_index[a_name]]
                         )
                         delay_val = float(
-                            par.params.values[
-                                par.params._name_to_index[b_name]
-                            ]
+                            par.params.values[par.params._name_to_index[b_name]]
                         )
                         mjds.append(mjd_val)
                         delays.append(delay_val)
 
                     sorted_pairs = sorted(zip(mjds, delays))
                     sorted_mjds, sorted_delays = zip(*sorted_pairs)
-                    phase_components.append(IFunc(
-                        interp_type=interp_type,
-                        control_mjds=tuple(
-                            float(x) for x in sorted_mjds
-                        ),
-                        control_delays=tuple(
-                            float(x) for x in sorted_delays
-                        ),
-                    ))
+                    phase_components.append(
+                        IFunc(
+                            interp_type=interp_type,
+                            control_mjds=tuple(float(x) for x in sorted_mjds),
+                            control_delays=tuple(float(x) for x in sorted_delays),
+                        )
+                    )
 
             # ---- Noise: ScaleToaError ----
             case Component.SCALE_TOA_ERROR:
                 efac_names = tuple(
-                    sorted(
-                        n
-                        for n in par.params.names
-                        if n.startswith("EFAC")
-                    )
+                    sorted(n for n in par.params.names if n.startswith("EFAC"))
                 )
                 equad_names = tuple(
-                    sorted(
-                        n
-                        for n in par.params.names
-                        if n.startswith("EQUAD")
-                    )
+                    sorted(n for n in par.params.names if n.startswith("EQUAD"))
                 )
                 white_noise = ScaleToaError(
                     efac_names=efac_names,
@@ -910,18 +839,10 @@ def build_model(
             # ---- Noise: ScaleDmError ----
             case Component.SCALE_DM_ERROR:
                 dmefac_names = tuple(
-                    sorted(
-                        n
-                        for n in par.params.names
-                        if n.startswith("DMEFAC")
-                    )
+                    sorted(n for n in par.params.names if n.startswith("DMEFAC"))
                 )
                 dmequad_names = tuple(
-                    sorted(
-                        n
-                        for n in par.params.names
-                        if n.startswith("DMEQUAD")
-                    )
+                    sorted(n for n in par.params.names if n.startswith("DMEQUAD"))
                 )
                 dm_white_noise = JaxScaleDmError(
                     dmefac_names=dmefac_names,
@@ -931,11 +852,7 @@ def build_model(
             # ---- Noise: EcorrNoise ----
             case Component.ECORR_NOISE:
                 ecorr_names = tuple(
-                    sorted(
-                        n
-                        for n in par.params.names
-                        if n.startswith("ECORR")
-                    )
+                    sorted(n for n in par.params.names if n.startswith("ECORR"))
                 )
                 if toa_data is not None and len(ecorr_names) > 0:
                     tdb_s = (
@@ -958,12 +875,8 @@ def build_model(
                             mask = np.ones(len(tdb_s), dtype=bool)
                         ecorr_masks[ename] = mask
 
-                    U, eslices = _build_quantization_matrix(
-                        tdb_s, ecorr_masks
-                    )
-                    ecorr_epoch_slices = tuple(
-                        eslices[n] for n in ecorr_names
-                    )
+                    U, eslices = _build_quantization_matrix(tdb_s, ecorr_masks)
+                    ecorr_epoch_slices = tuple(eslices[n] for n in ecorr_names)
                     ecorr_noise = EcorrNoise(
                         ecorr_names=ecorr_names,
                         quantization_matrix=jnp.asarray(U),
@@ -986,17 +899,13 @@ def build_model(
                     T = float(np.max(tdb_s) - np.min(tdb_s))
                     if _has_param(par, "TNREDTSPAN"):
                         tspan_days = float(
-                            par.params.values[
-                                par.params._name_to_index["TNREDTSPAN"]
-                            ]
+                            par.params.values[par.params._name_to_index["TNREDTSPAN"]]
                         )
                         T = tspan_days * 86400.0
 
                     from jaxpint.utils import build_fourier_basis
 
-                    F, freqs, freq_bin_widths = build_fourier_basis(
-                        tdb_s, n_freqs, T
-                    )
+                    F, freqs, freq_bin_widths = build_fourier_basis(tdb_s, n_freqs, T)
                     plred_noise = PLRedNoise(
                         fourier_basis=jnp.asarray(F),
                         freqs=jnp.asarray(freqs),
@@ -1016,17 +925,13 @@ def build_model(
                     T = float(np.max(tdb_s) - np.min(tdb_s))
                     if _has_param(par, "TNDMTSPAN"):
                         tspan_days = float(
-                            par.params.values[
-                                par.params._name_to_index["TNDMTSPAN"]
-                            ]
+                            par.params.values[par.params._name_to_index["TNDMTSPAN"]]
                         )
                         T = tspan_days * 86400.0
 
                     from jaxpint.utils import build_fourier_basis
 
-                    F, freqs, freq_bin_widths = build_fourier_basis(
-                        tdb_s, n_freqs, T
-                    )
+                    F, freqs, freq_bin_widths = build_fourier_basis(tdb_s, n_freqs, T)
 
                     bary_freqs_mhz = np.asarray(toa_data.freq)
                     D = (1400.0 / bary_freqs_mhz) ** 2
@@ -1051,17 +956,13 @@ def build_model(
                     T = float(np.max(tdb_s) - np.min(tdb_s))
                     if _has_param(par, "TNCHROMTSPAN"):
                         tspan_days = float(
-                            par.params.values[
-                                par.params._name_to_index["TNCHROMTSPAN"]
-                            ]
+                            par.params.values[par.params._name_to_index["TNCHROMTSPAN"]]
                         )
                         T = tspan_days * 86400.0
 
                     from jaxpint.utils import build_fourier_basis
 
-                    F, freqs, freq_bin_widths = build_fourier_basis(
-                        tdb_s, n_freqs, T
-                    )
+                    F, freqs, freq_bin_widths = build_fourier_basis(tdb_s, n_freqs, T)
 
                     plchrom_noise = PLChromNoise(
                         fourier_basis=jnp.asarray(F),
@@ -1085,9 +986,7 @@ def build_model(
 
                     from jaxpint.utils import build_fourier_basis
 
-                    F, freqs, freq_bin_widths = build_fourier_basis(
-                        tdb_s, n_freqs, T
-                    )
+                    F, freqs, freq_bin_widths = build_fourier_basis(tdb_s, n_freqs, T)
 
                     swm = par.int_params.get("SWM", 0)
                     swp_name = "SWP" if swm == 1 else None

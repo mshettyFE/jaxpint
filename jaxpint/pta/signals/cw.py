@@ -99,16 +99,8 @@ def _fplus_fcross_costheta(
     cos_phi = jnp.cos(gwphi)
 
     m_dot_pos = sin_phi * x - cos_phi * y
-    n_dot_pos = (
-        -cos_theta * cos_phi * x
-        - cos_theta * sin_phi * y
-        + sin_theta * z
-    )
-    omhat_dot_pos = (
-        -sin_theta * cos_phi * x
-        - sin_theta * sin_phi * y
-        - cos_theta * z
-    )
+    n_dot_pos = -cos_theta * cos_phi * x - cos_theta * sin_phi * y + sin_theta * z
+    omhat_dot_pos = -sin_theta * cos_phi * x - sin_theta * sin_phi * y - cos_theta * z
 
     denom = 1.0 + omhat_dot_pos
 
@@ -172,13 +164,16 @@ def cw_delay(
     # amplitude mode passes a list whose first entry is the linear strain.
     if param_names is None:
         param_names = tuple(CW_PARAM_DEFAULTS)
-    cw_params = jnp.array([
-        global_params.param_value(f"{prefix}{name}")
-        for name in param_names
-    ])
+    cw_params = jnp.array(
+        [global_params.param_value(f"{prefix}{name}") for name in param_names]
+    )
     return cw_delay_from_array(
-        toa_data, pos, pulsar_dist, cw_params,
-        earth_term_only=earth_term_only, linear_amplitude=linear_amplitude,
+        toa_data,
+        pos,
+        pulsar_dist,
+        cw_params,
+        earth_term_only=earth_term_only,
+        linear_amplitude=linear_amplitude,
     )
 
 
@@ -244,14 +239,10 @@ def log10_strain_from_binary(
     .. [cw_strain_thorne87] Thorne (1987), in *300 Years of Gravitation*;
        see also Ellis, Siemens & Creighton (2012), ApJ 756, 175.
     """
-    mc_sec = (10.0 ** log10_mc) * _TSUN          # G M_c / c^3 in seconds
-    dist_m = (10.0 ** log10_dist) * _MPC_TO_M    # luminosity distance in metres
-    fgw = 10.0 ** log10_fgw                      # GW frequency in Hz
-    h0 = (
-        2.0 * _C * mc_sec ** (5.0 / 3.0)
-        * (jnp.pi * fgw) ** (2.0 / 3.0)
-        / dist_m
-    )
+    mc_sec = (10.0**log10_mc) * _TSUN  # G M_c / c^3 in seconds
+    dist_m = (10.0**log10_dist) * _MPC_TO_M  # luminosity distance in metres
+    fgw = 10.0**log10_fgw  # GW frequency in Hz
+    h0 = 2.0 * _C * mc_sec ** (5.0 / 3.0) * (jnp.pi * fgw) ** (2.0 / 3.0) / dist_m
     return jnp.log10(h0)
 
 
@@ -331,8 +322,7 @@ class CWInjector(SignalInjector):
         # linear mode; the other six parameters are unchanged.
         self.amp_name = "h0" if linear_amplitude else "log10_h"
         amp_default = (
-            CW_LINEAR_AMP_DEFAULT if linear_amplitude
-            else CW_PARAM_DEFAULTS["log10_h"]
+            CW_LINEAR_AMP_DEFAULT if linear_amplitude else CW_PARAM_DEFAULTS["log10_h"]
         )
         nonamp = [k for k in CW_PARAM_DEFAULTS if k != "log10_h"]
         self.param_names: tuple[str, ...] = (self.amp_name, *nonamp)
@@ -394,7 +384,8 @@ class CWInjector(SignalInjector):
         earth_term_only_p = self.earth_term_only or (not self.pulsar_term_mask[p])
         # Earth-term-only has no pulsar-distance dependence, so don't require PX.
         pulsar_dist = (
-            jnp.float64(1.0) if earth_term_only_p
+            jnp.float64(1.0)
+            if earth_term_only_p
             else pulsar_params.param_value(self.dist_param)
         )
         return cw_delay(
@@ -506,8 +497,7 @@ def cw_delay_from_array(
     fp, fc = _fplus_fcross_costheta(pos, cos_theta, sin_theta, gwphi)
 
     toas_s = (
-        toa_data.tdb_int.astype(jnp.float64) * 86400.0
-        + toa_data.tdb_frac * 86400.0
+        toa_data.tdb_int.astype(jnp.float64) * 86400.0 + toa_data.tdb_frac * 86400.0
     )
 
     # Main contribution of pulsar distance is the phase as measured at earth and pulsar
@@ -529,11 +519,13 @@ def cw_delay_from_array(
         if pulsar_term_phase is not None:
             phase_pulsar = phase_earth - pulsar_term_phase
         else:
-            omhat = jnp.array([
-                -sin_theta * jnp.cos(gwphi),
-                -sin_theta * jnp.sin(gwphi),
-                -cos_theta,
-            ])
+            omhat = jnp.array(
+                [
+                    -sin_theta * jnp.cos(gwphi),
+                    -sin_theta * jnp.sin(gwphi),
+                    -cos_theta,
+                ]
+            )
             cos_mu = jnp.dot(omhat, pos)
             # pulsar_dist is parallax in mas (types.py convention).
             # Ellis+2012 (arXiv:1204.4218) writes the pulsar-term phase in terms of
@@ -682,9 +674,7 @@ class CWInjectorStack(SignalInjector):
                     )
                 unknown = set(per_source_values[m]) - set(CW_PARAM_DEFAULTS)
                 if unknown:
-                    raise ValueError(
-                        f"Unknown CW parameters in source {m}: {unknown}"
-                    )
+                    raise ValueError(f"Unknown CW parameters in source {m}: {unknown}")
                 spec.update(per_source_values[m])
             self.param_specs.append(spec)
 

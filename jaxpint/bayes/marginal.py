@@ -2,7 +2,7 @@
 
 The marginalization is performed analytically via the Woodbury identity.
 For a parameter ``y_i`` in ``over`` with an ``ImproperPrior`` (the only
-prior shape currently accepted), the integral is exact when residuals 
+prior shape currently accepted), the integral is exact when residuals
 are linear in ``y_i`` and is augmented onto the
 existing noise covariance as a low-rank Woodbury update with
 ``Φ = 1e40`` (discovery-equivalent).  The marginalized parameter
@@ -188,6 +188,7 @@ def _trust_radius_for_prior(
     """
     if not isinstance(prior, ImproperPrior):
         from jaxpint.bayes.priors import Gaussian
+
         # Defaulting to Gaussian for now. TODO
         if isinstance(prior, Gaussian):
             return float(prior.sigma)
@@ -446,6 +447,7 @@ def _marginalize_single_pulsar(
         M_marg = None
         marg_cov_cached = None
     else:
+
         def _resid_fn(values):
             p = eqx.tree_at(lambda pv: pv.values, fiducial_params, values)
             return compute_time_residuals(timing_model, toa_data, p)
@@ -456,7 +458,7 @@ def _marginalize_single_pulsar(
         # high-cadence pulsars (e.g. 35k TOAs).
         J_full = jax.jacfwd(_resid_fn)(fiducial_params.values)
         marg_idx_array = jnp.asarray(over_indices, dtype=jnp.int32)
-        M_marg = -J_full[:, marg_idx_array]   # (n_toas, n_marg)
+        M_marg = -J_full[:, marg_idx_array]  # (n_toas, n_marg)
         Phi_marg = jnp.full(len(over_indices), 1e40, dtype=jnp.float64)
         marg_cov_cached = (M_marg, Phi_marg)
 
@@ -473,7 +475,9 @@ def _marginalize_single_pulsar(
             ]
         )
         flagged = _check_linearity(
-            timing_model, toa_data, fiducial_params,
+            timing_model,
+            toa_data,
+            fiducial_params,
             over_indices=over_indices,
             over_names=tuple(over_list),
             trust_radii=trust_radii,
@@ -518,7 +522,7 @@ def _marginalize_single_pulsar(
 
     # 8. Reconstruct ParameterVector with the marginalized_mask updated
     full_skeleton = fiducial_params.with_marginalized(over_set)
-    reduced_skeleton = full_skeleton  
+    reduced_skeleton = full_skeleton
 
     # --- 9. Build the wrapper ---------------------------------------
     def likelihood_marg(
@@ -570,9 +574,7 @@ class _MarginalizationInjector(SignalInjector):
     def __init__(
         self,
         cached_blocks: tuple[
-            Optional[
-                tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]
-            ],
+            Optional[tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]],
             ...,
         ],
     ):
@@ -589,9 +591,7 @@ class _MarginalizationInjector(SignalInjector):
         toa_data: TOAData,
         pulsar_params: ParameterVector,
         global_params: GlobalParams,
-    ) -> Optional[
-        tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]
-    ]:
+    ) -> Optional[tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]]:
         return self.cached_blocks[p]
 
 
@@ -640,7 +640,7 @@ def _resolve_pta_marg_targets(
             prefix = f"{pulsar_names[p]}_"
             if not fqn.startswith(prefix):
                 continue
-            bare = fqn[len(prefix):]
+            bare = fqn[len(prefix) :]
             if bare in fiducial_pulsar_params[p].names:
                 matches.append((p, bare))
 
@@ -662,9 +662,7 @@ def _resolve_pta_marg_targets(
 
         p, bare = matches[0]
         bare_names_per_pulsar[p].append(bare)
-        bare_indices_per_pulsar[p].append(
-            fiducial_pulsar_params[p].param_index(bare)
-        )
+        bare_indices_per_pulsar[p].append(fiducial_pulsar_params[p].param_index(bare))
 
     return bare_names_per_pulsar, bare_indices_per_pulsar
 
@@ -739,9 +737,7 @@ def _marginalize_pta(
 
     # --- 5. Per-pulsar Jacobian + cached Woodbury blocks --------------------
     cached_blocks: list[
-        Optional[
-            tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]
-        ]
+        Optional[tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]]
     ] = []
     # For the linearity check we also retain per-pulsar M_p and over_indices.
     per_pulsar_M: list[Optional[Float[Array, "n_toas n_marg_p"]]] = []
@@ -793,10 +789,7 @@ def _marginalize_pta(
                 [
                     _trust_radius_for_prior(priors[fqn], idx, J_full_p, Ndiag_p)
                     for fqn, idx in zip(
-                        (
-                            f"{pulsar_names[p]}_{bare}"
-                            for bare in bare_names
-                        ),
+                        (f"{pulsar_names[p]}_{bare}" for bare in bare_names),
                         bare_indices,
                     )
                 ]
@@ -806,9 +799,7 @@ def _marginalize_pta(
                 toa_data_p,
                 fiducial_p,
                 over_indices=tuple(bare_indices),
-                over_names=tuple(
-                    f"{pulsar_names[p]}_{bare}" for bare in bare_names
-                ),
+                over_names=tuple(f"{pulsar_names[p]}_{bare}" for bare in bare_names),
                 trust_radii=trust_radii_p,
                 M_full_cols=M_p,
                 tol=laplace_error_tol,
@@ -879,9 +870,7 @@ def _marginalize_pta(
         # fiducial values cached inside reduced_pulsar_skeletons[p].
         full_pulsar_params = tuple(
             skeleton.with_free_values(rp.free_values())
-            for skeleton, rp in zip(
-                reduced_pulsar_skeletons, reduced_pulsar_params
-            )
+            for skeleton, rp in zip(reduced_pulsar_skeletons, reduced_pulsar_params)
         )
         return pta_logL(global_params, full_pulsar_params, modified_config)
 

@@ -84,12 +84,8 @@ class NoiseModel(eqx.Module):
     _U_static: Optional[Float[Array, "n_toas n_static_basis"]] = eqx.field(
         init=False, default=None
     )
-    _static_indices: tuple[int, ...] = eqx.field(
-        init=False, static=True, default=()
-    )
-    _dynamic_indices: tuple[int, ...] = eqx.field(
-        init=False, static=True, default=()
-    )
+    _static_indices: tuple[int, ...] = eqx.field(init=False, static=True, default=())
+    _dynamic_indices: tuple[int, ...] = eqx.field(init=False, static=True, default=())
 
     def __post_init__(self):
         static_idx: list[int] = []
@@ -109,10 +105,7 @@ class NoiseModel(eqx.Module):
             else:
                 dynamic_idx.append(i)
 
-        U_static = (
-            np.concatenate(static_bases_np, axis=1)
-            if static_bases_np else None
-        )
+        U_static = np.concatenate(static_bases_np, axis=1) if static_bases_np else None
 
         object.__setattr__(self, "_U_static", U_static)
         object.__setattr__(self, "_static_indices", tuple(static_idx))
@@ -183,10 +176,7 @@ class NoiseModel(eqx.Module):
 
         if self.correlated:
             Us, Phis = zip(
-                *(
-                    comp.covariance(toa_data, params)[1:]
-                    for comp in self.correlated
-                )
+                *(comp.covariance(toa_data, params)[1:] for comp in self.correlated)
             )
             U = jnp.concatenate(Us, axis=1)
             Phidiag = jnp.concatenate(Phis)
@@ -232,7 +222,7 @@ class NoiseModel(eqx.Module):
         """
         Ndiag_toa, U_toa, Phi_toa = self.covariance(toa_data, params)
         dm_sigma = self.scaled_dm_sigma(toa_data, params)
-        Ndiag_dm = dm_sigma ** 2
+        Ndiag_dm = dm_sigma**2
         return Ndiag_toa, U_toa, Phi_toa, Ndiag_dm
 
     @property
@@ -267,11 +257,7 @@ class NoiseModel(eqx.Module):
             for i, name in enumerate(names):
                 if name == key:
                     return comps[i]
-            raise KeyError(
-                f"{key!r} not found. Available components: {names}"
-            )
+            raise KeyError(f"{key!r} not found. Available components: {names}")
         elif isinstance(key, (int, slice)):
             return self.components[key]
-        raise TypeError(
-            f"indices must be str, int, or slice, not {type(key).__name__}"
-        )
+        raise TypeError(f"indices must be str, int, or slice, not {type(key).__name__}")

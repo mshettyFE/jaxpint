@@ -150,9 +150,7 @@ class CorrelatedPTAConfig(eqx.Module):
     noise_models: tuple[NoiseModel, ...]
     timing_models: tuple[TimingModel, ...] = eqx.field(static=True)
     signal_injectors: tuple[SignalInjector, ...] = eqx.field(static=True)
-    correlated_injectors: tuple[CorrelatedSignalInjector, ...] = eqx.field(
-        static=True
-    )
+    correlated_injectors: tuple[CorrelatedSignalInjector, ...] = eqx.field(static=True)
 
     def __post_init__(self):
         n_toa = len(self.toa_data_list)
@@ -242,12 +240,12 @@ def _per_pulsar_intermediates(
     #    Combine into one solve: B = [r[:, None], F_gwb]
     B = jnp.concatenate([r[:, None], F_gwb], axis=1)  # (n_toas, 1 + n_basis)
     Cinv_B = woodbury_solve(Ndiag, U, Phi, B)
-    Cinv_r = Cinv_B[:, 0]                              # (n_toas,)
-    Cinv_F = Cinv_B[:, 1:]                              # (n_toas, n_basis)
+    Cinv_r = Cinv_B[:, 0]  # (n_toas,)
+    Cinv_F = Cinv_B[:, 1:]  # (n_toas, n_basis)
 
     # 5. Project onto GWB Fourier basis
-    z_p = F_gwb.T @ Cinv_r                              # (n_basis,)
-    D_p = F_gwb.T @ Cinv_F                              # (n_basis, n_basis)
+    z_p = F_gwb.T @ Cinv_r  # (n_basis,)
+    D_p = F_gwb.T @ Cinv_F  # (n_basis, n_basis)
 
     return rCr_p, logdetC_p, z_p, D_p
 
@@ -319,10 +317,12 @@ def pta_logL_correlated(
         ]
         covs = [c for c in covs if c is not None]
         if covs:
-            per_pulsar_covs.append((
-                jnp.concatenate([U for U, _ in covs], axis=1),
-                jnp.concatenate([Phi for _, Phi in covs]),
-            ))
+            per_pulsar_covs.append(
+                (
+                    jnp.concatenate([U for U, _ in covs], axis=1),
+                    jnp.concatenate([Phi for _, Phi in covs]),
+                )
+            )
         else:
             per_pulsar_covs.append(None)
 
@@ -330,8 +330,8 @@ def pta_logL_correlated(
     total_logL = jnp.float64(0.0)
 
     for cinj in config.correlated_injectors:
-        S = cinj.get_psd(global_params)            # (n_basis,)
-        Gamma = cinj.get_orf_matrix()              # (n_psr, n_psr)
+        S = cinj.get_psd(global_params)  # (n_basis,)
+        Gamma = cinj.get_orf_matrix()  # (n_psr, n_psr)
 
         # Build Phi_gwb = Gamma kron diag(S) and its inverse
         # Phi_gwb is (n_psr * n_basis, n_psr * n_basis)
@@ -394,4 +394,3 @@ def pta_logL_correlated(
     total_logL = total_logL - 0.5 * n_total * jnp.log(2.0 * jnp.pi)
 
     return total_logL
-

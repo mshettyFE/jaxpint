@@ -27,15 +27,31 @@ from typing import Optional
 from jaxpint.par.registry import Component
 
 __all__ = [
-    "PARAM_SPEC", "ALIAS_MAP", "PREFIX_MAP", "CANONICAL_PREFIX",
-    "KNOWN_PARAMS", "TRIGGER_MAP", "BINARY_PARAMS", "BINARY_PRIORITY", "spec_for",
+    "PARAM_SPEC",
+    "ALIAS_MAP",
+    "PREFIX_MAP",
+    "CANONICAL_PREFIX",
+    "KNOWN_PARAMS",
+    "TRIGGER_MAP",
+    "BINARY_PARAMS",
+    "BINARY_PRIORITY",
+    "spec_for",
 ]
 
 _DEFAULT_FLOAT: dict = {"kind": "float", "unit": ""}
 
 # guess_binary_model priority when a .par has binary params but no BINARY line.
 BINARY_PRIORITY: tuple[str, ...] = (
-    "BT", "BT_piecewise", "ELL1", "ELL1H", "ELL1k", "DD", "DDK", "DDGR", "DDS", "DDH",
+    "BT",
+    "BT_piecewise",
+    "ELL1",
+    "ELL1H",
+    "ELL1k",
+    "DD",
+    "DDK",
+    "DDGR",
+    "DDS",
+    "DDH",
 )
 
 
@@ -84,27 +100,41 @@ def _component_classes():
 
     C = Component
     return [
-        (Spindown, C.SPINDOWN), (Glitch, C.GLITCH), (Wave, C.WAVE),
-        (PhaseJump, C.PHASE_JUMP), (PiecewiseSpindown, C.PIECEWISE_SPINDOWN),
+        (Spindown, C.SPINDOWN),
+        (Glitch, C.GLITCH),
+        (Wave, C.WAVE),
+        (PhaseJump, C.PHASE_JUMP),
+        (PiecewiseSpindown, C.PIECEWISE_SPINDOWN),
         (IFunc, C.IFUNC),
         (AstrometryEquatorial, C.ASTROMETRY_EQUATORIAL),
         (AstrometryEcliptic, C.ASTROMETRY_ECLIPTIC),
-        (DispersionDM, C.DISPERSION_DM), (DispersionDMX, C.DISPERSION_DMX),
+        (DispersionDM, C.DISPERSION_DM),
+        (DispersionDMX, C.DISPERSION_DMX),
         (DispersionJump, C.DISPERSION_JUMP),
         (SolarSystemShapiroDelay, C.SOLAR_SYSTEM_SHAPIRO),
         (SolarWindDispersion, C.SOLAR_WIND_DISPERSION),
         (SolarWindDispersionX, C.SOLAR_WIND_DISPERSION_X),
         (TroposphereDelay, C.TROPOSPHERE_DELAY),
-        (ChromaticCM, C.CHROMATIC_CM), (ChromaticCMX, C.CHROMATIC_CMX),
-        (CMWaveX, C.CM_WAVE_X), (WaveX, C.WAVE_X), (DMWaveX, C.DM_WAVE_X),
-        (FrequencyDependent, C.FREQUENCY_DEPENDENT), (FDJump, C.FD_JUMP),
+        (ChromaticCM, C.CHROMATIC_CM),
+        (ChromaticCMX, C.CHROMATIC_CMX),
+        (CMWaveX, C.CM_WAVE_X),
+        (WaveX, C.WAVE_X),
+        (DMWaveX, C.DM_WAVE_X),
+        (FrequencyDependent, C.FREQUENCY_DEPENDENT),
+        (FDJump, C.FD_JUMP),
         (ExponentialDip, C.EXPONENTIAL_DIP),
-        (BinaryBT, C.BINARY), (BinaryBTPiecewise, C.BINARY_BT_PIECEWISE),
-        (BinaryDD, C.BINARY), (BinaryDDK, C.BINARY), (BinaryDDGR, C.BINARY),
+        (BinaryBT, C.BINARY),
+        (BinaryBTPiecewise, C.BINARY_BT_PIECEWISE),
+        (BinaryDD, C.BINARY),
+        (BinaryDDK, C.BINARY),
+        (BinaryDDGR, C.BINARY),
         (BinaryELL1, C.BINARY),
-        (ScaleToaError, C.SCALE_TOA_ERROR), (ScaleDmError, C.SCALE_DM_ERROR),
-        (EcorrNoise, C.ECORR_NOISE), (PLRedNoise, C.PL_RED_NOISE),
-        (PLDMNoise, C.PL_DM_NOISE), (PLChromNoise, C.PL_CHROM_NOISE),
+        (ScaleToaError, C.SCALE_TOA_ERROR),
+        (ScaleDmError, C.SCALE_DM_ERROR),
+        (EcorrNoise, C.ECORR_NOISE),
+        (PLRedNoise, C.PL_RED_NOISE),
+        (PLDMNoise, C.PL_DM_NOISE),
+        (PLChromNoise, C.PL_CHROM_NOISE),
         (PLSWNoise, C.PL_SW_NOISE),
         (TimingModel, None),  # top-level/admin params (incl. PHOFF); see _tables
     ]
@@ -131,7 +161,7 @@ def _tables() -> dict:
     alias_map: dict[str, str] = {}
     prefix_map: dict[str, str] = {}
     canonical_prefix: dict[str, str] = {}
-    owners: dict[str, set] = {}        # param -> set of owning Component enums
+    owners: dict[str, set] = {}  # param -> set of owning Component enums
     known: set[str] = set()
     binary_params: set[str] = set()
 

@@ -26,10 +26,11 @@ from ._pinned import IPTA_RAW_BASE as RAW_BASE
 class IndexEntry(NamedTuple):
     """One ``index.txt`` row (matches PINT's ``IndexEntry`` semantics)."""
 
-    file: str                       # repo-relative path, e.g. tempo/clock/time_gbt.dat
-    update_interval_days: float     # float; "inf" -> math.inf
+    file: str  # repo-relative path, e.g. tempo/clock/time_gbt.dat
+    update_interval_days: float  # float; "inf" -> math.inf
     invalid_if_older_than: Optional[str]  # ISO date, or None for "---"
     extra: str
+
 
 def _ssl_context() -> ssl.SSLContext:
     try:
@@ -39,7 +40,10 @@ def _ssl_context() -> ssl.SSLContext:
     except Exception:  # pragma: no cover - falls back to system store
         return ssl.create_default_context()
 
-def _http_get(url: str, *, accept: Optional[str] = None, timeout: float = 30.0) -> bytes:
+
+def _http_get(
+    url: str, *, accept: Optional[str] = None, timeout: float = 30.0
+) -> bytes:
     """The single network seam: GET ``url`` and return raw bytes.
 
     Every fetch in this package goes through here; tests monkeypatch it.
@@ -56,6 +60,7 @@ def resolve_latest_sha() -> tuple[str, str]:
     """Return ``(sha, iso_date)`` of the IPTA repo's current ``main`` HEAD."""
     data = json.loads(_http_get(API_COMMIT, accept="application/vnd.github+json"))
     return data["sha"], data["commit"]["committer"]["date"][:10]
+
 
 def parse_index(text: str) -> list[IndexEntry]:
     """Parse ``index.txt`` text into :class:`IndexEntry` rows (``---`` -> None)."""
@@ -84,6 +89,7 @@ def _atomic_write(path: Path, data: bytes) -> None:
     with open(tmp, "wb") as f:
         f.write(data)
     os.replace(tmp, path)
+
 
 def _today() -> str:
     return datetime.date.today().isoformat()
@@ -133,7 +139,9 @@ def download_snapshot(
     old_names = set()
     old_index = dest / "index.txt"
     if old_index.exists():
-        old_names = {PurePosixPath(e.file).name for e in parse_index(old_index.read_text())}
+        old_names = {
+            PurePosixPath(e.file).name for e in parse_index(old_index.read_text())
+        }
 
     base = f"{RAW_BASE}/{ref}"
     if index_text is None:

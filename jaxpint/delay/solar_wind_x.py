@@ -130,7 +130,8 @@ class SolarWindDispersionX(DelayComponent):
         """
         # 1. Pulsar direction (unit vector, ICRS).
         psr_dir = compute_pulsar_direction(
-            toa_data, params,
+            toa_data,
+            params,
             raj_name=self.raj_name,
             decj_name=self.decj_name,
             pmra_name=self.pmra_name,
@@ -172,9 +173,7 @@ class SolarWindDispersionX(DelayComponent):
             # Scaling: (G(toa) - G_opp) / (G_conj - G_opp)
             denom = conj_geom - opp_geom
             safe_denom = jnp.where(denom == 0.0, 1.0, denom)
-            scaling = jnp.where(
-                denom == 0.0, 0.0, (toa_geom - opp_geom) / safe_denom
-            )
+            scaling = jnp.where(denom == 0.0, 0.0, (toa_geom - opp_geom) / safe_denom)
 
             dm = dm + jnp.where(in_bin, swxdm * scaling, 0.0)
 

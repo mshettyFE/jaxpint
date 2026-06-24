@@ -12,6 +12,7 @@ Registers Hypothesis profiles for different execution contexts:
 import os
 
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
 import pytest
@@ -31,6 +32,7 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "slow" in item.keywords:
             item.add_marker(skip_slow)
+
 
 hypothesis.settings.register_profile("interactive", deadline=None)
 hypothesis.settings.register_profile(

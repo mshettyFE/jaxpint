@@ -117,10 +117,9 @@ def extract_tzr_toa(
     abs_phase = model.components["AbsPhase"]
     tz_toas = abs_phase.get_TZR_toa(toas)
 
-    # Force planet position columns on the TZR TOA whenever the model needs them. 
-    need_planets = (
-        "PLANET_SHAPIRO" in model.params
-        and bool(getattr(model.PLANET_SHAPIRO, "value", False))
+    # Force planet position columns on the TZR TOA whenever the model needs them.
+    need_planets = "PLANET_SHAPIRO" in model.params and bool(
+        getattr(model.PLANET_SHAPIRO, "value", False)
     )
     if need_planets and not any(
         f"obs_{p}_pos" in tz_toas.table.colnames for p in PLANETS
@@ -129,14 +128,14 @@ def extract_tzr_toa(
 
     tz_tbl = tz_toas.table
 
-    tdb_int, tdb_frac = split_longdouble_days(
-        np.asarray(tz_tbl["tdbld"])
-    )
+    tdb_int, tdb_frac = split_longdouble_days(np.asarray(tz_tbl["tdbld"]))
 
     try:
         freq = float(model.barycentric_radio_freq(tz_toas).to(u.MHz).value[0])
     except AttributeError:
-        log.warning("Model has no barycentric_radio_freq; using topocentric TZR frequency")
+        log.warning(
+            "Model has no barycentric_radio_freq; using topocentric TZR frequency"
+        )
         freq = float(tz_toas.get_freqs().to(u.MHz).value[0])
 
     ssb_obs_pos = np.asarray(tz_tbl["ssb_obs_pos"], dtype=np.float64)[0]
@@ -158,7 +157,9 @@ def extract_tzr_toa(
             if tz_planet_positions is None:
                 tz_planet_positions = {}
             _check_column_unit(tz_tbl, col_name, u.km)
-            tz_planet_positions[col_name] = np.asarray(tz_tbl[col_name], dtype=np.float64)[0]
+            tz_planet_positions[col_name] = np.asarray(
+                tz_tbl[col_name], dtype=np.float64
+            )[0]
 
     return {
         "tdb_int": float(tdb_int[0]),
@@ -301,7 +302,6 @@ def pint_toas_to_jax(
     if model is not None and "TroposphereDelay" in model.components:
         tropo_comp = model.components["TroposphereDelay"]
         if tropo_comp.CORRECT_TROPOSPHERE.value:
-
             radec = tropo_comp._get_target_skycoord()
 
             alt_arr = np.zeros(n_toas, dtype=np.float64)
@@ -379,8 +379,12 @@ def pint_toas_to_jax(
         dm_values=to_jnp(dm_values) if dm_values is not None else None,
         dm_errors=to_jnp(dm_errors) if dm_errors is not None else None,
         tropo_alt=to_jnp(tropo_alt) if tropo_alt is not None else None,
-        tropo_alt_valid=jnp.asarray(tropo_alt_valid, dtype=jnp.bool_) if tropo_alt_valid is not None else None,
-        obs_geodetic_lat=to_jnp(obs_geodetic_lat) if obs_geodetic_lat is not None else None,
+        tropo_alt_valid=jnp.asarray(tropo_alt_valid, dtype=jnp.bool_)
+        if tropo_alt_valid is not None
+        else None,
+        obs_geodetic_lat=to_jnp(obs_geodetic_lat)
+        if obs_geodetic_lat is not None
+        else None,
         obs_height_km=to_jnp(obs_height_km) if obs_height_km is not None else None,
         tzr_tdb_int=tzr_tdb_int,
         tzr_tdb_frac=tzr_tdb_frac,

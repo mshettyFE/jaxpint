@@ -56,8 +56,13 @@ def get_TOAs(
     """
     par_result = _parse_par(par) if isinstance(par, str) else par
     return native_toas_to_jax(
-        tim_path, par_result, ephem=ephem, include_bipm=include_bipm,
-        bipm_version=bipm_version, planets=planets, limits=limits,
+        tim_path,
+        par_result,
+        ephem=ephem,
+        include_bipm=include_bipm,
+        bipm_version=bipm_version,
+        planets=planets,
+        limits=limits,
     )
 
 
@@ -80,8 +85,13 @@ def get_model_and_toas(
     """
     par_result = _parse_par(par_path)
     toa_data = native_toas_to_jax(
-        tim_path, par_result, ephem=ephem, include_bipm=include_bipm,
-        bipm_version=bipm_version, planets=planets, limits=limits,
+        tim_path,
+        par_result,
+        ephem=ephem,
+        include_bipm=include_bipm,
+        bipm_version=bipm_version,
+        planets=planets,
+        limits=limits,
     )
     model, noise = build_model(par_result, toa_data)
     return model, noise, toa_data

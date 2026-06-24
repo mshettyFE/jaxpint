@@ -15,6 +15,7 @@ Outputs:
     ocarina/par/<orig>.par   76 stripped .par files
     ocarina/tim/<orig>.tim   76 synthetic .tim files
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,17 +41,46 @@ DST = REPO / "ocarina_2"
 
 KEEP_TOKENS = {
     # metadata / SSB transform configuration
-    "PSR", "EPHEM", "CLOCK", "CLK", "UNITS",
-    "TIMEEPH", "T2CMETHOD", "DILATEFREQ", "DMDATA",
-    "ECL", "START", "FINISH", "POSEPOCH", "PEPOCH",
-    "TZRMJD", "TZRSITE", "TZRFRQ", "INFO", "MODE", "NTOA", "CHI2",
+    "PSR",
+    "EPHEM",
+    "CLOCK",
+    "CLK",
+    "UNITS",
+    "TIMEEPH",
+    "T2CMETHOD",
+    "DILATEFREQ",
+    "DMDATA",
+    "ECL",
+    "START",
+    "FINISH",
+    "POSEPOCH",
+    "PEPOCH",
+    "TZRMJD",
+    "TZRSITE",
+    "TZRFRQ",
+    "INFO",
+    "MODE",
+    "NTOA",
+    "CHI2",
     # astrometry (Roemer)
-    "RAJ", "DECJ", "ELONG", "ELAT",
-    "PMRA", "PMDEC", "PMELONG", "PMELAT", "PX",
+    "RAJ",
+    "DECJ",
+    "ELONG",
+    "ELAT",
+    "PMRA",
+    "PMDEC",
+    "PMELONG",
+    "PMELAT",
+    "PX",
     # noise model: white (EFAC/EQUAD) + red spin noise (RNAMP/RNIDX or TNRed*),
     # so red-noise-dominated pulsars get their realistic low-frequency limit.
-    "EFAC", "EQUAD",
-    "RNAMP", "RNIDX", "TNRedAmp", "TNRedGam", "TNRedC",
+    "EFAC",
+    "EQUAD",
+    "RNAMP",
+    "RNIDX",
+    "TNRedAmp",
+    "TNRedGam",
+    "TNRedC",
     # ECORR (per-epoch white jitter) still dropped; uncomment to include it too.
     # "ECORR",
 }
@@ -106,8 +136,10 @@ def synthesize(par_text: str, tim_path: Path, key):
     """
     pint_model = pm.get_model(io.StringIO(par_text))
     pint_toas = psim.make_fake_toas_fromtim(
-        str(tim_path), model=pint_model,
-        add_noise=False, add_correlated_noise=False,
+        str(tim_path),
+        model=pint_model,
+        add_noise=False,
+        add_correlated_noise=False,
     )
     toa_data = pint_toas_to_jax(pint_toas, model=pint_model)
     params = pint_model_to_params(pint_model).params
@@ -143,10 +175,10 @@ def main(seed: int, out_dir: Path):
             fake_toas = synthesize(simplified, tim_path, key)
             tim_out = out_dir / "tim" / tim_path.name
             fake_toas.write_TOA_file(str(tim_out), format="tempo2")
-            print(f"[{i+1:2d}/{len(par_files)}] {psr_name}: N={fake_toas.ntoas}")
+            print(f"[{i + 1:2d}/{len(par_files)}] {psr_name}: N={fake_toas.ntoas}")
         except Exception as e:
             msg = f"{type(e).__name__}: {e}"
-            print(f"[{i+1:2d}/{len(par_files)}] {psr_name}: FAILED — {msg}")
+            print(f"[{i + 1:2d}/{len(par_files)}] {psr_name}: FAILED — {msg}")
             failures.append((psr_name, msg))
 
     if failures:
@@ -163,11 +195,15 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--seed", type=int, default=2501,
+        "--seed",
+        type=int,
+        default=2501,
         help="PRNG seed for the noise draw (default: 2501)",
     )
     parser.add_argument(
-        "--out", type=Path, default=DST,
+        "--out",
+        type=Path,
+        default=DST,
         help=f"output dataset directory (default: {DST})",
     )
     args = parser.parse_args()

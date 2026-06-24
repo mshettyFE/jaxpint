@@ -94,7 +94,7 @@ def _sun_angle_and_distance(
         Observer-Sun distance in km.
     """
     obs_sun = toa_data.obs_sun_pos  # (n_toas, 3) km
-    r_km = jnp.sqrt(jnp.sum(obs_sun ** 2, axis=1))
+    r_km = jnp.sqrt(jnp.sum(obs_sun**2, axis=1))
     obs_sun_hat = obs_sun / r_km[:, None]
     cos_theta = jnp.sum(obs_sun_hat * psr_dir, axis=1)
     theta = jnp.arccos(jnp.clip(cos_theta, -1.0, 1.0))
@@ -120,7 +120,7 @@ def _solar_wind_geometry_swm0(
     # Near these limits rho/sin(rho) -> 1, so ratio -> 1.
     safe_sin = jnp.where(sin_theta == 0.0, 1.0, sin_theta)
     ratio = jnp.where(sin_theta == 0.0, 1.0, rho / safe_sin)
-    geometry_km = AU_KM ** 2 * ratio / r_km
+    geometry_km = AU_KM**2 * ratio / r_km
     return geometry_km / PC_TO_KM
 
 
@@ -149,13 +149,13 @@ def _solar_wind_geometry_swm1(
     sin_theta = jnp.sin(theta)
 
     b_km = r_km * sin_theta  # impact parameter (km)
-    b_au = b_km / AU_KM      # impact parameter (AU, dimensionless value)
+    b_au = b_km / AU_KM  # impact parameter (AU, dimensionless value)
 
     # Integration limits: u in [theta - pi/2, pi/2]
     u_lo = theta - jnp.pi / 2.0  # shape (n_toas,)
     u_hi = jnp.pi / 2.0
-    half_width = (u_hi - u_lo) / 2.0   # = (pi - theta) / 2
-    midpoint = (u_lo + u_hi) / 2.0     # = theta / 2
+    half_width = (u_hi - u_lo) / 2.0  # = (pi - theta) / 2
+    midpoint = (u_lo + u_hi) / 2.0  # = theta / 2
 
     # Map GL nodes from [-1, 1] to [u_lo, u_hi]:
     # u = midpoint + half_width * t, shape (n_toas, 32)
@@ -238,9 +238,7 @@ class SolarWindDispersion(DelayComponent):
 
     def __check_init__(self):
         if len(self.ne_sw_param_names) == 0:
-            raise ValueError(
-                "SolarWindDispersion requires at least one NE_SW term"
-            )
+            raise ValueError("SolarWindDispersion requires at least one NE_SW term")
         if self.ne_sw_param_names[0] != "NE_SW":
             raise ValueError(
                 f"First NE_SW term must be 'NE_SW', got '{self.ne_sw_param_names[0]}'"
@@ -264,13 +262,9 @@ class SolarWindDispersion(DelayComponent):
         dt_days = (toa_data.tdb - epoch).total
         return dt_days / DAYS_PER_JULIAN_YEAR
 
-    def _get_ne_sw_coeffs(
-        self, params: ParameterVector
-    ) -> Float[Array, " n_terms"]:
+    def _get_ne_sw_coeffs(self, params: ParameterVector) -> Float[Array, " n_terms"]:
         """Assemble ``[NE_SW, NE_SW1, NE_SW2, ...]``."""
-        return jnp.array(
-            [params.param_value(name) for name in self.ne_sw_param_names]
-        )
+        return jnp.array([params.param_value(name) for name in self.ne_sw_param_names])
 
     # ------------------------------------------------------------------
     # Public API
@@ -300,7 +294,8 @@ class SolarWindDispersion(DelayComponent):
         """
         # 1. Pulsar direction (unit vector, ICRS).
         psr_dir = compute_pulsar_direction(
-            toa_data, params,
+            toa_data,
+            params,
             raj_name=self.raj_name,
             decj_name=self.decj_name,
             pmra_name=self.pmra_name,
@@ -328,4 +323,4 @@ class SolarWindDispersion(DelayComponent):
 
         # 5. Solar wind DM (pc / cm^3) and delay (seconds).
         dm_sw = ne_sw * geometry_pc
-        return dm_sw * DMCONST / toa_data.freq ** 2
+        return dm_sw * DMCONST / toa_data.freq**2

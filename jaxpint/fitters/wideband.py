@@ -1,4 +1,5 @@
 """Wideband Generalised Least Squares fitter."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -140,16 +141,16 @@ def _wideband_iteration_core(
 
     if noise_model is not None:
         sigma_toa = noise_model.scaled_sigma(toa_data, params)
-        Ndiag_toa, U_toa, Phi_toa, Ndiag_dm = (
-            noise_model.wideband_covariance(toa_data, params)
+        Ndiag_toa, U_toa, Phi_toa, Ndiag_dm = noise_model.wideband_covariance(
+            toa_data, params
         )
     else:
         sigma_toa = toa_data.error
-        Ndiag_toa = sigma_toa ** 2
+        Ndiag_toa = sigma_toa**2
         U_toa = jnp.zeros((n, 0))
         Phi_toa = jnp.zeros(0)
         assert toa_data.dm_errors is not None  # wideband data always carries DM
-        Ndiag_dm = toa_data.dm_errors ** 2
+        Ndiag_dm = toa_data.dm_errors**2
 
     Ndiag = jnp.concatenate([Ndiag_toa, Ndiag_dm])
     U = jnp.concatenate([U_toa, jnp.zeros((n, U_toa.shape[1]))], axis=0)
@@ -183,16 +184,12 @@ def _wideband_iteration_core(
             residuals, Ndiag, U, Phidiag, M, threshold
         )
     elif n_basis > 0:
-        dpars, covariance, _norms, noise_realizations = (
-            gls_step_augmented(
-                residuals, Ndiag, U, Phidiag, M, threshold
-            )
+        dpars, covariance, _norms, noise_realizations = gls_step_augmented(
+            residuals, Ndiag, U, Phidiag, M, threshold
         )
     else:
         sigma_combined = jnp.sqrt(Ndiag)
-        dpars, covariance, _norms = wls_step(
-            residuals, sigma_combined, M, threshold
-        )
+        dpars, covariance, _norms = wls_step(residuals, sigma_combined, M, threshold)
 
     if include_offset:
         param_updates = dpars[1:]
@@ -237,28 +234,30 @@ class WidebandGLSFitter(BaseFitter):
         self,
         params: ParameterVector,
     ) -> tuple[
-        Float[Array, " n_toas"],       # sigma_toa
-        Float[Array, " n2_toas"],      # Ndiag (2N)
+        Float[Array, " n_toas"],  # sigma_toa
+        Float[Array, " n2_toas"],  # Ndiag (2N)
         Float[Array, "n2_toas n_basis"],  # U (2N, K)
-        Float[Array, " n_basis"],      # Phidiag
-        Float[Array, " n_toas"],       # sigma_dm
+        Float[Array, " n_basis"],  # Phidiag
+        Float[Array, " n_toas"],  # sigma_dm
     ]:
         """Return wideband noise quantities."""
         n = self.toa_data.n_toas
 
         if self.noise_model is not None:
             sigma_toa = self.noise_model.scaled_sigma(self.toa_data, params)
-            Ndiag_toa, U_toa, Phi_toa, Ndiag_dm = (
-                self.noise_model.wideband_covariance(self.toa_data, params)
+            Ndiag_toa, U_toa, Phi_toa, Ndiag_dm = self.noise_model.wideband_covariance(
+                self.toa_data, params
             )
             sigma_dm = self.noise_model.scaled_dm_sigma(self.toa_data, params)
         else:
             sigma_toa = self.toa_data.error
-            Ndiag_toa = sigma_toa ** 2
+            Ndiag_toa = sigma_toa**2
             U_toa = jnp.zeros((n, 0))
             Phi_toa = jnp.zeros(0)
-            assert self.toa_data.dm_errors is not None  # wideband data always carries DM
-            Ndiag_dm = self.toa_data.dm_errors ** 2
+            assert (
+                self.toa_data.dm_errors is not None
+            )  # wideband data always carries DM
+            Ndiag_dm = self.toa_data.dm_errors**2
             sigma_dm = self.toa_data.dm_errors
 
         # Stack into (2N,) diagonal and (2N, K) basis
@@ -279,8 +278,12 @@ class WidebandGLSFitter(BaseFitter):
     ]:
         """Run one Gauss-Newton iteration."""
         new_values, covariance, noise_real = _wideband_iteration_core(
-            self.model, self.toa_data, params,
-            self.noise_model, threshold, full_cov,
+            self.model,
+            self.toa_data,
+            params,
+            self.noise_model,
+            threshold,
+            full_cov,
         )
         new_params = eqx.tree_at(lambda pv: pv.values, params, new_values)
         noise_realizations = noise_real if noise_real.size > 0 else None
@@ -293,15 +296,11 @@ class WidebandGLSFitter(BaseFitter):
         noise_realizations: Optional[Float[Array, " n_basis"]],
     ) -> WidebandGLSFitResult:
         """Compute final residuals/chi2 and return a result object."""
-        sigma_toa, Ndiag, U, Phidiag, sigma_dm = self._get_wideband_noise(
-            params
-        )
+        sigma_toa, Ndiag, U, Phidiag, sigma_dm = self._get_wideband_noise(params)
         n_basis = U.shape[1]
         n = self.toa_data.n_toas
 
-        time_resid = compute_time_residuals(
-            self.model, self.toa_data, params
-        )
+        time_resid = compute_time_residuals(self.model, self.toa_data, params)
         dm_resid = compute_dm_residuals(self.model, self.toa_data, params)
 
         if n_basis > 0:
@@ -365,9 +364,7 @@ class WidebandGLSFitter(BaseFitter):
         n_toas = self.toa_data.n_toas
 
         if self.noise_model is not None and self.noise_model.has_correlated:
-            _, U_init, _ = self.noise_model.covariance(
-                self.toa_data, self.params
-            )
+            _, U_init, _ = self.noise_model.covariance(self.toa_data, self.params)
             n_basis = U_init.shape[1]
         else:
             n_basis = 0

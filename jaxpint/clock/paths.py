@@ -35,14 +35,17 @@ def clock_dir() -> Path:
         return Path(override).expanduser()
     return _bundled_clock_dir()
 
+
 def read_metadata() -> dict:
     """The committed read-schema (always from the package, not the cache)."""
     path = _bundled_clock_dir() / "clock_metadata.json"
     return json.loads(path.read_text())
 
+
 def snapshot_info() -> Optional[dict]:
     """Parsed ``SNAPSHOT.json`` from the active dir, or ``None`` if absent."""
     return fetch.read_snapshot(clock_dir())
+
 
 def read_index() -> list[fetch.IndexEntry]:
     """Parsed ``index.txt`` from the active dir (empty if not downloaded yet)."""
@@ -51,6 +54,7 @@ def read_index() -> list[fetch.IndexEntry]:
         return []
     return fetch.parse_index(path.read_text())
 
+
 def _to_date(value) -> datetime.date:
     if value is None:
         return datetime.date.today()
@@ -58,10 +62,12 @@ def _to_date(value) -> datetime.date:
         return datetime.date.fromisoformat(value)
     return value
 
+
 def _age_days(checked: Optional[str], today=None) -> float:
     if not checked:
         return float("inf")
     return (_to_date(today) - datetime.date.fromisoformat(checked)).days
+
 
 def _download(ref: str, dest: Path, *, commit_date=None) -> dict:
     try:
@@ -72,10 +78,12 @@ def _download(ref: str, dest: Path, *, commit_date=None) -> dict:
             f"$JAXPINT_CLOCK_DIR to a writable path (e.g. on a read-only install)."
         ) from exc
 
+
 def _touch_checked(dest: Path, snapshot: dict, today=None) -> None:
     snapshot = dict(snapshot)
     snapshot["checked_date"] = _to_date(today).isoformat()
     fetch.write_snapshot(dest, snapshot)
+
 
 def _do_ensure(today=None) -> None:
     dest = clock_dir()
@@ -107,6 +115,7 @@ def _do_ensure(today=None) -> None:
     else:
         _download(sha, dest, commit_date=date)
 
+
 def ensure_fresh(*, today=None, force: bool = False) -> None:
     """Lazily auto-update the cache (once per process unless ``force``)."""
     global _ensured
@@ -114,6 +123,7 @@ def ensure_fresh(*, today=None, force: bool = False) -> None:
         return
     _do_ensure(today=today)
     _ensured = True
+
 
 def clock_file_path(name: str) -> Path:
     """Path to clock file ``name`` in the active dir (auto-updates first)."""

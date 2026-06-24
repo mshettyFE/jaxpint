@@ -36,7 +36,7 @@ from jaxpint.binary.common import (
 
 
 # G * Msun in SI (m^3 / s^2).  Derived from TSUN = G*Msun/c^3.
-_GM_SUN_SI = TSUN * C_M_PER_S ** 3
+_GM_SUN_SI = TSUN * C_M_PER_S**3
 
 # Number of fixed iterations for relativistic Kepler equation.
 _REL_KEPLER_NITER = 20
@@ -62,12 +62,12 @@ def _solve_relativistic_kepler(mtot, m1, m2, n):
         Relativistic semi-major axis in metres.
     """
     gm_tot = mtot * _GM_SUN_SI
-    arr0 = (gm_tot / n ** 2) ** (1.0 / 3.0)
-    c2 = C_M_PER_S ** 2
+    arr0 = (gm_tot / n**2) ** (1.0 / 3.0)
+    c2 = C_M_PER_S**2
 
     def body(_, arr_prev):
         return arr0 * (
-            1.0 + (m1 * m2 / mtot ** 2 - 9.0) * (gm_tot / (2.0 * arr_prev * c2))
+            1.0 + (m1 * m2 / mtot**2 - 9.0) * (gm_tot / (2.0 * arr_prev * c2))
         ) ** (2.0 / 3.0)
 
     arr = jax.lax.fori_loop(0, _REL_KEPLER_NITER, body, arr0)
@@ -163,8 +163,8 @@ class BinaryDDGR(DelayComponent):
         n = 2.0 * jnp.pi / pb_s  # orbital angular frequency (rad/s)
         gm_tot = mtot * _GM_SUN_SI  # G * Mtot (m^3 s^{-2})
         c = C_M_PER_S
-        c2 = c ** 2
-        c5 = c ** 5
+        c2 = c**2
+        c5 = c**5
 
         arr0, arr = _solve_relativistic_kepler(mtot, m1, m2, n)
 
@@ -175,28 +175,28 @@ class BinaryDDGR(DelayComponent):
         sini = a1_ls * c / ar
 
         # GAMMA (Eq. 17, uses arr0 per tempo convention)
-        gamma = ecc0 * gm_tot * m2 * (m1 + 2.0 * m2) / (n * c2 * arr0 * mtot ** 2)
+        gamma = ecc0 * gm_tot * m2 * (m1 + 2.0 * m2) / (n * c2 * arr0 * mtot**2)
 
         # PBDOT (Eq. 18): GW orbital decay
         # Re-expressed as: (-192*pi/5) * (G*Mtot*n)^{5/3} * M1*M2/Mtot^2 * fe / c^5
-        fe = (1.0 + (73.0 / 24.0) * ecc0 ** 2 + (37.0 / 96.0) * ecc0 ** 4) * (
-            1.0 - ecc0 ** 2
+        fe = (1.0 + (73.0 / 24.0) * ecc0**2 + (37.0 / 96.0) * ecc0**4) * (
+            1.0 - ecc0**2
         ) ** (-7.0 / 2.0)
         pbdot = (
             (-192.0 * jnp.pi / 5.0)
             * (gm_tot * n) ** (5.0 / 3.0)
-            * (m1 * m2 / mtot ** 2)
+            * (m1 * m2 / mtot**2)
             * fe
             / c5
         ) + xpbdot
 
         # k: periastron advance rate (Eq. 16, uses arr0 per tempo convention)
-        k = 3.0 * gm_tot / (c2 * arr0 * (1.0 - ecc0 ** 2))
+        k = 3.0 * gm_tot / (c2 * arr0 * (1.0 - ecc0**2))
 
         # DR (Eq. 24) and DTH (Eq. 25): relativistic eccentricity corrections
         gr_factor = _GM_SUN_SI / (c2 * mtot * arr)
-        dr = gr_factor * (3.0 * m1 ** 2 + 6.0 * m1 * m2 + 2.0 * m2 ** 2)
-        dth = gr_factor * (3.5 * m1 ** 2 + 6.0 * m1 * m2 + 2.0 * m2 ** 2)
+        dr = gr_factor * (3.0 * m1**2 + 6.0 * m1 * m2 + 2.0 * m2**2)
+        dth = gr_factor * (3.5 * m1**2 + 6.0 * m1 * m2 + 2.0 * m2**2)
 
         # --- Compute time since periastron (corrected for accumulated delay) ---
         tt0_s = compute_tt0(toa_data.tdb, t0, delay=delay)
@@ -207,8 +207,12 @@ class BinaryDDGR(DelayComponent):
 
         # --- Solve Kepler's equation ---
         M = compute_orbital_phase(
-            toa_data.tdb, t0,
-            pb_d, pbdot, xpbdot, delay=delay,
+            toa_data.tdb,
+            t0,
+            pb_d,
+            pbdot,
+            xpbdot,
+            delay=delay,
         )
         E = compute_eccentric_anomaly(ecc, M)
         orbits = compute_orbits_pb(tt0_s, pb_d, pbdot, xpbdot)
@@ -219,6 +223,19 @@ class BinaryDDGR(DelayComponent):
         omega = om_rad + nu * k_eff
 
         return dd_core_delay(
-            E, ecc, omega, nu, a1, tt0_s, pb_d, pbdot,
-            gamma, dr, dth, A0, B0, sini, m2,
+            E,
+            ecc,
+            omega,
+            nu,
+            a1,
+            tt0_s,
+            pb_d,
+            pbdot,
+            gamma,
+            dr,
+            dth,
+            A0,
+            B0,
+            sini,
+            m2,
         )

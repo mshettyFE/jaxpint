@@ -126,4 +126,4 @@ class DMWaveX(DispersionDelayComponent):
             DMWaveX delay in seconds.
         """
         dm = self.compute_dm(toa_data, params, delay)
-        return dm * DMCONST / toa_data.freq ** 2
+        return dm * DMCONST / toa_data.freq**2

@@ -86,9 +86,7 @@ class Prior(eqx.Module):
             Log-density, with the same shape as ``x``.  Returns ``-inf``
             outside the prior's support.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__}.log_prob not implemented"
-        )
+        raise NotImplementedError(f"{type(self).__name__}.log_prob not implemented")
 
     def support(self) -> Tuple[float, float]:
         """Return the closed interval ``(low, high)`` over which ``log_prob`` is finite.
@@ -128,17 +126,14 @@ class Prior(eqx.Module):
             raise NotImplementedError(
                 f"Cannot sample from improper prior {type(self).__name__}"
             )
-        raise NotImplementedError(
-            f"{type(self).__name__}.sample not implemented"
-        )
+        raise NotImplementedError(f"{type(self).__name__}.sample not implemented")
 
     def __repr__(self) -> str:
         # equinox.Module's default repr is verbose; keep it concise here so
         # `validate_priors` and similar diagnostics produce readable output.
         cls = type(self).__name__
         fields = ", ".join(
-            f"{name}={getattr(self, name)}"
-            for name in self.__dataclass_fields__
+            f"{name}={getattr(self, name)}" for name in self.__dataclass_fields__
         )
         return f"{cls}({fields})"
 
@@ -233,9 +228,7 @@ class Gaussian(Prior):
 
     def __post_init__(self):
         if self.sigma <= 0:
-            raise ValueError(
-                f"Gaussian requires sigma > 0; got sigma={self.sigma}"
-            )
+            raise ValueError(f"Gaussian requires sigma > 0; got sigma={self.sigma}")
 
     def log_prob(self, x: Float[Array, "..."]) -> Float[Array, "..."]:
         x = jnp.asarray(x)

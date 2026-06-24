@@ -78,11 +78,7 @@ def _detect_binary(
         log.warning("Unknown binary model %r", name)
         return None, None
 
-    comp = (
-        Component.BINARY_BT_PIECEWISE
-        if name == "BT_piecewise"
-        else Component.BINARY
-    )
+    comp = Component.BINARY_BT_PIECEWISE if name == "BT_piecewise" else Component.BINARY
     return binary_model, comp
 
 

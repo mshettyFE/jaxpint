@@ -70,7 +70,9 @@ class PLDMNoise(NoiseComponent):
         # truth). See PLRedNoise for the rationale.
         if not isinstance(self.fourier_basis, np.ndarray):
             object.__setattr__(
-                self, "fourier_basis", np.asarray(self.fourier_basis),
+                self,
+                "fourier_basis",
+                np.asarray(self.fourier_basis),
             )
 
     @functools.cached_property
@@ -104,14 +106,9 @@ class PLDMNoise(NoiseComponent):
         """
         log10_A = params.param_value(self.tndmamp_name)
         gamma = params.param_value(self.tndmgam_name)
-        A = 10.0 ** log10_A
+        A = 10.0**log10_A
 
-        psd = (
-            A ** 2
-            / (12.0 * jnp.pi ** 2)
-            * FYR ** (gamma - 3.0)
-            * self.freqs ** (-gamma)
-        )
+        psd = A**2 / (12.0 * jnp.pi**2) * FYR ** (gamma - 3.0) * self.freqs ** (-gamma)
         return jnp.repeat(psd * self.freq_bin_widths, 2)
 
     def static_basis(self) -> Float[Array, "n_toas n_basis"]:

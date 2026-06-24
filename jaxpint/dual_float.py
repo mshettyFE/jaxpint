@@ -43,7 +43,9 @@ class DualFloat(eqx.Module):
     # -- Factory methods (normalization) --
 
     @staticmethod
-    def cycles(int_part: Float[Array, "..."], frac_part: Float[Array, "..."]) -> DualFloat:
+    def cycles(
+        int_part: Float[Array, "..."], frac_part: Float[Array, "..."]
+    ) -> DualFloat:
         """Create a DualFloat, normalizing frac to [-0.5, 0.5).
 
         Suitable for phase (cycles). Assumes ``int_part`` holds integer
@@ -58,7 +60,7 @@ class DualFloat(eqx.Module):
         # precision near half-integers, making normalization non-idempotent.
         # Instead compute the fractional remainder of floor directly.
         fl = jnp.floor(frac_part)
-        remainder = frac_part - fl          # in [0, 1), precise
+        remainder = frac_part - fl  # in [0, 1), precise
         carry = jnp.where(remainder >= 0.5, fl + 1.0, fl)
         ff = frac_part - carry
         ii = int_part + carry
@@ -66,7 +68,9 @@ class DualFloat(eqx.Module):
         return DualFloat(int=ii, frac=ff)
 
     @staticmethod
-    def days(int_part: Float[Array, "..."], frac_part: Float[Array, "..."]) -> DualFloat:
+    def days(
+        int_part: Float[Array, "..."], frac_part: Float[Array, "..."]
+    ) -> DualFloat:
         """Create a DualFloat, normalizing frac to [0, 1).
 
         Suitable for MJD / time values (days). Overflow from the
@@ -114,7 +118,9 @@ class DualFloat(eqx.Module):
         # == -0.5: total -> -total = -int + 0.5 -> (-int + 1) + (-0.5).
         on_boundary = self.frac == -0.5
         new_int = jnp.where(on_boundary, -self.int + 1.0, -self.int)
-        new_frac = jnp.where(on_boundary, jnp.asarray(-0.5, dtype=self.frac.dtype), -self.frac)
+        new_frac = jnp.where(
+            on_boundary, jnp.asarray(-0.5, dtype=self.frac.dtype), -self.frac
+        )
         return DualFloat(int=new_int, frac=new_frac)
 
     def __mul__(self, scalar) -> DualFloat:

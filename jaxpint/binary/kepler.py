@@ -73,6 +73,6 @@ def solve_kepler(
         f = f_fn(E, e, M)
         fp = fp_fn(E, e, M)
         fpp = fpp_fn(E, e, M)
-        E = E - 2.0 * f * fp / (2.0 * fp ** 2 - f * fpp)
+        E = E - 2.0 * f * fp / (2.0 * fp**2 - f * fpp)
 
     return E

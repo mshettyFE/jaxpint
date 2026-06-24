@@ -92,8 +92,8 @@ def _body_ssb_posvel(body: str, tdb: Time):
     pos, vel = get_body_barycentric_posvel(body, tdb)
     assert pos is not None and vel is not None
     return (
-        pos.xyz.to_value(u.km).T,            # (n, 3)
-        vel.xyz.to_value(u.km / u.s).T,      # (n, 3)
+        pos.xyz.to_value(u.km).T,  # (n, 3)
+        vel.xyz.to_value(u.km / u.s).T,  # (n, 3)
     )
 
 

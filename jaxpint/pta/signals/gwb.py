@@ -143,8 +143,7 @@ def gwb_covariance(
         PSD values for each basis function.
     """
     toas_seconds = (
-        toa_data.tdb_int.astype(jnp.float64) * 86400.0
-        + toa_data.tdb_frac * 86400.0
+        toa_data.tdb_int.astype(jnp.float64) * 86400.0 + toa_data.tdb_frac * 86400.0
     )
     F, freqs = fourier_basis(toas_seconds, n_components, T_span)
     df = 1.0 / T_span
@@ -251,6 +250,4 @@ class CURNInjector(SignalInjector):
         """
         log10_A = global_params.param_value(f"{self.prefix}log10_A")
         gamma = global_params.param_value(f"{self.prefix}gamma")
-        return gwb_covariance(
-            toa_data, self.n_components, self.T_span, log10_A, gamma
-        )
+        return gwb_covariance(toa_data, self.n_components, self.T_span, log10_A, gamma)

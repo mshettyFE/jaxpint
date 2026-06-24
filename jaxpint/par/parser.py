@@ -28,5 +28,7 @@ def get_model(par_path: str | Path) -> ParResult:
     produced natively.
     """
     parsed = to_raw_params(tokenize(par_path))
-    component_set, binary_model = detect_components(parsed.templates, parsed.binary_value)
+    component_set, binary_model = detect_components(
+        parsed.templates, parsed.binary_value
+    )
     return raw_params_to_result(parsed.raw_params, component_set, binary_model)

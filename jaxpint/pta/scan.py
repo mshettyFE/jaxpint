@@ -160,8 +160,7 @@ def _injectors_contribute_covariance(
     every global axis as covariance-touching.
     """
     return any(
-        type(inj).covariance is not SignalInjector.covariance
-        for inj in injectors
+        type(inj).covariance is not SignalInjector.covariance for inj in injectors
     )
 
 
@@ -250,7 +249,10 @@ def _build_per_pulsar_array(
 
     if use_factor:
         factor = precompute_single_pulsar_pta_factor(
-            p, base_global_params, base_pulsar_params_p, config,
+            p,
+            base_global_params,
+            base_pulsar_params_p,
+            config,
         )
 
         def f_p(*ax_values):
@@ -263,9 +265,14 @@ def _build_per_pulsar_array(
                 else:  # GlobalScanAxis
                     gp = gp.with_value(ax.param_name, val)
             return single_pulsar_pta_logL_with_factor(
-                p, gp, pp_p, factor, config,
+                p,
+                gp,
+                pp_p,
+                factor,
+                config,
             )
     else:
+
         def f_p(*ax_values):
             gp = base_global_params
             pp_p = base_pulsar_params_p
@@ -410,9 +417,7 @@ def scan_logL(
         If ``indexing`` is not ``"xy"`` or ``"ij"``.
     """
     if indexing not in ("xy", "ij"):
-        raise ValueError(
-            f"indexing must be 'xy' or 'ij', got {indexing!r}"
-        )
+        raise ValueError(f"indexing must be 'xy' or 'ij', got {indexing!r}")
 
     n_axes = len(axes)
     if n_axes == 0:
@@ -428,7 +433,10 @@ def scan_logL(
         dep_p = _dep_axes_for_pulsar(p, axes)
         if not dep_p:
             c_p = single_pulsar_pta_logL(
-                p, base_global_params, base_pulsar_params[p], config,
+                p,
+                base_global_params,
+                base_pulsar_params[p],
+                config,
             )
             constants_total = constants_total + c_p
         else:

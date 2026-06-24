@@ -1,4 +1,5 @@
 """Base classes and shared pure-JAX functions for all fitters."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

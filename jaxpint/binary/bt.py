@@ -96,11 +96,11 @@ class BinaryBT(DelayComponent):
             Binary delay in seconds.
         """
         # --- Extract parameters ---
-        pb_d = params.param_value(self.pb_name)       # days
+        pb_d = params.param_value(self.pb_name)  # days
         t0 = params.epoch_dual(self.t0_name)
-        a1_ls = params.param_value(self.a1_name)      # light-seconds
+        a1_ls = params.param_value(self.a1_name)  # light-seconds
         ecc0 = params.param_value(self.ecc_name)
-        om_rad = params.param_value(self.om_name)     # radians
+        om_rad = params.param_value(self.om_name)  # radians
 
         pbdot = params.param_value_or(self.pbdot_name)
         omdot = params.param_value_or(self.omdot_name)  # deg/yr
@@ -119,8 +119,12 @@ class BinaryBT(DelayComponent):
 
         # --- Solve Kepler's equation ---
         M = compute_orbital_phase(
-            toa_data.tdb, t0,
-            pb_d, pbdot, xpbdot, delay=delay,
+            toa_data.tdb,
+            t0,
+            pb_d,
+            pbdot,
+            xpbdot,
+            delay=delay,
         )
         E = compute_eccentric_anomaly(ecc, M)
 

@@ -62,12 +62,12 @@ class ScaleDmError(eqx.Module):
             Scaled DM uncertainties in pc/cm³.
         """
         assert toa_data.dm_errors is not None  # DM white noise requires DM data
-        sigma_sq = toa_data.dm_errors ** 2
+        sigma_sq = toa_data.dm_errors**2
 
         for dmequad_name in self.dmequad_names:
             mask = toa_data.flag_masks[dmequad_name]
             dmequad_val = params.param_value(dmequad_name)
-            sigma_sq = jnp.where(mask, sigma_sq + dmequad_val ** 2, sigma_sq)
+            sigma_sq = jnp.where(mask, sigma_sq + dmequad_val**2, sigma_sq)
 
         sigma = jnp.sqrt(sigma_sq)
 

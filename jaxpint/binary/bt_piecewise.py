@@ -157,8 +157,12 @@ class BinaryBTPiecewise(DelayComponent):
         # --- Solve Kepler's equation ---
         t0_per_toa = DualFloat(int=t0_int_per_toa, frac=t0_frac_per_toa)
         M = _compute_orbital_phase_piecewise(
-            toa_data.tdb, t0_per_toa,
-            pb_d, pbdot, xpbdot, delay=delay,
+            toa_data.tdb,
+            t0_per_toa,
+            pb_d,
+            pbdot,
+            xpbdot,
+            delay=delay,
         )
         E = compute_eccentric_anomaly(ecc, M)
 
@@ -166,7 +170,11 @@ class BinaryBTPiecewise(DelayComponent):
 
 
 def _compute_orbital_phase_piecewise(
-    tdb, epoch, pb_d, pbdot, xpbdot,
+    tdb,
+    epoch,
+    pb_d,
+    pbdot,
+    xpbdot,
     delay=None,
 ):
     """Orbital phase with per-TOA epoch (vectorized version of compute_orbital_phase)."""
@@ -188,7 +196,7 @@ def _compute_orbital_phase_piecewise(
     tt0_s = (dt_int_days + dt_frac_days) * SECS_PER_DAY
     pb_s = pb_d * SECS_PER_DAY
     ratio = tt0_s / pb_s
-    pbdot_corr = -0.5 * (pbdot + xpbdot) * ratio ** 2
+    pbdot_corr = -0.5 * (pbdot + xpbdot) * ratio**2
 
     frac_total = frac_orbit + pbdot_corr
     frac_total = frac_total - jnp.floor(frac_total)

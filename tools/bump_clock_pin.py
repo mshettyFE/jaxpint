@@ -83,9 +83,11 @@ def generate_metadata() -> dict:
     bipm_bogus_through = "bipm2019"
     default_bipm = str(bipm_default)
 
-    for name in sorted(Observatory.names_and_aliases().keys()
-                       if hasattr(Observatory, "names_and_aliases")
-                       else Observatory._registry.keys()):
+    for name in sorted(
+        Observatory.names_and_aliases().keys()
+        if hasattr(Observatory, "names_and_aliases")
+        else Observatory._registry.keys()
+    ):
         try:
             obs = get_observatory(name)
         except Exception:
@@ -108,10 +110,12 @@ def generate_metadata() -> dict:
             "timescale": str(getattr(obs, "timescale", "utc")).lower(),
             "itrf_xyz": _itrf_xyz(obs),  # metres; None for barycenter
             "aliases": [str(a).lower() for a in (getattr(obs, "aliases", None) or [])],
-            "tempo_code": (str(entry["tempo_code"]).lower()
-                           if entry.get("tempo_code") else None),
-            "itoa_code": (str(entry["itoa_code"]).lower()
-                          if entry.get("itoa_code") else None),
+            "tempo_code": (
+                str(entry["tempo_code"]).lower() if entry.get("tempo_code") else None
+            ),
+            "itoa_code": (
+                str(entry["itoa_code"]).lower() if entry.get("itoa_code") else None
+            ),
         }
         for fn, vbe in clock_files:
             files.setdefault(
@@ -126,7 +130,11 @@ def generate_metadata() -> dict:
     # Global correction files referenced by the chain by name.
     files.setdefault(
         "gps2utc.clk",
-        {"format": "tempo2", "bogus_last_correction": False, "valid_beyond_ends": False},
+        {
+            "format": "tempo2",
+            "bogus_last_correction": False,
+            "valid_beyond_ends": False,
+        },
     )
     files.setdefault(
         f"tai2tt_{default_bipm.lower()}.clk",
@@ -168,8 +176,10 @@ def main() -> None:
     meta = generate_metadata()
     _META.parent.mkdir(parents=True, exist_ok=True)
     _META.write_text(json.dumps(meta, indent=2) + "\n")
-    print(f"wrote {_META} ({len(meta['files'])} files, "
-          f"{len(meta['observatories'])} observatories, default {meta['default_bipm']})")
+    print(
+        f"wrote {_META} ({len(meta['files'])} files, "
+        f"{len(meta['observatories'])} observatories, default {meta['default_bipm']})"
+    )
 
     if args.bump_ref:
         sha, date = bump_ref()

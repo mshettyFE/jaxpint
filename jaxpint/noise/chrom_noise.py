@@ -98,14 +98,9 @@ class PLChromNoise(NoiseComponent):
         """
         log10_A = params.param_value(self.tnchromamp_name)
         gamma = params.param_value(self.tnchromgam_name)
-        A = 10.0 ** log10_A
+        A = 10.0**log10_A
 
-        psd = (
-            A ** 2
-            / (12.0 * jnp.pi ** 2)
-            * FYR ** (gamma - 3.0)
-            * self.freqs ** (-gamma)
-        )
+        psd = A**2 / (12.0 * jnp.pi**2) * FYR ** (gamma - 3.0) * self.freqs ** (-gamma)
         return jnp.repeat(psd * self.freq_bin_widths, 2)
 
     def _scaled_basis(
