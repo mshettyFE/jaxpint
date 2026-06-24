@@ -18,7 +18,7 @@ from jaxtyping import Array, Float, Bool
 if TYPE_CHECKING:
     from jaxpint.types import TOAData, ParameterVector
 
-from jaxpint.constants import ARCSEC_TO_RAD, DAYS_PER_JULIAN_YEAR, OBLIQUITY_ARCSEC, RAD_PER_MAS, SECS_PER_DAY
+from jaxpint.constants import ARCSEC_TO_RAD, DAYS_PER_JULIAN_YEAR, RAD_PER_MAS, SECS_PER_DAY
 from jaxpint.dual_float import DualFloat
 
 

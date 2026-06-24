@@ -36,7 +36,6 @@ from jaxtyping import Array, Float
 from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import AU_KM, DMCONST
 from jaxpint.delay.solar_wind import _solar_wind_geometry_swm1, _sun_angle_and_distance
-from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
 

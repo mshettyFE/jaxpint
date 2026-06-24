@@ -24,14 +24,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from typing import Optional
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 from jaxtyping import Array, Float
 
-from jaxpint.types import TOAData, ParameterVector
+from jaxpint.types import TOAData
 from jaxpint.pta.likelihood import SignalInjector
 
 # Speed of light (m/s) and kpc → metres conversion

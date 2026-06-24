@@ -40,7 +40,6 @@ sky vs. number of anchors).
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
 import numpy as np
@@ -481,7 +480,7 @@ def run_sweep(out_dir: Path, *, nside: int = 4,
         f.write("Wen et al. 2026 Table 1 analog\n")
         f.write(f"  Source: M_c = 5e8 Msun, f_GW = 10^-8.4 Hz, SNR = {snr_target}\n")
         f.write(f"  Array: {len(subset)}-pulsar ocarina subset\n")
-        f.write(f"  Method: data-injection Fisher via two CWInjectors\n\n")
+        f.write("  Method: data-injection Fisher via two CWInjectors\n\n")
         f.write(f"{'config':>10} {'n_psr':>6} {'n_anc':>6} "
                 f"{'90 median':>11} {'90 min':>11} {'90 max':>11} "
                 f"{'50 median':>11} {'50 min':>11} {'50 max':>11}  anchors\n")

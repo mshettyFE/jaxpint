@@ -61,11 +61,15 @@ jobs:
       # The --extra flags are repeated on `uv run` (not just `uv sync` above):
       # a bare `uv run` re-syncs to the default deps and would uninstall the
       # dev extra (pytest), so the extras must be named here too.
+      # --cov: report-only coverage (config in [tool.coverage]); pytest-cov
+      #   supports the -n auto xdist parallelism.
       - name: Run full test suite
         env:
           JAX_PLATFORMS: cpu
           HYPOTHESIS_PROFILE: ci
-        run: uv run --extra cpu --extra dev pytest --runslow -n auto
+        run: >-
+          uv run --extra cpu --extra dev pytest --runslow -n auto
+          --cov=jaxpint --cov-report=term-missing --cov-report=xml
 
   # Static type checking (pyright). Fast, so it gates PRs alongside the suite.
   # Scope and per-rule severities live in [tool.pyright] in pyproject.toml
@@ -93,3 +97,27 @@ jobs:
 
       - name: Run pyright
         run: uv run --extra cpu --extra dev pyright
+
+  # Lint (ruff). Static and fast; gates PRs alongside the suite. Rules and scope
+  # live in [tool.ruff] in pyproject.toml (tests + notebooks excluded). The format
+  # check (`ruff format --check`) is added with the one-time reformat commit.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --extra cpu --extra dev
+
+      - name: Run ruff
+        run: uv run --extra cpu --extra dev ruff check

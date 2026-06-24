@@ -25,7 +25,7 @@ from typing import Optional
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.types import TOAData, ParameterVector
+from jaxpint.types import TOAData
 from jaxpint.pta.likelihood import SignalInjector
 
 # Year in seconds (NANOGrav convention)

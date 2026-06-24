@@ -58,7 +58,7 @@ def compute_skymap(*, pulsar_subset=SMOKE_SUBSET, nside=8, k=5.0, n_phase=256,
     from jaxpint.pta.signals.cw import cw_delay_from_array
     from jaxpint.pta.cw_upper_limit import h0_to_distance
     from jaxpint.pta.incoherent_ul import (
-        extract_pulsar_bM, flat_phase_grid, h0_95_grid, _A_of_phase, earth_only_A,
+        extract_pulsar_bM, h0_95_grid, earth_only_A,
         mixed_phase_A,
     )
 
@@ -85,7 +85,8 @@ def compute_skymap(*, pulsar_subset=SMOKE_SUBSET, nside=8, k=5.0, n_phase=256,
     # pulsar-term phase is localized -> coherent. The rest stay flat-phase.
     def _px_sig(pp):
         try:
-            px = float(pp.param_value("PX")); sig = float(pp.param_uncertainty("PX"))
+            px = float(pp.param_value("PX"))
+            sig = float(pp.param_uncertainty("PX"))
         except KeyError:
             return -np.inf, np.nan
         ok = np.isfinite(px) and px > 0 and np.isfinite(sig) and sig > 0
@@ -95,7 +96,8 @@ def compute_skymap(*, pulsar_subset=SMOKE_SUBSET, nside=8, k=5.0, n_phase=256,
     n_tight = int(round(coherent_fraction * len(names)))
     tight_idx = np.argsort(sig_px)[::-1][:n_tight]
     tight_idx = tight_idx[sig_px[tight_idx] > -np.inf]   # never select PX<=0 / no-sigma
-    is_tight = np.zeros(len(names), dtype=bool); is_tight[tight_idx] = True
+    is_tight = np.zeros(len(names), dtype=bool)
+    is_tight[tight_idx] = True
     L0_kpc = np.where(px_val > 0, 1.0 / np.where(px_val > 0, px_val, 1.0), 1.0)  # kpc; dummy for non-tight
     sigma_L_kpc = float(coherent_sigma_pc) * 1e-3
     if n_tight:

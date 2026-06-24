@@ -14,7 +14,6 @@ from typing import Optional
 from pint.models.timing_model import TimingModel as PINTTimingModel
 from pint.toa import TOAs
 
-from jaxpint.utils import build_quantization_matrix as _build_quantization_matrix
 
 log = logging.getLogger(__name__)
 

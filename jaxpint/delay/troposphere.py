@@ -18,7 +18,6 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, ParamDecl
-from jaxpint.dual_float import DualFloat
 from jaxpint.constants import (
     C_M_PER_S,
     NIELL_A_AMP,

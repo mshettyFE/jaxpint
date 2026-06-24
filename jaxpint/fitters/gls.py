@@ -164,8 +164,6 @@ def gls_step_augmented(
         MAP noise amplitude estimates.
     """
     n_free = M.shape[1]
-    n_epochs = U.shape[1]
-    n_aug = n_free + n_epochs
 
     # Augmented design matrix
     M_aug = jnp.concatenate([M, U], axis=1)                 # (n_toas, n_aug)

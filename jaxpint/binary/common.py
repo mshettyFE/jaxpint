@@ -18,7 +18,7 @@ from jax.typing import ArrayLike
 from jaxtyping import Array, Float
 
 from jaxpint.binary.kepler import solve_kepler
-from jaxpint.constants import SECS_PER_DAY, SECS_PER_JULIAN_YEAR, TSUN
+from jaxpint.constants import SECS_PER_DAY, TSUN
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import ParameterVector
 
