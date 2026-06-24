@@ -157,16 +157,13 @@ class SolarWindDispersionX(DelayComponent):
         dm = jnp.zeros(toa_data.n_toas)
 
         for i in range(self.n_bins):
-            # Bin boundaries
             r1 = params.epoch_dual(self.swxr1_names[i]).total
             r2 = params.epoch_dual(self.swxr2_names[i]).total
             in_bin = (toa_mjd >= r1) & (toa_mjd <= r2)
 
-            # Segment parameters
             swxdm = params.param_value(self.swxdm_names[i])
             p = params.param_value(self.swxp_names[i])
 
-            # Per-TOA geometry
             toa_geom = _solar_wind_geometry_swm1(theta, r_km, p)
 
             # Conjunction and opposition geometry (scalar, via 1-element array)

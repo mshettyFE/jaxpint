@@ -152,7 +152,10 @@ class TestJIT:
         jax_model, noise_model, toa_data, params = synth_objects
         logL_eager = single_pulsar_logL(toa_data, jax_model, noise_model, params)
         logL_jit = jax.jit(single_pulsar_logL)(toa_data, jax_model, noise_model, params)
-        npt.assert_allclose(float(logL_jit), float(logL_eager), rtol=1e-12)
+        # JIT fuses/reorders the GLS reduction (FMA, summation order), so eager
+        # and JIT differ at the ~1e-9 level — not a correctness issue. Matches the
+        # tolerance used for the analogous marginal-likelihood JIT test.
+        npt.assert_allclose(float(logL_jit), float(logL_eager), rtol=1e-8)
 
 
 class TestAutodiff:

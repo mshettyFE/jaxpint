@@ -72,7 +72,6 @@ class ScaleToaError(NoiseComponent):
         """
         sigma_sq = toa_data.error ** 2
 
-        # Step 1: add EQUAD in quadrature (per mask)
         for equad_name in self.equad_names:
             mask = toa_data.flag_masks[equad_name]
             equad_val = params.param_value(equad_name)
@@ -80,7 +79,6 @@ class ScaleToaError(NoiseComponent):
 
         sigma = jnp.sqrt(sigma_sq)
 
-        # Step 2: multiply by EFAC (per mask)
         for efac_name in self.efac_names:
             mask = toa_data.flag_masks[efac_name]
             efac_val = params.param_value(efac_name)

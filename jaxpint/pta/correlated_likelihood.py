@@ -328,7 +328,6 @@ def pta_logL_correlated(
     total_logL = jnp.float64(0.0)
 
     for cinj in config.correlated_injectors:
-        # Get PSD and ORF matrix
         S = cinj.get_psd(global_params)            # (n_basis,)
         Gamma = cinj.get_orf_matrix()              # (n_psr, n_psr)
         n_basis = S.shape[0]
@@ -384,7 +383,6 @@ def pta_logL_correlated(
         # log|Sigma| from Cholesky: 2 * sum(log(diag(L)))
         logdet_Sigma_gwb = 2.0 * jnp.sum(jnp.log(jnp.diag(Sigma_cf[0])))
 
-        # Accumulate this injector's contribution
         total_logL = total_logL - 0.5 * (sum_rCr - correction)
         total_logL = total_logL - 0.5 * (
             sum_logdetC + logdet_Phi_gwb + logdet_Sigma_gwb

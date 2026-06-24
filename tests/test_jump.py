@@ -39,10 +39,6 @@ def _make_toa_with_masks(n_toas=6, masks=None):
     return make_toa_data(n_toas, flag_masks=masks or {})
 
 
-# ===========================================================================
-# Construction tests
-# ===========================================================================
-
 class TestConstruction:
     def test_basic(self):
         j = PhaseJump(jump_param_names=("JUMP1",))
@@ -62,10 +58,6 @@ class TestConstruction:
         leaves, _ = jax.tree.flatten(j)
         assert len(leaves) == 0
 
-
-# ===========================================================================
-# Phase computation tests
-# ===========================================================================
 
 class TestPhaseJump:
     def test_single_jump_masked_toas(self):
@@ -171,10 +163,6 @@ class TestPhaseJump:
         assert jnp.allclose(result.total, expected, atol=1e-15)
 
 
-# ===========================================================================
-# JIT tests
-# ===========================================================================
-
 class TestJIT:
     def test_jit_call(self):
         """PhaseJump works under jax.jit."""
@@ -189,10 +177,6 @@ class TestJIT:
         assert isinstance(result, DualFloat)
         assert result.int.shape == (4,)
 
-
-# ===========================================================================
-# Gradient tests
-# ===========================================================================
 
 class TestGrad:
     def test_grad_wrt_jump(self):

@@ -39,7 +39,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # Clone the repo at the commit that triggered the workflow.
       - uses: actions/checkout@v4
 
       # Install uv (our package manager). enable-cache + cache-dependency-glob

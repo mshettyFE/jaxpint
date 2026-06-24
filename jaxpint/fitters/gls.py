@@ -192,7 +192,6 @@ def gls_step_augmented(
     mtcm_normalized = mtcm / norms / norms[:, None]
     mtcy_normalized = mtcy / norms
 
-    # SVD solve
     U_svd, S, Vt = jnp.linalg.svd(mtcm_normalized, full_matrices=False)
     S_safe = jnp.where(S <= threshold * S[0], jnp.inf, S)
 

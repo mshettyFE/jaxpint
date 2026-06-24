@@ -111,7 +111,6 @@ class PiecewiseSpindown(PhaseComponent):
         phase = jnp.zeros(toa_data.n_toas)
 
         for i in range(self.n_pieces):
-            # Segment boundaries
             start = params.epoch_dual(self.pwstart_names[i]).total
             stop = params.epoch_dual(self.pwstop_names[i]).total
             affected = (toa_tdb >= start) & (toa_tdb < stop)
@@ -120,7 +119,6 @@ class PiecewiseSpindown(PhaseComponent):
             ep = params.epoch_dual(self.pwep_names[i])
             dt = (toa_data.tdb - ep).total * SECS_PER_DAY - delay
 
-            # Taylor coefficients: [PWPH, PWF0, PWF1, PWF2]
             pwph = params.param_value(self.pwph_names[i])
             pwf0 = params.param_value(self.pwf0_names[i])
             pwf1 = params.param_value(self.pwf1_names[i])

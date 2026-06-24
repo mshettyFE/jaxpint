@@ -116,7 +116,6 @@ def correct(
 
     clkcorr_seconds = to_s + corr_us * 1e-6
 
-    # Add the correction to the fractional day, then renormalise so frac in [0,1).
     frac2 = mjd_frac + clkcorr_seconds / 86400.0
     carry = np.floor(frac2)
     return CorrectedTOAs(

@@ -59,10 +59,6 @@ class Spindown(PhaseComponent):
                 f"First spin term must be 'F0', got '{self.spin_param_names[0]}'"
             )
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _get_spin_coeffs(
         self, params: ParameterVector
     ) -> Float[Array, " n_terms_plus_1"]:
@@ -93,10 +89,6 @@ class Spindown(PhaseComponent):
         factorials = jnp.cumprod(jnp.arange(1, n + 1, dtype=jnp.float64))
         f_scaled = f_values / factorials
         return jnp.concatenate([jnp.zeros(1), f_scaled])
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
 
     def __call__(
         self,

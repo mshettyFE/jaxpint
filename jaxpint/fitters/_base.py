@@ -139,7 +139,6 @@ def compute_phase_residuals(
         Phase residuals in cycles (fractional part of adjusted phase).
     """
     phase = model.compute_phase(toa_data, params)
-    # Add delta_pulse_number before extracting fractional part
     adjusted = DualFloat.cycles(
         phase.int + toa_data.delta_pulse_number,
         phase.frac,
@@ -291,7 +290,6 @@ def wls_step(
     norms : (n_free,)
         Column norms used for normalisation (diagnostic).
     """
-    # Weight by inverse uncertainty
     weighted_residuals = residuals / sigma
     weighted_design_matrix = M / sigma[:, None]
 
@@ -300,7 +298,6 @@ def wls_step(
         weighted_design_matrix
     )
 
-    # SVD via JAX
     U, S, Vt = jnp.linalg.svd(normalized_design_matrix, full_matrices=False)
 
     # Threshold degenerate singular values

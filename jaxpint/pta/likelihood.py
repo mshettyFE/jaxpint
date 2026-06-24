@@ -653,7 +653,6 @@ def single_pulsar_pta_logL(
     timing_model_p = config.timing_models[p]
     noise_model_p = config.noise_models[p]
 
-    # -- Collect delays from all injectors --
     delays = [
         inj.delay(p, toa_data_p, pulsar_params_p, global_params)
         for inj in config.signal_injectors
@@ -661,7 +660,6 @@ def single_pulsar_pta_logL(
     delays = [d for d in delays if d is not None]
     ext_delay = sum(delays) if delays else None
 
-    # -- Collect covariances from all injectors --
     covs = [
         inj.covariance(p, toa_data_p, pulsar_params_p, global_params)
         for inj in config.signal_injectors

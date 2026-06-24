@@ -61,7 +61,6 @@ DATA_DIR = Path(
         "/home/hector/NYU/PTA/jax_pint/minish/jpg00017/NANOGrav15yr_PulsarTiming_v2.0.0/narrowband",
     )
 ).expanduser()
-#DATA_DIR = Path("/home/hector/NYU/PTA/jax_pint/ocarina").expanduser()
 
 # CW injection (Earth-frame). Picked to fall inside the PTA band.
 TRUE_LOG10_H = -14.0
@@ -241,7 +240,6 @@ def compute_logL_2d(debug: bool = False, profile: bool = False) -> dict:
     if debug:
         # Same rule as the XLA flag above: must be set before `import jax`.
         os.environ["JAX_DEBUG_NANS"] = "1"
-#        os.environ["JAX_DEBUG_INFS"] = "1"
         os.environ["JAX_TRACEBACK_FILTERING"] = "off"
         print("[debug] JAX_DEBUG_NANS , traceback filtering OFF")
 

@@ -181,11 +181,6 @@ def _solar_wind_geometry_swm1(
     return geometry_km / PC_TO_KM
 
 
-# ---------------------------------------------------------------------------
-# SolarWindDispersion
-# ---------------------------------------------------------------------------
-
-
 class SolarWindDispersion(DelayComponent):
     """Dispersion delay from the solar wind.
 

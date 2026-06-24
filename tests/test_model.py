@@ -107,11 +107,6 @@ class TestComputeDelay:
         np.testing.assert_allclose(delay_jit, delay_eager, rtol=1e-14)
 
 
-# ===========================================================================
-# compute_phase — without absolute phase (no TZR)
-# ===========================================================================
-
-
 class TestComputePhaseRelative:
     """Tests for compute_phase without TZR subtraction."""
 
