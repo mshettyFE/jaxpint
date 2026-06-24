@@ -32,7 +32,6 @@ _LAZY = {
     "build_timing_model": ("jaxpint.bridge.component_builder", "build_timing_model"),
 }
 
-
 def __getattr__(name):
     target = _LAZY.get(name)
     if target is None:
@@ -47,7 +46,6 @@ def __getattr__(name):
             f"dependency. Install it with: pip install jaxpint[pint]"
         ) from exc
     return getattr(mod, target[1])
-
 
 def __dir__():
     return sorted(__all__)
