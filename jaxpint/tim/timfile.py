@@ -1,4 +1,4 @@
-"""Native ``.tim`` (TOA) text reader -- the first inroad to PINT-free TOA loading.
+"""Native ``.tim`` (TOA) text reader
 
 Produces a raw, pre-clock-correction TOA table (:class:`ParsedTim`) from a
 ``.tim`` file.  This is *purely* a text->records stage: it applies EFAC/EQUAD,

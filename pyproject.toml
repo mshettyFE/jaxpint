@@ -46,6 +46,7 @@ dev = [
     "jaxpint[pint]",
     "pytest>=7.0",
     "pytest-xdist>=3.8.0",
+    "pyright>=1.1.380",
     "hypothesis>=6.0",
     "ipykernel>=7.2.0",
     "ipympl>=0.10.0",
@@ -58,3 +59,12 @@ dev = [
 markers = [
     "slow: marks tests as slow (deselected by default, run with --runslow)",
 ]
+
+[tool.pyright]
+# Static type checking. Scoped to the library (tests/examples excluded for now);
+# start lenient and ratchet strictness per-module over time. Note: jaxtyping
+# shape strings (e.g. Float[Array, " n_toas"]) are NOT shape-checked statically
+# -- they resolve to jax.Array; this catches None/return/kwarg/typo bugs only.
+include = ["jaxpint"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
