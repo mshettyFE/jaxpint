@@ -61,11 +61,20 @@ markers = [
 ]
 
 [tool.pyright]
-# Static type checking. Scoped to the library (tests/examples excluded for now);
-# start lenient and ratchet strictness per-module over time. Note: jaxtyping
+# Static type checking. Covers the library plus examples and top-level scripts;
+# tests are in scope but with type-flow rules relaxed (see below). Note: jaxtyping
 # shape strings (e.g. Float[Array, " n_toas"]) are NOT shape-checked statically
 # -- they resolve to jax.Array; this catches None/return/kwarg/typo bugs only.
-include = ["jaxpint"]
+include = [
+    "jaxpint",
+    "tests",
+    "examples",
+    "conftest.py",
+    "main.py",
+    "slurm",
+    "tools",
+    "docs",
+]
 pythonVersion = "3.12"
 typeCheckingMode = "basic"
 # Dominated by astropy/numpy stub weakness: .value/.unit on Quantity, .jd1/.jd2
@@ -74,3 +83,18 @@ typeCheckingMode = "basic"
 # non-blocking warnings rather than scattering casts. Promote to error if
 # upstream typing improves.
 reportAttributeAccessIssue = "warning"
+
+# Test code intentionally accesses internals and uses Optional-returning helpers
+# it knows are populated; error-gating the type-flow rules there is high-noise and
+# zero-bug-yield (the suite validates behavior at runtime). Keep tests in scope
+# for the high-value checks (missing imports, undefined names, bad syntax) but
+# turn off the type-flow rules.
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+reportArgumentType = "none"
+reportOptionalMemberAccess = "none"
+reportOptionalSubscript = "none"
+reportOptionalOperand = "none"
+reportCallIssue = "none"
+reportIndexIssue = "none"
+reportOperatorIssue = "none"

@@ -37,7 +37,7 @@ Typical usage in a notebook::
 
 from __future__ import annotations
 
-from typing import Callable, NamedTuple, Optional
+from typing import TYPE_CHECKING, Callable, NamedTuple, Optional
 
 import astropy.units as u
 import jax
@@ -56,6 +56,11 @@ from jaxpint.pta.params import GlobalParams
 from jaxpint.pta.signals.cw import CWInjector
 from jaxpint.simulation import apply_delay_to_toas
 from jaxpint.types import ParameterVector, TOAData
+
+if TYPE_CHECKING:
+    # NanogravPTA is structurally identical to SyntheticPTA (see its docstring);
+    # the injector helpers accept either.
+    from jaxpint.loaders.nanograv import NanogravPTA
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +386,7 @@ def build_cw_injectors(
 
 
 def inject_and_build_config(
-    synthetic: SyntheticPTA,
+    synthetic: SyntheticPTA | NanogravPTA,
     injectors: tuple[SignalInjector, ...],
 ) -> tuple[GlobalParams, PTAConfig]:
     """Register injector params, apply their delays to TOAs, and build a ``PTAConfig``.
