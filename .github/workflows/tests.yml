@@ -1,5 +1,5 @@
-# Run the full pytest suite (including @slow PINT-validation tests) on every
-# push to main and every pull request.
+# Run the full pytest suite (including @slow PINT-validation tests) and pyright
+# static type checking on every push to main and every pull request.
 #
 # Mirrors the environment conventions from docs.yml: uv for installs,
 # --extra cpu (no CUDA wheels on the runner), and JAX_PLATFORMS=cpu so JAX
@@ -24,7 +24,7 @@ concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true
 
-# Read-only: the test job only needs to check out the repo.
+# Read-only: the jobs only need to check out the repo.
 permissions:
   contents: read
 
@@ -66,3 +66,30 @@ jobs:
           JAX_PLATFORMS: cpu
           HYPOTHESIS_PROFILE: ci
         run: uv run --extra cpu --extra dev pytest --runslow -n auto
+
+  # Static type checking (pyright). Fast, so it gates PRs alongside the suite.
+  # Scope and per-rule severities live in [tool.pyright] in pyproject.toml
+  # (library + examples + scripts at error level; tests' type-flow rules relaxed).
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # pyright needs the deps installed to resolve imports (jax, astropy, pint).
+      # --extra dev pulls in pyright itself (+ pint for the bridge modules);
+      # --extra cpu provides jax[cpu]. Extras repeated on `uv run` (see above).
+      - name: Install dependencies
+        run: uv sync --extra cpu --extra dev
+
+      - name: Run pyright
+        run: uv run --extra cpu --extra dev pyright
