@@ -116,35 +116,86 @@ def distance_phase_grid(
     return 2.0 * jnp.pi * f_gw * (L * _KPC_TO_M) * (1.0 + cos_mu) / _C
 
 
+def mixed_phase_A(
+    is_tight: Float[Array, " n_psr"],
+    L0_kpc: Float[Array, " n_psr"],
+    sigma_L_kpc: float,
+    k: float,
+    cos_mu: Float[Array, " n_psr"],
+    f_gw: float,
+    n_phase: int,
+    min_pts_per_cycle: float = 16.0,
+) -> Float[Array, "n_psr n_phase 2"]:
+    """Per-pulsar coefficient vectors ``A(Δ)`` for the hybrid map (one sky pixel).
+
+    Pulsars flagged ``is_tight`` (a well-measured / hypothetically tight distance)
+    marginalize the phase over their narrow distance prior via
+    :func:`distance_phase_grid` (localized -> coherent contribution); the rest use
+    :func:`flat_phase_grid` over ``[0, 2π)`` (incoherent).  ``cos_mu`` and
+    ``L0_kpc`` are per pulsar (``cos_mu`` is pixel-dependent), ``sigma_L_kpc``/``k``/
+    ``f_gw`` are shared.  Stack the result over a pixel chunk in the driver.
+
+    Adaptive: a tight prior spanning ``N_wrap = 2 k σ_L f (1+cos μ) / c`` phase
+    cycles needs ``≥ min_pts_per_cycle`` grid points per cycle to resolve; once it
+    exceeds what ``n_phase`` resolves the distance grid would alias, so we fall back
+    to the exact flat-phase limit (a loose "tight" prior is effectively incoherent).
+    Note ``L0`` cancels out of ``N_wrap``.
+    """
+    flat = flat_phase_grid(n_phase)                                   # (n_phase,)
+    dist = jax.vmap(
+        lambda L0, cm: distance_phase_grid(L0, sigma_L_kpc, k, cm, f_gw, n_phase),
+        in_axes=(0, 0),
+    )(L0_kpc, cos_mu)                                                 # (n_psr, n_phase)
+    n_wrap = 2.0 * k * sigma_L_kpc * f_gw * _KPC_TO_M * (1.0 + cos_mu) / _C
+    use_dist = is_tight & (n_wrap <= n_phase / min_pts_per_cycle)
+    grids = jnp.where(use_dist[:, None], dist, flat[None, :])         # (n_psr, n_phase)
+    return _A_of_phase(grids)                                         # (n_psr, n_phase, 2)
+
+
 # ------------------------------------------------------------------- marginal logL
 def _A_of_phase(phase: Float[Array, " n"]) -> Float[Array, "n 2"]:
     """``A(Δ) = (1 − cosΔ, sinΔ)`` stacked over a phase grid."""
     return jnp.stack([1.0 - jnp.cos(phase), jnp.sin(phase)], axis=-1)
 
 
+def earth_only_A() -> Float[Array, "1 2"]:
+    """The single signal-coefficient vector for the Earth-term-only baseline.
+
+    With the pulsar term dropped, the signal is fixed -- ``s = h0 * e`` -- so the
+    coefficient vector is ``A = (1, 0)`` and there is nothing to marginalize.
+    Routed through the same numerical UL as the marginalized case, this gives a
+    *method-matched* Earth-term map (a controlled comparison)."""
+    return jnp.array([[1.0, 0.0]])
+
+
 def logL_pulsar_marg(
     h0: Float[Array, ""],
     b: Float[Array, " 2"],
     M: Float[Array, "2 2"],
-    phase_grid: Float[Array, " n"],
+    A: Float[Array, "n 2"],
 ) -> Float[Array, ""]:
-    """Per-pulsar phase-marginalized log-likelihood ``log mean_Δ exp(logL_a)``."""
-    A = _A_of_phase(phase_grid)                       # (n, 2)
+    """Per-pulsar log-likelihood marginalized over the supplied signal-coefficient
+    vectors ``A`` (``log mean_i exp(logL_a(A_i))``).
+
+    ``A`` is the set of coefficient 2-vectors to average over: ``_A_of_phase`` of a
+    phase grid for the distance-marginalized case, or :func:`earth_only_A` (a
+    singleton ``(1,0)``) for the Earth-term-only baseline.
+    """
     bA = A @ b                                         # (n,)
     AMA = jnp.einsum("ni,ij,nj->n", A, M, A)          # (n,)
     logL = h0 * bA - 0.5 * h0**2 * AMA
-    return logsumexp(logL) - jnp.log(phase_grid.shape[0])
+    return logsumexp(logL) - jnp.log(A.shape[0])
 
 
 def total_logL_marg(
     h0: Float[Array, ""],
     b_stack: Float[Array, "n_psr 2"],
     M_stack: Float[Array, "n_psr 2 2"],
-    phase_grids: Float[Array, "n_psr n"],
+    A_stack: Float[Array, "n_psr n 2"],
 ) -> Float[Array, ""]:
-    """Σ over pulsars of the per-pulsar phase-marginalized logL (factorizes)."""
+    """Σ over pulsars of the per-pulsar marginalized logL (factorizes)."""
     per = jax.vmap(logL_pulsar_marg, in_axes=(None, 0, 0, 0))(
-        h0, b_stack, M_stack, phase_grids
+        h0, b_stack, M_stack, A_stack
     )
     return jnp.sum(per)
 
@@ -153,7 +204,7 @@ def total_logL_marg(
 def h0_95_grid(
     b_stack: Float[Array, "n_psr 2"],
     M_stack: Float[Array, "n_psr 2 2"],
-    phase_grids: Float[Array, "n_psr n"],
+    A_stack: Float[Array, "n_psr n 2"],
     h0_max: Float[Array, ""],
     n_h0: int = 512,
     level: float = 0.95,
@@ -165,15 +216,16 @@ def h0_95_grid(
     the normalized posterior weight, and interpolate the CDF.  ``h0_max`` must
     cover the 95% mass -- the driver sets it adaptively (see the module/driver).
 
-    The marginal posterior has a power-law tail ``~ h0^{-N}`` (``N`` = number of
-    pulsars), because the ``Δ≈0`` phases -- where the Earth and pulsar terms
-    cancel -- give vanishing signal power.  It is therefore proper only for
-    ``N >= 2``; a real PTA always satisfies this.
+    The distance-marginalized posterior has a power-law tail ``~ h0^{-N}`` (``N`` =
+    number of pulsars), because the ``Δ≈0`` phases -- where the Earth and pulsar
+    terms cancel -- give vanishing signal power; it is therefore proper only for
+    ``N >= 2`` (a real PTA always satisfies this).  The Earth-term-only baseline
+    (singleton ``A``) is a plain truncated Gaussian and proper for any ``N``.
     """
     h0 = jnp.linspace(0.0, h0_max, n_h0)
     logpost = jax.vmap(
         total_logL_marg, in_axes=(0, None, None, None)
-    )(h0, b_stack, M_stack, phase_grids)
+    )(h0, b_stack, M_stack, A_stack)
     w = jnp.exp(logpost - jnp.max(logpost))           # uniform prior on h0>=0
     cdf = jnp.cumsum(w)
     cdf = cdf / cdf[-1]

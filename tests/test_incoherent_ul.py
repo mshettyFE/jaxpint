@@ -9,7 +9,7 @@ import pytest
 from jaxpint.pta.signals.cw import cw_delay_from_array, _KPC_TO_M, _C
 from jaxpint.pta.incoherent_ul import (
     bM2_coeffs, extract_pulsar_bM, flat_phase_grid, distance_phase_grid,
-    logL_pulsar_marg, h0_95_grid, _A_of_phase,
+    logL_pulsar_marg, h0_95_grid, _A_of_phase, earth_only_A, mixed_phase_A,
 )
 from tests.helpers import make_toa_data, make_simple_pulsar
 
@@ -31,7 +31,7 @@ def test_phase_marginal_matches_quadrature():
     """logL_pulsar_marg == log mean_Delta exp(logL) by independent numpy quadrature."""
     b = jnp.array([0.7, -0.3]); M = jnp.array([[2.0, 0.4], [0.4, 1.5]])
     h0 = 0.8
-    got = float(logL_pulsar_marg(h0, b, M, flat_phase_grid(2048)))
+    got = float(logL_pulsar_marg(h0, b, M, _A_of_phase(flat_phase_grid(2048))))
     D = np.linspace(0, 2 * np.pi, 200001)
     A = np.stack([1 - np.cos(D), np.sin(D)], -1)
     integ = np.exp(h0 * (A @ np.array(b)) - 0.5 * h0**2
@@ -40,17 +40,27 @@ def test_phase_marginal_matches_quadrature():
     assert abs(got - ref) < 1e-9
 
 
+def test_earth_only_A_is_fixed_truncated_gaussian():
+    """earth_only_A() = (1,0): no marginalization, a plain truncated-Gaussian logL
+    s = h0*e with X=b[0], Y=M[0,0]."""
+    A = earth_only_A()
+    assert np.allclose(np.asarray(A), [[1.0, 0.0]])
+    b = jnp.array([0.7, -0.3]); M = jnp.array([[2.0, 0.4], [0.4, 1.5]]); h0 = 0.9
+    got = float(logL_pulsar_marg(h0, b, M, A))
+    assert np.isclose(got, h0 * b[0] - 0.5 * h0**2 * M[0, 0])
+
+
 def test_h0_95_grid_interior_and_sensitivity():
     # Use >=2 pulsars: the phase-marginalized posterior tail is ~h0^{-N}, so a
     # single null pulsar is improper (the Delta~0 phases give vanishing signal
     # power). With 2 pulsars it is proper and the 95% point is interior.
     M = jnp.broadcast_to(jnp.eye(2), (2, 2, 2))
-    g = jnp.broadcast_to(flat_phase_grid(256), (2, 256))
+    A = jnp.broadcast_to(_A_of_phase(flat_phase_grid(256)), (2, 256, 2))
     b = jnp.broadcast_to(jnp.array([0.5, 0.2]), (2, 2))
-    ul = float(h0_95_grid(b, M, g, jnp.float64(60.0), n_h0=6000))
+    ul = float(h0_95_grid(b, M, A, jnp.float64(60.0), n_h0=6000))
     assert 0.0 < ul < 60.0
     # sensitivity: 4x more signal power (M) -> tighter (smaller) upper limit
-    ul_more = float(h0_95_grid(b, 4.0 * M, g, jnp.float64(60.0), n_h0=6000))
+    ul_more = float(h0_95_grid(b, 4.0 * M, A, jnp.float64(60.0), n_h0=6000))
     assert ul_more < ul
 
 
@@ -58,11 +68,11 @@ def test_matched_filter_sign_single_phase():
     """At a fixed phase (degenerate grid) the UL is a standard truncated-Gaussian
     limit, so a larger positive matched filter pushes it UP -- validates the sign."""
     M = jnp.broadcast_to(jnp.eye(2), (2, 2, 2))
-    g = jnp.broadcast_to(jnp.array([jnp.pi]), (2, 1))     # single phase: A=(2,0)
+    A = jnp.broadcast_to(_A_of_phase(jnp.array([jnp.pi])), (2, 1, 2))  # A=(2,0)
     weak = jnp.broadcast_to(jnp.array([0.2, 0.0]), (2, 2))
     strong = jnp.broadcast_to(jnp.array([1.0, 0.0]), (2, 2))
-    ul_w = float(h0_95_grid(weak, M, g, jnp.float64(40.0), n_h0=6000))
-    ul_s = float(h0_95_grid(strong, M, g, jnp.float64(40.0), n_h0=6000))
+    ul_w = float(h0_95_grid(weak, M, A, jnp.float64(40.0), n_h0=6000))
+    ul_s = float(h0_95_grid(strong, M, A, jnp.float64(40.0), n_h0=6000))
     assert ul_s > ul_w
 
 
@@ -102,13 +112,32 @@ def test_distance_phase_grid_values():
         assert np.isclose(expect, 2 * np.pi * f * (L * _KPC_TO_M) * (1 + cosmu) / _C)
 
 
+def test_mixed_phase_A():
+    """Tight pulsars get the distance grid (localized); flat pulsars keep [0,2pi)."""
+    L0 = jnp.array([1.0, 2.0]); cosmu = jnp.array([0.3, -0.2]); n = 64
+    flatA = _A_of_phase(flat_phase_grid(n))
+    # all-flat -> flat broadcast
+    A0 = mixed_phase_A(jnp.array([False, False]), L0, 1e-5, 3.0, cosmu, 27e-9, n)
+    assert np.allclose(A0, np.broadcast_to(flatA, (2, n, 2)))
+    # one tight (sub-cycle) -> its row is the distance grid, differs from flat;
+    # the flat pulsar is unchanged
+    A1 = mixed_phase_A(jnp.array([True, False]), L0, 1e-6, 3.0, cosmu, 27e-9, n)
+    assert np.allclose(A1[0], _A_of_phase(distance_phase_grid(1.0, 1e-6, 3.0, 0.3, 27e-9, n)))
+    assert np.allclose(A1[1], flatA)
+    assert not np.allclose(A1[0], flatA)
+    # adaptive: a tight pulsar with a LOOSE prior (many cycles > grid resolves)
+    # falls back to the exact flat-phase limit (no aliasing)
+    A2 = mixed_phase_A(jnp.array([True, True]), L0, 2e-3, 5.0, cosmu, 27e-9, n)
+    assert np.allclose(A2[0], flatA) and np.allclose(A2[1], flatA)
+
+
 def test_narrow_prior_localizes_vs_flat():
     """A sub-cycle phase grid (informative distance) gives a DIFFERENT marginal
     than the flat-phase (broad-prior) limit -- i.e. the parallax is actually used."""
     b = jnp.array([0.6, -0.4]); M = jnp.array([[1.8, 0.3], [0.3, 1.2]]); h0 = 1.0
-    flat = float(logL_pulsar_marg(h0, b, M, flat_phase_grid(512)))
+    flat = float(logL_pulsar_marg(h0, b, M, _A_of_phase(flat_phase_grid(512))))
     narrow = jnp.linspace(1.00, 1.02, 64)         # tight cluster of phases (<<1 cycle)
-    loc = float(logL_pulsar_marg(h0, b, M, narrow))
+    loc = float(logL_pulsar_marg(h0, b, M, _A_of_phase(narrow)))
     # localized marginal ~ the single-phase logL at Delta~1.01, far from flat avg
     A = _A_of_phase(jnp.array([1.01]))[0]
     single = float(h0 * (A @ b) - 0.5 * h0**2 * (A @ M @ A))

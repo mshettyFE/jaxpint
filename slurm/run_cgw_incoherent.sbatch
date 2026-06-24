@@ -53,6 +53,19 @@ NSIDE="${NSIDE:-8}"            # HEALPix nside (npix = 12*nside^2; 8 -> 768 pixe
 PIXEL_CHUNK="${PIXEL_CHUNK:-8}"   # sky pixels vmapped per chunk (memory <-> speed)
 KSIGMA="${KSIGMA:-5}"         # distance prior half-width in units of sigma_PX (L in [1/PX +/- k*sigma_L])
 NPHASE="${NPHASE:-256}"       # pulsar-term phase grid points (flat-phase marginal)
+EARTH_TERM="${EARTH_TERM:-0}"  # 1 -> method-matched Earth-term baseline (no pulsar term)
+COHERENT_FRACTION="${COHERENT_FRACTION:-0}"   # fraction (best PX/sigma) with a tight distance prior (coherent)
+COHERENT_SIGMA_PC="${COHERENT_SIGMA_PC:-0.1}" # tight-subset distance prior 1-sigma in pc (~0.01 localizes, ~1 ~ flat)
+
+# Earth-term toggle: drops the pulsar term and routes the pure Earth signal
+# through the SAME numerical UL, for a controlled earth-vs-incoherent comparison.
+if [ "${EARTH_TERM}" = "1" ]; then
+    EARTH_FLAG="--earth-term-only"
+    EARTH_TAG="-earth"
+else
+    EARTH_FLAG=""
+    EARTH_TAG=""
+fi
 
 # Ocarina par/tim directory staged by slurm/stage_ocarina.sh (mirrors the local
 # dataset name). The driver reads this via $JAXPINT_OCARINA_DIR.
@@ -63,7 +76,12 @@ IMAGE="/share/apps/images/cuda12.1.1-cudnn8.9.0-devel-ubuntu22.04.2.sif"
 PROJECT_DIR="${SLURM_SUBMIT_DIR}"
 
 OUT_DIR="/scratch/${USER}/jaxpint-out"
-OUT_FILE="${OUT_DIR}/cgw-incoherent-${OCARINA}-real-${SLURM_JOB_ID}.npz"
+# Filename tag for the coherent subset (omit when fraction is 0).
+case "${COHERENT_FRACTION}" in
+    0|0.0|0.00|"") COH_TAG="" ;;
+    *)             COH_TAG="-coh${COHERENT_FRACTION}-s${COHERENT_SIGMA_PC}pc" ;;
+esac
+OUT_FILE="${OUT_DIR}/cgw-incoherent-${OCARINA}-real${EARTH_TAG}${COH_TAG}-${SLURM_JOB_ID}.npz"
 mkdir -p "${OUT_DIR}"
 
 # Sanity-check the artefacts we depend on; surface clear errors early.
@@ -84,6 +102,8 @@ echo "[sbatch] NSIDE       = ${NSIDE}"
 echo "[sbatch] PIXEL_CHUNK = ${PIXEL_CHUNK}"
 echo "[sbatch] KSIGMA      = ${KSIGMA}"
 echo "[sbatch] NPHASE      = ${NPHASE}"
+echo "[sbatch] EARTH_TERM  = ${EARTH_TERM} (${EARTH_FLAG:-pulsar term: distance-marginalized})"
+echo "[sbatch] COHERENT    = fraction ${COHERENT_FRACTION}, sigma ${COHERENT_SIGMA_PC} pc"
 echo "[sbatch] OUT_FILE    = ${OUT_FILE}"
 
 nvidia-smi || true
@@ -99,6 +119,6 @@ srun singularity exec --nv \
     --env "XLA_PYTHON_CLIENT_PREALLOCATE=false" \
     --env "PYTHONHTTPSVERIFY=0" \
     "${IMAGE}" \
-    /bin/bash -c "source /ext3/env.sh && cd '${PROJECT_DIR}' && python examples/cgw_incoherent_distance_skymap.py generate --output '${OUT_FILE}' --nside '${NSIDE}' --full --pixel-chunk '${PIXEL_CHUNK}' --k '${KSIGMA}' --n-phase '${NPHASE}'"
+    /bin/bash -c "source /ext3/env.sh && cd '${PROJECT_DIR}' && python examples/cgw_incoherent_distance_skymap.py generate --output '${OUT_FILE}' --nside '${NSIDE}' --full --pixel-chunk '${PIXEL_CHUNK}' --k '${KSIGMA}' --n-phase '${NPHASE}' --coherent-fraction '${COHERENT_FRACTION}' --coherent-sigma-pc '${COHERENT_SIGMA_PC}' ${EARTH_FLAG}"
 
 echo "[sbatch] Done. Output at ${OUT_FILE}"
