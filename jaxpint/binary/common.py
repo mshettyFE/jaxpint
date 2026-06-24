@@ -12,6 +12,7 @@ PINT ``binary_generic.py``, ``binary_orbits.py``.
 from __future__ import annotations
 
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 from jaxtyping import Array, Float
 
 from jaxpint.binary.kepler import solve_kepler
@@ -61,9 +62,9 @@ def compute_tt0(
 
 def compute_orbits_pb(
     tt0_s: Float[Array, " n_toas"],
-    pb_d: float,
-    pbdot: float = 0.0,
-    xpbdot: float = 0.0,
+    pb_d: ArrayLike,
+    pbdot: ArrayLike = 0.0,
+    xpbdot: ArrayLike = 0.0,
 ) -> Float[Array, " n_toas"]:
     """Orbital phase (number of orbits since T0) using the PB parameterization.
 
@@ -108,9 +109,9 @@ def compute_mean_anomaly(orbits: Float[Array, " n_toas"]) -> Float[Array, " n_to
 def compute_orbital_phase(
     tdb: DualFloat,
     epoch: DualFloat,
-    pb_d: float,
-    pbdot: float = 0.0,
-    xpbdot: float = 0.0,
+    pb_d: ArrayLike,
+    pbdot: ArrayLike = 0.0,
+    xpbdot: ArrayLike = 0.0,
     delay: Float[Array, " n_toas"] = None,
 ) -> Float[Array, " n_toas"]:
     """Orbital phase in [0, 2*pi) using DualFloat precision.
@@ -182,7 +183,7 @@ def compute_orbital_phase(
 # Time-dependent orbital elements
 # ---------------------------------------------------------------------------
 
-def compute_ecc(ecc0: float, edot: float, tt0_s: Float[Array, " n_toas"]) -> Float[Array, " n_toas"]:
+def compute_ecc(ecc0: ArrayLike, edot: ArrayLike, tt0_s: Float[Array, " n_toas"]) -> Float[Array, " n_toas"]:
     """Time-dependent eccentricity: ``ecc(t) = ECC + EDOT * tt0``.
 
     Parameters
@@ -199,10 +200,10 @@ def compute_ecc(ecc0: float, edot: float, tt0_s: Float[Array, " n_toas"]) -> Flo
     Float[Array, " n_toas"]
         Eccentricity at each TOA (dimensionless).
     """
-    return ecc0 + edot * tt0_s
+    return jnp.asarray(ecc0 + edot * tt0_s)
 
 
-def compute_a1(a1_0: float, a1dot: float, tt0_s: Float[Array, " n_toas"]) -> Float[Array, " n_toas"]:
+def compute_a1(a1_0: ArrayLike, a1dot: ArrayLike, tt0_s: Float[Array, " n_toas"]) -> Float[Array, " n_toas"]:
     """Time-dependent projected semi-major axis: ``a1(t) = A1 + A1DOT * tt0``.
 
     Parameters
@@ -219,12 +220,12 @@ def compute_a1(a1_0: float, a1dot: float, tt0_s: Float[Array, " n_toas"]) -> Flo
     Float[Array, " n_toas"]
         Projected semi-major axis at each TOA, in light-seconds.
     """
-    return a1_0 + a1dot * tt0_s
+    return jnp.asarray(a1_0 + a1dot * tt0_s)
 
 
 def compute_omega_bt(
-    om_rad: float,
-    omdot_rad_per_s: float,
+    om_rad: ArrayLike,
+    omdot_rad_per_s: ArrayLike,
     tt0_s: Float[Array, " n_toas"],
 ) -> Float[Array, " n_toas"]:
     """Longitude of periastron for BT model: ``omega = OM + OMDOT * tt0``.
@@ -243,16 +244,16 @@ def compute_omega_bt(
     array
         omega in radians.
     """
-    return om_rad + omdot_rad_per_s * tt0_s
+    return jnp.asarray(om_rad + omdot_rad_per_s * tt0_s)
 
 
 def _bt_delay_formula(
     a1: Float[Array, " n_toas"],
     ecc: Float[Array, " n_toas"],
     omega: Float[Array, " n_toas"],
-    gamma: float,
-    pb_d: float,
-    pbdot: float,
+    gamma: ArrayLike,
+    pb_d: ArrayLike,
+    pbdot: ArrayLike,
     tt0_s: Float[Array, " n_toas"],
     E: Float[Array, " n_toas"],
 ) -> Float[Array, " n_toas"]:
@@ -375,11 +376,11 @@ def compute_true_anomaly(
 # ---------------------------------------------------------------------------
 
 def compute_omega_dd(
-    om_rad: float,
-    omdot_rad_per_s: float,
+    om_rad: ArrayLike,
+    omdot_rad_per_s: ArrayLike,
     nu: Float[Array, " n_toas"],
-    pb_d: float,
-    pbdot: float = 0.0,
+    pb_d: ArrayLike,
+    pbdot: ArrayLike = 0.0,
     tt0_s: Float[Array, " n_toas"] = None,
 ) -> Float[Array, " n_toas"]:
     """Longitude of periastron for DD model: ``omega = OM + nu * k``.
@@ -416,7 +417,7 @@ def compute_omega_dd(
         pb_prime_s = pb_s
     n = 2.0 * jnp.pi / pb_prime_s  # mean motion (rad/s)
     k = omdot_rad_per_s / n   # advance of periastron per orbit (rad/rad)
-    return om_rad + nu * k
+    return jnp.asarray(om_rad + nu * k)
 
 
 # ---------------------------------------------------------------------------
@@ -505,8 +506,8 @@ def dd_shapiro_delay(
 
 
 def dd_aberration_delay(
-    A0: float,
-    B0: float,
+    A0: ArrayLike,
+    B0: ArrayLike,
     sin_omega: Float[Array, " n_toas"],
     cos_omega: Float[Array, " n_toas"],
     nu: Float[Array, " n_toas"],
@@ -534,7 +535,7 @@ def dd_aberration_delay(
         Aberration delay in seconds.
     """
     omg_plus_nu = omega + nu
-    return (
+    return jnp.asarray(
         A0 * (jnp.sin(omg_plus_nu) + ecc * sin_omega)
         + B0 * (jnp.cos(omg_plus_nu) + ecc * cos_omega)
     )
@@ -652,13 +653,13 @@ def dd_core_delay(
     nu: Float[Array, " n_toas"],
     a1: Float[Array, " n_toas"],
     tt0_s: Float[Array, " n_toas"],
-    pb_d: float,
-    pbdot: float,
-    gamma: float,
-    dr: float,
-    dth: float,
-    A0: float,
-    B0: float,
+    pb_d: ArrayLike,
+    pbdot: ArrayLike,
+    gamma: ArrayLike,
+    dr: ArrayLike,
+    dth: ArrayLike,
+    A0: ArrayLike,
+    B0: ArrayLike,
     sini,
     m2,
 ) -> Float[Array, " n_toas"]:
@@ -722,7 +723,7 @@ def dd_core_delay(
 
     # nhat (eq. [51]) — uses instantaneous period
     pb_prime_s = pb_d * SECS_PER_DAY + pbdot * tt0_s
-    nhat = 2.0 * jnp.pi / pb_prime_s / (1.0 - ecc * cosE)
+    nhat = jnp.asarray(2.0 * jnp.pi / pb_prime_s / (1.0 - ecc * cosE))
 
     # 1. Inverse timing delay (eq. [52])
     delay_inverse = dd_inverse_timing(Dre, Drep, Drepp, nhat, ecc, sinE, cosE)

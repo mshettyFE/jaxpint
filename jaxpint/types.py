@@ -15,6 +15,7 @@ from typing import Optional
 
 import equinox as eqx
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 from jaxtyping import Array, Bool, Float, Int
 
 from jaxpint.dual_float import DualFloat
@@ -421,7 +422,7 @@ class ParameterVector(eqx.Module):
         new_values = self.values.at[indices].set(new_free)
         return eqx.tree_at(lambda pv: pv.values, self, new_values)
 
-    def with_value(self, name: str, val: float) -> ParameterVector:
+    def with_value(self, name: str, val: ArrayLike) -> ParameterVector:
         """Return a new ParameterVector with one parameter updated.
 
         Parameters
