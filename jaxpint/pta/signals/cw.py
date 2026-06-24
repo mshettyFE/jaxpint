@@ -425,6 +425,8 @@ def cw_delay_from_array(
     cw_params: Float[Array, " 7"],
     earth_term_only: bool = False,
     linear_amplitude: bool = False,
+    pulsar_term_only: bool = False,
+    pulsar_term_phase: Optional[float] = None,
 ) -> Float[Array, " n_toas"]:
     """CW timing delay using a flat parameter array (vmappable over sources).
 
@@ -465,6 +467,14 @@ def cw_delay_from_array(
         pulsar-term phase unconstrained at PTA frequencies), and is the standard
         simplification for upper-limit / sensitivity sky maps.  Default False
         preserves the full Earth + pulsar term behavior.
+    pulsar_term_only : bool
+        If True, keep ONLY the pulsar-term contribution to the residual (the
+        ``full - earth`` piece: ``delta_sin = -sin(phase_pulsar)``).  Used with
+        ``pulsar_term_phase`` to build the pulsar-term quadrature templates for the
+        incoherent distance-marginalized upper limit (``jaxpint.pta.incoherent_ul``).
+    pulsar_term_phase : float, optional
+        When given (a static float), the pulsar-term phase lag is set DIRECTLY to
+        this value instead of computed from ``pulsar_dist`` -- distance-independent.
 
     Returns
     -------
@@ -509,29 +519,43 @@ def cw_delay_from_array(
         delta_sin = jnp.sin(phase_earth)
         delta_cos = jnp.cos(phase_earth)
     else:
-        omhat = jnp.array([
-            -sin_theta * jnp.cos(gwphi),
-            -sin_theta * jnp.sin(gwphi),
-            -cos_theta,
-        ])
+        # Pulsar-term phase lag. With ``pulsar_term_phase`` supplied (a static
+        # Python float), use it directly -- this builds the pulsar-term quadrature
+        # at a fixed phase, with NO dependence on pulsar_dist (used by the
+        # incoherent distance-marginalized upper limit to form the ``ps`` template
+        # at Delta=pi/2). Otherwise compute the lag from the pulsar distance.
+        if pulsar_term_phase is not None:
+            phase_pulsar = phase_earth - pulsar_term_phase
+        else:
+            omhat = jnp.array([
+                -sin_theta * jnp.cos(gwphi),
+                -sin_theta * jnp.sin(gwphi),
+                -cos_theta,
+            ])
+            cos_mu = jnp.dot(omhat, pos)
+            # pulsar_dist is parallax in mas (types.py convention).
+            # Ellis+2012 (arXiv:1204.4218) writes the pulsar-term phase in terms of
+            # the physical distance L; convert mas -> kpc via L_kpc = 1 / PX_mas.
+            dist_m = (1.0 / pulsar_dist) * _KPC_TO_M
+            # Pulsar phase gets delayed by light vacuum time
+            phase_pulsar = phase_earth - (
+                2.0 * jnp.pi * f0 * dist_m / _C * (1.0 + cos_mu)
+            )
 
-        cos_mu = jnp.dot(omhat, pos)
-        # pulsar_dist is parallax in mas (types.py convention).
-        # Ellis+2012 (arXiv:1204.4218) writes the pulsar-term phase in terms of
-        # the physical distance L; convert mas -> kpc via L_kpc = 1 / PX_mas.
-        dist_m = (1.0 / pulsar_dist) * _KPC_TO_M
-        # Pulsar phase gets delayed by light vacuum time
-        phase_pulsar = phase_earth - (
-            2.0 * jnp.pi * f0 * dist_m / _C * (1.0 + cos_mu)
-        )
+        if pulsar_term_only:
+            # Only the pulsar-term contribution to the residual (= full - earth),
+            # so the earth piece sin/cos(phase_earth) is dropped and the sign is
+            # negated relative to the earth term.
+            delta_sin = -jnp.sin(phase_pulsar)
+            delta_cos = -jnp.cos(phase_pulsar)
+        else:
+            # Sum to product formula  to convert sin(t_{p}) - sin(t_{e}) = sin((t_{p}+t_{e})/2)cos((t_{p}-t_{e})/2)
+            # Similar for cosine differences as well
+            phi_avg = 0.5 * (phase_earth + phase_pulsar)
+            phi_diff = 0.5 * (phase_earth - phase_pulsar)
 
-        # Sum to product formula  to convert sin(t_{p}) - sin(t_{e}) = sin((t_{p}+t_{e})/2)cos((t_{p}-t_{e})/2)
-        # Similar for cosine differences as well
-        phi_avg = 0.5 * (phase_earth + phase_pulsar)
-        phi_diff = 0.5 * (phase_earth - phase_pulsar)
-
-        delta_sin = 2.0 * jnp.cos(phi_avg) * jnp.sin(phi_diff)
-        delta_cos = -2.0 * jnp.sin(phi_avg) * jnp.sin(phi_diff)
+            delta_sin = 2.0 * jnp.cos(phi_avg) * jnp.sin(phi_diff)
+            delta_cos = -2.0 * jnp.sin(phi_avg) * jnp.sin(phi_diff)
 
     At = -(1.0 + cos_inc**2) * delta_sin
     Bt = 2.0 * cos_inc * delta_cos
