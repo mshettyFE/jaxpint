@@ -46,7 +46,10 @@ dev = [
     "jaxpint[pint]",
     "pytest>=7.0",
     "pytest-xdist>=3.8.0",
+    "pytest-cov>=5.0",
     "pyright>=1.1.380",
+    "ruff>=0.6",
+    "pre-commit>=3.7",
     "hypothesis>=6.0",
     "ipykernel>=7.2.0",
     "ipympl>=0.10.0",
@@ -98,3 +101,44 @@ reportOptionalOperand = "none"
 reportCallIssue = "none"
 reportIndexIssue = "none"
 reportOperatorIssue = "none"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+# Tests aren't auto-formatted (see the format scope) and lean on test-idiom style;
+# notebooks are exploratory. Keep both out of lint/format scope.
+extend-exclude = ["tests", "*.ipynb"]
+
+[tool.ruff.lint]
+# Default rule set is E, F, W.
+#   F722 -- jaxtyping shape strings (Float[Array, " n_toas"]) are string literals, not
+#           Python forward refs; F722 false-positives on every one.
+#   E731 -- the codebase deliberately assigns small local lambdas; respect that.
+ignore = ["F722", "E731"]
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py files enable x64 (jax.config.update) before the re-export imports, and
+# their re-exports look "unused" to F401.
+"**/__init__.py" = ["E402", "F401"]
+# par/spec.py exposes PARAM_SPEC/ALIAS_MAP/... lazily via a module __getattr__, so they
+# appear in __all__ but are invisible to ruff's static F822 check.
+"jaxpint/par/spec.py" = ["F822"]
+# Example/driver scripts and conftest set os.environ / jax flags before imports.
+"examples/*.py" = ["E402"]
+"conftest.py" = ["E402"]
+
+[tool.ruff.format]
+# Defaults (double quotes, magic trailing comma). The one-time reformat is applied
+# in a separate commit.
+
+[tool.coverage.run]
+source = ["jaxpint"]
+omit = ["jaxpint/data/*"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

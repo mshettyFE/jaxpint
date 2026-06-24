@@ -301,7 +301,6 @@ def pint_toas_to_jax(
     if model is not None and "TroposphereDelay" in model.components:
         tropo_comp = model.components["TroposphereDelay"]
         if tropo_comp.CORRECT_TROPOSPHERE.value:
-            from astropy.coordinates import AltAz, SkyCoord
 
             radec = tropo_comp._get_target_skycoord()
 

@@ -23,7 +23,6 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent, ParamDecl
 from jaxpint.constants import DMCONST
-from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
 

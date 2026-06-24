@@ -21,7 +21,7 @@ from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.utils import taylor_horner, taylor_horner_deriv, taylor_horner_phase
+from jaxpint.utils import taylor_horner_deriv, taylor_horner_phase
 
 
 class Spindown(PhaseComponent):

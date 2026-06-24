@@ -24,8 +24,6 @@ from jaxpint.types import TOAData, ParameterVector
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.binary.common import (
     _bt_delay_formula,
-    compute_tt0,
-    compute_orbital_phase,
     compute_eccentric_anomaly,
     compute_ecc,
     compute_a1,

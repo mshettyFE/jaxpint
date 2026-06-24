@@ -24,7 +24,7 @@ from __future__ import annotations
 import functools
 from typing import Optional
 
-from jaxpint.par.registry import BinaryModel, Component
+from jaxpint.par.registry import Component
 
 __all__ = [
     "PARAM_SPEC", "ALIAS_MAP", "PREFIX_MAP", "CANONICAL_PREFIX",

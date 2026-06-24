@@ -1,0 +1,14 @@
+# Pre-commit hooks. Install once with `pre-commit install`.
+# Runs ruff (lint + format) on changed files; scope/ignores come from
+# [tool.ruff] in pyproject.toml (tests and notebooks are excluded there, and
+# --force-exclude makes the hooks honor that even when pre-commit passes paths).
+# Pyright is intentionally NOT a hook -- it needs the full dependency env and is
+# slow; it runs in CI instead.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.19  # keep roughly in sync with the `ruff` pin in pyproject [dev]
+    hooks:
+      - id: ruff
+        args: [--fix, --force-exclude]
+      - id: ruff-format
+        args: [--force-exclude]

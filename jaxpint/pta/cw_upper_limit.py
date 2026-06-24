@@ -25,11 +25,11 @@ Fig. 8 in the NANOGrav 15-yr individual-SMBHB paper (arXiv:2306.16222).
 """
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.special import logsumexp, ndtr, ndtri
+from jax.scipy.special import ndtr, ndtri
 from jaxtyping import Array, Float
 
 from jaxpint.pta.signals.cw import log10_strain_from_binary

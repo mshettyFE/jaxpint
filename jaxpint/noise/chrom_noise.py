@@ -18,7 +18,6 @@ is computed at runtime to maintain JAX differentiability.
 
 from __future__ import annotations
 
-from typing import Optional
 
 import equinox as eqx
 import jax

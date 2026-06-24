@@ -53,7 +53,6 @@ from jaxpint.constants import (
     DMCONST,
     PC_TO_KM,
 )
-from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation, taylor_horner
 

@@ -23,7 +23,6 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent, ParamDecl
 from jaxpint.constants import DAYS_PER_JULIAN_YEAR, DMCONST
-from jaxpint.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
 

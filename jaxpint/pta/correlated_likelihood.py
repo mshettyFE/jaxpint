@@ -332,7 +332,6 @@ def pta_logL_correlated(
     for cinj in config.correlated_injectors:
         S = cinj.get_psd(global_params)            # (n_basis,)
         Gamma = cinj.get_orf_matrix()              # (n_psr, n_psr)
-        n_basis = S.shape[0]
 
         # Build Phi_gwb = Gamma kron diag(S) and its inverse
         # Phi_gwb is (n_psr * n_basis, n_psr * n_basis)
