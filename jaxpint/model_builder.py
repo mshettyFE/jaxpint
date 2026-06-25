@@ -998,6 +998,52 @@ def _active_components(par: ParResult) -> set[Component]:
     return active
 
 
+def _validate_referenced_params(timing_model, noise_model, params) -> None:
+    """Verify every parameter name a component references exists in ``params``.
+
+    Components bind to parameters by name (static ``*_name`` / ``*_names`` fields)
+    and resolve them lazily inside ``__call__`` via ``params.param_value(name)``.
+    A name that is absent from the ``ParameterVector`` would otherwise only fail
+    as a ``KeyError`` deep in a (possibly jitted) evaluation. This check runs once
+    at build time and fails early with a message naming every offending component
+    and parameter.
+
+    Raises
+    ------
+    ValueError
+        If any component (timing or noise) -- or the model's ``PHOFF`` binding --
+        references a name not present in ``params``.
+    """
+    known = params._name_to_index  # epoch params (PEPOCH/T0/...) are present here too
+    missing: list[tuple[str, str]] = []  # (component label, parameter name)
+
+    def _check(components, labels):
+        for comp, label in zip(components, labels):
+            for pname in comp.required_params():  # public API; skips unset Optionals
+                if pname not in known:
+                    missing.append((label, pname))
+
+    _check(timing_model.components, timing_model.component_names)
+    _check(noise_model.components, noise_model.component_names)
+
+    # PHOFF is the one name-bearing field on TimingModel itself, not a sub-component.
+    if timing_model.phoff_name is not None and timing_model.phoff_name not in known:
+        missing.append(("TimingModel", timing_model.phoff_name))
+
+    if missing:
+        lines = "\n".join(
+            f"  - {label} references unknown parameter {pname!r}"
+            for label, pname in missing
+        )
+        raise ValueError(
+            "build_model: component(s) reference parameter names not present in "
+            f"the ParameterVector:\n{lines}\n"
+            "This usually means a component's *_name field, its PARAMS schema, and "
+            "the builder wiring disagree. Available parameters: "
+            f"{tuple(params.names)}"
+        )
+
+
 def build_model(
     par: ParResult,
     toa_data: Optional[TOAData] = None,
@@ -1105,4 +1151,5 @@ def build_model(
         dm_white_noise=dm_white_noise,
     )
 
+    _validate_referenced_params(timing_model, combined_noise, par.params)
     return timing_model, combined_noise
