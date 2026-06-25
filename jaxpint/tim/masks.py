@@ -1,12 +1,9 @@
-"""Native (PINT-free) TOA selection for masked parameters.
+"""TOA selection for masked parameters.
 
-Reimplements ``pint.models.parameter.maskParameter.select_toa_mask``: given a
-:class:`~jaxpint.par.result.MaskInfo` selector (e.g. ``JUMP -fe Rcvr_800`` or
+Given a :class:`~jaxpint.par.result.MaskInfo` selector (e.g. ``JUMP -fe Rcvr_800`` or
 ``DMX ... mjd 55000 55100``) and the parsed TOAs, return a boolean mask over the
 TOAs the parameter applies to.  Keyed by parameter name, these populate
 ``TOAData.flag_masks``.
-
-PINT semantics (verified against ``parameter.py`` / ``toa_select.py``):
 
 * the key is matched after stripping a leading ``-`` and lower-casing;
 * ``mjd``/``freq``/``tel`` map to TOA columns (clock-corrected MJD, topocentric
@@ -21,11 +18,12 @@ from __future__ import annotations
 import numpy as np
 
 from ..par.result import MaskInfo
+from .raw_toa import RawTOA
 
 
 def select_toa_mask(
     info: MaskInfo,
-    raw_toas: list,
+    raw_toas: list[RawTOA],
     *,
     obs_canonical: list[str],
     mjd_corrected: np.ndarray,
@@ -46,6 +44,12 @@ def select_toa_mask(
         the ``mjd`` key).
     """
     n = len(raw_toas)
+    # The per-TOA column arrays must be parallel to raw_toas
+    if len(mjd_corrected) != n:
+        raise ValueError(f"mjd_corrected length {len(mjd_corrected)} != n_toas {n}")
+    if len(obs_canonical) != n:
+        raise ValueError(f"obs_canonical length {len(obs_canonical)} != n_toas {n}")
+
     key = info.key[1:] if info.key.startswith("-") else info.key
     klow = key.lower()
 
@@ -82,6 +86,7 @@ def select_toa_mask(
         return present & (column == target)
 
     # Two values -> inclusive range (numeric, as in PINT for mjd/freq).
+    assert(numeric)
     lo, hi = float(parsed[0]), float(parsed[1])
     col_num = np.asarray(column, dtype=np.float64)
     return (col_num >= lo) & (col_num <= hi)

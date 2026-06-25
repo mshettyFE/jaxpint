@@ -4,9 +4,7 @@ Two suites:
 
 * A PINT-free unit suite exercising the Tempo2 line parser and the command
   state machine (TIME/PHASE/JUMP/EFAC/EQUAD/filters/INCLUDE).
-* A differential-parity suite vs PINT's ``read_toa_file`` -- the exact stage we
-  reproduce (raw TOAs with EFAC/EQUAD + command flags, *before* any clock/TDB
-  math) -- over the Tempo2-format example corpus.
+* A differential-parity suite vs PINT's ``read_toa_file`` over the Tempo2-format example corpus.
 """
 
 from __future__ import annotations
@@ -66,7 +64,7 @@ def test_classify_line():
 
 
 # ---------------------------------------------------------------------------
-# Command state machine (PINT-free)
+# Command state machine 
 # ---------------------------------------------------------------------------
 
 

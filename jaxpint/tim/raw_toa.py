@@ -4,17 +4,14 @@ Defines the parser-side records produced by :mod:`jaxpint.tim.timfile` -- the
 ``.tim`` analogue of :class:`jaxpint.par.raw_params.RawParam` / ``ParsedPar``.
 These are *raw*, pre-clock-correction TOA records: the MJD is still in the
 site/UTC time scale, and **no** clock corrections, TT/TDB conversion, or
-ephemeris posvels have been applied (those are downstream stages that consume
-this table).  This module is PINT-free.
+ephemeris posvels have been applied 
 
 Flags handling -- permissive store, strict interpretation
 ---------------------------------------------------------
 ``.tim`` flag *keys* are an open, unbounded vocabulary (``-fe -be -f -sys
 -group -pta -pp_dm`` ... plus dataset-specific ones), so :class:`RawTOA` stores
-them as a plain ``dict[str, str]`` and the parser accepts *any* ``-key value``
-pair -- restricting the vocabulary at parse time would silently drop valid
-flags.  What we *do* validate is the **shape** (lowercase keys, no whitespace in
-values), matching PINT's ``FlagDict`` so the dicts compare 1:1.
+them as a plain ``dict[str, str]``. Restricting the vocabulary at parse time would silently drop valid
+flags. After each flag, the associate value cannot contain whitespace.   
 
 Strictness belongs at the *interpretation* boundary instead: the handful of
 flags the rest of the code actually acts on are named in :class:`KnownFlag`, and
@@ -25,7 +22,7 @@ used to filter what the parser ingests.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Optional
 
 
@@ -46,10 +43,13 @@ class RawTOA:
     mjd_frac: float  # fractional day in [0, 1)
     error_s: float  # seconds, AFTER EFAC/EQUAD applied at read time
     freq_mhz: float  # MHz (0 -> inf convention, matching PINT)
-    obs: str  # raw observatory token as written (no canonicalisation)
+    obs: str  # raw observatory token as written 
     flags: dict[str, str] = field(default_factory=dict)
-    delta_pulse_number: float = 0.0  # populated downstream from the 'phase' flag
-
+    # integer whole-rotation offset added to the model's pulse (turn) number so
+    # this TOA tracks its *correct* pulse, not just the nearest one -- resolves
+    # pulse-number ambiguity across glitches/observing gaps.  0 for well-timed
+    # pulsars; populated downstream from the '-phase' flag (see get_phase_offset).
+    delta_pulse_number: float = 0.0
 
 @dataclass
 class ParsedTim:
@@ -60,7 +60,7 @@ class ParsedTim:
     """
 
     toas: list[RawTOA] = field(default_factory=list)
-    commands: list[tuple] = field(default_factory=list)
+    commands: list[tuple[list[str], int]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +68,7 @@ class ParsedTim:
 # ---------------------------------------------------------------------------
 
 
-class KnownFlag(str, Enum):
+class KnownFlag(StrEnum):
     """Flags synthesised by the reader and consumed downstream.
 
     These are the *acted-on* flags (phase/clock/jump logic).  The open-vocabulary
@@ -78,14 +78,17 @@ class KnownFlag(str, Enum):
 
     TO = "to"  # cumulative TIME offset (seconds), -> clock chain
     PHASE = "phase"  # cumulative integer pulse turns, -> delta_pulse_number
-    JUMP = "jump"  # phase-jump block index
-    TIM_JUMP = "tim_jump"  # alias of JUMP that PINT also writes
+    # 1-based index of the JUMP-bracket block this TOA falls in, stamped while a
+    # `JUMP ... JUMP` toggle is open.  Turns a positional range into a per-TOA
+    # label that a JUMP model parameter's mask selector matches on (==index) to
+    # rebuild the range; absent on un-bracketed TOAs.  See select_toa_mask.
+    JUMP = "jump"
+    TIM_JUMP = "tim_jump"  # duplicate of JUMP that PINT also writes (kept for parity)
     INFO = "info"  # INFO-command string tag
 
 
 def normalize_flag_key(key: str) -> str:
-    """Normalise a flag key to PINT-``FlagDict`` form: strip a leading ``-`` and
-    lowercase.  Raises ``ValueError`` on an empty/whitespace key."""
+    """Normalise a flag key. All flag names are expected to be lower case with no whitespace."""
     k = key.lstrip("-").lower()
     if not k or any(c.isspace() for c in k):
         raise ValueError(f"invalid flag key {key!r}")
@@ -99,7 +102,6 @@ def _validate_flag_value(value: str) -> str:
 
 
 # -- typed accessors (coerce str -> type only at point of use) ---------------
-
 
 def get_time_offset(flags: dict[str, str]) -> float:
     """The ``-to`` (TIME command) offset in seconds; 0.0 if absent."""
