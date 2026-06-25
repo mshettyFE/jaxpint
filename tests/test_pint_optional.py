@@ -102,6 +102,35 @@ def test_no_pint_import_outside_bridge():
     assert not offenders, "PINT imported in PINT-free core:\n" + "\n".join(offenders)
 
 
+def test_components_do_not_import_par_spec():
+    """Components must not import ``jaxpint.par.spec`` (would risk a cycle).
+
+    ``par.spec`` lazily imports the component classes to aggregate their
+    ``PARAMS``; the no-cycle invariant relies on the reverse edge never
+    existing -- components import ``ParamDecl`` from ``jaxpint.components`` and
+    never import ``par.spec``.  Guard the component modules (and ``model.py``,
+    which ``par.spec`` also imports) against an ``import`` of it.  Only ``import``
+    statements are inspected, so ``:mod:`jaxpint.par.spec``` docstring mentions
+    are ignored.
+    """
+    files = [_REPO / "jaxpint" / "components.py", _REPO / "jaxpint" / "model.py"]
+    for pkg in ("phase", "delay", "binary", "noise"):
+        files.extend((_REPO / "jaxpint" / pkg).rglob("*.py"))
+
+    offenders = []
+    for py in files:
+        for i, line in enumerate(py.read_text().splitlines(), 1):
+            s = line.strip()
+            if not (s.startswith("import ") or s.startswith("from ")):
+                continue
+            if "par.spec" in s or "par import spec" in s:
+                offenders.append(f"{py.relative_to(_REPO)}:{i}: {s}")
+    assert not offenders, (
+        "component module imports jaxpint.par.spec (cycle risk):\n"
+        + "\n".join(offenders)
+    )
+
+
 def test_pyproject_pint_is_optional():
     import tomllib
 

@@ -67,6 +67,42 @@ def _collect_prefix_indices(par: ParResult, prefix: str) -> list[int]:
     return sorted(indices)
 
 
+def _resolve_astrometry(par: ParResult):
+    """Resolve astrometry parameter names once, before the build loop.
+
+    Returns ``(raj, decj, pmra, pmdec, posepoch, obliquity_arcsec)``.  The frame
+    (equatorial vs ecliptic) is chosen from the detected component set.  These
+    names are read by the astrometry, Shapiro, solar-wind and binary builders,
+    so resolving them up front makes the result independent of build order
+    (previously the astrometry arms mutated shared state later arms relied on).
+    """
+    cs = par.component_set
+    raj, decj = "RAJ", "DECJ"
+    pmra = pmdec = posepoch = None
+    obliquity_arcsec = None
+
+    if Component.ASTROMETRY_ECLIPTIC in cs:
+        from jaxpint.constants import OBLIQUITY_ARCSEC
+
+        raj, decj = "ELONG", "ELAT"
+        if _param_is_set(par, "PMELONG"):
+            pmra = "PMELONG"
+        if _param_is_set(par, "PMELAT"):
+            pmdec = "PMELAT"
+        ecl_name = par.metadata.get("ECL", "IERS2010")
+        obliquity_arcsec = OBLIQUITY_ARCSEC[ecl_name]
+    elif Component.ASTROMETRY_EQUATORIAL in cs:
+        if _param_is_set(par, "PMRA"):
+            pmra = "PMRA"
+        if _param_is_set(par, "PMDEC"):
+            pmdec = "PMDEC"
+
+    if pmra is not None or pmdec is not None:
+        posepoch = "POSEPOCH" if _has_param(par, "POSEPOCH") else "PEPOCH"
+
+    return raj, decj, pmra, pmdec, posepoch, obliquity_arcsec
+
+
 # ---------------------------------------------------------------------------
 # Binary model construction
 # ---------------------------------------------------------------------------
@@ -332,13 +368,16 @@ def build_model(
     # Detect which components are present from parsed parameter metadata
     comp_set = par.component_set
 
-    # Astrometry info shared with Shapiro / solar wind / binary
-    _astro_raj = "RAJ"
-    _astro_decj = "DECJ"
-    _astro_pmra = None
-    _astro_pmdec = None
-    _astro_posepoch = None
-    _astro_obliquity_arcsec = None
+    # Astrometry names, resolved once up front (read by astrometry / Shapiro /
+    # solar wind / binary builders -- so the result is independent of build order).
+    (
+        _astro_raj,
+        _astro_decj,
+        _astro_pmra,
+        _astro_pmdec,
+        _astro_posepoch,
+        _astro_obliquity_arcsec,
+    ) = _resolve_astrometry(par)
 
     phoff_name = None
     if _param_is_set(par, "PHOFF"):
@@ -381,58 +420,26 @@ def build_model(
         match comp:
             # ---- Astrometry Equatorial ----
             case Component.ASTROMETRY_EQUATORIAL:
-                if _param_is_set(par, "PMRA"):
-                    _astro_pmra = "PMRA"
-                if _param_is_set(par, "PMDEC"):
-                    _astro_pmdec = "PMDEC"
-
-                px_name = _opt_name(par, "PX")
-
-                if _astro_pmra is not None or _astro_pmdec is not None:
-                    _astro_posepoch = (
-                        "POSEPOCH" if _has_param(par, "POSEPOCH") else "PEPOCH"
-                    )
-
                 delay_components.append(
                     AstrometryEquatorial(
                         raj_name=_astro_raj,
                         decj_name=_astro_decj,
                         pmra_name=_astro_pmra,
                         pmdec_name=_astro_pmdec,
-                        px_name=px_name,
+                        px_name=_opt_name(par, "PX"),
                         posepoch_name=_astro_posepoch,
                     )
                 )
 
             # ---- Astrometry Ecliptic ----
             case Component.ASTROMETRY_ECLIPTIC:
-                from jaxpint.constants import OBLIQUITY_ARCSEC
-
-                _astro_raj = "ELONG"
-                _astro_decj = "ELAT"
-
-                if _param_is_set(par, "PMELONG"):
-                    _astro_pmra = "PMELONG"
-                if _param_is_set(par, "PMELAT"):
-                    _astro_pmdec = "PMELAT"
-
-                px_name = _opt_name(par, "PX")
-
-                if _astro_pmra is not None or _astro_pmdec is not None:
-                    _astro_posepoch = (
-                        "POSEPOCH" if _has_param(par, "POSEPOCH") else "PEPOCH"
-                    )
-
-                ecl_name = par.metadata.get("ECL", "IERS2010")
-                _astro_obliquity_arcsec = OBLIQUITY_ARCSEC[ecl_name]
-
                 delay_components.append(
                     AstrometryEcliptic(
                         elong_name=_astro_raj,
                         elat_name=_astro_decj,
                         pmelong_name=_astro_pmra,
                         pmelat_name=_astro_pmdec,
-                        px_name=px_name,
+                        px_name=_opt_name(par, "PX"),
                         posepoch_name=_astro_posepoch,
                         obliquity_arcsec=_astro_obliquity_arcsec,
                     )

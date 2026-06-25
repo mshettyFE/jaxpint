@@ -1,12 +1,7 @@
 """Component and binary model enumerations for JaxPINT.
 
 These enums identify which timing model components are active and which
-binary orbital model is in use.  They are the shared vocabulary between
-the parameter adapters (the native ``.par`` parser :mod:`jaxpint.par.parser`
-and the PINT bridge :mod:`jaxpint.bridge`) and the model
-builder (:mod:`jaxpint.model_builder`).
-
-This module is PINT-free.
+binary orbital model is in use.  
 """
 
 from __future__ import annotations

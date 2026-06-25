@@ -1,19 +1,7 @@
-"""PINT-free shared core for parameter conversion.
-
-This subpackage holds the adapter-neutral parameter logic shared between the
+"""
+This subpackage holds the parameter logic shared between the
 native ``.par`` parser (:mod:`jaxpint.par.parser`) and the PINT bridge
 (:mod:`jaxpint.bridge`):
-
-- :class:`~jaxpint.par.raw_params.RawParam` -- the normalized parsed-parameter
-  record produced by either adapter,
-- :func:`~jaxpint.par.core.raw_params_to_result` -- turns a ``list[RawParam]``
-  (+ detected components / binary model) into a
-  :class:`~jaxpint.par.result.ParResult`,
-- :class:`~jaxpint.par.result.ParResult` / :class:`~jaxpint.par.result.MaskInfo`
-  -- the contract consumed by :func:`jaxpint.model_builder.build_model`,
-- :class:`~jaxpint.par.registry.Component` / ``BinaryModel`` enums.
-
-Nothing here imports PINT.
 """
 
 from jaxpint.par.core import raw_params_to_result

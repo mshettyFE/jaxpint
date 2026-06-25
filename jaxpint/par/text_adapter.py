@@ -70,7 +70,7 @@ def _parse_bool(s: str) -> bool:
 def _split_mjd_string(tok: str) -> tuple[float, float]:
     """Split an MJD string into (int_day, frac_day) at longdouble precision.
 
-    PINT-free; matches PINT's pulsar_mjd split to ~1 ULP for ordinary days
+    matches PINT's pulsar_mjd split to ~1 ULP for ordinary days
     (leap-second-day exactness is deferred to the .tim/clock phase)."""
     ld = np.longdouble(_fortran(tok))
     mjd_int = np.floor(ld)

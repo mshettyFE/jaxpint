@@ -20,7 +20,6 @@ The division of labour:
 - **Core owns everything unit-algebraic / structural** (see
   :func:`jaxpint.par.core.raw_params_to_result`).
 
-This module is PINT-free.
 """
 
 from __future__ import annotations
