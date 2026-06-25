@@ -1,11 +1,11 @@
-"""Native ``.tim`` (TOA) text reader
+"""``.tim`` (TOA) text reader
 
 Produces a raw, pre-clock-correction TOA table (:class:`ParsedTim`) from a
 ``.tim`` file.  This is *purely* a text->records stage: it applies EFAC/EQUAD,
 EMIN/EMAX/FMIN/FMAX filtering, and the command flags (``TIME``/``PHASE``/
 ``JUMP``/``INFO``), but performs **no** clock corrections, TT/TDB conversion, or
 ephemeris math -- exactly the surface of PINT's :func:`pint.toa.read_toa_file`
-(``toa.py:701``), which it is bit-for-bit diffable against.  PINT-free.
+(``toa.py:701``), which it is bit-for-bit diffable against. 
 
 Only the **Tempo2** line format (``name freq MJD err obs -flag val ...``) is
 supported; the fixed-column legacy formats (Princeton/Parkes/ITOA) raise
@@ -17,9 +17,12 @@ from __future__ import annotations
 import logging
 import math
 import re
+from collections.abc import Callable
+from enum import StrEnum
 from pathlib import Path
 
 from .raw_toa import (
+    KnownFlag,
     ParsedTim,
     RawTOA,
     _validate_flag_value,
@@ -58,11 +61,28 @@ TOA_COMMANDS = (
 )
 
 # Flag keys that would collide with TOA parameters; rejected, as in PINT
-# (``toa.py:527``).  Compared against the lowercased key (slightly stricter than
-# PINT, which compares the raw-case key -- harmless for real corpora).
+# (``toa.py:527``).  Compared against the lowercased key
 _RESERVED_FLAG_KEYS = frozenset(
     {"error", "freq", "scale", "mjd", "flags", "obs", "name"}
 )
+
+
+class LineFormat(StrEnum):
+    """Classification of a ``.tim`` line, mirroring PINT's ``_toa_format`` labels.
+
+    Doubles as the running FORMAT state in ``cdict["FORMAT"]``, where only
+    ``UNKNOWN`` (initial) and ``TEMPO2`` (after a ``FORMAT 1`` command) occur --
+    the legacy formats are detected by line shape, not selected by a command.
+    """
+
+    PRINCETON = "Princeton"
+    COMMENT = "Comment"
+    COMMAND = "Command"
+    BLANK = "Blank"
+    PARKES = "Parkes"
+    TEMPO2 = "Tempo2"
+    ITOA = "ITOA"
+    UNKNOWN = "Unknown"
 
 
 def _new_cdict() -> dict:
@@ -72,48 +92,47 @@ def _new_cdict() -> dict:
     TIME in seconds, EFAC dimensionless.
     """
     return {
-        "EFAC": 1.0,
-        "EQUAD": 0.0,
-        "EMIN": 0.0,
-        "EMAX": math.inf,
-        "FMIN": 0.0,
-        "FMAX": math.inf,
-        "INFO": None,
-        "SKIP": False,
-        "TIME": 0.0,
-        "PHASE": 0,
-        "JUMP": [False, 0],
-        "FORMAT": "Unknown",
-        "END": False,
+        "EFAC": 1.0,  # error multiplier (set/replace; dimensionless)
+        "EQUAD": 0.0,  # error added in quadrature (set/replace; microseconds)
+        "EMIN": 0.0,  # drop TOAs with raw error below this (set/replace; us)
+        "EMAX": math.inf,  # drop TOAs with raw error above this (set/replace; us)
+        "FMIN": 0.0,  # drop TOAs with freq below this (set/replace; MHz)
+        "FMAX": math.inf,  # drop TOAs with freq above this (set/replace; MHz)
+        "INFO": None,  # current -info string tag, or None (set/replace)
+        "SKIP": False,  # while True, parsed TOAs are discarded (toggle)
+        "TIME": 0.0,  # cumulative clock/time offset (accumulates; seconds)
+        "PHASE": 0,  # cumulative integer pulse-turn offset (accumulates)
+        "JUMP": [False, 0],  # [block currently open?, blocks-closed counter] (toggle)
+        "FORMAT": LineFormat.UNKNOWN,  # running line-format state (TEMPO2 after FORMAT 1)
+        "END": False,  # set True by END; stops parsing the file
     }
 
 
-def _classify_line(line: str, fmt: str = "Unknown") -> str:
+def _classify_line(line: str, fmt: LineFormat = LineFormat.UNKNOWN) -> LineFormat:
     """Classify a ``.tim`` line, mirroring PINT's ``_toa_format`` (``toa.py:441``).
 
-    Returns one of: Princeton, Comment, Command, Blank, Parkes, Tempo2, ITOA,
-    Unknown.  ``fmt`` is the running FORMAT state (``"Tempo2"`` once a
-    ``FORMAT 1`` command has been seen).
+    ``fmt`` is the running FORMAT state (``LineFormat.TEMPO2`` once a ``FORMAT 1``
+    command has been seen).
     """
     if re.match(r"[0-9a-z@] ", line):
-        return "Princeton"
+        return LineFormat.PRINCETON
     elif line.startswith(("C ", "c ", "#", "CC ")):
-        return "Comment"
+        return LineFormat.COMMENT
     elif line.upper().lstrip().startswith(TOA_COMMANDS):
-        return "Command"
+        return LineFormat.COMMAND
     elif re.match(r"^\s*$", line):
-        return "Blank"
+        return LineFormat.BLANK
     elif re.match(r"^ ", line) and len(line) > 41 and line[41] == ".":
-        return "Parkes"
-    elif len(line) > 80 or fmt == "Tempo2":
-        return "Tempo2"
+        return LineFormat.PARKES
+    elif len(line) > 80 or fmt == LineFormat.TEMPO2:
+        return LineFormat.TEMPO2
     elif re.match(r"\S\S", line) and len(line) > 14 and line[14] == ".":
-        return "ITOA"
+        return LineFormat.ITOA
     else:
-        return "Unknown"
+        return LineFormat.UNKNOWN
 
 
-def _parse_tempo2_line(line: str):
+def _parse_tempo2_line(line: str) -> tuple:
     """Parse one Tempo2-format TOA line, mirroring PINT (``toa.py:504``).
 
     Returns ``(mjd_int, mjd_frac, freq_mhz, error_us, obs, line_flags)``.  The
@@ -146,13 +165,16 @@ def _parse_tempo2_line(line: str):
     return mjd_int, mjd_frac, freq_mhz, error_us, obs, line_flags
 
 
-def read_tim(
-    path,
-    *,
-    process_includes: bool = True,
-    _cdict: dict | None = None,
-    _dir: Path | None = None,
-) -> ParsedTim:
+# Per-format TOA line parsers.  Each returns the shared 6-tuple
+# ``(mjd_int, mjd_frac, freq_mhz, error_us, obs, line_flags)``.  A classified
+# format absent from this table is unsupported (-> NotImplementedError); add an
+# entry (plus its parser and a LineFormat member) to support a new format.
+_PARSERS: dict[LineFormat, Callable[[str], tuple]] = {
+    LineFormat.TEMPO2: _parse_tempo2_line,
+}
+
+
+def read_tim(path, *, process_includes: bool = True) -> ParsedTim:
     """Read a ``.tim`` file into a :class:`ParsedTim` (raw TOA table).
 
     Parameters
@@ -162,85 +184,90 @@ def read_tim(
     process_includes :
         Whether to follow ``INCLUDE`` directives (relative to the including
         file's directory).
-    _cdict, _dir :
-        Internal -- used to share command state and the base directory across
-        ``INCLUDE`` recursion.  Do not set these directly.
     """
     path = Path(path)
-    if _dir is None:
-        _dir = path.parent
-    cdict = _cdict if _cdict is not None else _new_cdict()
+    return _read_tim(path, _new_cdict(), path.parent, process_includes)
 
+def _read_tim(
+    path: Path,
+    cdict: dict,
+    base_dir: Path,
+    process_includes: bool,
+) -> ParsedTim:
+    """Recursive worker for :func:`read_tim`.
+
+    ``cdict`` is the running command state, shared by reference so that command
+    effects (``EFAC``, an open ``JUMP``, accumulated ``TIME``/``PHASE`` ...) flow
+    into and back out of ``INCLUDE``d files.  ``base_dir`` resolves relative
+    ``INCLUDE`` paths against the including file's directory.
+    """
     toas: list[RawTOA] = []
-    commands: list[tuple] = []
+    commands: list[tuple[list[str], int]] = []
     ntoas = 0
 
     for line in path.read_text().splitlines():
         fmt_line = _classify_line(line, cdict["FORMAT"])
 
-        if fmt_line == "Command":
+        if fmt_line == LineFormat.COMMAND:
             tokens = line.split()
             cmd = tokens[0].upper()
             commands.append((tokens, ntoas))
-            if cmd == "SKIP":
-                cdict["SKIP"] = True
-            elif cmd == "NOSKIP":
-                cdict["SKIP"] = False
-            elif cmd == "END":
-                cdict["END"] = True
-                break
-            elif cmd in ("TIME", "PHASE"):
-                cdict[cmd] += float(tokens[1])
-            elif cmd in ("EMIN", "EMAX", "EQUAD"):
-                cdict[cmd] = float(tokens[1])  # microseconds
-            elif cmd in ("FMIN", "FMAX"):
-                cdict[cmd] = float(tokens[1])  # MHz
-            elif cmd in ("EFAC", "PHA1", "PHA2"):
-                cdict[cmd] = float(tokens[1])
-            elif cmd == "INFO":
-                cdict["INFO"] = tokens[1]
-            elif cmd == "FORMAT":
-                if tokens[1] == "1":
-                    cdict["FORMAT"] = "Tempo2"
-            elif cmd == "JUMP":
-                if cdict["JUMP"][0]:
-                    cdict["JUMP"][0] = False
-                    cdict["JUMP"][1] += 1
-                else:
-                    cdict["JUMP"][0] = True
-            elif cmd == "INCLUDE" and process_includes:
-                inc = _dir / tokens[1]
-                saved_fmt = cdict["FORMAT"]
-                cdict["FORMAT"] = "Unknown"
-                sub = read_tim(
-                    inc,
-                    process_includes=process_includes,
-                    _cdict=cdict,
-                    _dir=inc.parent,
-                )
-                cdict["FORMAT"] = saved_fmt
-                toas.extend(sub.toas)
-                commands.extend(sub.commands)
-                ntoas += len(sub.toas)
-            elif cmd == "MODE":
-                log.warning("MODE command is not supported; ignoring: %r", line)
-            else:
-                log.warning("Unknown/unsupported .tim command: %r", line)
+            match cmd:
+                case "SKIP":
+                    cdict["SKIP"] = True
+                case "NOSKIP":
+                    cdict["SKIP"] = False
+                case "END":
+                    cdict["END"] = True
+                    break
+                case "TIME" | "PHASE":
+                    cdict[cmd] += float(tokens[1])
+                case "EMIN" | "EMAX" | "EQUAD":
+                    cdict[cmd] = float(tokens[1])  # microseconds
+                case "FMIN" | "FMAX":
+                    cdict[cmd] = float(tokens[1])  # MHz
+                case "EFAC" | "PHA1" | "PHA2":
+                    cdict[cmd] = float(tokens[1])
+                case "INFO":
+                    cdict["INFO"] = tokens[1]
+                case "FORMAT":
+                    if tokens[1] == "1":
+                        cdict["FORMAT"] = LineFormat.TEMPO2
+                case "JUMP":
+                    if cdict["JUMP"][0]:
+                        cdict["JUMP"][0] = False
+                        cdict["JUMP"][1] += 1
+                    else:
+                        cdict["JUMP"][0] = True
+                case "INCLUDE" if process_includes:
+                    inc = base_dir / tokens[1]
+                    saved_fmt = cdict["FORMAT"]
+                    cdict["FORMAT"] = LineFormat.UNKNOWN
+                    sub = _read_tim(inc, cdict, inc.parent, process_includes)
+                    cdict["FORMAT"] = saved_fmt
+                    toas.extend(sub.toas)
+                    commands.extend(sub.commands)
+                    ntoas += len(sub.toas)
+                case "MODE":
+                    log.warning("MODE command is not supported; ignoring: %r", line)
+                case _:
+                    log.warning("Unknown/unsupported .tim command: %r", line)
             continue
 
-        # Non-command line.
-        if cdict["SKIP"] or fmt_line in ("Comment", "Blank", "Unknown"):
+        if cdict["SKIP"] or fmt_line in (
+            LineFormat.COMMENT,
+            LineFormat.BLANK,
+            LineFormat.UNKNOWN,
+        ):
             continue
-        if fmt_line in ("Princeton", "Parkes", "ITOA"):
+
+        parser = _PARSERS.get(fmt_line)
+        if parser is None:
             raise NotImplementedError(
                 f"{fmt_line}-format TOA lines are not supported by the native "
                 f".tim parser (Tempo2 only): {line!r}"
             )
-
-        # Tempo2 TOA line.
-        mjd_int, mjd_frac, freq_mhz, error_us, obs, line_flags = _parse_tempo2_line(
-            line
-        )
+        mjd_int, mjd_frac, freq_mhz, error_us, obs, line_flags = parser(line)
         if freq_mhz == 0.0:
             freq_mhz = math.inf  # PINT's 0 -> inf convention
 
@@ -253,20 +280,19 @@ def read_tim(
         ):
             continue
 
-        # Scale: error = hypot(EFAC * error, EQUAD), in microseconds -> seconds.
         err_us = math.hypot(error_us * cdict["EFAC"], cdict["EQUAD"])
         error_s = err_us * 1e-6
 
         flags = dict(line_flags)
         if cdict["INFO"]:
-            flags["info"] = cdict["INFO"]
+            flags[KnownFlag.INFO] = cdict["INFO"]
         if cdict["JUMP"][0]:
-            flags["jump"] = str(cdict["JUMP"][1] + 1)
-            flags["tim_jump"] = str(cdict["JUMP"][1] + 1)
+            flags[KnownFlag.JUMP] = str(cdict["JUMP"][1] + 1)
+            flags[KnownFlag.TIM_JUMP] = str(cdict["JUMP"][1] + 1)
         if cdict["PHASE"] != 0:
-            flags["phase"] = str(cdict["PHASE"])
+            flags[KnownFlag.PHASE] = str(cdict["PHASE"])
         if cdict["TIME"] != 0.0:
-            flags["to"] = str(cdict["TIME"])
+            flags[KnownFlag.TO] = str(cdict["TIME"])
 
         toas.append(
             RawTOA(
