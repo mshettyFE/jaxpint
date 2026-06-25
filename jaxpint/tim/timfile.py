@@ -5,7 +5,7 @@ Produces a raw, pre-clock-correction TOA table (:class:`ParsedTim`) from a
 EMIN/EMAX/FMIN/FMAX filtering, and the command flags (``TIME``/``PHASE``/
 ``JUMP``/``INFO``), but performs **no** clock corrections, TT/TDB conversion, or
 ephemeris math -- exactly the surface of PINT's :func:`pint.toa.read_toa_file`
-(``toa.py:701``), which it is bit-for-bit diffable against. 
+(``toa.py:701``), which it is bit-for-bit diffable against.
 
 Only the **Tempo2** line format (``name freq MJD err obs -flag val ...``) is
 supported; the fixed-column legacy formats (Princeton/Parkes/ITOA) raise
@@ -187,6 +187,7 @@ def read_tim(path, *, process_includes: bool = True) -> ParsedTim:
     """
     path = Path(path)
     return _read_tim(path, _new_cdict(), path.parent, process_includes)
+
 
 def _read_tim(
     path: Path,
