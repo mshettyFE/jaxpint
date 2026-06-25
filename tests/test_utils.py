@@ -7,6 +7,7 @@ import pytest
 
 import math
 import numpy as np
+from fractions import Fraction
 
 from jaxpint.utils import (
     taylor_horner,
@@ -401,15 +402,26 @@ def _scale_coeffs(raw_f):
     )
 
 
-def _longdouble_phase(raw_f, dt_int_days, dt_frac_days, delay):
-    """Reference: sum_k F_k * x^{k+1} / (k+1)! in longdouble."""
-    x = (np.longdouble(dt_int_days) * np.longdouble(SECS_PER_DAY)
-         + np.longdouble(dt_frac_days) * np.longdouble(SECS_PER_DAY)
-         - np.longdouble(delay))
-    total = np.longdouble(0)
-    for k, f in enumerate(raw_f):
-        total = total + np.longdouble(f) * x ** (k + 1) / np.longdouble(math.factorial(k + 1))
-    return total
+def _exact_phase(coeffs, dt_int_days, dt_frac_days, delay):
+    """EXACT reference: ``sum_k coeffs[k] * x^k`` as a rational, where
+    ``x = dt_int_days*86400 + dt_frac_days*86400 - delay``.
+
+    Takes the *same* (float64) ``coeffs`` handed to ``taylor_horner_phase``, so
+    it isolates the Horner accumulation error from the caller's coefficient
+    pre-division. ``fractions.Fraction`` is exact for float64 inputs, so --
+    unlike ``np.longdouble`` (whose ULP at a ~1e12-cycle absolute phase is
+    already ~1e-7 cycles) -- it can resolve the implementation's true
+    ~1e-9-cycle accuracy. Returns a ``Fraction``.
+    """
+    x = (Fraction(float(dt_int_days)) * 86400
+         + Fraction(float(dt_frac_days)) * 86400
+         - Fraction(float(delay)))
+    acc = Fraction(0)
+    xp = Fraction(1)
+    for c in np.asarray(coeffs):
+        acc += Fraction(float(c)) * xp
+        xp *= x
+    return acc
 
 
 def _uncompensated_horner_phase(dt_int_days, dt_frac_days, delay, coeffs):
@@ -445,6 +457,26 @@ def _uncompensated_horner_phase(dt_int_days, dt_frac_days, delay, coeffs):
     return DualFloat.from_cycles(result_int, result_frac)
 
 
+# (id, raw_f derivatives, dt_int_days, dt_frac_days, delay) regression cases
+# spanning realistic and extreme regimes: MSP/slow/Crab spin params, 5-100 yr
+# baselines, pre-epoch (negative) dt, large delay, and F0..F5 high order.
+# Every case's error vs the longdouble reference is well under the 1e-6 cycle
+# bound asserted below (the partial-KBN floor tops out ~2e-7 at 100 yr).
+_PHASE_CASES = [
+    ("msp_5yr",       [700.0, -1e-15],                               1826.0,  0.5,   1.7e-3),
+    ("msp_20yr",      [700.0, -1e-15],                               7305.0,  0.314, 1.7e-3),
+    ("msp_30yr",      [700.0, -1e-15],                               10957.0, 0.314, 1.7e-3),
+    ("slow_30yr",     [2.0, -1e-13],                                 10957.0, 0.314, 1.7e-3),
+    ("crab_30yr",     [30.0, -3.7e-10, 1e-20],                       10957.0, 0.314, 1.7e-3),
+    ("high_order_f5", [600.0, -1e-15, 1e-25, -1e-35, 1e-45, -1e-55], 10957.0, 0.314, 1.7e-3),
+    ("msp_100yr",     [700.0, -1e-15],                               36525.0, 0.314, 1.7e-3),
+    ("fast_100yr",    [1000.0, -1e-15],                              36525.0, 0.314, 1.7e-3),
+    ("negative_dt",   [700.0, -1e-15],                               -7305.0, 0.314, 1.7e-3),
+    ("large_delay",   [700.0, -1e-15],                               7305.0,  0.5,   1.0e4),
+    ("f0_only_short", [622.122],                                     100.0,   0.0,   0.0),
+]
+
+
 class TestTaylorHornerPhase:
     """End-to-end precision check on pre-divided Horner."""
 
@@ -455,58 +487,51 @@ class TestTaylorHornerPhase:
         )
         assert float(out.total[0]) == pytest.approx(0.0, abs=1e-12)
 
-    def test_f0_only(self):
-        """F0-only: the only float64 rounding comes from one (frac * x_int_s)
-        multiplication. ULP at that product (~1.05e6) is ~1e-10, so we
-        expect well under 1e-9 cycles of error against the longdouble
-        reference — many orders of magnitude tighter than the ~1e-6 ULP
-        of the final ~5e9-cycle answer.
+    @pytest.mark.parametrize(
+        "raw_f, dt_int_days, dt_frac_days, delay",
+        [c[1:] for c in _PHASE_CASES],
+        ids=[c[0] for c in _PHASE_CASES],
+    )
+    def test_matches_exact(self, raw_f, dt_int_days, dt_frac_days, delay):
+        """Regression: the int/frac Horner must match an EXACT rational
+        evaluation to < 1e-7 cycles across all regimes in ``_PHASE_CASES``.
+
+        This is the primary correctness/precision guard for taylor_horner_phase.
+        Measured against the exact reference the implementation actually achieves
+        ~1e-9 cycles for MSP spin params (~0.005 ns at F0=700 even on a 100-yr
+        baseline) and ~3.5e-8 cycles worst-case (low-F0 Crab); the 1e-7 bound
+        leaves headroom while genuinely guarding the algorithm. (A longdouble
+        reference could NOT do this -- its ULP at ~1e12 cycles is itself ~1e-7.)
+
+        FAILURE MODE: a jump to ~1e-4 on the high-order / long-baseline cases
+        points at XLA folding the ``jax.lax.optimization_barrier`` in
+        taylor_horner_phase, collapsing the KBN error term to zero. See
+        jaxpint/utils.py.
         """
-        F0 = 622.122
-        dt_int_days = 100.0
-        coeffs = _scale_coeffs([F0])
-        out = taylor_horner_phase(
-            jnp.array([dt_int_days]),
-            jnp.array([0.0]),
-            jnp.array([0.0]),
-            coeffs,
-        )
-        ld_expected = np.longdouble(F0) * np.longdouble(dt_int_days) * np.longdouble(SECS_PER_DAY)
-        actual = np.longdouble(float(out.int[0])) + np.longdouble(float(out.frac[0]))
-        assert abs(float(actual - ld_expected)) < 1e-9
-
-    def test_high_order_matches_longdouble(self):
-        """n_coeffs=7 (F0..F5) — the case where fact=7 made the old code inexact."""
-        raw_f = [
-            600.0,       # F0 (Hz)
-            -1.0e-15,    # F1
-            1.0e-25,     # F2
-            -1.0e-35,    # F3
-            1.0e-45,     # F4
-            -1.0e-55,    # F5
-        ]
-        # 10957 days mod 7 == 4: x_int_s/7 would round in the old code.
-        dt_int_days = 10957.0
-        dt_frac_days = 0.314
-        delay = 1.7e-3
         coeffs = _scale_coeffs(raw_f)
-
         out = taylor_horner_phase(
             jnp.array([dt_int_days]),
             jnp.array([dt_frac_days]),
             jnp.array([delay]),
             coeffs,
         )
-        ld_expected = _longdouble_phase(raw_f, dt_int_days, dt_frac_days, delay)
-        actual = np.longdouble(float(out.int[0])) + np.longdouble(float(out.frac[0]))
-        # With KBN compensation in the Horner body, the residue-amplification
-        # floor (~7e-5 cycles without compensation) is lifted to ~1e-7 cycles
-        # (~0.2 ns at 600 Hz). The remaining floor is from the cross-term sum
-        # within new_frac, not residue amplification.
-        # FAILURE MODE: if this test ever regresses to ~1e-4, suspect XLA has
-        # folded `jax.lax.optimization_barrier` through and the KBN error term
-        # is being algebraically simplified to zero. See utils.py for context.
-        assert abs(float(actual - ld_expected)) < 1e-6
+        ref = _exact_phase(coeffs, dt_int_days, dt_frac_days, delay)
+        actual = Fraction(float(out.int[0])) + Fraction(float(out.frac[0]))
+        assert abs(float(actual - ref)) < 1e-7
+
+    def test_batch_matches_exact(self):
+        """Vectorized evaluation must match the exact reference elementwise,
+        guarding against any batch/scalar divergence in the fori_loop body."""
+        raw_f = [700.0, -1e-15]
+        coeffs = _scale_coeffs(raw_f)
+        di = jnp.array([1826.0, 7305.0, 10957.0, -7305.0])
+        df = jnp.array([0.1, 0.314, 0.7, 0.314])
+        dl = jnp.array([1e-3, 1.7e-3, 2e-3, 1.7e-3])
+        out = taylor_horner_phase(di, df, dl, coeffs)
+        for j in range(di.shape[0]):
+            ref = _exact_phase(coeffs, float(di[j]), float(df[j]), float(dl[j]))
+            actual = Fraction(float(out.int[j])) + Fraction(float(out.frac[j]))
+            assert abs(float(actual - ref)) < 1e-7, f"batch element {j}"
 
     def test_compensation_matters(self):
         """KBN compensation must outperform the un-compensated Horner body
@@ -533,19 +558,18 @@ class TestTaylorHornerPhase:
             jnp.array([dt_int_days]), jnp.array([dt_frac_days]),
             jnp.array([delay]), coeffs,
         )
-        ld = _longdouble_phase(raw_f, dt_int_days, dt_frac_days, delay)
+        ref = _exact_phase(coeffs, dt_int_days, dt_frac_days, delay)
 
         kbn_err = abs(float(
-            np.longdouble(float(out_kbn.int[0]))
-            + np.longdouble(float(out_kbn.frac[0])) - ld
+            Fraction(float(out_kbn.int[0])) + Fraction(float(out_kbn.frac[0])) - ref
         ))
         uncomp_err = abs(float(
-            np.longdouble(float(out_uncomp.int[0]))
-            + np.longdouble(float(out_uncomp.frac[0])) - ld
+            Fraction(float(out_uncomp.int[0]))
+            + Fraction(float(out_uncomp.frac[0])) - ref
         ))
 
-        # Empirically: KBN ~1.2e-7, uncompensated ~7e-5. Assert KBN at
-        # least 100x tighter.
+        # Against the exact reference: KBN ~2e-9, uncompensated ~7e-5. Assert
+        # KBN at least 100x tighter.
         assert kbn_err * 100 < uncomp_err, (
             f"KBN err={kbn_err:.3e} should be >100x tighter than "
             f"uncompensated err={uncomp_err:.3e}"

@@ -142,9 +142,9 @@ def taylor_horner_phase(
     ``coeffs[k] = F_{k-1} / k!`` for k >= 1, with ``coeffs[0] = 0`` for
     the constant phase term. (For Spindown, use
     ``Spindown._get_spin_coeffs_scaled``.) This lets the Horner loop
-    multiply by ``x`` without an inner division, which keeps
-    ``c_int * x_int_s`` as exact integer × integer when ``c_int`` is
-    integer-valued and the product stays under 2^53.
+    multiply by ``x`` without an inner division, so the integer-part
+    product ``phase_int * x_int_s`` stays exact (integer × integer below
+    2^53).
 
     Parameters
     ----------
@@ -167,46 +167,37 @@ def taylor_horner_phase(
     delay = jnp.asarray(delay, dtype=jnp.float64)
     coeffs = jnp.asarray(coeffs, dtype=jnp.float64)
 
-    x_int_s = dt_int_days * SECS_PER_DAY  # exact integer seconds
-    x_frac_s = dt_frac_days * SECS_PER_DAY - delay  # fractional seconds
+    x_int_s = dt_int_days * SECS_PER_DAY  # integer seconds, exact
+    x_frac_s = dt_frac_days * SECS_PER_DAY - delay  # sub-day seconds minus delay
 
     n_coeffs = coeffs.shape[0]
 
     def body(i, state):
+        # Horner step `acc = acc * x + coeff`. The accumulator is carried as an
+        # exact integer (phase_int) plus a small frac normalized to [-0.5, 0.5)
+        # each iteration, with `comp` holding the frac's rounding error. x is
+        # split the same way; phase_int * x_int_s is exact (int x int < 2^53).
         phase_int, phase_frac, comp = state
         coeff = coeffs[n_coeffs - 1 - i]
 
-        # Split phase_frac into integer + remainder in [-0.5, 0.5).
-        # Using round (not floor) so tiny negative values like -1e-15
-        # stay in the remainder instead of producing a -1 carry.
-        pf_int = jnp.round(phase_frac)
-        pf_rem = phase_frac - pf_int
-        c_int = phase_int + pf_int
+        new_int_base = phase_int * x_int_s
+        base_frac = (
+            phase_int * x_frac_s + phase_frac * x_int_s + phase_frac * x_frac_s
+        )
 
-        # Multiply by x = x_int_s + x_frac_s. With c_int integer-valued
-        # and the product below 2^53, c_int * x_int_s is exact.
-        new_int_base = c_int * x_int_s
-        base_frac = c_int * x_frac_s + pf_rem * x_int_s + pf_rem * x_frac_s
-
-        # The polynomial accumulator gets multiplied by x at each step, so
-        # the compensation carried from the previous iteration must scale
-        # with x as well to stay registered with the bits it represents.
-        # KBN convention: comp = true_value - rounded_value (negative of
-        # rounding error). The "corrected" accumulator at this iter is
-        # base_frac + comp*x, so we add comp_x into the coeff side.
+        # comp is scaled by x too, to stay aligned with the accumulator bits it
+        # corrects (KBN convention: comp = true - rounded).
+        # See https://en.wikipedia.org/wiki/Kahan_summation_algorithm for KBN summation
         comp_x = comp * x_int_s + comp * x_frac_s
 
-        # Kahan-Babuška-Neumaier-compensated addition of coeff to the small
-        # frac residue. Without compensation, when coeff ~ F0 (~600) and
-        # base_frac includes a residue at ~1e-7 cycles, the sum rounds at
-        # ULP(600) ~ 7e-14, contaminating the residue. Next iteration's
-        # `pf_rem * x_int_s` amplifies that loss to ~7e-5 cycles.
+        # KBN-compensated add of (coeff + comp_x) to base_frac. coeff (~F0) dwarfs
+        # the ~1e-7 frac residue, so a naive sum rounds the residue away and the
+        # next step's `phase_frac * x_int_s` amplifies the loss (~7e-5 cycles);
+        # new_comp captures that rounding error for the next iteration instead.
         y = coeff + comp_x
         t = base_frac + y
-        # The optimization_barrier prevents XLA from algebraically folding
-        # the (s - t) and (y - t) subexpressions back to zero — those
-        # subtractions are exact by Sterbenz only if `t` is treated as an
-        # opaque rounded value.
+        # optimization_barrier stops XLA from cancelling the error-extraction
+        # subtractions (exact by Sterbenz only if t is opaque) back to zero.
         t_pinned = jax.lax.optimization_barrier(t)
         new_comp = jnp.where(
             jnp.abs(base_frac) >= jnp.abs(y),
@@ -215,9 +206,7 @@ def taylor_horner_phase(
         )
         new_frac = t
 
-        # Normalize: carry overflow from frac to int.
-        # Using round (not floor) so the remainder stays in [-0.5, 0.5),
-        # consistent with the round-based split at the start.
+        # Re-normalize frac into [-0.5, 0.5), carrying the integer part up.
         overflow = jnp.round(new_frac)
         return new_int_base + overflow, new_frac - overflow, new_comp
 
@@ -370,6 +359,7 @@ def sherman_morrison_dot(
     r"""Compute :math:`x^T C^{-1} y` where :math:`C = \mathrm{diag}(N) + w\,v\,v^T`.
 
     Uses the Sherman–Morrison identity to avoid forming or inverting *C*.
+    See https://en.wikipedia.org/wiki/Sherman%E2%80%93Morrison_formula
 
     Parameters
     ----------
@@ -410,6 +400,8 @@ def woodbury_dot(
     Uses the Woodbury identity and Cholesky factorisation of the
     reduced-rank matrix :math:`\Sigma = \Phi^{-1} + U^T N^{-1} U`.
 
+    See https://en.wikipedia.org/wiki/Woodbury_matrix_identity
+
     Parameters
     ----------
     Ndiag : 1-D array, shape (n,)
@@ -442,8 +434,6 @@ def woodbury_dot(
     # Use the Cholesky factor (already computed above) instead of jnp.linalg.slogdet:
     # det(Sigma) = det(L L^T) = (prod diag(L))^2, so logdet = 2 sum log diag(L).
     # Mathematically identical for our PD Sigma but DOES NOT break higher-order
-    # autodiff — slogdet's sign branch NaNs out the Hessian (needed for sky-Fisher
-    # in cw_localization). See cw_localization.py docstring.
     logdet_Sigma = 2.0 * jnp.sum(jnp.log(jnp.abs(jnp.diag(Sigma_cf[0]))))
 
     logdet_C = logdet_N + logdet_Phi + logdet_Sigma
