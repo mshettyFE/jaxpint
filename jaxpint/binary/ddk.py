@@ -41,9 +41,6 @@ from jaxpint.binary.common import (
 class BinaryDDK(DelayComponent):
     """DDK binary delay model.
 
-    All hand-coded derivatives are omitted; ``jax.jacobian`` through
-    ``__call__`` replaces PINT's ``d_*_d_*`` methods.
-
     Parameters
     ----------
     kin_name : str

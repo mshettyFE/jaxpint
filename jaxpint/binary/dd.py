@@ -39,10 +39,7 @@ from jaxpint.binary.common import (
 class BinaryDD(DelayComponent):
     """Damour-Deruelle binary delay model.
 
-    All hand-coded derivatives are omitted; ``jax.jacobian`` through
-    ``__call__`` replaces PINT's ``d_DDdelay_d_*`` functions.
-
-    Supports three Shapiro delay parameterizations via ``shapiro_mode``:
+   Supports three Shapiro delay parameterizations via ``shapiro_mode``:
 
     - ``"standard"`` (DD): Uses ``SINI`` and ``M2`` directly.
     - ``"shapmax"`` (DDS): Uses ``SHAPMAX = -ln(1 - sin(i))``.
