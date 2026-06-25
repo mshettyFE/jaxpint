@@ -28,11 +28,13 @@ from . import config, fetch
 
 _ensured = False
 
+
 @functools.cache
 def _bundled_clock_dir() -> Path:
     # The packaged data dir is fixed for the life of the process; resolve the
     # importlib.resources path once (clock_dir() hits this on every call).
     return Path(str(files("jaxpint.data").joinpath("clock")))
+
 
 def clock_dir() -> Path:
     """The active clock directory: ``$JAXPINT_CLOCK_DIR`` or the packaged dir."""
@@ -40,6 +42,7 @@ def clock_dir() -> Path:
     if override:
         return Path(override).expanduser()
     return _bundled_clock_dir()
+
 
 @functools.cache
 def read_metadata() -> dict:
@@ -50,6 +53,7 @@ def read_metadata() -> dict:
     """
     path = _bundled_clock_dir() / "clock_metadata.json"
     return json.loads(path.read_text())
+
 
 def snapshot_info() -> Optional[dict]:
     """Parsed ``SNAPSHOT.json`` from the active dir, or ``None`` if absent."""
@@ -195,13 +199,12 @@ def update_clocks(ref: str = "latest") -> dict:
     else:
         sha, date = ref, None
     diff = _download(sha, dest, commit_date=date)
-    _ensured = True  
+    _ensured = True
     return diff
 
 
 def clock_file_path(name: str) -> Path:
-    """Path to clock file ``name`` in the active dir (auto-updates first).
-    """
+    """Path to clock file ``name`` in the active dir (auto-updates first)."""
     ensure_fresh()
     name = Path(name).name
     path = clock_dir() / name

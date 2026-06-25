@@ -10,9 +10,7 @@ horizontally concatenated from all correlated noise components.
 Parameter-independent bases (red noise, DM noise, ECORR quantization) are
 pre-hstacked at construction time into ``_U_static`` so that the JIT
 graph sees a single constant basis matrix, regardless of how many
-correlated components were passed in. This mirrors the
-``CompoundGP``/``WoodburyKernel`` pre-stacking pattern in
-:mod:`discovery.matrix`, and prevents per-component basis ops from
+correlated components were passed in. Prevents per-component basis ops from
 multiplying the HLO graph size on every likelihood call.
 
 ``_U_static`` is stored as a *numpy* array (host RAM), not a

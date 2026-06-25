@@ -9,7 +9,7 @@ km/s) and ``Lhat`` is the unit vector toward the pulsar (from astrometry).
 
 JaxPINT instead **precomputes** this once at TOAData-build time and stores the
 barycentric value as ``TOAData.freq`` (see :mod:`jaxpint.loaders.native`), rather
-than recomputing it per component on demand.  
+than recomputing it per component on demand.
 
 - *Lazy (PINT):* ``Lhat`` (and thus the Doppler factor) is recomputed from the
   current astrometry, so the barycentric freq stays exact while RAJ/DECJ/proper
@@ -17,7 +17,7 @@ than recomputing it per component on demand.
 - *Precompute (JaxPINT):* the build-time astrometry is baked in, keeping
   ``TOAData`` a static, parameter-independent data container and keeping the
   Doppler/astrometry work off the (jitted) per-call likelihood path.  The cost is
-  that the stored freq is not refreshed if the astrometry is later refit. 
+  that the stored freq is not refreshed if the astrometry is later refit.
 
 That staleness is negligible in practice: real ``.par`` astrometry
 uncertainties are sub-arcsec (~1e-4" for good MSPs, <~ 1" even for

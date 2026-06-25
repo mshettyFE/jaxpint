@@ -26,7 +26,7 @@ class IndexEntry(NamedTuple):
     """One ``index.txt`` row (matches PINT's ``IndexEntry`` semantics)."""
 
     file: str  # repo-relative path, e.g. tempo/clock/time_gbt.dat
-    update_interval_days: float  
+    update_interval_days: float
     invalid_if_older_than: Optional[str]  # ISO date, or None for "---"
     extra: str
 
@@ -46,10 +46,12 @@ def _http_get(
     with urllib.request.urlopen(req, timeout=timeout, context=context) as resp:
         return resp.read()
 
+
 def resolve_latest_sha() -> tuple[str, str]:
     """Return ``(sha, iso_date)`` of the IPTA repo's current ``main`` HEAD."""
     data = json.loads(_http_get(API_COMMIT, accept="application/vnd.github+json"))
     return data["sha"], data["commit"]["committer"]["date"][:10]
+
 
 def parse_index(text: str) -> list[IndexEntry]:
     """Parse ``index.txt`` text into :class:`IndexEntry` rows (``---`` -> None)."""
@@ -78,6 +80,7 @@ def _atomic_write(path: Path, data: bytes) -> None:
     with open(tmp, "wb") as f:
         f.write(data)
     os.replace(tmp, path)
+
 
 # --- SNAPSHOT.json: this module owns its name, format, and read/write --------
 

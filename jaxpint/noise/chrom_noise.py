@@ -1,8 +1,7 @@
 """Power-law chromatic noise model for JaxPINT.
 
 Implements frequency-dependent chromatic noise (e.g. from ISM scattering)
-with a power-law power spectral density, matching PINT's ``PLChromNoise``
-component.
+with a power-law power spectral density.
 
 The noise covariance is decomposed as::
 

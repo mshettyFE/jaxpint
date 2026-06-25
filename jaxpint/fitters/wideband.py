@@ -323,17 +323,11 @@ class WidebandGLSFitter(BaseFitter):
         n_offset = 0 if self.model.phoff_name is not None else 1
         dof = 2 * n - params.n_free - n_offset
 
-        errors, correlation = self._covariance_to_correlation(covariance)
-        reduced_chi2 = self._reduced_chi2(chi2_val, dof)
-
         return WidebandGLSFitResult(
             params=params,
             covariance_matrix=covariance,
-            correlation_matrix=correlation,
-            parameter_uncertainties=errors,
             chi2=chi2_val,
             dof=dof,
-            reduced_chi2=reduced_chi2,
             time_residuals=time_resid,
             dm_residuals=dm_resid,
             noise_realizations=noise_realizations,
