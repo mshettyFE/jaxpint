@@ -546,6 +546,10 @@ def _marginalize_single_pulsar(
             full,
             external_delay=external_delay,
             external_cov=ext_cov,
+            # The marg block is the timing design matrix M at Φ=1e40 -- genuinely
+            # collinear for multi-parameter MSPs. The QR (square-root) Woodbury
+            # avoids the Gram-squaring that costs the Cholesky form ~4 digits.
+            use_qr=True,
         )
 
     return likelihood_marg, sampled_priors, reduced_skeleton
