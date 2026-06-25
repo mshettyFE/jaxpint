@@ -1,12 +1,10 @@
 """Fourier-basis timing noise delay component (WaveX).
 
-Ports PINT's ``WaveX`` class as a pure Equinox module.  The delay is
-modelled as a sum of sinusoids at specified frequencies:
+The delay is modelled as a sum of sinusoids at specified frequencies:
 
     delay(t) = Σ_i (WXSIN_i * sin(2π * WXFREQ_i * (t - WXEPOCH - delay))
                   + WXCOS_i * cos(2π * WXFREQ_i * (t - WXEPOCH - delay)))
 
-All derivatives are handled by ``jax.jacobian`` through ``__call__``.
 """
 
 from __future__ import annotations

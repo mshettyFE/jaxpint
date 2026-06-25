@@ -1,7 +1,6 @@
 """Dispersion jump component (DMJUMP).
 
-Ports PINT's ``DispersionJump`` as a pure Equinox module.  DMJUMPs apply
-constant DM offsets per flag group.  They affect the model DM (used in
+DMJUMPs apply constant DM offsets per flag group.  They affect the model DM (used in
 wideband fitting) but do **not** contribute to timing delay.
 """
 

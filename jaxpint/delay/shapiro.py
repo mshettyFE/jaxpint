@@ -1,7 +1,6 @@
 """Solar system Shapiro delay component.
 
-Ports PINT's ``SolarSystemShapiro`` as a pure Equinox module.  Computes the
-general-relativistic time delay caused by light passing through the
+ Computes the general-relativistic time delay caused by light passing through the
 gravitational field of the Sun and (optionally) planets.
 
 Formula (Backer & Hellings 1986, Eq 4.6 with gamma=1):

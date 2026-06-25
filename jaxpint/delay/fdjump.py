@@ -1,7 +1,6 @@
 """System-dependent frequency-dependent delay component (FDJump).
 
-Ports PINT's ``FDJump`` class as a pure Equinox module.  Each FDJump
-parameter applies a polynomial delay in log-frequency (or linear frequency)
+Each FDJump parameter applies a polynomial delay in log-frequency (or linear frequency)
 to a subset of TOAs identified by boolean flag masks:
 
     delay_q = Σ_p FDpJUMPq * y^p
@@ -9,7 +8,6 @@ to a subset of TOAs identified by boolean flag masks:
 where y = log(f / 1 GHz) if FDJUMPLOG, else y = f / 1 GHz,
 and the sum is over the polynomial orders p present for system q.
 
-All derivatives are handled by ``jax.jacobian`` through ``__call__``.
 """
 
 from __future__ import annotations

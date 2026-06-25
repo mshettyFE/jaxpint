@@ -191,6 +191,25 @@ class ParameterVector(eqx.Module):
         """
         return self.values[self._name_to_index[name]]
 
+    def param_values(self, names) -> Float[Array, " k"]:
+        """Values of several parameters as a 1-D array, in the given order.
+
+        Plural companion to :meth:`param_value`, convenient for gathering a
+        Taylor-coefficient vector (e.g. ``[DM, DM1, DM2]``). JIT-compatible
+        when ``names`` is a static sequence of strings.
+
+        Parameters
+        ----------
+        names : sequence of str
+            Parameter names.
+
+        Returns
+        -------
+        array, shape (len(names),)
+            The parameters' current values, in order.
+        """
+        return jnp.array([self.values[self._name_to_index[n]] for n in names])
+
     def param_uncertainty(self, name: str) -> float:
         """1-sigma fit uncertainty of a parameter (static metadata, in the same
         internal unit as :meth:`param_value`).

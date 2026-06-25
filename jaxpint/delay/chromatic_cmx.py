@@ -1,7 +1,6 @@
 """Piecewise chromatic measure delay component (ChromaticCMX).
 
-Ports PINT's ``ChromaticCMX`` class as a pure Equinox module.  The chromatic
-measure is modelled as piecewise-constant within user-defined MJD bins:
+The chromatic measure is modelled as piecewise-constant within user-defined MJD bins:
 
     CM(t) = Σ CMX_i   for each bin i where CMXR1_i <= t <= CMXR2_i
 
@@ -11,7 +10,6 @@ and the delay for each TOA is:
 
 where freq is in MHz and alpha = TNCHROMIDX.
 
-All derivatives are handled by ``jax.jacobian`` through ``__call__``.
 """
 
 from __future__ import annotations

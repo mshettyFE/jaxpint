@@ -15,11 +15,11 @@ where freq is in MHz and alpha = TNCHROMIDX.
 from __future__ import annotations
 
 import equinox as eqx
-import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, ParamDecl
-from jaxpint.constants import DAYS_PER_JULIAN_YEAR, DMCONST
+from jaxpint.constants import DMCONST
+from jaxpint.delay._epoch import dt_years_from_epoch
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
 
@@ -58,20 +58,6 @@ class ChromaticCM(DelayComponent):
         if len(self.cm_param_names) == 0:
             raise ValueError("ChromaticCM requires at least one CM term")
 
-    def _compute_dt_yr(
-        self,
-        toa_data: TOAData,
-        params: ParameterVector,
-    ) -> Float[Array, " n_toas"]:
-        """Time from CMEPOCH to each TOA, in Julian years."""
-        epoch = params.epoch_dual(self.cmepoch_name)
-        dt_days = (toa_data.tdb - epoch).total
-        return dt_days / DAYS_PER_JULIAN_YEAR
-
-    def _get_cm_coeffs(self, params: ParameterVector) -> Float[Array, " n_terms"]:
-        """Assemble ``[CM, CM1, CM2, ...]`` for :func:`taylor_horner`."""
-        return jnp.array([params.param_value(name) for name in self.cm_param_names])
-
     def __call__(
         self,
         toa_data: TOAData,
@@ -94,8 +80,8 @@ class ChromaticCM(DelayComponent):
         array, shape (n_toas,)
             Chromatic delay in seconds.
         """
-        dt_yr = self._compute_dt_yr(toa_data, params)
-        cm_coeffs = self._get_cm_coeffs(params)
+        dt_yr = dt_years_from_epoch(toa_data, params, self.cmepoch_name)
+        cm_coeffs = params.param_values(self.cm_param_names)
         cm = taylor_horner(dt_yr, cm_coeffs)
         alpha = params.param_value(self.tnchromidx_name)
         return cm * DMCONST * toa_data.freq ** (-alpha)
