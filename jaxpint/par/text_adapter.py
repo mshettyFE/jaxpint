@@ -204,7 +204,9 @@ def _resolve(name: str, counters: dict[str, int]):
 # ---------------------------------------------------------------------------
 
 
-def _emit(canonical: str, spec: dict, tokens: tuple[str, ...]) -> Optional[RawParam]:
+def _emit(
+    canonical: str, spec: S.ParamSpec, tokens: tuple[str, ...]
+) -> Optional[RawParam]:
     kind = spec["kind"]
     unit = spec.get("unit", "")
     fd = spec.get("frozen_default", True)
