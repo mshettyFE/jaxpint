@@ -84,5 +84,7 @@ def to_tdb(mjd_int, mjd_frac, itrf_xyz):
     from ..utils import split_longdouble_days
 
     tdb = t.tdb
-    ld = (np.longdouble(tdb.jd1) - np.longdouble(JD_MJD_OFFSET)) + np.longdouble(tdb.jd2)
+    ld = (np.longdouble(tdb.jd1) - np.longdouble(JD_MJD_OFFSET)) + np.longdouble(
+        tdb.jd2
+    )
     return split_longdouble_days(ld)

@@ -1,5 +1,4 @@
-"""Binary delay models for JaxPINT.
-"""
+"""Binary delay models for JaxPINT."""
 
 from jaxpint.binary.kepler import solve_kepler
 from jaxpint.binary.bt import BinaryBT

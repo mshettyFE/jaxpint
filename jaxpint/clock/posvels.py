@@ -99,6 +99,7 @@ def _body_ssb_posvel(body: SolarSystemBody, tdb: Time):
         vel.xyz.to_value(u.km / u.s).T,  # (n, 3)
     )
 
+
 def compute_posvels(
     tdb_int,
     tdb_frac,

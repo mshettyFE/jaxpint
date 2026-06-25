@@ -181,5 +181,3 @@ NIELL_DOY_OFFSET: int = -28
 #: Halley's method iterations for Kepler equation (cubically convergent;
 #: 5 iterations reaches machine epsilon even at e=0.95 with Danby initial guess)
 KEPLER_N_ITER: int = 5
-
-

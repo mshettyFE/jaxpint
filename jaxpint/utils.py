@@ -181,9 +181,7 @@ def taylor_horner_phase(
         coeff = coeffs[n_coeffs - 1 - i]
 
         new_int_base = phase_int * x_int_s
-        base_frac = (
-            phase_int * x_frac_s + phase_frac * x_int_s + phase_frac * x_frac_s
-        )
+        base_frac = phase_int * x_frac_s + phase_frac * x_int_s + phase_frac * x_frac_s
 
         # comp is scaled by x too, to stay aligned with the accumulator bits it
         # corrects (KBN convention: comp = true - rounded).
@@ -517,9 +515,7 @@ def woodbury_dot_qr(
     q = jax.scipy.linalg.solve_triangular(R, A.T @ v, trans="T", lower=False)
 
     x_Cinv_y = u @ v - p @ q
-    logdet_C = jnp.sum(jnp.log(Ndiag)) + 2.0 * jnp.sum(
-        jnp.log(jnp.abs(jnp.diag(R)))
-    )
+    logdet_C = jnp.sum(jnp.log(Ndiag)) + 2.0 * jnp.sum(jnp.log(jnp.abs(jnp.diag(R))))
     return x_Cinv_y, logdet_C
 
 
@@ -934,14 +930,14 @@ def _group_toas_into_epochs(
     current: list[int] = []
     epoch_start = 0.0
     for t, idx in zip(sorted_times, sorted_indices):
-       # This TOA is >= dt from the current epoch's start: close that epoch.
-       if current and t - epoch_start >= dt:
+        # This TOA is >= dt from the current epoch's start: close that epoch.
+        if current and t - epoch_start >= dt:
             epochs.append(current)
             current = []
         # Start of new epoch. Record start time
-       if not current:
+        if not current:
             epoch_start = t
-       current.append(int(idx))
+        current.append(int(idx))
     if current:
         epochs.append(current)
 
@@ -990,18 +986,16 @@ def build_quantization_matrix(
             order = np.argsort(tdb_times_s[toa_indices])
             sorted_times = tdb_times_s[toa_indices][order]
             sorted_indices = toa_indices[order]
-            for epoch in _group_toas_into_epochs(sorted_times, sorted_indices, dt, nmin):
+            for epoch in _group_toas_into_epochs(
+                sorted_times, sorted_indices, dt, nmin
+            ):
                 col = np.zeros(n_toas, dtype=np.float64)
                 col[epoch] = 1.0
                 columns.append(col)
 
         epoch_slices[ecorr_name] = (start, len(columns))
 
-    U = (
-        np.column_stack(columns)
-        if columns
-        else np.zeros((n_toas, 0), dtype=np.float64)
-    )
+    U = np.column_stack(columns) if columns else np.zeros((n_toas, 0), dtype=np.float64)
     return U, epoch_slices
 
 

@@ -1,5 +1,4 @@
-"""TOAData: pre-extracted TOA data as JAX arrays.
-"""
+"""TOAData: pre-extracted TOA data as JAX arrays."""
 
 from __future__ import annotations
 

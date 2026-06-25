@@ -1,5 +1,4 @@
-"""ParameterVector: timing model parameters as a flat JAX array with metadata.
-"""
+"""ParameterVector: timing model parameters as a flat JAX array with metadata."""
 
 from __future__ import annotations
 

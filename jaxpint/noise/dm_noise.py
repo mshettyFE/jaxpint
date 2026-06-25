@@ -1,8 +1,7 @@
 """Power-law DM noise model for JaxPINT.
 
 Implements dispersion-measure (DM) variations with a power-law power
-spectral density using a frequency-scaled Fourier basis, matching
-PINT's ``PLDMNoise`` component.
+spectral density using a frequency-scaled Fourier basis.
 
 The noise covariance is decomposed as::
 

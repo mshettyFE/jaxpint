@@ -29,11 +29,26 @@ class BaseFitResult:
 
     params: ParameterVector
     covariance_matrix: Float[Array, "n_free n_free"]
-    correlation_matrix: Float[Array, "n_free n_free"]
-    parameter_uncertainties: Float[Array, " n_free"]
     chi2: float
     dof: int
-    reduced_chi2: float
+
+    @property
+    def parameter_uncertainties(self) -> Float[Array, " n_free"]:
+        """1-sigma marginal errors: square root of the covariance diagonal."""
+        return jnp.sqrt(jnp.diag(self.covariance_matrix))
+
+    @property
+    def correlation_matrix(self) -> Float[Array, "n_free n_free"]:
+        """Covariance rescaled to unit diagonal: ``D^-1 C D^-1`` with
+        ``D = diag(sigma)``. Zero-variance rows/cols are left unscaled."""
+        errors = jnp.sqrt(jnp.diag(self.covariance_matrix))
+        errors_safe = jnp.where(errors == 0, 1.0, errors)
+        return (self.covariance_matrix / errors_safe).T / errors_safe
+
+    @property
+    def reduced_chi2(self) -> float:
+        """``chi2 / dof``, or NaN when ``dof <= 0``."""
+        return self.chi2 / self.dof if self.dof > 0 else float("nan")
 
 
 # ---------------------------------------------------------------------------
@@ -92,21 +107,6 @@ class BaseFitter(ABC):
             uncertainties, chi-squared, and degrees of freedom.
         """
         ...
-
-    @staticmethod
-    def _covariance_to_correlation(
-        covariance: Float[Array, " n n"],
-    ) -> tuple[Float[Array, " n"], Float[Array, " n n"]]:
-        """Compute parameter uncertainties and correlation matrix from covariance."""
-        errors = jnp.sqrt(jnp.diag(covariance))
-        errors_safe = jnp.where(errors == 0, 1.0, errors)
-        correlation = (covariance / errors_safe).T / errors_safe
-        return errors, correlation
-
-    @staticmethod
-    def _reduced_chi2(chi2_val: float, dof: int) -> float:
-        """Compute reduced chi-squared, returning NaN if dof <= 0."""
-        return chi2_val / dof if dof > 0 else float("nan")
 
 
 # ---------------------------------------------------------------------------

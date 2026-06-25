@@ -2,7 +2,7 @@
 
 Reimplements PINT's TEMPO2 / TEMPO clock-file parsers and ``ClockFile.evaluate``
 closely enough to reproduce its corrections bit-for-bit.  Everything is stored
-internally in **microseconds** 
+internally in **microseconds**
 
 This is the data-reading half of the clock-correction chain; the chain that sums
 site/GPS/BIPM/TIME terms lives in :mod:`jaxpint.clock.correction`.
