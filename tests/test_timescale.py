@@ -25,6 +25,7 @@ def test_itrf_xyz_present_in_metadata():
 def test_to_tdb_matches_astropy_pulsar_mjd():
     """to_tdb equals astropy's pulsar_mjd .tdb (the reference path) -- incl a
     leap-second day (MJD 57753 = 2016-12-31)."""
+    import pint.pulsar_mjd  # noqa: F401  -- registers the astropy "pulsar_mjd" format
     import astropy.units as u
     from astropy.coordinates import EarthLocation
     from astropy.time import Time
@@ -63,6 +64,41 @@ def test_doppler_shift_basic():
     assert out0[0] == pytest.approx(1400.0)
 
 
+def test_precompute_staleness_below_ns():
+    """Precomputing barycentric freq with build-time astrometry is safe.
+
+    The Doppler-shifted freq is baked into ``TOAData.freq`` at build time (see
+    jaxpint/delay/_barycentric.py) and is not refreshed if astrometry is refit.
+    Real ``.par`` astrometry uncertainties are sub-arcsec, so take 1" as a
+    generous worst-case fit step, push the Doppler factor at the max observatory
+    speed (~30 km/s), and confirm the resulting frequency-dependent-delay error
+    stays well below ns-level timing precision.
+    """
+    from jaxpint.delay._barycentric import doppler_shift_freq
+
+    f_topo = np.array([1400.0])           # MHz
+    v_obs = np.array([[30.0, 0.0, 0.0]])  # km/s (max observatory speed scale)
+
+    def lhat(ra, dec):
+        return np.array(
+            [[np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)]]
+        )
+
+    ra, dec = np.radians(120.0), np.radians(-25.0)
+    dtheta = np.radians(1.0 / 3600.0)  # 1 arcsec: worst-case fit step
+    f0 = float(np.asarray(doppler_shift_freq(f_topo, v_obs, lhat(ra, dec)))[0])
+    f1 = float(
+        np.asarray(doppler_shift_freq(f_topo, v_obs, lhat(ra + dtheta, dec)))[0]
+    )
+
+    df_over_f = abs(f1 - f0) / f0
+    # dispersion delay ~ f^-2  =>  d(delay) = 2 (df/f) * delay; DM=30 @ 1400 MHz
+    disp_delay = 4.148808e3 * 30.0 / 1400.0**2  # seconds
+    d_delay = 2.0 * df_over_f * disp_delay
+    assert d_delay < 1e-9, f"precompute staleness {d_delay:.2e} s exceeds 1 ns"
+    assert d_delay < 1e-10  # actually ~5e-11 s; tight bound trips a real regression
+
+
 # --- posvels (needs ephemeris; slow) ----------------------------------------
 
 
@@ -94,9 +130,13 @@ def test_compute_posvels_vs_pint():
 def test_compute_posvels_barycenter_zero_obs_term():
     from jaxpint.clock.posvels import compute_posvels
 
-    ti = np.array([57000.0]); tf = np.array([0.3])
+    ti = np.array([57000.0])
+    tf = np.array([0.3])
     bary = compute_posvels(ti, tf, None, ephem="DE440")
-    earth = compute_posvels(ti, tf, (0.0, 0.0, 0.0), ephem="DE440")
-    # barycenter obs term is zero -> ssb_obs == earth posvel (geocentre at xyz=0
-    # differs from SSB-earth only by the ~Earth-radius obs term, which is 0 here)
+    geo = compute_posvels(ti, tf, (0.0, 0.0, 0.0), ephem="DE440")
+    # The barycentre observatory IS the SSB, so its SSB-relative posvel is zero --
+    # distinct from the geocentre (itrf_xyz == 0), whose ssb_obs == earth posvel.
     assert bary["ssb_obs_pos"].shape == (1, 3)
+    assert np.allclose(bary["ssb_obs_pos"], 0.0)
+    assert np.allclose(bary["ssb_obs_vel"], 0.0)
+    assert not np.allclose(bary["ssb_obs_pos"], geo["ssb_obs_pos"])

@@ -1,7 +1,5 @@
 """Native (PINT-free) ``.tim`` -> :class:`~jaxpint.types.TOAData`.
 
-Chains the native stages built across this effort:
-
     read_tim  ->  clock.correct  ->  clock.timescale.to_tdb
               ->  clock.posvels.compute_posvels  ->  TOAData
 

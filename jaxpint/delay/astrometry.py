@@ -1,8 +1,8 @@
 """Astrometry delay components: equatorial (ICRS) and ecliptic coordinates.
 
-Ports PINT's ``AstrometryEquatorial`` and ``AstrometryEcliptic`` as pure
-Equinox modules.  Both compute the solar-system geometric delay (Roemer
-delay) and, optionally, the parallax delay.
+Ports PINT's ``AstrometryEquatorial`` and ``AstrometryEcliptic``. 
+Both compute the solar-system geometric delay (Roemer delay)
+and, optionally, the parallax delay.
 
 The Roemer delay is the projection of the observatory's SSB offset onto the
 pulsar direction:
