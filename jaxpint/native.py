@@ -6,11 +6,6 @@ Swapping ``from pint.models import get_model_and_toas`` for
 *loading* step.  (Downstream usage still differs: JaxPINT's residual/phase verbs
 and objects are not PINT's.)
 
-Composes the already-built native pieces:
-:func:`jaxpint.par.parser.get_model` (.par -> ParResult) +
-:func:`jaxpint.loaders.native_toas_to_jax` (.tim + ParResult -> TOAData) +
-:func:`jaxpint.model_builder.build_model` (ParResult [+ TOAData] ->
-(TimingModel, NoiseModel)).  All PINT-free at runtime.
 """
 
 from __future__ import annotations
