@@ -5,8 +5,8 @@ each stored in float64. This gives ~30 digits of precision for values
 that would otherwise lose low-order bits in a single float64.
 
 Two normalization conventions are supported via factory methods:
-- ``DualFloat.cycles()``: frac in [-0.5, 0.5), for phase (cycles)
-- ``DualFloat.days()``:   frac in [0, 1),      for MJD / time (days)
+- ``DualFloat.from_cycles()``: frac in [-0.5, 0.5), for phase (cycles)
+- ``DualFloat.from_days()``:   frac in [0, 1),      for MJD / time (days)
 """
 
 from __future__ import annotations
@@ -40,10 +40,8 @@ class DualFloat(eqx.Module):
                 f"{self.int.dtype} vs {self.frac.dtype}"
             )
 
-    # -- Factory methods (normalization) --
-
     @staticmethod
-    def cycles(
+    def from_cycles(
         int_part: Float[Array, "..."], frac_part: Float[Array, "..."]
     ) -> DualFloat:
         """Create a DualFloat, normalizing frac to [-0.5, 0.5).
@@ -68,7 +66,7 @@ class DualFloat(eqx.Module):
         return DualFloat(int=ii, frac=ff)
 
     @staticmethod
-    def days(
+    def from_days(
         int_part: Float[Array, "..."], frac_part: Float[Array, "..."]
     ) -> DualFloat:
         """Create a DualFloat, normalizing frac to [0, 1).
@@ -80,7 +78,7 @@ class DualFloat(eqx.Module):
             Arithmetic operators (``+``, ``-``, ``*``) always renormalize
             to the cycles convention (``frac in [-0.5, 0.5)``). If you
             need days-form output after arithmetic, call
-            ``DualFloat.days(result.int, result.frac)`` explicitly.
+            ``DualFloat.from_days(result.int, result.frac)`` explicitly.
         """
         int_part = jnp.asarray(int_part, dtype=jnp.float64)
         frac_part = jnp.asarray(frac_part, dtype=jnp.float64)
@@ -107,10 +105,10 @@ class DualFloat(eqx.Module):
     # -- Arithmetic --
 
     def __add__(self, other: DualFloat) -> DualFloat:
-        return DualFloat.cycles(self.int + other.int, self.frac + other.frac)
+        return DualFloat.from_cycles(self.int + other.int, self.frac + other.frac)
 
     def __sub__(self, other: DualFloat) -> DualFloat:
-        return DualFloat.cycles(self.int - other.int, self.frac - other.frac)
+        return DualFloat.from_cycles(self.int - other.int, self.frac - other.frac)
 
     def __neg__(self) -> DualFloat:
         # Plain negation gives frac in (-0.5, 0.5]; the value 0.5 is out
@@ -133,7 +131,7 @@ class DualFloat(eqx.Module):
         # magnitudes (Sterbenz lemma applies once |raw_int| >= 1).
         int_rounded = jnp.round(raw_int)
         frac_adjusted = raw_frac + (raw_int - int_rounded)
-        return DualFloat.cycles(int_rounded, frac_adjusted)
+        return DualFloat.from_cycles(int_rounded, frac_adjusted)
 
     def __rmul__(self, scalar) -> DualFloat:
         return self.__mul__(scalar)

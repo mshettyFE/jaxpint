@@ -4,7 +4,7 @@ import jax as _jax
 
 _jax.config.update("jax_enable_x64", True)
 
-from .dual_float import DualFloat
+from .types.dual_float import DualFloat
 from .types import TOAData, ParameterVector
 from .components import PhaseComponent, DelayComponent, NoiseComponent
 from .phase import Spindown, Glitch, IFunc, PhaseJump, PiecewiseSpindown, Wave

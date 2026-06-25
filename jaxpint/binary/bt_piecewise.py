@@ -19,7 +19,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.binary._param_decls import BINARY_CORE
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.constants import SECS_PER_DAY
 from jaxpint.binary.common import (

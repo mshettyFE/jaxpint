@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -316,7 +316,7 @@ class TestIntegration:
             dt = toa_data.tdb_frac  # simplified: just use fractional day
             phase_val = f0 * dt
             phase_int = jnp.floor(phase_val)
-            return DualFloat.cycles(phase_int, phase_val - phase_int)
+            return DualFloat.from_cycles(phase_int, phase_val - phase_int)
 
         result = mock_phase(pv, td)
         assert result.int.shape == (10,)

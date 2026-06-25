@@ -229,7 +229,7 @@ def native_toas_to_jax(
     tzr = (
         None
         if par_result is None
-        else _build_tzr_fields(
+        else _extract_tzr_fields(
             core,
             par_result,
             ephem=ephem,
@@ -325,7 +325,7 @@ def _assemble(
     )
 
 
-def _build_tzr_fields(
+def _extract_tzr_fields(
     core,
     par_result: ParResult,
     *,

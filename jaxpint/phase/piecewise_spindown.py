@@ -17,7 +17,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
 
@@ -133,4 +133,4 @@ class PiecewiseSpindown(PhaseComponent):
             piece_phase = taylor_horner(dt, coeffs)
             phase = phase + jnp.where(affected, piece_phase, 0.0)
 
-        return DualFloat.cycles(jnp.zeros(toa_data.n_toas), phase)
+        return DualFloat.from_cycles(jnp.zeros(toa_data.n_toas), phase)

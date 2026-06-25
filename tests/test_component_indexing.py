@@ -8,7 +8,7 @@ import pytest
 
 from jaxpint.components import _make_component_names
 from jaxpint.delay.dispersion_dm import DispersionDM
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 from jaxpint.model import TimingModel
 from jaxpint.noise import ScaleToaError
 from jaxpint.noise.noise_model import NoiseModel

@@ -7,10 +7,10 @@ import pytest
 
 
 from jaxpint.types import TOAData
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 from jaxpint.phase.spin import Spindown
 from jaxpint.delay.dispersion_dm import DispersionDM
-from jaxpint.model import TimingModel, _build_tzr_toa_data
+from jaxpint.model import TimingModel, _reconstruct_tzr_toa
 from tests.helpers import make_gbt_toa_data, make_spindown_params, make_params
 
 
@@ -259,7 +259,7 @@ class TestComputePhaseAbsolute:
 
 
 class TestBuildTzrToaData:
-    """Tests for _build_tzr_toa_data helper."""
+    """Tests for _reconstruct_tzr_toa helper."""
 
     def test_shape(self):
         """TZR TOAData has n_toas=1 and correct array shapes."""
@@ -268,7 +268,7 @@ class TestBuildTzrToaData:
             tzr_tdb_frac=0.5,
             tzr_freq=1400.0,
         )
-        tzr = _build_tzr_toa_data(toa_data)
+        tzr = _reconstruct_tzr_toa(toa_data)
 
         assert tzr.n_toas == 1
         assert tzr.tdb_int.shape == (1,)
@@ -283,7 +283,7 @@ class TestBuildTzrToaData:
             tzr_tdb_frac=0.5,
             tzr_freq=1400.0,
         )
-        tzr = _build_tzr_toa_data(toa_data)
+        tzr = _reconstruct_tzr_toa(toa_data)
 
         np.testing.assert_allclose(tzr.tdb_int[0], 59001.0)
         np.testing.assert_allclose(tzr.tdb_frac[0], 0.5)
@@ -295,7 +295,7 @@ class TestBuildTzrToaData:
             tzr_tdb_frac=0.5,
             tzr_freq=2000.0,
         )
-        tzr = _build_tzr_toa_data(toa_data)
+        tzr = _reconstruct_tzr_toa(toa_data)
 
         np.testing.assert_allclose(tzr.freq[0], 2000.0)
 
@@ -306,7 +306,7 @@ class TestBuildTzrToaData:
             tzr_tdb_frac=0.5,
             tzr_freq=1400.0,
         )
-        tzr = _build_tzr_toa_data(toa_data)
+        tzr = _reconstruct_tzr_toa(toa_data)
 
         assert tzr.tzr_tdb_int is None
         assert tzr.tzr_tdb_frac is None

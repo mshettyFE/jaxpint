@@ -18,7 +18,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -132,4 +132,4 @@ class Glitch(PhaseComponent):
             # Only apply for TOAs after the glitch epoch
             phase = phase + jnp.where(dt > 0.0, glitch_phase, 0.0)
 
-        return DualFloat.cycles(jnp.zeros(toa_data.n_toas), phase)
+        return DualFloat.from_cycles(jnp.zeros(toa_data.n_toas), phase)

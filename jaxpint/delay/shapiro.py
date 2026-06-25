@@ -21,7 +21,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, ParamDecl
-from jaxpint.constants import TSUN, AU_KM, PLANET_MASSES, PLANET_NAMES
+from jaxpint.constants import TSUN, AU_KM, PLANET_MASSES
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
 
@@ -141,7 +141,7 @@ class SolarSystemShapiroDelay(DelayComponent):
                 raise ValueError(
                     "planet_shapiro=True but toa_data.planet_positions is None"
                 )
-            for pl in PLANET_NAMES:
+            for pl in PLANET_MASSES:
                 col = f"obs_{pl}_pos"
                 if col not in toa_data.planet_positions:
                     raise KeyError(f"Missing planet position '{col}' in toa_data")

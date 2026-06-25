@@ -24,13 +24,13 @@ def _pinned_clock(monkeypatch):
 
 
 def _native_tzr(parp, timp, planets=False):
-    from jaxpint.loaders.native import topocentric_core, _build_tzr_fields
+    from jaxpint.loaders.native import topocentric_core, _extract_tzr_fields
     import jaxpint.par as par
 
     pr = par.get_model(parp)
     core = topocentric_core(timp, ephem=EPHEM, include_bipm=True,
                             bipm_version=BIPM, planets=planets)
-    return _build_tzr_fields(core, pr, ephem=EPHEM, include_bipm=True,
+    return _extract_tzr_fields(core, pr, ephem=EPHEM, include_bipm=True,
                              bipm_version=BIPM, planets=planets), pr
 
 
@@ -190,10 +190,10 @@ def test_abs_phase_residuals_vs_pint(_pinned_clock):
 
 
 def test_no_tzrmjd_no_pepoch_returns_none():
-    """Neither TZRMJD nor PEPOCH -> _build_tzr_fields returns None (no abs phase)."""
+    """Neither TZRMJD nor PEPOCH -> _extract_tzr_fields returns None (no abs phase)."""
     import types as _t
 
-    from jaxpint.loaders.native import _build_tzr_fields
+    from jaxpint.loaders.native import _extract_tzr_fields
     from jaxpint.par.result import ParResult
     from jaxpint.types import ParameterVector
 
@@ -203,5 +203,5 @@ def test_no_tzrmjd_no_pepoch_returns_none():
     )
     pr = ParResult(params=pv)
     core = _t.SimpleNamespace(mjd_int=np.array([55000.0]), mjd_frac=np.array([0.0]))
-    assert _build_tzr_fields(core, pr, ephem=EPHEM, include_bipm=True,
+    assert _extract_tzr_fields(core, pr, ephem=EPHEM, include_bipm=True,
                              bipm_version=BIPM, planets=False) is None

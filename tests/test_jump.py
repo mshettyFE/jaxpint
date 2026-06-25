@@ -7,7 +7,7 @@ import pytest
 
 
 from jaxpint.phase.jump import PhaseJump
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 from tests.helpers import make_toa_data, make_params
 
 
