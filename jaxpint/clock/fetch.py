@@ -1,14 +1,15 @@
 """Raw-HTTPS fetch + manifest parsing for the IPTA clock snapshot (PINT-free).
 
 All network access funnels through the single seam :func:`_http_get`, which is
-also the one place tests monkeypatch.  Uses only stdlib ``urllib`` (+ ``certifi``
-for the SSL context *when importable*, which fixes the macOS framework-Python
-cert gotcha).  File writes are binary + atomic (``os.replace``), correct on both
-POSIX and Windows.
+also the one place tests monkeypatch.  Uses stdlib ``urllib`` over an SSL context
+backed by the ``certifi`` CA bundle (a declared dependency), which fixes the
+macOS framework-Python cert gotcha.  File writes are binary + atomic
+(``os.replace``), correct on both POSIX and Windows.
 """
 
 from __future__ import annotations
 
+import certifi
 import datetime
 import json
 import os
@@ -17,8 +18,6 @@ import urllib.request
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple, Optional
 
-# The IPTA repository location lives in _pinned.py (single source of truth);
-# these are local aliases so the rest of this module reads naturally.
 from ._pinned import IPTA_API_COMMIT as API_COMMIT
 from ._pinned import IPTA_RAW_BASE as RAW_BASE
 
@@ -27,18 +26,9 @@ class IndexEntry(NamedTuple):
     """One ``index.txt`` row (matches PINT's ``IndexEntry`` semantics)."""
 
     file: str  # repo-relative path, e.g. tempo/clock/time_gbt.dat
-    update_interval_days: float  # float; "inf" -> math.inf
+    update_interval_days: float  
     invalid_if_older_than: Optional[str]  # ISO date, or None for "---"
     extra: str
-
-
-def _ssl_context() -> ssl.SSLContext:
-    try:
-        import certifi  # noqa: PLC0415
-
-        return ssl.create_default_context(cafile=certifi.where())
-    except Exception:  # pragma: no cover - falls back to system store
-        return ssl.create_default_context()
 
 
 def _http_get(
@@ -52,15 +42,14 @@ def _http_get(
     if accept is not None:
         headers["Accept"] = accept
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
+    context = ssl.create_default_context(cafile=certifi.where())
+    with urllib.request.urlopen(req, timeout=timeout, context=context) as resp:
         return resp.read()
-
 
 def resolve_latest_sha() -> tuple[str, str]:
     """Return ``(sha, iso_date)`` of the IPTA repo's current ``main`` HEAD."""
     data = json.loads(_http_get(API_COMMIT, accept="application/vnd.github+json"))
     return data["sha"], data["commit"]["committer"]["date"][:10]
-
 
 def parse_index(text: str) -> list[IndexEntry]:
     """Parse ``index.txt`` text into :class:`IndexEntry` rows (``---`` -> None)."""
@@ -89,11 +78,6 @@ def _atomic_write(path: Path, data: bytes) -> None:
     with open(tmp, "wb") as f:
         f.write(data)
     os.replace(tmp, path)
-
-
-def _today() -> str:
-    return datetime.date.today().isoformat()
-
 
 # --- SNAPSHOT.json: this module owns its name, format, and read/write --------
 
@@ -155,7 +139,8 @@ def download_snapshot(
         new_names.add(name)
         _atomic_write(dest / name, _http_get(f"{base}/{e.file}"))
 
-    today = _today()
+    today = datetime.date.today().isoformat()
+
     write_snapshot(
         dest,
         {

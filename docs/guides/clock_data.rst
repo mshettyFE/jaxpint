@@ -9,6 +9,72 @@ borrows PINT's copies), sourced from the
 repository. This guide explains where that data lives, how it stays current,
 and how to make a run reproducible.
 
+The time-standard chain
+-----------------------
+
+A pulse arrival time is recorded against a telescope's **local clock** and must
+end up as **TDB** -- the coordinate time at the solar-system barycentre, the
+inertial reference in which the pulsar's rotation is regular. Getting there walks
+a chain of well-defined time standards, each step handled either by a
+clock-correction *file* or by an analytic conversion:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 30 44
+
+   * - From → To
+     - Transformation
+     - Where it happens
+   * - site clock → GPS (or local ref)
+     - per-telescope clock table
+     - site ``*.clk`` / ``*.dat`` files
+   * - GPS → UTC
+     - GPS−UTC offset (~tens of ns)
+     - ``gps2utc.clk`` (per-obs ``apply_gps2utc``)
+   * - UTC → TAI
+     - add leap seconds
+     - erfa leap-second table
+   * - TAI → TT
+     - ``+ 32.184 s`` (definitional)
+     - constant
+   * - TT(TAI) → TT(BIPM)
+     - µs-level realization refinement
+     - ``tai2tt_bipm<year>.clk`` (``include_bipm``)
+   * - TT → TDB
+     - periodic relativistic terms (~1.6 ms)
+     - erfa, from the JPL ephemeris
+
+The standards, briefly:
+
+- **Local / site clock** -- the raw timestamp the backend recorded. Observatories
+  discipline it to an external reference, commonly **GPS** (sometimes a hydrogen
+  maser or NIST).
+- **GPS** -- Global Positioning System time: a continuous atomic scale used for
+  time dissemination, offset from UTC by the accumulated leap seconds (and from
+  TAI by a fixed 19 s).
+- **UTC** -- Coordinated Universal Time: atomic, but with **leap seconds** inserted
+  irregularly so it tracks Earth's rotation. The civil standard.
+- **TAI** -- International Atomic Time: continuous atomic time with **no** leap
+  seconds.
+- **TT** -- Terrestrial Time: the idealized time on Earth's geoid that the timing
+  model uses, defined as ``TT = TAI + 32.184 s``. It has two realizations:
+  **TT(TAI)**, available in real time, and **TT(BIPM<year>)**, a more stable
+  version the BIPM recomputes each year by re-analysing the global atomic-clock
+  ensemble (``BIPM2019``, ``BIPM2021``, ``BIPM2023``, ...).
+- **TDB** -- Barycentric Dynamical Time: a coordinate time at the barycentre,
+  differing from TT only by small **periodic relativistic terms** (~1.6 ms
+  amplitude) from Earth's motion through the Sun's gravity well.
+
+The **clock chain** (``jaxpint.clock.correction``) assembles the *file-based*
+legs -- the per-site tables, ``gps2utc``, and ``tai2tt_bipm`` -- and records their
+sum as the per-TOA ``clkcorr``, landing the time on **TT(BIPM)**. The leap-second
+(UTC→TAI) and ``+32.184 s`` (TAI→TT) steps are analytic, and the final **TT → TDB**
+conversion is a separate relativistic step (``jaxpint.clock.timescale``). Note
+that this chain only fixes the *timescale*; the geometric **barycentering** -- the
+Roemer light-travel delay from the observatory to the barycentre -- is a
+timing-model delay, not a clock correction, even though both are needed to reach a
+true barycentric time.
+
 Where the data lives
 --------------------
 

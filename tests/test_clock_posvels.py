@@ -18,12 +18,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 
 from jaxpint.clock.posvels import (
     _EPHEMERIS_MIRRORS,
     _LOADED_EPHEMS,
     _ensure_ephemeris,
+    compute_posvels,
 )
 
 
@@ -104,6 +106,33 @@ def test_falls_back_to_download_file_with_ftp_first(monkeypatch):
     assert sources[0].endswith("de440.bsp"), (
         f"first source must end with the requested .bsp; got {sources[0]!r}"
     )
+
+
+def test_barycentre_observatory_has_zero_ssb_obs():
+    """A barycentric observatory (``itrf_xyz=None``, the ``@`` site) *is* the
+    SSB, so its SSB-relative posvel must be zero -- matching the native TZR
+    path, astrometry's ``ssb_obs == 0`` guard, and PINT.
+
+    Regression guard: the ``None`` branch used to return ``earth_pos`` (the
+    *geocentre* value), which would silently inject a spurious Roemer delay for
+    any barycentred main-list TOA.  Run offline via astropy's ``"builtin"``
+    (erfa) ephemeris -- no kernel download.
+    """
+    tdb_int = np.array([55000.0, 55100.0])
+    tdb_frac = np.array([0.5, 0.25])
+
+    bary = compute_posvels(tdb_int, tdb_frac, None, ephem="builtin")
+    assert np.allclose(bary["ssb_obs_pos"], 0.0)
+    assert np.allclose(bary["ssb_obs_vel"], 0.0)
+
+    # The geocentre (itrf_xyz == 0) is a *different* place: ssb_obs == earth_pos
+    # (~1 AU).  Before the fix the None branch returned earth_pos too, making
+    # these equal -- so this inequality is what actually fails on the old code.
+    geo = compute_posvels(tdb_int, tdb_frac, (0.0, 0.0, 0.0), ephem="builtin")
+    assert not np.allclose(bary["ssb_obs_pos"], geo["ssb_obs_pos"])
+    # obs->sun for the barycentre is SSB->sun; the geocentre's is offset by
+    # earth_pos, so they must differ as well.
+    assert not np.allclose(bary["obs_sun_pos"], geo["obs_sun_pos"])
 
 
 def test_cache_skips_repeat_resolution(monkeypatch):

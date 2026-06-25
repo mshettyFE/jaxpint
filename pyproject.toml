@@ -20,7 +20,10 @@ dependencies = [
     "astropy>=6.0",
     "pyerfa>=2.0",
     "jplephem>=2.21",
-    "loguru>=0.7"
+    "loguru>=0.7",
+    # CA bundle for the clock-snapshot HTTPS fetch (jaxpint/clock/fetch.py);
+    # guarantees a working cert store (notably on macOS framework Python).
+    "certifi>=2023.7.22"
 ]
 
 [project.optional-dependencies]

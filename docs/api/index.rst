@@ -71,6 +71,7 @@ These require no PINT (see :mod:`jaxpint.bridge` for the PINT-backed adapters).
    :toctree: generated
 
    jaxpint.native
+   jaxpint.clock
    jaxpint.model_builder
    jaxpint.par.parser
    jaxpint.par.core

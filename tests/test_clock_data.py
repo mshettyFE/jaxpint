@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from jaxpint import clock
-from jaxpint.clock import config, fetch, paths, staleness, update
+from jaxpint.clock import config, fetch, paths
 
 REF = "deadbeef" * 5  # a fake 40-char-ish sha
 NEWREF = "feedface" * 5
@@ -93,7 +93,7 @@ def test_no_stray_env_reads():
 
 
 def test_shipped_metadata():
-    md = clock.read_metadata()
+    md = paths.read_metadata()
     assert {"files", "observatories", "default_bipm"} <= set(md)
     assert "gps2utc.clk" in md["files"]
     assert md["default_bipm"].upper().startswith("BIPM")
@@ -144,7 +144,7 @@ def test_cold_cache_downloads_latest(cache, monkeypatch, fresh_state):
     _serve(monkeypatch, _fake_repo(REF))
     monkeypatch.setattr(fetch, "resolve_latest_sha", lambda: (REF, "2026-05-01"))
     paths.ensure_fresh(force=True)
-    assert clock.snapshot_info()["ref"] == REF
+    assert paths.snapshot_info()["ref"] == REF
 
 
 def test_within_ttl_no_check(cache, monkeypatch, fresh_state):
@@ -164,7 +164,7 @@ def test_ttl_elapsed_head_unchanged_touches(cache, monkeypatch, fresh_state):
     monkeypatch.setattr(fetch, "_http_get",
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("no dl")))
     paths.ensure_fresh(force=True, today="2026-06-01")
-    assert clock.snapshot_info()["checked_date"] == "2026-06-01"
+    assert paths.snapshot_info()["checked_date"] == "2026-06-01"
 
 
 def test_ttl_elapsed_head_newer_redownloads(cache, monkeypatch, fresh_state):
@@ -173,7 +173,7 @@ def test_ttl_elapsed_head_newer_redownloads(cache, monkeypatch, fresh_state):
     _serve(monkeypatch, _fake_repo(NEWREF))
     monkeypatch.setattr(fetch, "resolve_latest_sha", lambda: (NEWREF, "2026-06-01"))
     paths.ensure_fresh(force=True, today="2026-06-01")
-    assert clock.snapshot_info()["ref"] == NEWREF
+    assert paths.snapshot_info()["ref"] == NEWREF
 
 
 def test_pinned_ref_freezes(cache, monkeypatch, fresh_state):
@@ -182,7 +182,7 @@ def test_pinned_ref_freezes(cache, monkeypatch, fresh_state):
     monkeypatch.setattr(fetch, "resolve_latest_sha",
                         lambda: (_ for _ in ()).throw(AssertionError("no API on pin")))
     paths.ensure_fresh(force=True)
-    assert clock.snapshot_info()["ref"] == REF
+    assert paths.snapshot_info()["ref"] == REF
 
 
 def test_offline_stale_warns(cache, monkeypatch, fresh_state):
@@ -190,7 +190,7 @@ def test_offline_stale_warns(cache, monkeypatch, fresh_state):
         {"ref": REF, "commit_date": "2025-01-01", "checked_date": "2025-01-01"}))
     monkeypatch.setattr(fetch, "resolve_latest_sha",
                         lambda: (_ for _ in ()).throw(urllib.error.URLError("offline")))
-    with pytest.warns(staleness.StaleClockWarning):
+    with pytest.warns(paths.StaleClockWarning):
         paths.ensure_fresh(force=True, today="2026-05-30")
 
 
@@ -203,9 +203,9 @@ def test_offline_cold_errors(cache, monkeypatch, fresh_state):
 
 def test_update_clocks_forces_refresh(cache, monkeypatch, fresh_state):
     _serve(monkeypatch, _fake_repo(NEWREF))
-    diff = update.update_clocks(ref=NEWREF)
+    diff = paths.update_clocks(ref=NEWREF)
     assert diff["ref_new"] == NEWREF
-    assert clock.snapshot_info()["ref"] == NEWREF
+    assert paths.snapshot_info()["ref"] == NEWREF
 
 
 def test_clock_file_path_missing_raises(cache, monkeypatch, fresh_state):
