@@ -11,6 +11,8 @@ from jaxpint.types.dual_float import DualFloat
 from jaxpint.phase.spin import Spindown
 from jaxpint.delay.dispersion_dm import DispersionDM
 from jaxpint.model import TimingModel, _reconstruct_tzr_toa
+from jaxpint.model_builder import _validate_referenced_params
+from jaxpint.noise import NoiseModel
 from tests.helpers import make_gbt_toa_data, make_spindown_params, make_params
 
 
@@ -569,3 +571,59 @@ class TestVsPINT:
 
         # Should match within ~0.01 cycles (float64 precision over the data span)
         np.testing.assert_allclose(jax_total, pint_phase, rtol=1e-8)
+
+
+class TestValidateReferencedParams:
+    """build_model's build-time check that every component's referenced
+    parameter names exist in the ParameterVector."""
+
+    @staticmethod
+    def _empty_noise():
+        return NoiseModel(white_noise=None, correlated=())
+
+    def test_missing_name_raises(self):
+        # pepoch_name points at a parameter absent from the vector (F0 present).
+        spin = Spindown(spin_param_names=("F0",), pepoch_name="MISSING_PEPOCH")
+        model = TimingModel(delay_components=(), phase_components=(spin,))
+        params = make_params(["F0"], [200.0], units=("Hz",))
+        with pytest.raises(ValueError, match="MISSING_PEPOCH"):
+            _validate_referenced_params(model, self._empty_noise(), params)
+
+    def test_aggregates_all_missing(self):
+        # Two components, each with one absent name -> a single error listing both.
+        spin = Spindown(spin_param_names=("F0",), pepoch_name="MISSING_PEPOCH")
+        dm = DispersionDM(dm_param_names=("DM",), dmepoch_name="MISSING_DMEPOCH")
+        model = TimingModel(
+            delay_components=(dm,),
+            phase_components=(spin,),
+            dispersion_components=(dm,),
+        )
+        params = make_params(["F0", "DM"], [200.0, 15.0], units=("Hz", "pc cm^-3"))
+        with pytest.raises(ValueError) as exc:
+            _validate_referenced_params(model, self._empty_noise(), params)
+        msg = str(exc.value)
+        assert "MISSING_PEPOCH" in msg and "MISSING_DMEPOCH" in msg
+
+    def test_valid_model_does_not_raise(self):
+        # All referenced names present (incl. epoch params PEPOCH/DMEPOCH).
+        spin = Spindown(spin_param_names=("F0",))          # pepoch_name -> "PEPOCH"
+        dm = DispersionDM(dm_param_names=("DM",))          # dmepoch_name -> "DMEPOCH"
+        model = TimingModel(
+            delay_components=(dm,),
+            phase_components=(spin,),
+            dispersion_components=(dm,),
+        )
+        params = _make_full_params()
+        _validate_referenced_params(model, self._empty_noise(), params)  # no raise
+
+    def test_phoff_name_validated(self):
+        # PHOFF is the one name-bearing field on TimingModel itself.
+        spin = Spindown(spin_param_names=("F0",))
+        model = TimingModel(
+            delay_components=(),
+            phase_components=(spin,),
+            phoff_name="PHOFF",
+        )
+        params = _make_full_params()  # has F0/PEPOCH/DM/DMEPOCH but not PHOFF
+        with pytest.raises(ValueError, match="PHOFF"):
+            _validate_referenced_params(model, self._empty_noise(), params)
