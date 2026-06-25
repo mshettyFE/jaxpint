@@ -1,7 +1,7 @@
 """Component and binary model enumerations for JaxPINT.
 
 These enums identify which timing model components are active and which
-binary orbital model is in use.  
+binary orbital model is in use.
 """
 
 from __future__ import annotations

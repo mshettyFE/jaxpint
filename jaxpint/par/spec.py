@@ -44,6 +44,7 @@ __all__ = [
     "spec_for",
 ]
 
+
 class ParamSpec(TypedDict):
     """Per-parameter spec aggregated from a :class:`ParamDecl`.
 

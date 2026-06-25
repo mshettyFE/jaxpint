@@ -7,7 +7,7 @@ component class itself).
 
 The *metadata* (identity / order / PINT names / flags) is a
 plain module-level tuple that imports only the ``Component`` enum, so deriving
-the order and PINT-name maps stays import-light. 
+the order and PINT-name maps stays import-light.
 
 The component *classes* are resolved lazily in :func:`_param_classes`
 (function-local imports), so importing this module never forces the heavy
@@ -88,7 +88,9 @@ COMPONENTS: tuple[ComponentSpec, ...] = (
     ComponentSpec(C.PL_CHROM_NOISE, ("PLChromNoise",), order=30),
     ComponentSpec(C.PL_SW_NOISE, ("PLSWNoise",), order=31),
     # --- Unordered: detected/activated but not in DEFAULT_ORDER ---
-    ComponentSpec(C.PHASE_OFFSET, ("PhaseOffset",)),  # modeled as TimingModel.phoff_name
+    ComponentSpec(
+        C.PHASE_OFFSET, ("PhaseOffset",)
+    ),  # modeled as TimingModel.phoff_name
     ComponentSpec(C.NONE, top_level=True),  # admin/top-level params (TimingModel)
 )
 

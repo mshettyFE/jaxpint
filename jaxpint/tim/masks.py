@@ -86,7 +86,7 @@ def select_toa_mask(
         return present & (column == target)
 
     # Two values -> inclusive range (numeric, as in PINT for mjd/freq).
-    assert(numeric)
+    assert numeric
     lo, hi = float(parsed[0]), float(parsed[1])
     col_num = np.asarray(column, dtype=np.float64)
     return (col_num >= lo) & (col_num <= hi)
