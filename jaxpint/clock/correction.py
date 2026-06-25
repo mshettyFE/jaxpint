@@ -1,4 +1,4 @@
-"""The native per-TOA clock-correction chain (site clock -> TT(BIPM)).
+"""The per-TOA clock-correction chain (site clock -> TT(BIPM)).
 
 Reproduces PINT's ``TOAs.apply_clock_corrections`` for a list of raw
 :class:`~jaxpint.tim.raw_toa.RawTOA`: for each TOA the correction (seconds) is
@@ -11,8 +11,15 @@ Reproduces PINT's ``TOAs.apply_clock_corrections`` for a list of raw
 
 with the microsecond terms converted to seconds and added to ``to_flag``.  This
 matches the ``clkcorr`` flag PINT records (which *includes* ``-to``).  The
-corrected MJD is on the TT(BIPM) timescale; TT->TDB and barycentering are later
-phases.  PINT-free at runtime.
+corrected MJD is still a **UTC-scale** ``pulsar_mjd`` value with the corrections
+applied -- the corrections *target* the TT(BIPM) realization, but the actual
+UTC -> TAI -> TT -> TDB scale conversion is done later by
+``jaxpint.clock.timescale`` (and geometric barycentering is a later phase again).
+PINT-free at runtime.
+
+For the underlying time-transfer conventions (UTC -> TAI -> TT -> TT(BIPM)) see
+the TEMPO2 timing-model paper, Edwards, Hobbs & Manchester (2006), MNRAS 372,
+1549: https://arxiv.org/abs/astro-ph/0607664
 """
 
 from __future__ import annotations
@@ -27,16 +34,25 @@ from .clockfile import ClockFile, load_clock_file
 from .observatory import resolve_observatory
 from .paths import clock_file_path, read_metadata
 
-# TT(TAI) - TAI = 32.184 s, in microseconds.  The BIPM file holds TT(BIPM)-TAI;
-# subtracting this leaves the (us-level) TT(BIPM)-TT(TAI) part, as PINT does.
+# TT(TAI) - TAI = 32.184 s, in microseconds.  The BIPM file holds TT(BIPM)-TAI,
+# so subtracting this leaves only the (us-level) TT(BIPM)-TT(TAI) realization
+# delta.  We strip the nominal 32.184 s here *because* the TT<->TAI conversion
+# itself is applied later by timescale.to_tdb (astropy's UTC->TAI->TT step);
+# leaving it in would double-count it.  So this leg contributes only the BIPM
+# refinement, not a TT<->TAI conversion.  (Matches PINT.)
 _TT_TAI_US = 32.184e6
 
 
 @dataclass(frozen=True)
-class CorrectedTOAs:
-    """Result of the clock chain: corrected MJD (int/frac) + the clkcorr it added."""
+class UTCScaleTOAs:
+    """Output of the clock-correction stage *only* -- not a finished time.
 
-    mjd_int: np.ndarray  # float64, integer MJD day (TT(BIPM))
+    The MJD is a UTC-scale ``pulsar_mjd`` with the clock corrections applied (the
+    corrections target the TT(BIPM) realization).  The TT -> TDB conversion and
+    geometric barycentering are still to come; see :func:`correct`.
+    """
+
+    mjd_int: np.ndarray  # float64, integer MJD day (UTC-scale, clock-corrected)
     mjd_frac: np.ndarray  # float64, fractional day in [0, 1)
     clkcorr_seconds: np.ndarray  # float64, total correction (incl. -to), seconds
 
@@ -72,21 +88,38 @@ def correct(
     include_bipm: bool = True,
     bipm_version: str | None = None,
     limits: str = "warn",
-) -> CorrectedTOAs:
-    """Apply the full clock-correction chain to a list of raw TOAs.
+) -> UTCScaleTOAs:
+    """Apply the clock-correction chain (site clock -> TT(BIPM)) to raw TOAs.
+
+    This is the clock-correction stage *only* (the analogue of PINT's
+    ``apply_clock_corrections``): it returns a **UTC-scale** ``pulsar_mjd`` with
+    the corrections applied.  The corrections *target* the TT(BIPM) realization,
+    but the value is not yet on any TT/TDB scale and is *not* a usable
+    barycentric time -- the UTC -> TT -> TDB conversion
+    (``jaxpint.clock.timescale.to_tdb``) and the geometric barycentering
+    (posvels + the model's Roemer delay) are separate subsequent steps, not
+    performed here.
 
     Parameters
     ----------
     raw_toas:
-        Parsed, pre-correction TOAs from :func:`jaxpint.tim.read_tim`.
+        Parsed, pre-correction TOAs from :func:`jaxpint.tim.read_tim` (MJD still
+        in the raw site/UTC time scale).
     include_bipm:
-        Apply the TT(TAI)->TT(BIPM) correction (default True).
+        Apply the TT(TAI)->TT(BIPM) realization refinement (default True).
     bipm_version:
         BIPM realization, e.g. ``"BIPM2023"``; defaults to the metadata
         ``default_bipm``.
     limits:
         Out-of-range policy passed to each :meth:`ClockFile.evaluate`
         (``"warn"`` | ``"error"`` | ``"ignore"``).
+
+    Returns
+    -------
+    UTCScaleTOAs
+        The corrected MJD (integer + fractional day, a **UTC-scale**
+        ``pulsar_mjd`` with corrections applied) plus the total ``clkcorr``
+        applied in seconds (including the ``-to`` flag offset).
     """
     n = len(raw_toas)
     mjd_int = np.array([t.mjd_int for t in raw_toas], dtype=np.float64)
@@ -119,7 +152,7 @@ def correct(
 
     frac2 = mjd_frac + clkcorr_seconds / 86400.0
     carry = np.floor(frac2)
-    return CorrectedTOAs(
+    return UTCScaleTOAs(
         mjd_int=mjd_int + carry,
         mjd_frac=frac2 - carry,
         clkcorr_seconds=clkcorr_seconds,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import jax.numpy as jnp
 
 # ── Physical constants ──────────────────────────────────────────────
@@ -158,5 +160,30 @@ KEPLER_N_ITER: int = 5
 
 #: PINT parameter types that map to numeric values
 NUMERIC_PARAM_TYPES = frozenset({"floatParameter", "MJDParameter", "AngleParameter"})
-#: Planets used for Shapiro delay and position lookups
-PLANETS = ("jupiter", "saturn", "venus", "uranus", "neptune", "earth")
+#: Solar-system bodies the JPL/astropy ephemerides expose.  Closed set -- new
+#: ephemeris releases add precision, not bodies -- so a Literal is safe here.
+SolarSystemBody = Literal[
+    "sun",
+    "mercury",
+    "venus",
+    "earth",
+    "moon",
+    "earth-moon-barycenter",
+    "mars",
+    "jupiter",
+    "saturn",
+    "uranus",
+    "neptune",
+    "pluto",
+]
+#: Planets used for Shapiro delay and position lookups.  Distinct from
+#: ``SolarSystemBody``: that is the compile-time *type* (every valid body); this
+#: is a runtime *value* -- a curated subset we actually iterate over.
+PLANETS: tuple[SolarSystemBody, ...] = (
+    "jupiter",
+    "saturn",
+    "venus",
+    "uranus",
+    "neptune",
+    "earth",
+)

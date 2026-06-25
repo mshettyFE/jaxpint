@@ -1,9 +1,10 @@
-"""TT(BIPM) -> TDB conversion (PINT-free; astropy/erfa).
+"""Clock-corrected (UTC-scale) MJD -> TDB conversion (PINT-free; astropy/erfa).
 
 The clock chain (:mod:`jaxpint.clock.correction`) leaves each TOA as a UTC-scale
-``pulsar_mjd`` value nudged by the (microsecond-level) clock corrections; this
-module performs the remaining time-scale step UTC -> TAI -> TT -> TDB via
-astropy, returning the longdouble TDB MJD split into ``(int, frac)`` days.
+``pulsar_mjd`` value nudged by the (microsecond-level) clock corrections (which
+target the TT(BIPM) realization); this module performs the remaining time-scale
+step UTC -> TAI -> TT -> TDB via astropy, returning the longdouble TDB MJD split
+into ``(int, frac)`` days.
 
 ``pulsar_mjd`` (the leap-second-day-aware MJD convention TEMPO/TEMPO2 use) is a
 PINT-registered astropy format, *not* built into astropy.  Rather than depend on
@@ -45,7 +46,7 @@ def mjds_to_jds_pulsar(mjd1, mjd2):
 
 
 def to_tdb(mjd_int, mjd_frac, itrf_xyz):
-    """Convert clock-corrected (TT(BIPM)) UTC-scale MJDs to TDB ``(int, frac)``.
+    """Convert clock-corrected UTC-scale MJDs to TDB ``(int, frac)``.
 
     Parameters
     ----------
@@ -73,6 +74,7 @@ def to_tdb(mjd_int, mjd_frac, itrf_xyz):
     loc = EarthLocation.from_geocentric(
         xyz[..., 0] * u.m, xyz[..., 1] * u.m, xyz[..., 2] * u.m
     )
+    # Off load conversion to astropy
     t = Time(jd1, jd2, format="jd", scale="utc", location=loc)
 
     # Longdouble TDB MJD, split to (int, frac).  (jd1 is a half-integer JD, so

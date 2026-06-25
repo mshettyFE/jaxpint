@@ -24,10 +24,11 @@ from astropy.coordinates import (
     get_body_barycentric_posvel,
     solar_system_ephemeris,
 )
+
 from astropy.time import Time
 from astropy.utils.data import download_file
 
-from ..constants import PLANETS
+from ..constants import PLANETS, SolarSystemBody
 from . import config
 
 # Mirror list for JPL SPK kernels. Order matters: FTP is first so the fallback
@@ -39,6 +40,8 @@ _EPHEMERIS_MIRRORS: tuple[str, ...] = (
     "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/a_old_versions/",
     "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/",
 )
+
+# location of already loaded ephems
 _LOADED_EPHEMS: dict[str, str] = {}
 
 
@@ -87,7 +90,7 @@ def _ensure_ephemeris(ephem: str) -> str:
     return p
 
 
-def _body_ssb_posvel(body: str, tdb: Time):
+def _body_ssb_posvel(body: SolarSystemBody, tdb: Time):
     """(pos_km, vel_kms) of ``body`` wrt the SSB at the given TDB times."""
     pos, vel = get_body_barycentric_posvel(body, tdb)
     assert pos is not None and vel is not None
@@ -95,7 +98,6 @@ def _body_ssb_posvel(body: str, tdb: Time):
         pos.xyz.to_value(u.km).T,  # (n, 3)
         vel.xyz.to_value(u.km / u.s).T,  # (n, 3)
     )
-
 
 def compute_posvels(
     tdb_int,
@@ -115,8 +117,14 @@ def compute_posvels(
         The observatory's geocentric ITRF xyz in metres.  ``None`` (the
         barycentre) yields a zero observatory term.
     ephem : str
-        JPL ephemeris name (e.g. ``"DE421"``, ``"DE440"``); astropy downloads +
-        caches it.
+        JPL ephemeris name; ``"DE440"`` by default.  Commonly used names are
+        ``DE200``, ``DE405``, ``DE421``, ``DE430``, ``DE436``, ``DE438``,
+        ``DE440``, ``DE440s``, and ``DE441`` (DE421/DE430/DE436/DE440 are the
+        usual NANOGrav/IPTA choices).  The set is *not* closed: any name astropy
+        can resolve works, as does any ``<name>.bsp`` reachable via
+        ``$JAXPINT_EPHEM_PATH`` or the download mirrors -- so newer JPL releases
+        are accepted without a code change.  Resolution + caching is handled by
+        :func:`_ensure_ephemeris`.
     planets : bool
         Also compute observatory->planet vectors.
 
@@ -137,11 +145,12 @@ def compute_posvels(
         earth_pos, earth_vel = _body_ssb_posvel("earth", tdb)
 
         if itrf_xyz is None:
-            # Barycentre (or any obs at the geocentre-less SSB): no obs term.
-            obs_geo_pos = np.zeros((n, 3))
-            obs_geo_vel = np.zeros((n, 3))
-            ssb_obs_pos = earth_pos.copy()
-            ssb_obs_vel = earth_vel.copy()
+            # Barycentre: the observatory *is* the SSB, so its SSB-relative
+            # posvel is zero (matches the native TZR path and PINT).  The
+            # geocentre is NOT this case -- it carries itrf_xyz == (0, 0, 0) and
+            # goes through the else branch (giving ssb_obs == earth_pos).
+            ssb_obs_pos = np.zeros((n, 3))
+            ssb_obs_vel = np.zeros((n, 3))
         else:
             xyz = np.asarray(itrf_xyz, dtype=np.float64)
             loc = EarthLocation.from_geocentric(

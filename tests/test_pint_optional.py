@@ -9,6 +9,7 @@ symbols raise a clear ``ImportError`` only on access.  Also a static guard that
 from __future__ import annotations
 
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -128,6 +129,46 @@ def test_components_do_not_import_par_spec():
     assert not offenders, (
         "component module imports jaxpint.par.spec (cycle risk):\n"
         + "\n".join(offenders)
+    )
+
+
+def test_clock_subsystem_only_used_by_loaders():
+    """Clock correction is a TOA-loading stage, not a model/parse concern.
+
+    Only ``jaxpint.loaders`` may depend on ``jaxpint.clock``.  Parsers
+    (``jaxpint.par`` / ``jaxpint.tim``), the model builder, components, and the
+    PINT bridge must stay clock-independent: clock correction runs upstream of
+    model evaluation, and the bridge uses PINT's own clock machinery.  Coupling
+    those layers to the clock data/snapshot subsystem would undercut their
+    data-independent testability.  Guards the current (clean) layering against
+    regrowth.
+    """
+    allowed = {
+        _REPO / "jaxpint" / "loaders",
+        _REPO / "jaxpint" / "clock",
+    }
+
+    def _is_allowed(p: pathlib.Path) -> bool:
+        return any(p == a or (a.is_dir() and a in p.parents) for a in allowed)
+
+    # Matches any import that resolves to the clock package: absolute
+    # (``jaxpint.clock``) or relative (``from ..clock`` / ``from .clock``).
+    # ``\bclock\b`` avoids matching a hypothetical ``clockfoo`` sibling.
+    clock_import = re.compile(r"\bjaxpint\.clock\b|\bfrom\s+\.+clock\b")
+
+    offenders = []
+    for py in (_REPO / "jaxpint").rglob("*.py"):
+        if _is_allowed(py):
+            continue
+        for i, line in enumerate(py.read_text().splitlines(), 1):
+            s = line.strip()
+            if not (s.startswith("import ") or s.startswith("from ")):
+                continue
+            if clock_import.search(s):
+                offenders.append(f"{py.relative_to(_REPO)}:{i}: {s}")
+    assert not offenders, (
+        "jaxpint.clock imported outside jaxpint/loaders/ (clock is a "
+        "loader-stage dependency):\n" + "\n".join(offenders)
     )
 
 

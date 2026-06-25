@@ -7,26 +7,32 @@ always read from the package; the *bulk* (``index.txt``, ``*.clk``/``*.dat``,
 
 :func:`ensure_fresh` is the auto-update core — called lazily on first clock
 access, never at import. Network failures are non-fatal (warn + use cache).
+
+When the TTL has expired but the IPTA repo is unreachable, :func:`check_staleness`
+emits a :class:`StaleClockWarning` if the cached snapshot is too old to trust --
+the offline fallback for the normal auto-refresh.
 """
 
 from __future__ import annotations
 
 import datetime
+import functools
 import json
 import urllib.error
+import warnings
 from importlib.resources import files
 from pathlib import Path
 from typing import Optional
 
 from . import config, fetch
-from .staleness import check_staleness
 
 _ensured = False
 
-
+@functools.cache
 def _bundled_clock_dir() -> Path:
+    # The packaged data dir is fixed for the life of the process; resolve the
+    # importlib.resources path once (clock_dir() hits this on every call).
     return Path(str(files("jaxpint.data").joinpath("clock")))
-
 
 def clock_dir() -> Path:
     """The active clock directory: ``$JAXPINT_CLOCK_DIR`` or the packaged dir."""
@@ -35,12 +41,15 @@ def clock_dir() -> Path:
         return Path(override).expanduser()
     return _bundled_clock_dir()
 
-
+@functools.cache
 def read_metadata() -> dict:
-    """The committed read-schema (always from the package, not the cache)."""
+    """The committed read-schema (always from the package, not the cache).
+
+    Parsed once per process and cached: the committed JSON never changes at
+    runtime.  The returned dict is shared -- callers must treat it as read-only.
+    """
     path = _bundled_clock_dir() / "clock_metadata.json"
     return json.loads(path.read_text())
-
 
 def snapshot_info() -> Optional[dict]:
     """Parsed ``SNAPSHOT.json`` from the active dir, or ``None`` if absent."""
@@ -67,6 +76,45 @@ def _age_days(checked: Optional[str], today=None) -> float:
     if not checked:
         return float("inf")
     return (_to_date(today) - datetime.date.fromisoformat(checked)).days
+
+
+HARD_STALE_DAYS = 180
+
+
+class StaleClockWarning(UserWarning):
+    """Emitted when clock data is old and could not be refreshed."""
+
+
+def check_staleness(
+    snapshot: Optional[dict],
+    *,
+    today=None,
+    hard_days: int = HARD_STALE_DAYS,
+) -> Optional[int]:
+    """Warn (``StaleClockWarning``) if the snapshot is older than ``hard_days``.
+
+    The offline fallback for the TTL auto-update: when the cache cannot be
+    refreshed, warn if its data is too old to trust.  Age is measured from the
+    snapshot's ``commit_date`` (the upstream IPTA commit date -- the true age of
+    the clock data, not ``downloaded_date``/``checked_date``).  Distinct from
+    :class:`~jaxpint.clock.clockfile.ClockCorrectionOutOfRange`, which warns
+    about a TOA past a clock file's data *range* rather than the snapshot's
+    *age*.  Returns the age in days when a warning fired, else ``None``.
+    """
+    commit_date = (snapshot or {}).get("commit_date")
+    if not commit_date:
+        return None
+    age = (_to_date(today) - datetime.date.fromisoformat(commit_date)).days
+    if age > hard_days:
+        warnings.warn(
+            f"clock snapshot {(snapshot or {}).get('ref')!r} is {age} days old "
+            f"and could not be refreshed (offline); corrections may be out of "
+            f"date. Reconnect, or pin a known commit via $JAXPINT_CLOCK_REF.",
+            StaleClockWarning,
+            stacklevel=2,
+        )
+        return age
+    return None
 
 
 def _download(ref: str, dest: Path, *, commit_date=None) -> dict:
@@ -125,9 +173,37 @@ def ensure_fresh(*, today=None, force: bool = False) -> None:
     _ensured = True
 
 
+def update_clocks(ref: str = "latest") -> dict:
+    """Force a fresh clock-snapshot download (the rare manual override).
+
+    Auto-update via :func:`ensure_fresh` is the default; this always downloads.
+
+    Parameters
+    ----------
+    ref:
+        ``"latest"`` (the IPTA ``main`` HEAD) or an explicit commit SHA.
+
+    Returns
+    -------
+    dict
+        ``{ref_old, ref_new, added, removed}``.
+    """
+    global _ensured
+    dest = clock_dir()
+    if ref == "latest":
+        sha, date = fetch.resolve_latest_sha()
+    else:
+        sha, date = ref, None
+    diff = _download(sha, dest, commit_date=date)
+    _ensured = True  
+    return diff
+
+
 def clock_file_path(name: str) -> Path:
-    """Path to clock file ``name`` in the active dir (auto-updates first)."""
+    """Path to clock file ``name`` in the active dir (auto-updates first).
+    """
     ensure_fresh()
+    name = Path(name).name
     path = clock_dir() / name
     if not path.exists():
         raise FileNotFoundError(

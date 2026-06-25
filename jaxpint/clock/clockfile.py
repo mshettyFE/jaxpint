@@ -2,10 +2,7 @@
 
 Reimplements PINT's TEMPO2 / TEMPO clock-file parsers and ``ClockFile.evaluate``
 closely enough to reproduce its corrections bit-for-bit.  Everything is stored
-internally in **microseconds** (TEMPO2 files are read as seconds and converted;
-TEMPO ``.dat`` files are already microseconds), so :meth:`ClockFile.evaluate`
-returns microseconds with no further unit handling -- matching
-``np.interp(t.mjd, file_mjd, clock.to(u.us).value)`` in PINT.
+internally in **microseconds** 
 
 This is the data-reading half of the clock-correction chain; the chain that sums
 site/GPS/BIPM/TIME terms lives in :mod:`jaxpint.clock.correction`.
@@ -24,7 +21,7 @@ import numpy as np
 class ClockCorrectionOutOfRange(UserWarning):
     """A TOA falls outside a clock file's covered MJD range.
 
-    Distinct from :class:`jaxpint.clock.staleness.StaleClockWarning` (which is
+    Distinct from :class:`jaxpint.clock.paths.StaleClockWarning` (which is
     about snapshot *age*); this is about a specific TOA being past the *data*.
     ``np.interp`` clamps to the endpoint value regardless -- this only governs
     whether we warn (``limits="warn"``) or raise (``limits="error"``).
@@ -41,6 +38,23 @@ _CLKCORR_RE = re.compile(
     r" ?(.*)"
 )
 
+# TEMPO fixed-column layout (Fortran FORMAT, verbatim from PINT): the fields
+# live at fixed character offsets, and a *blank* column means "absent" (-> 0.0).
+# Whitespace splitting cannot represent a blank column -- it would shift later
+# fields left and silently misread the corrections -- so these slices are
+# load-bearing, not stylistic.
+_COL_MJD = slice(0, 9)
+_COL_CLKCORR1 = slice(9, 21)
+_COL_CLKCORR2 = slice(21, 33)
+
+
+def _col_float(line: str, col: slice):
+    """Parse a fixed-width numeric column; ``None`` if blank or unparseable."""
+    try:
+        return float(line[col])
+    except (ValueError, IndexError):
+        return None
+
 
 @dataclass(frozen=True)
 class ClockFile:
@@ -54,8 +68,7 @@ class ClockFile:
     def evaluate(self, t_mjd, *, limits: str = "warn") -> np.ndarray:
         """Linear-interpolate the correction (µs) at the given MJD(s).
 
-        Mirrors PINT's ``np.interp(t.mjd, self.time.mjd, clock_us)``: ``np.interp``
-        clamps to the endpoint values outside the range; if ``valid_beyond_ends``
+        ``np.interp`` clamps to the endpoint values outside the range; if ``valid_beyond_ends``
         is False and any query is out of range we ``warn`` or ``raise`` per
         ``limits``.
         """
@@ -114,7 +127,19 @@ class ClockFile:
 
 
 def _trim(mjd: list, clk: list, *, bogus_last_correction: bool):
-    """Apply PINT's bogus-last-row drop, then strip leading ``mjd == 0`` rows."""
+    """Drop clock-file rows that are not real measurements.
+
+    Two PINT-compatible cleanups on the parsed ``(mjd, clk)`` sample lists:
+
+    1. If *bogus_last_correction* is set, drop the final row -- a sentinel
+       placeholder some clock files append to pad the table (see
+       :func:`read_tempo2_clock_file` for what the flag means).
+    2. Strip any leading ``mjd == 0`` rows -- blank placeholder rows at the top
+       of the file, whose zero MJD would otherwise corrupt the interpolation
+       domain (a spurious sample at MJD 0 wrecks ``np.interp``'s range).
+
+    Returns the trimmed ``(mjd, clk)`` lists.
+    """
     if bogus_last_correction and mjd:
         mjd, clk = mjd[:-1], clk[:-1]
     while mjd and mjd[0] == 0:
@@ -129,7 +154,37 @@ def read_tempo2_clock_file(
     valid_beyond_ends: bool = False,
     friendly_name: str | None = None,
 ) -> ClockFile:
-    """Read a TEMPO2-format ``.clk`` file (values in seconds -> stored µs)."""
+    """Read a TEMPO2-format ``.clk`` file (values in seconds -> stored µs).
+
+    The first line is the header (two timescale names); each data row is two
+    floats (MJD, correction in seconds); anything else is a comment.
+
+    Parameters
+    ----------
+    path : str or path-like
+        The ``.clk`` file to read.
+    bogus_last_correction : bool, default False
+        Drop the file's final data row before interpolating.  Some TEMPO/TEMPO2
+        clock files terminate with a sentinel last row -- a placeholder (not a
+        real measurement) that pads the table -- which would otherwise extend
+        the apparent valid range and skew the endpoint used when clamping
+        out-of-range queries.  PINT carries the same per-file flag; set it only
+        for files whose final row is known to be bogus.
+    valid_beyond_ends : bool, default False
+        Whether MJDs outside the file's covered span are treated as valid.  With
+        the default (False), :meth:`ClockFile.evaluate` warns -- or raises, per
+        its ``limits`` argument -- when a query falls before the first or past
+        the last entry (``np.interp`` clamps to the endpoint value regardless).
+        With True, out-of-range queries are silently clamped, no warning.
+    friendly_name : str or None, default None
+        Human-readable label for this file, used only in out-of-range warning
+        messages.  Defaults to the file's base name.
+
+    Returns
+    -------
+    ClockFile
+        The parsed piecewise-linear correction (microseconds vs MJD).
+    """
     path = Path(path)
     mjd: list[float] = []
     clk: list[float] = []  # seconds, as written in the file
@@ -176,6 +231,26 @@ def read_tempo_clock_file(
     -= 818.8`` adjustment, the MJD sanity skip, header-line skipping, and storing
     ``clkcorr2 - clkcorr1`` in microseconds.  (INCLUDE directives are not present
     in the files we vendor and are not handled.)
+
+    Parameters
+    ----------
+    path : str or path-like
+        The ``.dat`` file to read.
+    bogus_last_correction : bool, default False
+        Drop the file's final data row before interpolating -- a sentinel
+        placeholder row that pads the table.  See
+        :func:`read_tempo2_clock_file` for the full rationale.
+    valid_beyond_ends : bool, default False
+        Whether MJDs outside the file's covered span are treated as valid; see
+        :func:`read_tempo2_clock_file`.
+    friendly_name : str or None, default None
+        Human-readable label used only in out-of-range warning messages.
+        Defaults to the file's base name.
+
+    Returns
+    -------
+    ClockFile
+        The parsed piecewise-linear correction (microseconds vs MJD).
     """
     path = Path(path)
     mjds: list[float] = []
@@ -188,21 +263,15 @@ def read_tempo_clock_file(
             if ls and (ls[0].upper().startswith("MJD") or ls[0].startswith("=====")):
                 continue  # header lines
 
-            try:
-                mjd = float(line[:9])
-                if (mjd < 39000 and mjd != 0) or mjd > 100000:
-                    mjd = None  # suspicious MJD -> treat line as comment
-            except (ValueError, IndexError):
+            mjd = _col_float(line, _COL_MJD)
+            # Out-of-range MJD (before ~1965 or after ~2132) -- almost certainly
+            # a fixed-column misparse of a non-data line, so skip it.  0 is
+            # exempt: it is a blank-row placeholder that _trim removes.
+            if mjd is not None and ((mjd < 39000 and mjd != 0) or mjd > 100000):
                 mjd = None
 
-            try:
-                clkcorr1 = float(line[9:21])
-            except (ValueError, IndexError):
-                clkcorr1 = None
-            try:
-                clkcorr2 = float(line[21:33])
-            except (ValueError, IndexError):
-                clkcorr2 = None
+            clkcorr1 = _col_float(line, _COL_CLKCORR1)
+            clkcorr2 = _col_float(line, _COL_CLKCORR2)
 
             if mjd is None:
                 continue
@@ -212,7 +281,10 @@ def read_tempo_clock_file(
                 clkcorr1 = 0.0
             if clkcorr2 is None:
                 clkcorr2 = 0.0
-            # Hard-coded in TEMPO:
+            # Hard-coded in TEMPO (newsrc.f): clkcorr1 is the legacy LORAN-C
+            # column (``xlor``); a reading above 800 carries the LORAN chain's
+            # ~818.8 us coding delay, which TEMPO strips to recover the true
+            # offset.  Undocumented constant, preserved verbatim for parity.
             if clkcorr1 > 800.0:
                 clkcorr1 -= 818.8
 
@@ -236,7 +308,23 @@ def load_clock_file(
     valid_beyond_ends: bool = False,
     friendly_name: str | None = None,
 ) -> ClockFile:
-    """Dispatch to the TEMPO/TEMPO2 reader by format string."""
+    """Dispatch to the TEMPO/TEMPO2 reader by format string.
+
+    Parameters
+    ----------
+    path : str or path-like
+        The clock file to read.
+    fmt : {"tempo", "tempo2"}
+        Which reader to use; raises ``ValueError`` for anything else.
+    bogus_last_correction, valid_beyond_ends, friendly_name
+        Forwarded verbatim to the selected reader; see
+        :func:`read_tempo2_clock_file` for their meaning.
+
+    Returns
+    -------
+    ClockFile
+        The parsed piecewise-linear correction (microseconds vs MJD).
+    """
     if fmt == "tempo2":
         return read_tempo2_clock_file(
             path,
