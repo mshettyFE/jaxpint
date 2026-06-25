@@ -1,15 +1,7 @@
 """Model builder: ParResult → TimingModel + NoiseModel.
 
 Constructs JaxPINT timing and noise components from a
-:class:`~jaxpint.par.result.ParResult`.  The PINT bridge delegates to
-:func:`build_model` after converting a PINT model to ``ParResult`` via
-:func:`~jaxpint.bridge.pint_model_to_params`.
-
-Each component is constructed by a ``_build_<comp>(ctx)`` function registered in
-:data:`_BUILDERS` (keyed by :class:`~jaxpint.par.registry.Component`).
-:func:`build_model` resolves the active component set, then calls the builders in
-PINT execution order and routes each result to the delay / phase / noise bucket
-by its base class.  A builder returns ``None`` when its parameters are absent.
+:class:`~jaxpint.par.result.ParResult`.
 """
 
 from __future__ import annotations

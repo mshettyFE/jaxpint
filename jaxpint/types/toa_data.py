@@ -34,7 +34,7 @@ class TOAData(eqx.Module):
     mjd_int: Float[Array, " n_toas"]
     mjd_frac: Float[Array, " n_toas"]
     # Same timestamp as MJD, but converted to Barycentric Dynamic Time (TDB)
-    # Timing model oeprates on these values.
+    # Timing model operates on these values.
     # MJD is kept around for matching to original data
     tdb_int: Float[Array, " n_toas"]
     tdb_frac: Float[Array, " n_toas"]
@@ -85,16 +85,6 @@ class TOAData(eqx.Module):
     #   tdb: days (int/frac split, same as tdb_int/tdb_frac)
     #   freq: MHz (barycentric Doppler-corrected TZRFRQ; inf means no dispersion delay)
     #   ssb_obs_pos: km, shape (3,) — SSB observer position at TZR epoch
-    @property
-    def tdb(self) -> DualFloat:
-        """TDB timestamp as a DualFloat (int day + fractional day)."""
-        return DualFloat(int=self.tdb_int, frac=self.tdb_frac)
-
-    @property
-    def mjd(self) -> DualFloat:
-        """MJD timestamp as a DualFloat (int day + fractional day)."""
-        return DualFloat(int=self.mjd_int, frac=self.mjd_frac)
-
     tzr_tdb_int: Optional[float] = eqx.field(static=True, default=None)
     tzr_tdb_frac: Optional[float] = eqx.field(static=True, default=None)
     tzr_freq: Optional[float] = eqx.field(static=True, default=None)
@@ -104,3 +94,15 @@ class TOAData(eqx.Module):
     tzr_planet_positions: Optional[dict[str, Float[Array, " 3"]]] = eqx.field(
         default=None
     )
+
+    # -- Derived timestamps --
+
+    @property
+    def tdb(self) -> DualFloat:
+        """TDB timestamp as a DualFloat (int day + fractional day)."""
+        return DualFloat(int=self.tdb_int, frac=self.tdb_frac)
+
+    @property
+    def mjd(self) -> DualFloat:
+        """MJD timestamp as a DualFloat (int day + fractional day)."""
+        return DualFloat(int=self.mjd_int, frac=self.mjd_frac)
