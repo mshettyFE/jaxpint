@@ -7,6 +7,14 @@ module that contributes either a **delay** (seconds), a **phase** (cycles), or a
 new one, using the existing :class:`~jaxpint.phase.Spindown` phase component as
 the worked example.
 
+Adding a component touches four files: the class itself, the
+:class:`~jaxpint.par.registry.Component` enum, the component table in
+:mod:`jaxpint.par.registry_table`, and the builder in
+:mod:`jaxpint.model_builder` (plus the package ``__init__`` exports). The table
+is the **single source of truth**: the parser vocabulary, auto-detection,
+execution order, and the optional PINT-bridge name all *derive* from one
+``ComponentSpec`` entry, so there are no longer separate lists to keep in sync.
+
 Every component carries two related-but-distinct descriptions of its parameters,
 explained in detail in :mod:`jaxpint.components`:
 
@@ -69,7 +77,7 @@ look values up at call time.
 
 Add an entry to the :class:`~jaxpint.par.registry.Component` enum in
 ``jaxpint/par/registry.py``. This enum is the shared vocabulary that the parser,
-the execution-order table, and the builder all key off:
+the component table, and the builder all key off:
 
 .. code-block:: python
 
@@ -77,43 +85,107 @@ the execution-order table, and the builder all key off:
        ...
        SPINDOWN = "Spindown"
 
-3. Register it for parsing & detection
---------------------------------------
+3. Register it in the component table
+-------------------------------------
 
-Add the class to ``_component_classes()`` in :mod:`jaxpint.par.spec`. That
-function is the single list of components whose ``PARAMS`` get aggregated into
-the parser's vocabulary, so registering it there is what makes the ``.par``
-parser recognize the component's parameters.
+This is the consolidated step. In :mod:`jaxpint.par.registry_table` -- the
+single source of truth -- do two small edits:
 
-Detection is then **automatic**: a parameter that is *uniquely owned* by exactly
-one non-binary component activates ("triggers") that component when it appears in
-a ``.par`` file. You do not declare triggers by hand -- they're derived in
-``jaxpint.par.spec`` from the aggregated schemas. (If you also want the optional
-PINT bridge to detect the component from an in-memory PINT model, add a
-PINT-class-name → ``Component`` entry to ``PINT_COMPONENT_MAP`` in
-``jaxpint.par.components``.)
+**(a)** Add a :class:`~jaxpint.par.registry_table.ComponentSpec` to the
+``COMPONENTS`` tuple. This one line carries the component's identity, its PINT
+class name(s) (for the optional bridge), and its execution order:
 
-4. Slot it into the execution order
------------------------------------
+.. code-block:: python
 
-Add the new ``Component`` to ``DEFAULT_ORDER`` in ``jaxpint/_component_order.py``
-at the right physical position. Delays are chained in this order (each sees the
-accumulated delay from earlier components), so placement matters for delays;
-phases are summed, so their order is irrelevant.
+   COMPONENTS = (
+       ...
+       ComponentSpec(C.SPINDOWN, ("Spindown",), order=19),
+       ...
+   )
+
+**(b)** Add the class to the dict returned by ``_param_classes()`` (a lazy,
+function-local import so the table stays import-light and PINT-free):
+
+.. code-block:: python
+
+   def _param_classes():
+       from jaxpint.phase.spin import Spindown
+       ...
+       return {
+           ...
+           C.SPINDOWN: (Spindown,),   # tuple: binary maps several classes to one Component
+           ...
+       }
+
+Everything else is **derived** from these two edits at import time (validated by
+``_validate()``, which checks the table still covers the whole ``Component``
+enum):
+
+- **Parsing** -- the class's ``PARAMS`` are aggregated into the parser's
+  vocabulary (``PARAM_SPEC`` / ``ALIAS_MAP`` / ``TRIGGER_MAP`` / ``BINARY_PARAMS``
+  in :mod:`jaxpint.par.spec`).
+- **Detection** -- automatic: a parameter *uniquely owned* by exactly one
+  non-binary component activates ("triggers") that component when it appears in a
+  ``.par`` file. You never declare triggers by hand.
+- **Execution order** -- ``DEFAULT_ORDER`` / ``PRIORITY`` in
+  ``jaxpint/_component_order.py`` derive from the ``order=`` field (see step 4).
+- **PINT bridge** -- ``PINT_COMPONENT_MAP`` in :mod:`jaxpint.par.components`
+  derives from the ``pint_names`` tuple; the optional bridge uses it to detect
+  the component from an in-memory PINT model. Omit ``pint_names`` (defaults to
+  ``()``) if there is no corresponding PINT class.
+
+4. Set its execution order
+--------------------------
+
+The ``order=`` integer on the ``ComponentSpec`` is the component's position in
+``DEFAULT_ORDER`` (it mirrors PINT's ordering). Delays are chained in this order
+-- each sees the accumulated delay from earlier components -- so placement matters
+for delays; phases are summed, so their relative order is irrelevant. The values
+are currently contiguous, so to insert a delay *between* two existing ones, bump
+the ``order`` of the entries that follow.
+
+Components that are detected/activated but never executed in the delay/phase
+chain (``PHASE_OFFSET``, the admin-only ``NONE``) omit ``order=`` entirely.
+Binary models set ``is_binary=True`` instead, which routes their params to
+``BINARY_PARAMS`` and excludes them from the trigger map.
 
 5. Build it from a parsed model
 -------------------------------
 
-Add a branch to :func:`jaxpint.model_builder.build_model` (it ``match``-es on the
-detected ``Component`` set) that reads the relevant parameters out of the
-:class:`~jaxpint.par.result.ParResult` and constructs your instance with the
-right ``*_name`` fields:
+In :mod:`jaxpint.model_builder`, write a ``_build_<comp>(ctx)`` function and
+register it in the ``_BUILDERS`` dispatch table. The function receives a
+:class:`~jaxpint.model_builder.BuildContext` (the parsed ``par``, optional
+``toa_data``, and the pre-resolved astrometry names), reads the relevant
+parameters off ``ctx.par``, and returns the constructed instance -- or ``None``
+when the parameters are absent:
 
 .. code-block:: python
 
-   case Component.SPINDOWN:
-       spin_names = _collect_prefix_indices(par, "F")  # F0, F1, ...
-       phase_components.append(Spindown(spin_param_names=tuple(spin_names)))
+   def _build_spindown(ctx: BuildContext):
+       from jaxpint.phase.spin import Spindown
+
+       par = ctx.par
+       spin_names = ["F0"]
+       for pname in par.params.names:
+           if pname.startswith("F") and pname != "F0" and pname[1:].isdigit():
+               spin_names.append(pname)
+       spin_names.sort(key=lambda n: int(n[1:]))
+       return Spindown(spin_param_names=tuple(spin_names))
+
+
+   _BUILDERS = {
+       ...
+       Component.SPINDOWN: _build_spindown,
+       ...
+   }
+
+You do **not** choose which list the result goes in: ``build_model`` runs the
+builders in execution order and routes each return value to the delay, phase, or
+noise bucket by its base class (``DelayComponent`` / ``PhaseComponent`` /
+``NoiseComponent``). Noise objects are further partitioned by type into the
+white / DM-white / correlated slots automatically. (The one explicit case is
+``ScaleDmError``, which scales DM-domain uncertainties and so subclasses
+``eqx.Module`` rather than ``NoiseComponent``; the router names it directly.)
 
 6. Export it
 ------------
@@ -128,4 +200,6 @@ The repo validates components for numerical parity against PINT. A new component
 should come with a test that compares its contribution (or end-to-end residuals)
 against PINT for a representative ``.par`` / ``.tim`` pair, alongside any
 unit-level checks of its math. See the existing ``tests/`` for the patterns
-(differential parity, Hypothesis property tests).
+(differential parity, Hypothesis property tests). ``tests/test_registry_consistency.py``
+additionally checks that every ``ComponentSpec`` resolves and that the table
+covers the ``Component`` enum, so a half-registered component fails fast there.
