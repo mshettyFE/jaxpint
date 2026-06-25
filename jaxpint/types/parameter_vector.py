@@ -6,7 +6,7 @@ from __future__ import annotations
 import equinox as eqx
 import jax.numpy as jnp
 from jax.typing import ArrayLike
-from jaxtyping import Array, Bool, Float, Int
+from jaxtyping import Array, Float, Int
 
 from jaxpint.types.dual_float import DualFloat
 
@@ -80,8 +80,8 @@ class ParameterVector(eqx.Module):
     # Static metadata
     frozen_mask: tuple[bool, ...] = eqx.field(static=True)
     # Names of parameters which map to values
-    # Not a dictionary with values to avoi equinox warning, as well as allow
-    # ifferentiability of parameters in jax
+    # Not a dictionary with values to avoid equinox warning, as well as allow
+    # differentiability of parameters in jax
     names: tuple[str, ...] = eqx.field(static=True)
     # Purely for documentation. JAX has a preset unit system that it will assume as mentioned above
     units: tuple[str, ...] = eqx.field(static=True)
@@ -264,10 +264,6 @@ class ParameterVector(eqx.Module):
 
     # -- Free / frozen helpers --
 
-    def free_mask_array(self) -> Bool[Array, " n_params"]:
-        """Boolean array: True where parameter is free (not frozen)."""
-        return jnp.array([not f for f in self.frozen_mask], dtype=jnp.bool_)
-
     def free_indices_array(self) -> Int[Array, " n_free"]:
         """Integer indices of free parameters as a JAX array (JIT-safe)."""
         return jnp.array(self._free_indices, dtype=jnp.int32)
@@ -280,11 +276,7 @@ class ParameterVector(eqx.Module):
     def free_names(self) -> tuple[str, ...]:
         """Names of free parameters (= not frozen AND not marginalized).
         Python-level, not JIT-compatible."""
-        return tuple(
-            self.names[i]
-            for i in range(len(self.names))
-            if not self.frozen_mask[i] and not self.marginalized_mask[i]
-        )
+        return tuple(self.names[i] for i in self._free_indices)
 
     def marginalized_names(self) -> tuple[str, ...]:
         """Names of parameters that have been analytically marginalized out.
@@ -380,4 +372,6 @@ class ParameterVector(eqx.Module):
 
     @property
     def n_free(self) -> int:
-        return sum(1 for f in self.frozen_mask if not f)
+        # Free = not frozen AND not marginalized; mirror _free_indices so this
+        # stays consistent with free_values() / free_names().
+        return len(self._free_indices)
