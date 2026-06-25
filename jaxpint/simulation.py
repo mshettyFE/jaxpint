@@ -18,7 +18,7 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import NoiseComponent
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 from jaxpint.fitters import compute_time_residuals
 from jaxpint.model import TimingModel
 from jaxpint.types import TOAData, ParameterVector
@@ -49,8 +49,8 @@ def apply_delay_to_toas(
     """
     delay_days = delays_seconds / SECS_PER_DAY
 
-    new_mjd = DualFloat.days(toa_data.mjd_int, toa_data.mjd_frac + delay_days)
-    new_tdb = DualFloat.days(toa_data.tdb_int, toa_data.tdb_frac + delay_days)
+    new_mjd = DualFloat.from_days(toa_data.mjd_int, toa_data.mjd_frac + delay_days)
+    new_tdb = DualFloat.from_days(toa_data.tdb_int, toa_data.tdb_frac + delay_days)
 
     return eqx.tree_at(
         lambda td: (td.mjd_int, td.mjd_frac, td.tdb_int, td.tdb_frac),

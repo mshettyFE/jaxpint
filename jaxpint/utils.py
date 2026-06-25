@@ -23,7 +23,7 @@ from jaxpint.constants import (
     RAD_PER_MAS,
     SECS_PER_DAY,
 )
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 
 
 # ---------------------------------------------------------------------------
@@ -37,8 +37,8 @@ def split_longdouble_days(
     """Split a longdouble day value into float64 ``(int_day, frac_day)``.
 
     The integer/fractional split is performed in extended (longdouble)
-    precision *before* casting to float64, which is the whole point: a single
-    float64 cannot hold an absolute MJD (~60000) to sub-microsecond precision,
+    precision *before* casting to float64
+    A single float64 cannot hold an absolute MJD (~60000) to sub-microsecond precision,
     but the two-part ``(int, frac)`` form can.  ``frac_day`` is in [0, 1).
     """
     int_part = np.floor(ld_array)
@@ -229,7 +229,7 @@ def taylor_horner_phase(
         (z, z, z),
     )
     # Fold the residual compensation back into the frac before normalization.
-    return DualFloat.cycles(result_int, result_frac + result_comp)
+    return DualFloat.from_cycles(result_int, result_frac + result_comp)
 
 
 # ---------------------------------------------------------------------------

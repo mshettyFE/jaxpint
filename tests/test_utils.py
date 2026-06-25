@@ -417,7 +417,7 @@ def _uncompensated_horner_phase(dt_int_days, dt_frac_days, delay, coeffs):
     WITHOUT the KBN compensation. Used to document the precision win
     of the compensation. Mirrors the pre-KBN implementation."""
     import jax
-    from jaxpint.dual_float import DualFloat
+    from jaxpint.types.dual_float import DualFloat
     dt_int_days = jnp.asarray(dt_int_days, dtype=jnp.float64)
     dt_frac_days = jnp.asarray(dt_frac_days, dtype=jnp.float64)
     delay = jnp.asarray(delay, dtype=jnp.float64)
@@ -442,7 +442,7 @@ def _uncompensated_horner_phase(dt_int_days, dt_frac_days, delay, coeffs):
 
     z = jnp.zeros_like(dt_int_days)
     result_int, result_frac = jax.lax.fori_loop(0, n_coeffs, body, (z, z))
-    return DualFloat.cycles(result_int, result_frac)
+    return DualFloat.from_cycles(result_int, result_frac)
 
 
 class TestTaylorHornerPhase:

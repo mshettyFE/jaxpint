@@ -12,7 +12,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.model import TimingModel
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import normalize_designmatrix
@@ -140,7 +140,7 @@ def compute_phase_residuals(
         Phase residuals in cycles (fractional part of adjusted phase).
     """
     phase = model.compute_phase(toa_data, params)
-    adjusted = DualFloat.cycles(
+    adjusted = DualFloat.from_cycles(
         phase.int + toa_data.delta_pulse_number,
         phase.frac,
     )

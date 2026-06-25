@@ -23,8 +23,36 @@ KPC_TO_KM: float = 3.0856775814913673e16
 PC_TO_KM: float = 3.0856775814913673e13
 #: GM_sun / c^3 (s)
 TSUN: float = 4.92549094830932e-6
-#: Earth radius at 45 deg latitude (km)
-EARTH_R_KM: float = 6356.766
+
+# ── Solar-system bodies ───────────────────────────────────────────
+
+#: Solar-system bodies the JPL/astropy ephemerides expose.  Closed set -- new
+#: ephemeris releases add precision, not bodies -- so a Literal is safe here.
+SolarSystemBody = Literal[
+    "sun",
+    "mercury",
+    "venus",
+    "earth",
+    "moon",
+    "earth-moon-barycenter",
+    "mars",
+    "jupiter",
+    "saturn",
+    "uranus",
+    "neptune",
+    "pluto",
+]
+#: Planets used for Shapiro delay and position lookups.  Distinct from
+#: ``SolarSystemBody``: that is the compile-time *type* (every valid body); this
+#: is a runtime *value* -- a curated subset we actually iterate over.
+PLANETS: tuple[SolarSystemBody, ...] = (
+    "jupiter",
+    "saturn",
+    "venus",
+    "uranus",
+    "neptune",
+    "earth",
+)
 
 #: Planet mass parameters; ``T_planet = T_sun / mass_ratio`` in seconds.
 PLANET_MASSES: dict[str, float] = {
@@ -34,8 +62,6 @@ PLANET_MASSES: dict[str, float] = {
     "uranus": TSUN / 22902.98,
     "neptune": TSUN / 19412.24,
 }
-#: Names of planets used in Shapiro delay calculation
-PLANET_NAMES: tuple[str, ...] = ("jupiter", "saturn", "venus", "uranus", "neptune")
 
 #: Ecliptic obliquity (arcseconds), from PINT's ecliptic.dat
 OBLIQUITY_ARCSEC: dict[str, float] = {
@@ -156,34 +182,4 @@ NIELL_DOY_OFFSET: int = -28
 #: 5 iterations reaches machine epsilon even at e=0.95 with Danby initial guess)
 KEPLER_N_ITER: int = 5
 
-# ── Bridge layer ──────────────────────────────────────────────────
 
-#: PINT parameter types that map to numeric values
-NUMERIC_PARAM_TYPES = frozenset({"floatParameter", "MJDParameter", "AngleParameter"})
-#: Solar-system bodies the JPL/astropy ephemerides expose.  Closed set -- new
-#: ephemeris releases add precision, not bodies -- so a Literal is safe here.
-SolarSystemBody = Literal[
-    "sun",
-    "mercury",
-    "venus",
-    "earth",
-    "moon",
-    "earth-moon-barycenter",
-    "mars",
-    "jupiter",
-    "saturn",
-    "uranus",
-    "neptune",
-    "pluto",
-]
-#: Planets used for Shapiro delay and position lookups.  Distinct from
-#: ``SolarSystemBody``: that is the compile-time *type* (every valid body); this
-#: is a runtime *value* -- a curated subset we actually iterate over.
-PLANETS: tuple[SolarSystemBody, ...] = (
-    "jupiter",
-    "saturn",
-    "venus",
-    "uranus",
-    "neptune",
-    "earth",
-)

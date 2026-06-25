@@ -19,7 +19,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.binary.kepler import solve_kepler
 from jaxpint.constants import SECS_PER_DAY, TSUN
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import ParameterVector
 
 

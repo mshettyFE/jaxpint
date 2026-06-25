@@ -52,7 +52,7 @@ import jax
 from jaxtyping import Array, Float
 
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 
 
 # ---------------------------------------------------------------------------

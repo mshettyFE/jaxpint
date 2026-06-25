@@ -22,6 +22,8 @@ import numpy as np
 from astropy.time import Time
 from astropy.time.utils import day_frac
 
+from ..constants import JD_MJD_OFFSET
+
 
 def mjds_to_jds_pulsar(mjd1, mjd2):
     """Port of PINT's ``pulsar_mjd`` MJD->(jd1, jd2), leap-second-day aware.
@@ -32,7 +34,7 @@ def mjds_to_jds_pulsar(mjd1, mjd2):
     ``pint.pulsar_mjd.mjds_to_jds_pulsar``.
     """
     v1, v2 = day_frac(mjd1, mjd2)
-    y, mo, d, f = erfa.jd2cal(erfa.DJM0 + v1, v2)
+    y, mo, d, f = erfa.jd2cal(JD_MJD_OFFSET + v1, v2)
     # Fractional day -> H:M:S on a uniform 86400-second day (stable; avoids
     # np.remainder issues, matching PINT's comment).
     f = f * 24.0
@@ -78,9 +80,9 @@ def to_tdb(mjd_int, mjd_frac, itrf_xyz):
     t = Time(jd1, jd2, format="jd", scale="utc", location=loc)
 
     # Longdouble TDB MJD, split to (int, frac).  (jd1 is a half-integer JD, so
-    # jd1 - DJM0 is the integer-ish MJD day and jd2 the fraction.)
+    # jd1 - JD_MJD_OFFSET is the integer-ish MJD day and jd2 the fraction.)
     from ..utils import split_longdouble_days
 
     tdb = t.tdb
-    ld = (np.longdouble(tdb.jd1) - np.longdouble(erfa.DJM0)) + np.longdouble(tdb.jd2)
+    ld = (np.longdouble(tdb.jd1) - np.longdouble(JD_MJD_OFFSET)) + np.longdouble(tdb.jd2)
     return split_longdouble_days(ld)

@@ -1,9 +1,7 @@
 """Timing model orchestration: chains delays and sums phases.
 
 Ports the orchestration logic from PINT's ``TimingModel.delay()`` and
-``TimingModel.phase()`` as a pure Equinox module.  All fields are static
-(component lists don't change during fitting), so ``TimingModel`` has no
-dynamic leaves -- all differentiation flows through ``ParameterVector.values``.
+``TimingModel.phase()``.  All fields are static (saves HLO comp times)
 """
 
 from __future__ import annotations
@@ -21,7 +19,8 @@ from jaxpint.components import (
     PhaseComponent,
     _make_component_names,
 )
-from jaxpint.dual_float import DualFloat
+
+from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -158,7 +157,7 @@ class TimingModel(eqx.Module):
         """
         corr_days = self.compute_delay_to_binary(toa_data, params) / 86400.0
         tdb = toa_data.tdb
-        return DualFloat.days(tdb.int, tdb.frac - corr_days)
+        return DualFloat.from_days(tdb.int, tdb.frac - corr_days)
 
     def compute_dm(
         self,
@@ -225,7 +224,7 @@ class TimingModel(eqx.Module):
         # cancel out (PINT applies PHOFF only to observation TOAs).
         if self.phoff_name is not None:
             phoff = params.param_value(self.phoff_name)
-            phase = phase + DualFloat.cycles(
+            phase = phase + DualFloat.from_cycles(
                 jnp.zeros(toa_data.n_toas), -phoff * jnp.ones(toa_data.n_toas)
             )
 
@@ -239,7 +238,7 @@ class TimingModel(eqx.Module):
     ) -> DualFloat:
         """Sum phase contributions from all phase components."""
         zeros = jnp.zeros(toa_data.n_toas)
-        phase = DualFloat.cycles(zeros, zeros)
+        phase = DualFloat.from_cycles(zeros, zeros)
         for comp in self.phase_components:
             phase = phase + comp(toa_data, params, delay)
         return phase
@@ -256,7 +255,7 @@ class TimingModel(eqx.Module):
         at that point, and returns a DualFloat that broadcasts when
         subtracted from the full TOA phases.
         """
-        tzr_toa = _build_tzr_toa_data(toa_data)
+        tzr_toa = _reconstruct_tzr_toa(toa_data)
         tzr_delay = self.compute_delay(tzr_toa, params)
         tzr_phase = self._sum_phase_components(tzr_toa, params, tzr_delay)
         # Broadcast: return shape (1,) so subtraction works with (n_toas,)
@@ -411,7 +410,7 @@ class TimingModel(eqx.Module):
         return result
 
 
-def _build_tzr_toa_data(toa_data: TOAData) -> TOAData:
+def _reconstruct_tzr_toa(toa_data: TOAData) -> TOAData:
     """Construct a single-element TOAData for the TZR reference TOA.
 
     Uses the TZR fields stored on *toa_data*.  Fields not relevant to

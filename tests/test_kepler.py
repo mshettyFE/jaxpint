@@ -3,7 +3,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 import numpy.testing as npt
 import pytest
 

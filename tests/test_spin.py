@@ -10,7 +10,7 @@ import pytest
 
 
 from jaxpint.constants import SECS_PER_DAY
-from jaxpint.dual_float import DualFloat
+from jaxpint.types.dual_float import DualFloat
 from jaxpint.phase.spin import Spindown
 from tests.helpers import make_gbt_toa_data, make_spindown_params
 
