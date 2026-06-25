@@ -918,6 +918,36 @@ def fourier_sum(
     return jnp.sum(wx_sins * jnp.sin(arg) + wx_coses * jnp.cos(arg), axis=1)
 
 
+def _group_toas_into_epochs(
+    sorted_times: np.ndarray,
+    sorted_indices: np.ndarray,
+    dt: float,
+    nmin: int,
+) -> list[list[int]]:
+    """Greedily group time-sorted TOAs into epochs, keeping only big-enough ones.
+
+    A TOA joins the current epoch if it falls within *dt* seconds of that
+    epoch's *first* TOA; otherwise it opens a new epoch. Returns the epochs
+    (as lists of original TOA indices) that have at least *nmin* members.
+    """
+    epochs: list[list[int]] = []
+    current: list[int] = []
+    epoch_start = 0.0
+    for t, idx in zip(sorted_times, sorted_indices):
+       # This TOA is >= dt from the current epoch's start: close that epoch.
+       if current and t - epoch_start >= dt:
+            epochs.append(current)
+            current = []
+        # Start of new epoch. Record start time
+       if not current:
+            epoch_start = t
+       current.append(int(idx))
+    if current:
+        epochs.append(current)
+
+    return [ep for ep in epochs if len(ep) >= nmin]
+
+
 def build_quantization_matrix(
     tdb_times_s: np.ndarray,
     ecorr_masks: dict[str, np.ndarray],
@@ -947,46 +977,31 @@ def build_quantization_matrix(
         Column-index range for each ECORR parameter.
     """
     n_toas = len(tdb_times_s)
-    columns: list[np.ndarray] = []
+    columns: list[np.ndarray] = []  # one binary (n_toas,) column per kept epoch
     epoch_slices: dict[str, tuple[int, int]] = {}
-    col_offset = 0
 
     for ecorr_name in sorted(ecorr_masks):
-        mask = ecorr_masks[ecorr_name]
-        subset_indices = np.where(mask)[0]
-        if len(subset_indices) == 0:
-            epoch_slices[ecorr_name] = (col_offset, col_offset)
-            continue
+        # Column index where this parameter's epochs will start. The running
+        # column count *is* the offset, so no separate bookkeeping is needed.
+        start = len(columns)
 
-        subset_times = tdb_times_s[subset_indices]
-        isort = np.argsort(subset_times)
-        sorted_times = subset_times[isort]
-        sorted_indices = subset_indices[isort]
+        toa_indices = np.where(ecorr_masks[ecorr_name])[0]
+        if len(toa_indices) > 0:
+            order = np.argsort(tdb_times_s[toa_indices])
+            sorted_times = tdb_times_s[toa_indices][order]
+            sorted_indices = toa_indices[order]
+            for epoch in _group_toas_into_epochs(sorted_times, sorted_indices, dt, nmin):
+                col = np.zeros(n_toas, dtype=np.float64)
+                col[epoch] = 1.0
+                columns.append(col)
 
-        epochs: list[list[int]] = [[sorted_indices[0]]]
-        ref_time = sorted_times[0]
-        for j in range(1, len(sorted_times)):
-            if sorted_times[j] - ref_time < dt:
-                epochs[-1].append(sorted_indices[j])
-            else:
-                epochs.append([sorted_indices[j]])
-                ref_time = sorted_times[j]
+        epoch_slices[ecorr_name] = (start, len(columns))
 
-        epochs = [ep for ep in epochs if len(ep) >= nmin]
-
-        start = col_offset
-        for ep in epochs:
-            col = np.zeros(n_toas, dtype=np.float64)
-            col[ep] = 1.0
-            columns.append(col)
-        col_offset += len(epochs)
-        epoch_slices[ecorr_name] = (start, col_offset)
-
-    if columns:
-        U = np.column_stack(columns)
-    else:
-        U = np.zeros((n_toas, 0), dtype=np.float64)
-
+    U = (
+        np.column_stack(columns)
+        if columns
+        else np.zeros((n_toas, 0), dtype=np.float64)
+    )
     return U, epoch_slices
 
 
