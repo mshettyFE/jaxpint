@@ -4,7 +4,6 @@ Defines :class:`ParResult` and :class:`MaskInfo`, the canonical contract
 between a parameter adapter (the native ``.par`` parser or the PINT bridge)
 and JaxPINT's model builder (:func:`jaxpint.model_builder.build_model`).
 
-This module is PINT-free.
 """
 
 from __future__ import annotations

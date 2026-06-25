@@ -162,7 +162,11 @@ def test_params_is_required_on_components(monkeypatch):
     assert _Bare.PARAMS == ()
 
     # a component reaching the aggregator without PARAMS is a hard, named error
-    monkeypatch.setattr(S, "_component_classes", lambda: [(_Bare, None)])
+    from jaxpint.par import registry_table
+
+    monkeypatch.setattr(
+        registry_table, "derive_component_classes", lambda: [(_Bare, None)]
+    )
     S._tables.cache_clear()
     try:
         with pytest.raises(TypeError, match="_Bare declares no PARAMS"):

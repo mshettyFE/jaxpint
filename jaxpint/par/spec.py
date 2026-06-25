@@ -10,21 +10,27 @@ the tables the parser consumes:
 - ``PREFIX_MAP``     -- prefix (incl. prefix aliases) -> template name
 - ``CANONICAL_PREFIX``-- template name -> its canonical prefix
 - ``KNOWN_PARAMS``   -- every declared canonical parameter name
-- ``TRIGGER_MAP``    -- param -> Component it activates (from ``triggers=True``)
+- ``TRIGGER_MAP``    -- param -> Component it activates (derived: uniquely-owned params)
 - ``spec_for(name)`` -- spec for a known name (default float if undeclared-but-known)
 
-Built lazily on first access (importing the component classes only then), so it
-is robust to import order and ``jaxpint.par`` never imports PINT.  Components
-import ``ParamDecl`` from :mod:`jaxpint.components` and never import this module,
-so there is no cycle.
+Built lazily and cached on first access: the ``(class, owner)`` pairs come from
+:mod:`jaxpint.par.registry_table`, which resolves the component classes with
+function-local imports.  So this is robust to import order, ``jaxpint.par`` never
+imports PINT, and there is no cycle (this module imports no component class;
+components import ``ParamDecl`` from :mod:`jaxpint.components` and never import
+this module).
 """
 
 from __future__ import annotations
 
 import functools
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
+from jaxpint.par import registry_table
 from jaxpint.par.registry import Component
+
+if TYPE_CHECKING:
+    from jaxpint.components import ParamDecl
 
 __all__ = [
     "PARAM_SPEC",
@@ -55,93 +61,8 @@ BINARY_PRIORITY: tuple[str, ...] = (
 )
 
 
-def _component_classes():
-    """(class, Component) for every component that declares ``PARAMS``.
-
-    Imported lazily so this module never forces a heavy import at load time and
-    cannot create a cycle with the component packages.
-    """
-    from jaxpint.phase.spin import Spindown
-    from jaxpint.phase.glitch import Glitch
-    from jaxpint.phase.wave import Wave
-    from jaxpint.phase.jump import PhaseJump
-    from jaxpint.phase.piecewise_spindown import PiecewiseSpindown
-    from jaxpint.phase.ifunc import IFunc
-    from jaxpint.delay.astrometry import AstrometryEquatorial, AstrometryEcliptic
-    from jaxpint.delay.dispersion_dm import DispersionDM
-    from jaxpint.delay.dispersion_dmx import DispersionDMX
-    from jaxpint.delay.dispersion_jump import DispersionJump
-    from jaxpint.delay.shapiro import SolarSystemShapiroDelay
-    from jaxpint.delay.solar_wind import SolarWindDispersion
-    from jaxpint.delay.solar_wind_x import SolarWindDispersionX
-    from jaxpint.delay.troposphere import TroposphereDelay
-    from jaxpint.delay.chromatic_cm import ChromaticCM
-    from jaxpint.delay.chromatic_cmx import ChromaticCMX
-    from jaxpint.delay.cmwavex import CMWaveX
-    from jaxpint.delay.wavex import WaveX
-    from jaxpint.delay.dmwavex import DMWaveX
-    from jaxpint.delay.frequency_dependent import FrequencyDependent
-    from jaxpint.delay.fdjump import FDJump
-    from jaxpint.delay.exponential_dip import ExponentialDip
-    from jaxpint.binary.bt import BinaryBT
-    from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
-    from jaxpint.binary.dd import BinaryDD
-    from jaxpint.binary.ddk import BinaryDDK
-    from jaxpint.binary.ddgr import BinaryDDGR
-    from jaxpint.binary.ell1 import BinaryELL1
-    from jaxpint.noise.white import ScaleToaError
-    from jaxpint.noise.dm_white import ScaleDmError
-    from jaxpint.noise.ecorr import EcorrNoise
-    from jaxpint.noise.red_noise import PLRedNoise
-    from jaxpint.noise.dm_noise import PLDMNoise
-    from jaxpint.noise.chrom_noise import PLChromNoise
-    from jaxpint.noise.sw_noise import PLSWNoise
-    from jaxpint.model import TimingModel
-
-    C = Component
-    return [
-        (Spindown, C.SPINDOWN),
-        (Glitch, C.GLITCH),
-        (Wave, C.WAVE),
-        (PhaseJump, C.PHASE_JUMP),
-        (PiecewiseSpindown, C.PIECEWISE_SPINDOWN),
-        (IFunc, C.IFUNC),
-        (AstrometryEquatorial, C.ASTROMETRY_EQUATORIAL),
-        (AstrometryEcliptic, C.ASTROMETRY_ECLIPTIC),
-        (DispersionDM, C.DISPERSION_DM),
-        (DispersionDMX, C.DISPERSION_DMX),
-        (DispersionJump, C.DISPERSION_JUMP),
-        (SolarSystemShapiroDelay, C.SOLAR_SYSTEM_SHAPIRO),
-        (SolarWindDispersion, C.SOLAR_WIND_DISPERSION),
-        (SolarWindDispersionX, C.SOLAR_WIND_DISPERSION_X),
-        (TroposphereDelay, C.TROPOSPHERE_DELAY),
-        (ChromaticCM, C.CHROMATIC_CM),
-        (ChromaticCMX, C.CHROMATIC_CMX),
-        (CMWaveX, C.CM_WAVE_X),
-        (WaveX, C.WAVE_X),
-        (DMWaveX, C.DM_WAVE_X),
-        (FrequencyDependent, C.FREQUENCY_DEPENDENT),
-        (FDJump, C.FD_JUMP),
-        (ExponentialDip, C.EXPONENTIAL_DIP),
-        (BinaryBT, C.BINARY),
-        (BinaryBTPiecewise, C.BINARY_BT_PIECEWISE),
-        (BinaryDD, C.BINARY),
-        (BinaryDDK, C.BINARY),
-        (BinaryDDGR, C.BINARY),
-        (BinaryELL1, C.BINARY),
-        (ScaleToaError, C.SCALE_TOA_ERROR),
-        (ScaleDmError, C.SCALE_DM_ERROR),
-        (EcorrNoise, C.ECORR_NOISE),
-        (PLRedNoise, C.PL_RED_NOISE),
-        (PLDMNoise, C.PL_DM_NOISE),
-        (PLChromNoise, C.PL_CHROM_NOISE),
-        (PLSWNoise, C.PL_SW_NOISE),
-        (TimingModel, None),  # top-level/admin params (incl. PHOFF); see _tables
-    ]
-
-
-def _spec_of(decl) -> dict:
-    spec = {"kind": decl.kind, "unit": decl.unit}
+def _spec_of(decl: ParamDecl) -> dict:
+    spec: dict[str, object] = {"kind": decl.kind, "unit": decl.unit}
     if decl.scale is not None:
         spec["scale"] = decl.scale
         spec["scale_threshold"] = decl.scale_threshold
@@ -157,6 +78,7 @@ def _spec_of(decl) -> dict:
 
 @functools.cache
 def _tables() -> dict:
+    """Aggregate the registry's ``(class, owner)`` pairs into the parser tables."""
     param_spec: dict[str, dict] = {}
     alias_map: dict[str, str] = {}
     prefix_map: dict[str, str] = {}
@@ -165,8 +87,8 @@ def _tables() -> dict:
     known: set[str] = set()
     binary_params: set[str] = set()
 
-    _binary = {Component.BINARY, Component.BINARY_BT_PIECEWISE}
-    for cls, comp in _component_classes():
+    _binary = registry_table.binary_components()
+    for cls, comp in registry_table.derive_component_classes():
         if not cls.PARAMS:
             raise TypeError(f"{cls.__name__} declares no PARAMS")
         for decl in cls.PARAMS:

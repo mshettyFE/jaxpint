@@ -1,13 +1,16 @@
 """Component auto-detection for the native ``.par`` parser.
 
 Detection is driven by the components' own ``PARAMS`` declarations (aggregated
-in :mod:`jaxpint.par.spec`): a parameter marked ``triggers=True`` activates its
-component when present.  ``SolarSystemShapiro`` is auto-added with astrometry,
+in :mod:`jaxpint.par.spec`): a parameter uniquely owned by exactly one
+non-binary component activates it when present (this trigger relation is
+*derived* from ownership, not declared).  ``SolarSystemShapiro`` is auto-added
+with astrometry,
 and the binary model comes from the ``BINARY`` line.  This produces the same
 ``(component_set, binary_model)`` the PINT bridge reads from ``model.components``.
 
-Also owns ``PINT_COMPONENT_MAP`` (PINT component class name -> JaxPINT
-``Component`` enum), used only by the PINT bridge.  PINT-free.
+Also exposes ``PINT_COMPONENT_MAP`` (PINT component class name -> JaxPINT
+``Component`` enum, derived from :mod:`jaxpint.par.registry_table`), used only by
+the PINT bridge.  PINT-free.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from jaxpint.par import registry_table
 from jaxpint.par import spec as S
 from jaxpint.par.registry import BinaryModel, Component
 
@@ -23,40 +27,9 @@ log = logging.getLogger(__name__)
 
 # PINT component class name -> JaxPINT Component enum.  Used only by the PINT
 # bridge (which reads PINT's own model.components); the native detector uses the
-# components' trigger declarations instead.
-PINT_COMPONENT_MAP: dict[str, Component] = {
-    "Spindown": Component.SPINDOWN,
-    "PhaseOffset": Component.PHASE_OFFSET,
-    "AstrometryEquatorial": Component.ASTROMETRY_EQUATORIAL,
-    "AstrometryEcliptic": Component.ASTROMETRY_ECLIPTIC,
-    "DispersionDM": Component.DISPERSION_DM,
-    "DispersionDMX": Component.DISPERSION_DMX,
-    "DispersionJump": Component.DISPERSION_JUMP,
-    "SolarSystemShapiro": Component.SOLAR_SYSTEM_SHAPIRO,
-    "SolarWindDispersion": Component.SOLAR_WIND_DISPERSION,
-    "SolarWindDispersionX": Component.SOLAR_WIND_DISPERSION_X,
-    "TroposphereDelay": Component.TROPOSPHERE_DELAY,
-    "PhaseJump": Component.PHASE_JUMP,
-    "ScaleToaError": Component.SCALE_TOA_ERROR,
-    "ScaleDmError": Component.SCALE_DM_ERROR,
-    "EcorrNoise": Component.ECORR_NOISE,
-    "PLRedNoise": Component.PL_RED_NOISE,
-    "PLDMNoise": Component.PL_DM_NOISE,
-    "PLChromNoise": Component.PL_CHROM_NOISE,
-    "PLSWNoise": Component.PL_SW_NOISE,
-    "WaveX": Component.WAVE_X,
-    "DMWaveX": Component.DM_WAVE_X,
-    "CMWaveX": Component.CM_WAVE_X,
-    "ChromaticCM": Component.CHROMATIC_CM,
-    "ChromaticCMX": Component.CHROMATIC_CMX,
-    "FD": Component.FREQUENCY_DEPENDENT,
-    "FDJump": Component.FD_JUMP,
-    "SimpleExponentialDip": Component.EXPONENTIAL_DIP,
-    "PiecewiseSpindown": Component.PIECEWISE_SPINDOWN,
-    "Wave": Component.WAVE,
-    "IFunc": Component.IFUNC,
-    "Glitch": Component.GLITCH,
-}
+# components' trigger declarations instead.  Derived from the registry's
+# ``pint_names`` (single source of truth).
+PINT_COMPONENT_MAP: dict[str, Component] = registry_table.derive_pint_component_map()
 
 _ASTROMETRY = {Component.ASTROMETRY_EQUATORIAL, Component.ASTROMETRY_ECLIPTIC}
 
