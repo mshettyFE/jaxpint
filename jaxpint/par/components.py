@@ -20,7 +20,7 @@ from typing import Optional
 
 from jaxpint.par import registry_table
 from jaxpint.par import spec as S
-from jaxpint.par.registry import BinaryModel, Component
+from jaxpint.par.registry import BinaryModel, Component, binary_component_for
 
 log = logging.getLogger(__name__)
 
@@ -45,13 +45,9 @@ def _detect_binary(
         name = S.BINARY_PRIORITY[0]  # priority-ordered fallback (rare; no BINARY line)
         log.warning("No BINARY line but binary params present; guessing %r", name)
 
-    try:
-        binary_model = BinaryModel(name)
-    except ValueError:
+    binary_model, comp = binary_component_for(name)
+    if binary_model is None:
         log.warning("Unknown binary model %r", name)
-        return None, None
-
-    comp = Component.BINARY_BT_PIECEWISE if name == "BT_piecewise" else Component.BINARY
     return binary_model, comp
 
 

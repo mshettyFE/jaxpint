@@ -1,6 +1,4 @@
 """Binary delay models for JaxPINT.
-
-Ports PINT's standalone binary models as pure Equinox modules with JAX autodiff.
 """
 
 from jaxpint.binary.kepler import solve_kepler

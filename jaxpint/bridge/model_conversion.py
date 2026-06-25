@@ -37,7 +37,7 @@ from jaxpint.bridge.toa_conversion import _split_mjd_time
 from jaxpint.par.components import PINT_COMPONENT_MAP as _PINT_COMPONENT_MAP
 from jaxpint.par.core import raw_params_to_result
 from jaxpint.par.raw_params import ParamKind, RawParam
-from jaxpint.par.registry import BinaryModel, Component
+from jaxpint.par.registry import BinaryModel, Component, binary_component_for
 from jaxpint.par.result import ParResult
 from jaxpint.types import ParameterVector
 
@@ -299,14 +299,11 @@ def _pint_detect_components(
                     log.warning("Could not compute SWX theta0 from PINT")
         elif isinstance(comp, PINTPulsarBinary):
             bname = comp.binary_model_name
-            try:
-                binary_model = BinaryModel(bname)
-            except ValueError:
+            binary_model, binary_comp = binary_component_for(bname)
+            if binary_comp is None:
                 log.warning("Unknown binary model %r", bname)
-            if bname == "BT_piecewise":
-                component_set.add(Component.BINARY_BT_PIECEWISE)
             else:
-                component_set.add(Component.BINARY)
+                component_set.add(binary_comp)
         else:
             log.warning(
                 "Unknown PINT component %r (%s) — skipping for component_set",
