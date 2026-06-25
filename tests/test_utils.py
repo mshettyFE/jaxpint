@@ -18,6 +18,7 @@ from jaxpint.utils import (
     normalize_designmatrix,
     sherman_morrison_dot,
     woodbury_dot,
+    woodbury_dot_qr,
 )
 from jaxpint.constants import SECS_PER_DAY
 
@@ -383,6 +384,110 @@ class TestWoodburyDot:
 
         g = loss(Ndiag)
         assert g.shape == (n,)
+        assert jnp.all(jnp.isfinite(g))
+
+
+def _exact_woodbury_dot(Ndiag, U, Phidiag, x, y):
+    """EXACT x^T C^{-1} y for C = diag(N) + U diag(Phi) U^T, via the Woodbury
+    identity in fractions.Fraction (exact for float64 inputs). Used to measure
+    the true error of the float64 Woodbury variants below 1e-7, which a
+    float64/longdouble dense solve cannot do when C is ill-conditioned."""
+    Ndiag = np.asarray(Ndiag); U = np.asarray(U); Phidiag = np.asarray(Phidiag)
+    x = np.asarray(x); y = np.asarray(y)
+    n, k = U.shape
+    Ni = [Fraction(1) / Fraction(float(v)) for v in Ndiag]
+    Ud = [[Fraction(float(U[i, a])) for a in range(k)] for i in range(n)]
+    xd = [Fraction(float(v)) for v in x]; yd = [Fraction(float(v)) for v in y]
+    Sig = [[sum(Ud[i][a] * Ni[i] * Ud[i][b] for i in range(n)) for b in range(k)]
+           for a in range(k)]
+    for a in range(k):
+        Sig[a][a] += Fraction(1) / Fraction(float(Phidiag[a]))
+    aX = [sum(xd[i] * Ni[i] * Ud[i][a] for i in range(n)) for a in range(k)]
+    aY = [sum(yd[i] * Ni[i] * Ud[i][a] for i in range(n)) for a in range(k)]
+    # solve Sig s = aY (exact Gaussian elimination, partial pivot)
+    M = [Sig[i][:] + [aY[i]] for i in range(k)]
+    for c in range(k):
+        p = max(range(c, k), key=lambda r: abs(M[r][c]))
+        M[c], M[p] = M[p], M[c]
+        for r in range(c + 1, k):
+            f = M[r][c] / M[c][c]
+            for cc in range(c, k + 1):
+                M[r][cc] -= f * M[c][cc]
+    s = [Fraction(0)] * k
+    for r in range(k - 1, -1, -1):
+        s[r] = (M[r][k] - sum(M[r][cc] * s[cc] for cc in range(r + 1, k))) / M[r][r]
+    xNy = sum(xd[i] * Ni[i] * yd[i] for i in range(n))
+    return float(xNy - sum(aX[a] * s[a] for a in range(k)))
+
+
+class TestWoodburyDotQR:
+    """Square-root (QR) Woodbury: parity on well-conditioned input, and a
+    genuine accuracy win on the collinear marginalization-style block."""
+
+    def _well_conditioned(self):
+        key = jax.random.PRNGKey(0)
+        k1, k2, k3, k4, k5 = jax.random.split(key, 5)
+        n, k = 8, 3
+        Ndiag = jnp.abs(jax.random.normal(k1, (n,))) + 1.0
+        U = jax.random.normal(k2, (n, k))
+        Phidiag = jnp.abs(jax.random.normal(k3, (k,))) + 0.1
+        x = jax.random.normal(k4, (n,))
+        y = jax.random.normal(k5, (n,))
+        return Ndiag, U, Phidiag, x, y
+
+    def test_matches_cholesky_well_conditioned(self):
+        """On a benign problem the QR form agrees with woodbury_dot."""
+        Ndiag, U, Phidiag, x, y = self._well_conditioned()
+        r0, l0 = woodbury_dot(Ndiag, U, Phidiag, x, y)
+        r1, l1 = woodbury_dot_qr(Ndiag, U, Phidiag, x, y)
+        assert jnp.isclose(r0, r1, rtol=1e-10)
+        assert jnp.isclose(l0, l1, rtol=1e-10)
+
+    def test_beats_cholesky_on_collinear_marginalization(self):
+        """Collinear design (Vandermonde) at Φ=1e40 -- the marginalization
+        regime. Against an exact reference the QR form must be both far more
+        accurate than the Cholesky form AND below 1e-8 relative error."""
+        n, k = 40, 6
+        rng = np.random.default_rng(0)
+        # Design with cond(U) = 1e6 (genuine collinearity, like a real
+        # multi-parameter MSP's marginalized design after scaling). N = I, so
+        # cond(N^-1/2 U) = 1e6 exactly; the Gram squares this to ~1e12.
+        Q, _ = np.linalg.qr(rng.standard_normal((n, k)))
+        V, _ = np.linalg.qr(rng.standard_normal((k, k)))
+        U = Q @ (np.geomspace(1.0, 1e-6, k)[:, None] * V)
+        Ndiag = np.ones(n)
+        Phidiag = np.full(k, 1e40)                      # flat-prior marginalization
+        x = rng.standard_normal(n); y = rng.standard_normal(n)
+
+        truth = _exact_woodbury_dot(Ndiag, U, Phidiag, x, y)
+        chol, _ = woodbury_dot(
+            jnp.asarray(Ndiag), jnp.asarray(U), jnp.asarray(Phidiag),
+            jnp.asarray(x), jnp.asarray(y),
+        )
+        qr, _ = woodbury_dot_qr(
+            jnp.asarray(Ndiag), jnp.asarray(U), jnp.asarray(Phidiag),
+            jnp.asarray(x), jnp.asarray(y),
+        )
+        chol_err = abs(float(chol) - truth) / abs(truth)
+        qr_err = abs(float(qr) - truth) / abs(truth)
+        assert qr_err < 1e-8, f"qr relerr {qr_err:.2e} not below 1e-8"
+        assert qr_err < chol_err / 100, (
+            f"qr relerr {qr_err:.2e} should be >100x tighter than "
+            f"cholesky relerr {chol_err:.2e}"
+        )
+
+    def test_logdet_matches_dense_well_conditioned(self):
+        Ndiag, U, Phidiag, x, _ = self._well_conditioned()
+        C = jnp.diag(Ndiag) + U @ jnp.diag(Phidiag) @ U.T
+        _, ref_logdet = jnp.linalg.slogdet(C)
+        _, logdet = woodbury_dot_qr(Ndiag, U, Phidiag, x, x)
+        assert jnp.isclose(logdet, ref_logdet, rtol=1e-10)
+
+    def test_jit_and_grad(self):
+        Ndiag, U, Phidiag, x, _ = self._well_conditioned()
+        r, ld = jax.jit(woodbury_dot_qr)(Ndiag, U, Phidiag, x, x)
+        assert jnp.isfinite(r) and jnp.isfinite(ld)
+        g = jax.grad(lambda r_: woodbury_dot_qr(Ndiag, U, Phidiag, r_, r_)[0])(x)
         assert jnp.all(jnp.isfinite(g))
 
 

@@ -33,6 +33,7 @@ from jaxpint.utils import (
     concat_woodbury_blocks,
     precompute_woodbury_factor,
     woodbury_dot,
+    woodbury_dot_qr,
 )
 
 
@@ -45,6 +46,7 @@ def single_pulsar_logL(
     external_cov: Optional[
         tuple[Float[Array, "n_toas n_basis"], Float[Array, " n_basis"]]
     ] = None,
+    use_qr: bool = False,
 ) -> Float[Array, ""]:
     """Per-pulsar log-likelihood with optional external injections.
 
@@ -65,6 +67,13 @@ def single_pulsar_logL(
         Optional ``(U, Phi)`` tuple where ``U`` has shape ``(n_toas, n_basis)``
         and ``Phi`` has shape ``(n_basis,)``.  Augments the noise covariance:
         ``C += U @ diag(Phi) @ U.T``.
+    use_qr : bool
+        If True, evaluate the Woodbury quadratic form / log-determinant with
+        :func:`~jaxpint.utils.woodbury_dot_qr` (square-root form) instead of
+        :func:`~jaxpint.utils.woodbury_dot` (Cholesky of the Gram). Set by
+        :func:`~jaxpint.bayes.marginalize`, whose ``external_cov`` carries the
+        timing design matrix at ``Φ = 1e40``: that block is genuinely collinear
+        for multi-parameter MSPs, where the Gram form loses several digits.
 
     Returns
     -------
@@ -84,8 +93,10 @@ def single_pulsar_logL(
     assert woodbury is not None  # first block is always non-None
     U, Phi = woodbury
 
-    # 5. Evaluate via Woodbury
-    rCr, logdetC = woodbury_dot(Ndiag, U, Phi, r, r)
+    # 5. Evaluate via Woodbury (square-root QR form when the basis may be
+    # collinear, e.g. the marginalization design-matrix block at Φ=1e40).
+    dot = woodbury_dot_qr if use_qr else woodbury_dot
+    rCr, logdetC = dot(Ndiag, U, Phi, r, r)
     n = r.shape[0]
     return -0.5 * rCr - 0.5 * logdetC - 0.5 * n * jnp.log(2 * jnp.pi)
 

@@ -79,6 +79,7 @@ from .utils import (
     weighted_mean,
     weighted_mean_sdev,
     woodbury_dot,
+    woodbury_dot_qr,
     woodbury_solve,
 )
 
@@ -154,6 +155,7 @@ __all__ = [
     "weighted_mean",
     "weighted_mean_sdev",
     "woodbury_dot",
+    "woodbury_dot_qr",
     "woodbury_solve",
     "zero_residuals",
     # PINT-backed (lazy; require `pip install jaxpint[pint]`)
