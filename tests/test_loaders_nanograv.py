@@ -304,7 +304,7 @@ def test_ell1h_no_shapiro_params_uses_none_mode():
     """ELL1H par with no H3/H4/STIGMA must produce shapiro_mode='none' so
     the binary model never tries to read an absent H3 at logL time. Mirrors
     NANOGrav 15-yr J1802-2124 (BINARY ELL1H, NHARMS only)."""
-    from jaxpint.bridge._model_builder import _build_binary
+    from jaxpint.model_builder import _build_binary
 
     binary = _build_binary(_ell1h_par_result(), astro_info={})
     assert binary.shapiro_mode == "none"
@@ -317,7 +317,7 @@ def test_ell1h_with_h3_only_uses_h3nharms():
     """H3 set but H4/STIGMA absent → Freire-Wex 2010 H3-only Fourier mode.
     Mirrors NANOGrav 15-yr J2145-0750 and J2317+1439 (BINARY ELL1H, H3 set,
     no STIGMA/H4)."""
-    from jaxpint.bridge._model_builder import _build_binary
+    from jaxpint.model_builder import _build_binary
 
     binary = _build_binary(_ell1h_par_result(h3=True, nharms=3), astro_info={})
     assert binary.shapiro_mode == "h3nharms"
@@ -327,14 +327,14 @@ def test_ell1h_with_h3_only_uses_h3nharms():
 
 def test_ell1h_h3_only_default_nharms_is_seven():
     """Without NHARMS in int_params, the bridge falls back to 7 (PINT default)."""
-    from jaxpint.bridge._model_builder import _build_binary
+    from jaxpint.model_builder import _build_binary
 
     binary = _build_binary(_ell1h_par_result(h3=True), astro_info={})
     assert binary.nharms == 7
 
 
 def test_ell1h_with_h3_h4_uses_h3h4():
-    from jaxpint.bridge._model_builder import _build_binary
+    from jaxpint.model_builder import _build_binary
 
     binary = _build_binary(_ell1h_par_result(h3=True, h4=True), astro_info={})
     assert binary.shapiro_mode == "h3h4"
@@ -342,7 +342,7 @@ def test_ell1h_with_h3_h4_uses_h3h4():
 
 
 def test_ell1h_with_stigma_uses_h3stigma():
-    from jaxpint.bridge._model_builder import _build_binary
+    from jaxpint.model_builder import _build_binary
 
     binary = _build_binary(_ell1h_par_result(h3=True, stigma=True), astro_info={})
     assert binary.shapiro_mode == "h3stigma"

@@ -106,7 +106,7 @@ def test_residual_parity_vs_pint(parname, timname):
     import pint.toa as pt
     from pint.config import examplefile
     from jaxpint.bridge import pint_model_to_params, pint_toas_to_jax
-    from jaxpint.bridge._model_builder import build_model
+    from jaxpint.model_builder import build_model
     from jaxpint.fitters import compute_time_residuals
 
     parf = examplefile(parname)

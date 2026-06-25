@@ -153,7 +153,7 @@ def test_abs_phase_residuals_vs_pint(_pinned_clock):
     from pint.config import examplefile
     from pint.residuals import Residuals
 
-    from jaxpint.bridge._model_builder import build_model
+    from jaxpint.model_builder import build_model
     from jaxpint.fitters import compute_time_residuals
     from jaxpint.loaders.native import native_toas_to_jax
     import jaxpint.par as par
