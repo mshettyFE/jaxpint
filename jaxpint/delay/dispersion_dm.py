@@ -1,7 +1,6 @@
 """Dispersion delay component: DM Taylor expansion.
 
-Ports PINT's ``DispersionDM`` class as a pure Equinox module.  The dispersion
-measure is modelled as a Taylor expansion about DMEPOCH:
+The dispersion measure is modelled as a Taylor expansion about DMEPOCH:
 
     DM(t) = DM + DM1*(t - DMEPOCH) + DM2*(t - DMEPOCH)^2/2! + ...
 
@@ -11,18 +10,16 @@ and the delay for each TOA is:
 
 where freq is in MHz and K_DM = 1 / 2.41e-4 (MHz^2 s cm^3 / pc).
 
-All hand-coded derivatives are omitted; ``jax.jacobian`` through
-``__call__`` replaces PINT's ``d_delay_d_dmparam``.
 """
 
 from __future__ import annotations
 
 import equinox as eqx
-import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent, ParamDecl
-from jaxpint.constants import DAYS_PER_JULIAN_YEAR, DMCONST
+from jaxpint.constants import DMCONST
+from jaxpint.delay._epoch import dt_years_from_epoch
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
 
@@ -65,28 +62,6 @@ class DispersionDM(DispersionDelayComponent):
             )
 
     # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _compute_dt_yr(
-        self,
-        toa_data: TOAData,
-        params: ParameterVector,
-    ) -> Float[Array, " n_toas"]:
-        """Time from DMEPOCH to each TOA, in Julian years.
-
-        Uses the integer/fractional MJD split to avoid catastrophic
-        cancellation when TDB and DMEPOCH are close in value.
-        """
-        epoch = params.epoch_dual(self.dmepoch_name)
-        dt_days = (toa_data.tdb - epoch).total
-        return dt_days / DAYS_PER_JULIAN_YEAR
-
-    def _get_dm_coeffs(self, params: ParameterVector) -> Float[Array, " n_terms"]:
-        """Assemble ``[DM, DM1, DM2, ...]`` for :func:`taylor_horner`."""
-        return jnp.array([params.param_value(name) for name in self.dm_param_names])
-
-    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -112,8 +87,8 @@ class DispersionDM(DispersionDelayComponent):
         array, shape (n_toas,)
             Dispersion measure in pc cm^-3 at each TOA.
         """
-        dt_yr = self._compute_dt_yr(toa_data, params)
-        dm_coeffs = self._get_dm_coeffs(params)
+        dt_yr = dt_years_from_epoch(toa_data, params, self.dmepoch_name)
+        dm_coeffs = params.param_values(self.dm_param_names)
         return taylor_horner(dt_yr, dm_coeffs)
 
     def __call__(

@@ -1,7 +1,6 @@
 """Piecewise dispersion delay component (DMX).
 
-Ports PINT's ``DispersionDMX`` class as a pure Equinox module.  The dispersion
-measure is modelled as piecewise-constant within user-defined MJD bins:
+The dispersion measure is modelled as piecewise-constant within user-defined MJD bins:
 
     DM(t) = Σ DMX_i   for each bin i where DMXR1_i <= t <= DMXR2_i
 
@@ -11,8 +10,6 @@ and the delay for each TOA is:
 
 where freq is in MHz and K_DM = 1 / 2.41e-4 (MHz^2 s cm^3 / pc).
 
-All derivatives are handled automatically by ``jax.jacobian`` through
-``__call__``.
 """
 
 from __future__ import annotations

@@ -1,7 +1,6 @@
 """Troposphere delay component.
 
-Ports PINT's ``TroposphereDelay`` as a pure Equinox module.  Computes the
-atmospheric delay for topocentric TOAs using:
+Computes the atmospheric delay for topocentric TOAs using:
 
 - Davis zenith hydrostatic delay (Davis et al. 1985, Appendix A)
 - Niell mapping functions (Niell 1996, Eq 4)
@@ -9,7 +8,6 @@ atmospheric delay for topocentric TOAs using:
 
 The target elevation angle, observatory latitude, and observatory height
 are pre-computed in the bridge layer (requires astropy AltAz transforms).
-This module performs only the numerical delay calculation in pure JAX.
 """
 
 from __future__ import annotations

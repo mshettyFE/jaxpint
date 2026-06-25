@@ -1,13 +1,11 @@
 """Frequency-dependent delay component (FD parameters).
 
-Ports PINT's ``FD`` class as a pure Equinox module.  The delay is a
-polynomial in the log of the observing frequency:
+The delay is a polynomial in the log of the observing frequency:
 
     delay(f) = Σ_i FD_i * (log(f / 1 GHz))^i     (i = 1, 2, ...)
 
 where f is the barycentric radio frequency in MHz.
 
-All derivatives are handled by ``jax.jacobian`` through ``__call__``.
 """
 
 from __future__ import annotations

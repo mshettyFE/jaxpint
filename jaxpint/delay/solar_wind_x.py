@@ -1,7 +1,6 @@
 """Piecewise solar wind dispersion delay component (SWX).
 
-Ports PINT's ``SolarWindDispersionX`` as a pure Equinox module.  Each segment
-has its own maximum DM at conjunction (``SWXDM_XXXX``), radial power-law index
+Each segment has its own maximum DM at conjunction (``SWXDM_XXXX``), radial power-law index
 (``SWXP_XXXX``), and time range (``SWXR1_XXXX`` / ``SWXR2_XXXX``).
 
 Unlike the standard ``SolarWindDispersion``, this model represents *excess* DM:
@@ -13,9 +12,6 @@ for each TOA is:
 where ``G`` is the Hazboun et al. (2022) geometry factor, ``G_conj`` and
 ``G_opp`` are the geometry at conjunction and opposition respectively (computed
 at 1 AU with the pulsar's ecliptic latitude as the elongation angle).
-
-All derivatives are handled automatically by ``jax.jacobian`` through
-``__call__``.
 
 References
 ----------

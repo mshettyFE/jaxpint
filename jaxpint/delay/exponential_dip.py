@@ -1,6 +1,5 @@
 """Exponential dip delay component.
 
-Ports PINT's ``SimpleExponentialDip`` class as a pure Equinox module.
 Models chromatic exponential dip events (e.g. profile changes) with a
 smooth logistic transition:
 
@@ -9,7 +8,6 @@ smooth logistic transition:
 where norm ensures the extremum equals A at the peak, and expfac
 combines an exponential decay with a smooth logistic onset.
 
-All derivatives are handled by ``jax.jacobian`` through ``__call__``.
 """
 
 from __future__ import annotations
@@ -150,9 +148,6 @@ class ExponentialDip(DelayComponent):
             )
 
             # Exponential factor with smooth logistic transition.
-            # For dt >= 0: exp(-dt/tau) / (1 + exp(-dt/eps))
-            # For dt < 0:  exp(dt*(tau-eps)/(tau*eps)) / (1 + exp(dt/eps))
-            # Use jnp.where for JIT compatibility.
             expfac_pos = jnp.exp(-dt / tau) / (1.0 + jnp.exp(-dt / eps))
             expfac_neg = jnp.exp(dt * (tau - eps) / (tau * eps)) / (
                 1.0 + jnp.exp(dt / eps)

@@ -1,7 +1,6 @@
 """Solar wind dispersion delay component.
 
-Ports PINT's ``SolarWindDispersion`` as a pure Equinox module.  The solar
-wind contributes a frequency-dependent delay through the excess dispersion
+The solar wind contributes a frequency-dependent delay through the excess dispersion
 measure caused by free electrons between the observer and the pulsar.
 
 Two geometry models are supported:
@@ -26,9 +25,6 @@ and the delay is:
 
     delay = NE_SW(t) * geometry(theta, r) * K_DM / freq^2
 
-All hand-coded derivatives are omitted; ``jax.jacobian`` through
-``__call__`` replaces PINT's derivative functions.
-
 References
 ----------
 - Edwards et al. 2006, MNRAS, 372, 1549
@@ -49,10 +45,10 @@ from jaxtyping import Array, Float
 from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import (
     AU_KM,
-    DAYS_PER_JULIAN_YEAR,
     DMCONST,
     PC_TO_KM,
 )
+from jaxpint.delay._epoch import dt_years_from_epoch
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation, taylor_horner
 
@@ -76,8 +72,6 @@ def _sun_angle_and_distance(
     psr_dir: Float[Array, "n_toas 3"],
 ) -> tuple[Float[Array, " n_toas"], Float[Array, " n_toas"]]:
     """Compute the pulsar-observer-Sun angle and observer-Sun distance.
-
-    Mirrors PINT's ``AstrometryEquatorial.sun_angle()``.
 
     Parameters
     ----------
@@ -249,24 +243,6 @@ class SolarWindDispersion(DelayComponent):
             raise ValueError("SWM=1 requires swp_name to be set")
 
     # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _compute_dt_yr(
-        self,
-        toa_data: TOAData,
-        params: ParameterVector,
-    ) -> Float[Array, " n_toas"]:
-        """Time from SWEPOCH to each TOA, in Julian years."""
-        epoch = params.epoch_dual(self.swepoch_name)
-        dt_days = (toa_data.tdb - epoch).total
-        return dt_days / DAYS_PER_JULIAN_YEAR
-
-    def _get_ne_sw_coeffs(self, params: ParameterVector) -> Float[Array, " n_terms"]:
-        """Assemble ``[NE_SW, NE_SW1, NE_SW2, ...]``."""
-        return jnp.array([params.param_value(name) for name in self.ne_sw_param_names])
-
-    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -317,8 +293,8 @@ class SolarWindDispersion(DelayComponent):
             geometry_pc = _solar_wind_geometry_swm1(theta, r_km, p)
 
         # 4. NE_SW Taylor expansion (cm^-3).
-        dt_yr = self._compute_dt_yr(toa_data, params)
-        ne_sw_coeffs = self._get_ne_sw_coeffs(params)
+        dt_yr = dt_years_from_epoch(toa_data, params, self.swepoch_name)
+        ne_sw_coeffs = params.param_values(self.ne_sw_param_names)
         ne_sw = taylor_horner(dt_yr, ne_sw_coeffs)
 
         # 5. Solar wind DM (pc / cm^3) and delay (seconds).

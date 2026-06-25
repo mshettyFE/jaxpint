@@ -1,14 +1,11 @@
 """Fourier-basis DM noise delay component (DMWaveX).
 
-Ports PINT's ``DMWaveX`` class as a pure Equinox module.  The DM is
-modelled as a Fourier sum and converted to delay via DM dispersion:
+The DM is modelled as a Fourier sum and converted to delay via DM dispersion:
 
     DM(t) = Σ_i (DMWXSIN_i * sin(2π * DMWXFREQ_i * (t - DMWXEPOCH))
                + DMWXCOS_i * cos(2π * DMWXFREQ_i * (t - DMWXEPOCH)))
 
     delay = DM(t) * K_DM / freq^2
-
-All derivatives are handled by ``jax.jacobian`` through ``__call__``.
 """
 
 from __future__ import annotations

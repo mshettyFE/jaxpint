@@ -1,7 +1,6 @@
 """Fourier-basis chromatic noise delay component (CMWaveX).
 
-Ports PINT's ``CMWaveX`` class as a pure Equinox module.  The chromatic
-measure (CM) is modelled as a Fourier sum and converted to delay via
+The chromatic measure (CM) is modelled as a Fourier sum and converted to delay via
 chromatic dispersion:
 
     CM(t) = Σ_i (CMWXSIN_i * sin(2π * CMWXFREQ_i * (t - CMWXEPOCH))
@@ -11,7 +10,6 @@ chromatic dispersion:
 
 where alpha = TNCHROMIDX.
 
-All derivatives are handled by ``jax.jacobian`` through ``__call__``.
 """
 
 from __future__ import annotations
