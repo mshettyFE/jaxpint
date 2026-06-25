@@ -1,17 +1,31 @@
-"""Barycentric radio frequency (native; model/consumption side).
-
+"""
 PINT stores topocentric frequency in its TOA table and applies the barycentric
 Doppler correction on demand (``model.barycentric_radio_freq``):
 
     f_bary = f_topo * (1 - v_obs . Lhat / c)
 
 where ``v_obs`` is the observatory velocity wrt the SSB (``toa_data.ssb_obs_vel``,
-km/s) and ``Lhat`` is the unit vector toward the pulsar (from astrometry).  This
-mirrors that, reusing the native pulsar-direction code already in
-:mod:`jaxpint.utils`.
+km/s) and ``Lhat`` is the unit vector toward the pulsar (from astrometry).
 
-(Applied once at TOAData-build time today so ``TOAData.freq`` stays barycentric
-and matches PINT; available for a future per-component refactor.)
+JaxPINT instead **precomputes** this once at TOAData-build time and stores the
+barycentric value as ``TOAData.freq`` (see :mod:`jaxpint.loaders.native`), rather
+than recomputing it per component on demand.  
+
+- *Lazy (PINT):* ``Lhat`` (and thus the Doppler factor) is recomputed from the
+  current astrometry, so the barycentric freq stays exact while RAJ/DECJ/proper
+  motion are being fit.
+- *Precompute (JaxPINT):* the build-time astrometry is baked in, keeping
+  ``TOAData`` a static, parameter-independent data container and keeping the
+  Doppler/astrometry work off the (jitted) per-call likelihood path.  The cost is
+  that the stored freq is not refreshed if the astrometry is later refit. 
+
+That staleness is negligible in practice: real ``.par`` astrometry
+uncertainties are sub-arcsec (~1e-4" for good MSPs, <~ 1" even for
+poorly-constrained ones), and the Doppler factor is only first order in
+``v/c`` (~1e-4).  So the worst-case fit-step error in the frequency-dependent
+delays (dispersion, FD, chromatic) is <~ 50 ps -- far below ns-level timing
+precision (guarded by
+``tests/test_timescale.py::test_precompute_staleness_below_ns``).
 """
 
 from __future__ import annotations

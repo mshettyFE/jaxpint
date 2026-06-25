@@ -9,7 +9,10 @@ Registers Hypothesis profiles for different execution contexts:
   Activated by setting ``HYPOTHESIS_PROFILE=fuzzing``.
 """
 
+import functools
+import importlib.util
 import os
+import re
 
 import jax
 
@@ -18,6 +21,23 @@ jax.config.update("jax_enable_x64", True)
 import pytest
 import hypothesis
 
+# Most tests are PINT-parity tests.  PINT is an optional dependency, so rather
+# than hand-mark ~50 files, auto-detect any test module that imports PINT and
+# (a) tag it ``requires_pint`` for selection and (b) skip it cleanly when PINT
+# is not installed instead of erroring on a function-level ``import pint``.
+_HAS_PINT = importlib.util.find_spec("pint") is not None
+_PINT_RE = re.compile(
+    r"""^\s*(?:import\s+pint|from\s+pint)|importorskip\(\s*["']pint""", re.M
+)
+
+
+@functools.lru_cache(maxsize=None)
+def _module_uses_pint(path: str) -> bool:
+    try:
+        return bool(_PINT_RE.search(open(path, encoding="utf-8").read()))
+    except OSError:
+        return False
+
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -25,13 +45,25 @@ def pytest_addoption(parser):
     )
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "requires_pint: test imports PINT (auto-detected per module; skipped "
+        "when PINT is not installed).",
+    )
+
+
 def pytest_collection_modifyitems(config, items):
-    if config.getoption("--runslow"):
-        return
+    run_slow = config.getoption("--runslow")
     skip_slow = pytest.mark.skip(reason="need --runslow option to run")
+    skip_no_pint = pytest.mark.skip(reason="requires PINT (pip install jaxpint[pint])")
     for item in items:
-        if "slow" in item.keywords:
+        if not run_slow and "slow" in item.keywords:
             item.add_marker(skip_slow)
+        if _module_uses_pint(str(item.fspath)):
+            item.add_marker(pytest.mark.requires_pint)  # denote for -m selection
+            if not _HAS_PINT:
+                item.add_marker(skip_no_pint)  # graceful skip, not a hard error
 
 
 hypothesis.settings.register_profile("interactive", deadline=None)

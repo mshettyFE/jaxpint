@@ -1,6 +1,5 @@
 """Utility functions for JaxPINT.
 
-Pure JAX ports of selected functions from pint.utils.
 All functions are JIT-compatible and operate on raw float64 arrays (no units).
 """
 
