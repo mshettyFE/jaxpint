@@ -103,6 +103,27 @@ def _resolve_astrometry(par: ParResult):
     return raj, decj, pmra, pmdec, posepoch, obliquity_arcsec
 
 
+def _tdb_seconds(toa_data) -> np.ndarray:
+    """Per-TOA TDB time in seconds (``(tdb_int + tdb_frac) * 86400``)."""
+    return (
+        np.asarray(toa_data.tdb_int) * 86400.0
+        + np.asarray(toa_data.tdb_frac) * 86400.0
+    )
+
+
+def _span_seconds(par: ParResult, tdb_s, tspan_param: Optional[str] = None) -> float:
+    """Observation span in seconds.
+
+    The default is ``max - min`` of the TDB times; an explicit ``T...TSPAN``
+    parameter (in days), when present, overrides it (matches PINT).
+    """
+    T = float(np.max(tdb_s) - np.min(tdb_s))
+    if tspan_param is not None and _has_param(par, tspan_param):
+        tspan_days = float(par.params.values[par.params._name_to_index[tspan_param]])
+        T = tspan_days * 86400.0
+    return T
+
+
 # ---------------------------------------------------------------------------
 # Binary model construction
 # ---------------------------------------------------------------------------
@@ -862,10 +883,7 @@ def build_model(
                     sorted(n for n in par.params.names if n.startswith("ECORR"))
                 )
                 if toa_data is not None and len(ecorr_names) > 0:
-                    tdb_s = (
-                        np.asarray(toa_data.tdb_int) * 86400.0
-                        + np.asarray(toa_data.tdb_frac) * 86400.0
-                    )
+                    tdb_s = _tdb_seconds(toa_data)
                     ecorr_masks = {}
                     for ename in ecorr_names:
                         if (
@@ -898,17 +916,9 @@ def build_model(
             # ---- Noise: PLRedNoise ----
             case Component.PL_RED_NOISE:
                 if toa_data is not None:
-                    tdb_s = (
-                        np.asarray(toa_data.tdb_int) * 86400.0
-                        + np.asarray(toa_data.tdb_frac) * 86400.0
-                    )
+                    tdb_s = _tdb_seconds(toa_data)
                     n_freqs = par.int_params.get("TNREDC", 30)
-                    T = float(np.max(tdb_s) - np.min(tdb_s))
-                    if _has_param(par, "TNREDTSPAN"):
-                        tspan_days = float(
-                            par.params.values[par.params._name_to_index["TNREDTSPAN"]]
-                        )
-                        T = tspan_days * 86400.0
+                    T = _span_seconds(par, tdb_s, "TNREDTSPAN")
 
                     from jaxpint.utils import build_fourier_basis
 
@@ -924,17 +934,9 @@ def build_model(
             # ---- Noise: PLDMNoise ----
             case Component.PL_DM_NOISE:
                 if toa_data is not None:
-                    tdb_s = (
-                        np.asarray(toa_data.tdb_int) * 86400.0
-                        + np.asarray(toa_data.tdb_frac) * 86400.0
-                    )
+                    tdb_s = _tdb_seconds(toa_data)
                     n_freqs = par.int_params.get("TNDMC", 30)
-                    T = float(np.max(tdb_s) - np.min(tdb_s))
-                    if _has_param(par, "TNDMTSPAN"):
-                        tspan_days = float(
-                            par.params.values[par.params._name_to_index["TNDMTSPAN"]]
-                        )
-                        T = tspan_days * 86400.0
+                    T = _span_seconds(par, tdb_s, "TNDMTSPAN")
 
                     from jaxpint.utils import build_fourier_basis
 
@@ -955,17 +957,9 @@ def build_model(
             # ---- Noise: PLChromNoise ----
             case Component.PL_CHROM_NOISE:
                 if toa_data is not None:
-                    tdb_s = (
-                        np.asarray(toa_data.tdb_int) * 86400.0
-                        + np.asarray(toa_data.tdb_frac) * 86400.0
-                    )
+                    tdb_s = _tdb_seconds(toa_data)
                     n_freqs = par.int_params.get("TNCHROMC", 30)
-                    T = float(np.max(tdb_s) - np.min(tdb_s))
-                    if _has_param(par, "TNCHROMTSPAN"):
-                        tspan_days = float(
-                            par.params.values[par.params._name_to_index["TNCHROMTSPAN"]]
-                        )
-                        T = tspan_days * 86400.0
+                    T = _span_seconds(par, tdb_s, "TNCHROMTSPAN")
 
                     from jaxpint.utils import build_fourier_basis
 
@@ -984,12 +978,9 @@ def build_model(
             # ---- Noise: PLSWNoise ----
             case Component.PL_SW_NOISE:
                 if toa_data is not None:
-                    tdb_s = (
-                        np.asarray(toa_data.tdb_int) * 86400.0
-                        + np.asarray(toa_data.tdb_frac) * 86400.0
-                    )
+                    tdb_s = _tdb_seconds(toa_data)
                     n_freqs = par.int_params.get("TNSWC", 100)
-                    T = float(np.max(tdb_s) - np.min(tdb_s))
+                    T = _span_seconds(par, tdb_s)
 
                     from jaxpint.utils import build_fourier_basis
 
