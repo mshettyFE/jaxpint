@@ -1,7 +1,6 @@
 """Astrometry delay components: equatorial (ICRS) and ecliptic coordinates.
 
-Ports PINT's ``AstrometryEquatorial`` and ``AstrometryEcliptic``. 
-Both compute the solar-system geometric delay (Roemer delay)
+Both components compute the solar-system geometric delay (Roemer delay)
 and, optionally, the parallax delay.
 
 The Roemer delay is the projection of the observatory's SSB offset onto the
@@ -13,8 +12,6 @@ where L_hat is the unit vector from the SSB to the pulsar in ICRS.
 For equatorial coordinates L_hat is computed directly from RAJ/DECJ;
 for ecliptic coordinates it is computed from ELONG/ELAT and rotated to ICRS.
 
-All hand-coded derivatives are omitted; ``jax.jacobian`` through
-``__call__`` replaces PINT's ``d_delay_astrometry_d_*`` functions.
 """
 
 from __future__ import annotations

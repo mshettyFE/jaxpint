@@ -1,7 +1,6 @@
 """Chromatic measure delay component: CM Taylor expansion.
 
-Ports PINT's ``ChromaticCM`` class as a pure Equinox module.  The chromatic
-measure is modelled as a Taylor expansion about CMEPOCH:
+The chromatic measure is modelled as a Taylor expansion about CMEPOCH:
 
     CM(t) = CM + CM1*(t - CMEPOCH) + CM2*(t - CMEPOCH)^2/2! + ...
 
@@ -11,7 +10,6 @@ and the delay for each TOA is:
 
 where freq is in MHz and alpha = TNCHROMIDX.
 
-All derivatives are handled by ``jax.jacobian`` through ``__call__``.
 """
 
 from __future__ import annotations
