@@ -24,7 +24,7 @@ this module).
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, NotRequired, Optional, TypedDict
 
 from jaxpint.par import registry_table
 from jaxpint.par.registry import Component
@@ -44,7 +44,24 @@ __all__ = [
     "spec_for",
 ]
 
-_DEFAULT_FLOAT: dict = {"kind": "float", "unit": ""}
+class ParamSpec(TypedDict):
+    """Per-parameter spec aggregated from a :class:`ParamDecl`.
+
+    Fixed schema: ``kind``/``unit`` are always present; the rest appear only
+    when the declaration sets them.
+    """
+
+    kind: str
+    unit: str
+    scale: NotRequired[float]
+    scale_threshold: NotRequired[float]
+    frozen_default: NotRequired[bool]
+    is_prefix: NotRequired[bool]
+    prefix: NotRequired[str]
+    prefix_aliases: NotRequired[tuple[str, ...]]
+
+
+_DEFAULT_FLOAT: ParamSpec = {"kind": "float", "unit": ""}
 
 # guess_binary_model priority when a .par has binary params but no BINARY line.
 BINARY_PRIORITY: tuple[str, ...] = (
@@ -61,11 +78,12 @@ BINARY_PRIORITY: tuple[str, ...] = (
 )
 
 
-def _spec_of(decl: ParamDecl) -> dict:
-    spec: dict[str, object] = {"kind": decl.kind, "unit": decl.unit}
+def _spec_of(decl: ParamDecl) -> ParamSpec:
+    spec: ParamSpec = {"kind": decl.kind, "unit": decl.unit}
     if decl.scale is not None:
         spec["scale"] = decl.scale
-        spec["scale_threshold"] = decl.scale_threshold
+        if decl.scale_threshold is not None:
+            spec["scale_threshold"] = decl.scale_threshold
     if decl.frozen_default is False:
         spec["frozen_default"] = False
     if decl.prefix is not None:
@@ -79,7 +97,7 @@ def _spec_of(decl: ParamDecl) -> dict:
 @functools.cache
 def _tables() -> dict:
     """Aggregate the registry's ``(class, owner)`` pairs into the parser tables."""
-    param_spec: dict[str, dict] = {}
+    param_spec: dict[str, ParamSpec] = {}
     alias_map: dict[str, str] = {}
     prefix_map: dict[str, str] = {}
     canonical_prefix: dict[str, str] = {}
@@ -140,7 +158,7 @@ def _tables() -> dict:
     }
 
 
-def spec_for(name: str) -> Optional[dict]:
+def spec_for(name: str) -> Optional[ParamSpec]:
     """Spec for a canonical name, or ``None`` if unknown.
 
     Declared params have an explicit spec; any other declared-but-plain name
