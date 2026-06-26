@@ -29,10 +29,7 @@ def apply_delay_to_toas(
     toa_data: TOAData,
     delays_seconds: Float[Array, " n_toas"],
 ) -> TOAData:
-    """Return a new TOAData with time delays added to MJD and TDB fields.
-
-    Converts *delays_seconds* to days, adds to the fractional part of
-    each timestamp, and renormalises so ``frac`` stays in [0, 1).
+    """Return a new TOAData with *delays_seconds* added to MJD and TDB fields.
 
     Parameters
     ----------
@@ -57,7 +54,6 @@ def apply_delay_to_toas(
         toa_data,
         (new_mjd.int, new_mjd.frac, new_tdb.int, new_tdb.frac),
     )
-
 
 def zero_residuals(
     model: TimingModel,
@@ -118,8 +114,6 @@ def simulate_noise(
     noise_components: Sequence[NoiseComponent],
 ) -> Float[Array, " n_toas"]:
     """Generate a combined noise realization from multiple noise sources.
-
-    Each component receives an independent PRNG key derived from *key*.
 
     Parameters
     ----------

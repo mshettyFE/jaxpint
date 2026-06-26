@@ -17,6 +17,7 @@ from jaxpint.types import TOAData, ParameterVector
 from ._base import (
     BaseFitter,
     BaseFitResult,
+    IterationState,
     compute_time_residuals,
     _subtract_weighted_mean,
     _subtract_cov_weighted_mean,
@@ -269,11 +270,7 @@ class WidebandGLSFitter(BaseFitter):
         params: ParameterVector,
         threshold: float,
         full_cov: bool,
-    ) -> tuple[
-        ParameterVector,
-        Float[Array, "n_free n_free"],
-        Optional[Float[Array, " n_basis"]],
-    ]:
+    ) -> IterationState:
         """Run one Gauss-Newton iteration."""
         new_values, covariance, noise_real = _wideband_iteration_core(
             self.model,
@@ -285,15 +282,11 @@ class WidebandGLSFitter(BaseFitter):
         )
         new_params = eqx.tree_at(lambda pv: pv.values, params, new_values)
         noise_realizations = noise_real if noise_real.size > 0 else None
-        return new_params, covariance, noise_realizations
+        return IterationState(new_params, covariance, noise_realizations)
 
-    def _build_result(
-        self,
-        params: ParameterVector,
-        covariance: Float[Array, "n_free n_free"],
-        noise_realizations: Optional[Float[Array, " n_basis"]],
-    ) -> WidebandGLSFitResult:
+    def _build_result(self, state: IterationState) -> WidebandGLSFitResult:
         """Compute final residuals/chi2 and return a result object."""
+        params = state.params
         sigma_toa, Ndiag, U, Phidiag, sigma_dm = self._get_wideband_noise(params)
         n_basis = U.shape[1]
         n = self.toa_data.n_toas
@@ -322,12 +315,12 @@ class WidebandGLSFitter(BaseFitter):
 
         return WidebandGLSFitResult(
             params=params,
-            covariance_matrix=covariance,
+            covariance_matrix=state.covariance,
             chi2=chi2_val,
             dof=dof,
             time_residuals=time_resid,
             dm_residuals=dm_resid,
-            noise_realizations=noise_realizations,
+            noise_realizations=state.noise_realizations,
         )
 
     def fit_toas(
@@ -367,14 +360,7 @@ class WidebandGLSFitter(BaseFitter):
                 dim = self.params.n_free + n_basis
             threshold = 1e-14 * max(2 * n_toas, dim)
 
-        safe_maxiter = 1 if maxiter < 1 else maxiter
-        params = self.params
-        covariance = None
-        noise_realizations = None
-        for _ in range(safe_maxiter):
-            params, covariance, noise_realizations = self._iteration(
-                params, threshold, full_cov
-            )
-
-        assert covariance is not None  # safe_maxiter >= 1, so the loop always runs
-        return self._build_result(params, covariance, noise_realizations)
+        state = self._gauss_newton(
+            maxiter, threshold, lambda p, t: self._iteration(p, t, full_cov)
+        )
+        return self._build_result(state)

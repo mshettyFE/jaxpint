@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import equinox as eqx
 import jax
@@ -51,6 +51,18 @@ class BaseFitResult:
         return self.chi2 / self.dof if self.dof > 0 else float("nan")
 
 
+@dataclass
+class IterationState:
+    """One Gauss-Newton step's output, passed from ``_iteration`` to ``_build_result``.
+
+    ``noise_realizations`` is ``None`` for fitters that don't estimate them (WLS).
+    """
+
+    params: ParameterVector
+    covariance: Float[Array, "n_free n_free"]
+    noise_realizations: Optional[Float[Array, " n_epochs"]] = None
+
+
 # ---------------------------------------------------------------------------
 # Base fitter
 # ---------------------------------------------------------------------------
@@ -58,6 +70,11 @@ class BaseFitResult:
 
 class BaseFitter(ABC):
     """Base for all JaxPINT fitters.
+
+    Subclasses implement :meth:`_build_result` (turns the final
+    :class:`IterationState` into a fitter-specific result) and :meth:`fit_toas`,
+    whose body computes the SVD threshold, runs :meth:`_gauss_newton` with a
+    per-fitter step callable, and returns ``self._build_result(state)``.
 
     Parameters
     ----------
@@ -115,6 +132,30 @@ class BaseFitter(ABC):
         """
         n_offset = 0 if self.model.phoff_name is not None else 1
         return n_data - params.n_free - n_offset
+
+    def _gauss_newton(
+        self,
+        maxiter: int,
+        threshold: float,
+        iterate: Callable[[ParameterVector, float], IterationState],
+    ) -> IterationState:
+        """Run ``max(1, maxiter)`` Gauss-Newton steps and return the final state.
+
+        ``iterate(params, threshold) -> IterationState`` is the per-fitter step,
+        already bound to any fitter-specific options (e.g. ``full_cov``).
+        """
+        params = self.params
+        state: Optional[IterationState] = None
+        for _ in range(max(1, maxiter)):
+            state = iterate(params, threshold)
+            params = state.params
+        assert state is not None  # max(1, maxiter) >= 1, so the loop always runs
+        return state
+
+    @abstractmethod
+    def _build_result(self, state: IterationState) -> BaseFitResult:
+        """Turn the final iteration state into a fitter-specific result."""
+        ...
 
 
 # ---------------------------------------------------------------------------
