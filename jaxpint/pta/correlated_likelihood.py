@@ -38,7 +38,7 @@ from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import woodbury_dot, woodbury_solve
 
-from jaxpint.pta.params import GlobalParams
+from jaxpint.types import GlobalParams
 from jaxpint.pta.likelihood import SignalInjector
 
 

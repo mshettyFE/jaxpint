@@ -19,7 +19,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from jaxpint.pta.params import GlobalParams
+from jaxpint.types import GlobalParams
 from jaxpint.pta.signals.cw import (
     fplus_fcross, cw_delay, cw_delay_from_array, sum_cw_delays,
     CWInjector, CWInjectorStack, CW_PARAM_DEFAULTS, log10_strain_from_binary,

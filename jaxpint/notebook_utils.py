@@ -52,7 +52,7 @@ from matplotlib.collections import QuadMesh
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.pta.likelihood import PTAConfig, SignalInjector
-from jaxpint.pta.params import GlobalParams
+from jaxpint.types import GlobalParams
 from jaxpint.pta.signals.cw import CWInjector
 from jaxpint.simulation import apply_delay_to_toas
 from jaxpint.types import ParameterVector, TOAData

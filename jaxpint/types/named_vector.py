@@ -84,7 +84,7 @@ class NamedVector(eqx.Module):
         for name in self.names:
             if name.startswith(prefix):
                 try:
-                    out.add(int(name[len(prefix):]))
+                    out.add(int(name[len(prefix) :]))
                 except ValueError:
                     pass
         return tuple(sorted(out))

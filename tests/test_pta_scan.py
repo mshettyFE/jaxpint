@@ -15,7 +15,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from jaxpint.pta.params import GlobalParams
+from jaxpint.types import GlobalParams
 from jaxpint.pta.likelihood import (
     PTAConfig,
     precompute_single_pulsar_pta_factor,

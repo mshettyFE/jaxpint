@@ -18,7 +18,7 @@ import pytest
 from jaxpint.noise import NoiseModel
 from jaxpint.noise.white import ScaleToaError
 from jaxpint.noise.red_noise import PLRedNoise
-from jaxpint.pta.params import GlobalParams
+from jaxpint.types import GlobalParams
 from jaxpint.pta.likelihood import (
     PTAConfig,
     pta_logL,

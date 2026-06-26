@@ -486,7 +486,7 @@ def _build_dispersion_dmx(ctx: BuildContext):
 def _build_dispersion_jump(ctx: BuildContext):
     from jaxpint.delay.dispersion_jump import DispersionJump
 
-    dmjump_names = tuple(n for n in ctx.par.params.names if n.startswith("DMJUMP"))
+    dmjump_names = ctx.par.params.names_with_prefix("DMJUMP")
     if not dmjump_names:
         return None
     return DispersionJump(dmjump_names=dmjump_names)
@@ -686,7 +686,7 @@ def _build_piecewise_spindown(ctx: BuildContext):
 def _build_phase_jump(ctx: BuildContext):
     from jaxpint.phase.jump import PhaseJump
 
-    jump_names = tuple(n for n in ctx.par.params.names if n.startswith("JUMP"))
+    jump_names = ctx.par.params.names_with_prefix("JUMP")
     if not jump_names:
         return None
     return PhaseJump(jump_param_names=jump_names)

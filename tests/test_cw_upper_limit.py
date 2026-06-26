@@ -16,7 +16,7 @@ from jaxpint.pta.cw_upper_limit import (
     basis_quadratics,
     fstat,
 )
-from jaxpint.pta.params import GlobalParams
+from jaxpint.types import GlobalParams
 from jaxpint.pta.signals.cw import CWInjector, log10_strain_from_binary
 from tests.helpers import make_toa_data
 

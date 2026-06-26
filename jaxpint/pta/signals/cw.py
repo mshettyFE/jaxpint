@@ -251,7 +251,7 @@ class CWInjector(SignalInjector):
 
     Subclasses :class:`~jaxpint.pta.likelihood.SignalInjector`.  Uses a naming *prefix*
     (e.g. ``'cw0_'``, ``'cw1_'``) so that multiple CW sources can coexist
-    in the same :class:`~jaxpint.pta.params.GlobalParams`.
+    in the same :class:`~jaxpint.types.GlobalParams`.
 
     Parameters
     ----------
@@ -425,7 +425,7 @@ def cw_delay_from_array(
 
     Identical physics to :func:`cw_delay` but takes CW parameters as a
     positional ``(7,)`` array instead of named lookups into
-    :class:`~jaxpint.pta.params.GlobalParams`.
+    :class:`~jaxpint.types.GlobalParams`.
 
     Parameter order (matching :data:`CW_PARAM_DEFAULTS` key order):
         0: log10_h (or linear h0, see *linear_amplitude*), 1: cos_gwtheta,

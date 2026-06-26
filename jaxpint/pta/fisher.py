@@ -12,7 +12,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.types import ParameterVector
-from jaxpint.pta.params import GlobalParams
+from jaxpint.types import GlobalParams
 from jaxpint.pta.likelihood import PTAConfig, pta_logL
 
 

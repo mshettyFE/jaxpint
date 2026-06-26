@@ -7,7 +7,7 @@ same :func:`pta_logL` entry point via the
 :class:`~jaxpint.pta.likelihood.CorrelatedSignalInjector` interface.
 """
 
-from jaxpint.pta.params import GlobalParams
+from jaxpint.types import GlobalParams
 from jaxpint.pta.likelihood import (
     CorrelatedSignalInjector,
     PTAConfig,
