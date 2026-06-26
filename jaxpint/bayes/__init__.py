@@ -1,8 +1,6 @@
 """Bayesian-inference layer for JaxPINT.
 
-JaxPINT's core (``jaxpint.likelihood``, ``jaxpint.pta.likelihood``) is a
-pure differentiable-likelihood library.  Importing from
-:mod:`jaxpint.bayes` opts in to Bayesian-flavoured machinery — priors,
+Importing from :mod:`jaxpint.bayes` opts in to Bayesian-flavoured machinery — priors,
 analytic / numerical marginalization, posterior helpers — that build on
 top of those likelihoods.
 
@@ -11,7 +9,6 @@ to act as a visible flag that the script is making Bayesian assumptions
 (e.g., choice of prior shape, marginalization over nuisance parameters).
 Pure likelihood scans don't need this subpackage.
 
-See ``Plans/priors_design.md`` for the design discussion.
 """
 
 from __future__ import annotations

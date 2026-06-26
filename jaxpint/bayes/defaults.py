@@ -281,7 +281,7 @@ def distance_priors(
     names, params = _resolve_pulsars(psrs)
     out: dict[str, Prior] = {}
     for psr_name, pp in zip(names, params, strict=True):
-        if param_name not in pp.names:
+        if param_name not in pp:
             continue
         if prior is None:
             mu, sigma = _par_file_gaussian_args(pp, param_name, n_sigma)

@@ -644,7 +644,7 @@ def _resolve_pta_marg_targets(
             if not fqn.startswith(prefix):
                 continue
             bare = fqn[len(prefix) :]
-            if bare in fiducial_pulsar_params[p].names:
+            if bare in fiducial_pulsar_params[p]:
                 matches.append((p, bare))
 
         if not matches:
