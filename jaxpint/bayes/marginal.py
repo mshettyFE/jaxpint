@@ -121,7 +121,7 @@ def _check_linearity(
     over_indices: tuple[int, ...],
     over_names: tuple[str, ...],
     trust_radii: Float[Array, " n_marg"],
-    M_full_cols: Float[Array, "n_toas n_params"],
+    M_full_cols: Float[Array, "n_toas n_marg"],
     tol: float,
 ) -> list[tuple[str, float]]:
     """Heuristic to flag parameters whose residuals are nonlinear in y at y_fid.
@@ -137,7 +137,39 @@ def _check_linearity(
     function appreciably, so r(y) is NOT well-approximated by its
     linearization within the range the prior gives non-negligible weight to.
 
-    Returns a list of (name, ratio) pairs for parameters that exceed ``tol``.
+    Parameters
+    ----------
+    timing_model : TimingModel
+        Model the time residuals are computed through
+    toa_data : TOAData
+        The TOAs the residuals are evaluated on.
+    fiducial_params : ParameterVector
+        Linearization point ``y_fid``.
+    over_indices : tuple of int
+        Indices, into the full parameter vector, of the marginalized parameters
+        being checked.
+    over_names : tuple of str
+        Names of those parameters, parallel to ``over_indices``; used only to
+        label the flagged entries in the return value.
+    trust_radii : array, shape (n_marg,)
+        Per-parameter trust radius ``sigma_i`` (prior σ for a Gaussian prior,
+        WLS posterior σ for an ``ImproperPrior``), parallel to ``over_indices``
+        -- the scale over which the linearization must remain valid.  See
+        :func:`_trust_radius_for_prior`.
+    M_full_cols : array, shape (n_toas, n_marg)
+        Design-matrix (Jacobian) columns of the marginalized parameters at
+        ``y_fid``, in ``over`` order: column ``k`` is ``d r / d y_k``.  Supplies
+        the linear-term magnitude (the denominator) each curvature term is
+        compared against.
+    tol : float
+        Ratio threshold; a parameter is flagged when its curvature-to-linear
+        ratio exceeds this.
+
+    Returns
+    -------
+    list of (str, float)
+        ``(name, ratio)`` for each marginalized parameter whose ratio exceeds
+        ``tol`` (empty when all are acceptably linear).
 
     Notes
     -----
@@ -147,6 +179,13 @@ def _check_linearity(
     """
 
     from jaxpint.fitters._base import compute_time_residuals
+    assert (
+      len(over_names)
+      == len(over_indices)
+      == trust_radii.shape[0]
+      == M_full_cols.shape[1]
+    )
+
 
     def time_resid_fn(values):
         p = fiducial_params.with_values(values)
