@@ -591,7 +591,8 @@ def concat_woodbury_blocks(
     Used by :func:`~jaxpint.likelihood.single_pulsar_logL`,
     :func:`~jaxpint.pta.pta_logL`,
     :meth:`~jaxpint.noise.NoiseModel.covariance`,
-    :func:`~jaxpint.bayes.marginalize` and the
+    :func:`~jaxpint.bayes.marginalize_single_pulsar` /
+    :func:`~jaxpint.bayes.marginalize_pta` and the
     correlated-likelihood paths to compose the Woodbury low-rank update from
     multiple sources (white-noise components, per-pulsar signal injectors,
     cross-pulsar GW basis, analytic-marginalization prior block, etc.).

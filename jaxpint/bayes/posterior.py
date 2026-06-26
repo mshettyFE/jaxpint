@@ -1,7 +1,7 @@
 """Posterior helpers for JaxPINT.
 
 The posterior log-density is the sum of the log-likelihood and the log-prior
-(up to a normalising constant).  This
+(up to a unormalising constant).  This
 module provides composition utilities that turn
 
     likelihood : params_dict -> log L

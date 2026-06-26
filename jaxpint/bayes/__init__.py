@@ -23,7 +23,11 @@ from jaxpint.bayes.defaults import (
     noise_priors_simple,
     timing_priors,
 )
-from jaxpint.bayes.marginal import marg_set_from_priors, marginalize
+from jaxpint.bayes.marginal import (
+    marg_set_from_priors,
+    marginalize_pta,
+    marginalize_single_pulsar,
+)
 from jaxpint.bayes.posterior import combine_log_prob, log_prior_sum
 from jaxpint.bayes.priors import (
     Gaussian,
@@ -59,6 +63,7 @@ __all__ = [
     "log_prior_sum",
     "combine_log_prob",
     # Marginalization
-    "marginalize",
+    "marginalize_single_pulsar",
+    "marginalize_pta",
     "marg_set_from_priors",
 ]

@@ -113,7 +113,7 @@ def compute_multi_source_localization_skymap(
     from jaxpint import load_nanograv_pta
     from jaxpint.pta.likelihood import PTAConfig, pta_logL
     from jaxpint.pta.params import GlobalParams
-    from jaxpint.bayes import ImproperPrior, marginalize
+    from jaxpint.bayes import ImproperPrior, marginalize_pta
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import quadratic_coeffs
     from jaxpint.pta.cw_localization import (
@@ -192,9 +192,7 @@ def compute_multi_source_localization_skymap(
                 over.add(fqn)
                 priors[fqn] = ImproperPrior()
     _log(f"Marginalizing {len(over)} timing params across {len(names)} pulsars...")
-    g, _, reduced_pp = marginalize(
-        pta_logL,
-        over=over,
+    g, _, reduced_pp = marginalize_pta(over=over,
         priors=priors,
         config=config,
         pulsar_names=tuple(names),

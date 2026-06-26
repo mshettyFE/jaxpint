@@ -72,7 +72,7 @@ def compute_skymap(
 
     from jaxpint import load_nanograv_pta
     from jaxpint.likelihood import single_pulsar_logL
-    from jaxpint.bayes import marginalize, ImproperPrior
+    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
     from jaxpint.pta.signals.cw import cw_delay_from_array
     from jaxpint.pta.cw_upper_limit import h0_to_distance
     from jaxpint.pta.incoherent_ul import (
@@ -152,9 +152,7 @@ def compute_skymap(
         zip(td_list, tm_list, nm_list, pp_list, jnp.asarray(positions))
     ):
         over = {n for n in pp.free_names() if n in MARG_PARAMS}
-        g, _, skel = marginalize(
-            single_pulsar_logL,
-            over=over,
+        g, _, skel = marginalize_single_pulsar(over=over,
             priors={n: ImproperPrior() for n in over},
             toa_data=td,
             timing_model=tm,

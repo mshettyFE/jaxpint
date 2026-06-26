@@ -150,12 +150,11 @@ def test_extract_pulsar_bM_self_consistent():
     """The recovered (b, M) reproduce the actual marginalized g at arbitrary
     amplitudes (validates the real-mode timing-marginalized GLS extraction)."""
     from jaxpint.likelihood import single_pulsar_logL
-    from jaxpint.bayes import marginalize, ImproperPrior
+    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
 
     td, tm, nm, pp = make_simple_pulsar(200, f0=100.0, f1=-1e-14)
     over = {n for n in pp.free_names() if n in ("F0", "F1")}
-    g, _, skel = marginalize(
-        single_pulsar_logL, over=over,
+    g, _, skel = marginalize_single_pulsar(over=over,
         priors={n: ImproperPrior() for n in over},
         toa_data=td, timing_model=tm, noise_model=nm, fiducial_params=pp,
         allow_nonlinear=True, validate_linearity=False,

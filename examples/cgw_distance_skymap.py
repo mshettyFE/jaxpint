@@ -14,7 +14,7 @@ Method (see ``jaxpint/pta/cw_upper_limit.py`` for the math):
    ``logL(h0) = logL(0) + h0*X - 0.5*h0**2*Y``.
 2. A single CWInjector(linear_amplitude=True, earth_term_only=...) carries
    the sky position / orientation
-   / linear amplitude as global params; ``marginalize(pta_logL, ...)`` analytically
+   / linear amplitude as global params; ``marginalize_pta(...)`` analytically
    marginalizes the (linear) timing-model parameters once.  Autodiff of the
    marginalized likelihood w.r.t. the amplitude gives ``X=(d|s_hat)`` and
    ``Y=(s_hat|s_hat)`` exactly.
@@ -258,7 +258,7 @@ def compute_skymap(
     from jaxpint import load_nanograv_pta
     from jaxpint.pta.likelihood import PTAConfig, pta_logL
     from jaxpint.pta.params import GlobalParams
-    from jaxpint.bayes import ImproperPrior, marginalize
+    from jaxpint.bayes import ImproperPrior, marginalize_pta
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import (
         quadratic_coeffs,
@@ -343,9 +343,7 @@ def compute_skymap(
                 over.add(fqn)
                 priors[fqn] = ImproperPrior()
     _log(f"Marginalizing {len(over)} timing params across {len(names)} pulsars...")
-    g, _, reduced_pp = marginalize(
-        pta_logL,
-        over=over,
+    g, _, reduced_pp = marginalize_pta(over=over,
         priors=priors,
         config=config,
         pulsar_names=tuple(names),
