@@ -22,11 +22,11 @@ from __future__ import annotations
 import dataclasses
 import warnings
 from typing import (
-    TYPE_CHECKING,
     Callable,
     Iterable,
     Mapping,
     Optional,
+    Sequence,
 )
 
 import jax
@@ -42,9 +42,6 @@ from jaxpint.pta.likelihood import PTAConfig, SignalInjector, pta_logL
 from jaxpint.types import GlobalParams
 from jaxpint.types import ParameterVector, TOAData
 from jaxpint.utils import concat_woodbury_blocks
-
-if TYPE_CHECKING:
-    pass
 
 
 __all__ = [
@@ -183,10 +180,10 @@ def _check_linearity(
 
     from jaxpint.fitters._base import compute_time_residuals
     assert (
-      len(over_names)
-      == len(over_indices)
-      == trust_radii.shape[0]
-      == M_full_cols.shape[1]
+        len(over_names)
+        == len(over_indices)
+        == trust_radii.shape[0]
+        == M_full_cols.shape[1]
     )
 
 
@@ -239,6 +236,159 @@ def _trust_radius_for_prior(
     if fisher_diag <= 0.0:
         return float("inf")  # degenerate — let the check fire loudly
     return float(1.0 / jnp.sqrt(fisher_diag))
+
+
+# ---------------------------------------------------------------------------
+# Shared marginalization helpers (used by both backends)
+# ---------------------------------------------------------------------------
+
+
+def _validate_marg_inputs(
+    over_set: set[str],
+    priors: Mapping[str, Prior],
+    *,
+    valid_names: Optional[Iterable[str]] = None,
+) -> None:
+    """Validate the priors (and, optionally, the names) for a marginalization set.
+
+    Raises
+    ------
+    PriorValidationError
+        If any name in ``over_set`` has no entry in ``priors``.
+    NotImplementedError
+        If any prior assigned to an ``over_set`` name is not an
+        :class:`ImproperPrior` (the only shape currently supported in ``over``).
+    ValueError
+        If ``valid_names`` is supplied and ``over_set`` contains a name not in
+        it.  The single-pulsar backend passes ``fiducial_params.names``; the PTA
+        backend leaves this ``None`` and validates names per pulsar via
+        :func:`_resolve_pta_marg_targets` instead.
+    """
+    missing = over_set - set(priors.keys())
+    if missing:
+        raise PriorValidationError(
+            f"marginalize: priors dict is missing entries for {sorted(missing)} "
+            f"(found in `over` but not in `priors`)."
+        )
+    bad = [
+        (n, type(priors[n]).__name__)
+        for n in sorted(over_set)
+        if not isinstance(priors[n], ImproperPrior)
+    ]
+    if bad:
+        raise NotImplementedError(
+            "marginalize() phase 1 supports only ImproperPrior in `over`. "
+            f"Got non-Improper priors for: {bad}. "
+            "Keep these parameters sampled (combine_log_prob will apply their "
+            "priors), or assign ImproperPrior() if you want analytic "
+            "marginalization with no prior information."
+        )
+    if valid_names is not None:
+        unknown = over_set - set(valid_names)
+        if unknown:
+            raise ValueError(
+                f"marginalize: parameter name(s) {sorted(unknown)} in `over` "
+                f"are not present in the fiducial parameter vector."
+            )
+
+
+def _marg_woodbury_block(
+    timing_model: TimingModel,
+    toa_data: TOAData,
+    fiducial: ParameterVector,
+    indices: tuple[int, ...],
+) -> tuple[
+    Optional[Float[Array, "n_toas n_params"]],
+    Optional[Float[Array, "n_toas n_marg"]],
+    Optional[Float[Array, " n_marg"]],
+]:
+    """Design matrix and the Φ=1e40 Woodbury block for one pulsar's marg targets.
+
+    Returns ``(J_full, M, Phi)`` where ``J_full = ∂r/∂y|_{fiducial}``,
+    ``M = -J_full[:, indices]`` and ``Phi`` is the improper-prior regularizer
+    (``1e40``).  Returns ``(None, None, None)`` when ``indices`` is empty
+    (nothing to marginalize for this pulsar).
+
+    Forward-mode: the design matrix is tall (n_toas >> n_params), so jacfwd
+    costs O(n_toas * n_params); reverse mode vmaps n_toas backward passes ->
+    O(n_toas**2) and OOMs on high-cadence pulsars (e.g. 35k TOAs).
+    """
+    if len(indices) == 0:
+        return None, None, None
+
+    from jaxpint.fitters._base import compute_time_residuals
+
+    def _resid_fn(values):
+        params = fiducial.with_values(values)
+        return compute_time_residuals(timing_model, toa_data, params)
+
+    J_full = jax.jacfwd(_resid_fn)(fiducial.values)
+    idx_array = jnp.asarray(indices, dtype=jnp.int32)
+    M = -J_full[:, idx_array]
+    Phi = jnp.full(len(indices), 1e40, dtype=jnp.float64)
+    return J_full, M, Phi
+
+
+def _marg_trust_radii(
+    priors: Mapping[str, Prior],
+    fqns: Sequence[str],
+    indices: Sequence[int],
+    J_full: Float[Array, "n_toas n_params"],
+    Ndiag: Float[Array, " n_toas"],
+) -> Float[Array, " n_marg"]:
+    """Per-target prior trust radii for the linearity check.
+
+    ``fqns`` are the prior-dict keys for the targets (bare names for a single
+    pulsar; ``"{prefix}_{bare}"`` for a PTA pulsar), aligned with ``indices``.
+    """
+    return jnp.asarray(
+        [
+            _trust_radius_for_prior(priors[fqn], idx, J_full, Ndiag)
+            for fqn, idx in zip(fqns, indices)
+        ]
+    )
+
+
+def _raise_or_warn_nonlinear(
+    flagged: Sequence[tuple[str, float]],
+    *,
+    allow_nonlinear: bool,
+    tol: float,
+) -> None:
+    """Act on parameters flagged by the linearity check (shared by both backends).
+
+    Raises ``NotImplementedError`` when ``allow_nonlinear`` is ``False``, or
+    emits a :class:`UserWarning` when ``True``, naming the offending parameters
+    and their Laplace-error ratios.  No-op when ``flagged`` is empty.
+    """
+    if not flagged:
+        return
+    if not allow_nonlinear:
+        msg = "\n".join(
+            f"  - {name}: Laplace error ratio = {ratio:.2e} > tol = {tol:.2e}"
+            for name, ratio in flagged
+        )
+        raise NotImplementedError(
+            "marginalize: cannot analytically marginalize parameter(s) "
+            "whose Laplace-approximation error exceeds the tolerance "
+            "within the prior support (i.e., the residual's second-order "
+            "Taylor term is not negligible compared to its linear term "
+            "over one prior-σ step from the fiducial parameters):\n"
+            f"{msg}\n\n"
+            "Options:\n"
+            "  - Remove these from `over` and sample them instead.\n"
+            "  - Pass allow_nonlinear=True to accept the Laplace approximation\n"
+            "    around the fiducial parameters (matches discovery's behavior).\n"
+            "  - Raise laplace_error_tol if you've assessed the error and find it acceptable."
+        )
+    msg = "; ".join(f"{name} (ratio={ratio:.2e})" for name, ratio in flagged)
+    warnings.warn(
+        f"marginalize: marginalizing nonlinear parameter(s) via "
+        f"Laplace approximation around the fiducial parameters: {msg}. "
+        "Marginalized likelihood is accurate to O((y - y_fid)^2). "
+        "For exact treatment, sample these parameters instead.",
+        stacklevel=3,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -330,79 +480,21 @@ def marginalize_single_pulsar(
     over_set = set(over)
     over_list = sorted(over_set)  # deterministic ordering for caching
 
-    # --- 1. Completeness check ----------------------------------------
-    missing = over_set - set(priors.keys())
-    if missing:
-        raise PriorValidationError(
-            f"marginalize: priors dict is missing entries for {sorted(missing)} "
-            f"(found in `over` but not in `priors`)."
-        )
+    _validate_marg_inputs(over_set, priors, valid_names=fiducial_params.names)
 
-    # --- 2. Prior-shape check (TEMP. Improper only)  ----------------
-    bad = [
-        (n, type(priors[n]).__name__)
-        for n in over_list
-        if not isinstance(priors[n], ImproperPrior)
-    ]
-    if bad:
-        raise NotImplementedError(
-            "marginalize() phase 1 supports only ImproperPrior in `over`. "
-            f"Got non-Improper priors for: {bad}. "
-            "Keep these parameters sampled (combine_log_prob will apply their "
-            "priors), or assign ImproperPrior() if you want analytic "
-            "marginalization with no prior information."
-        )
-
-    # --- 3. Validate over_set fiducial_params.names --------------------
-    unknown = over_set - set(fiducial_params.names)
-    if unknown:
-        raise ValueError(
-            f"marginalize: parameter name(s) {sorted(unknown)} in `over` "
-            f"are not present in fiducial_params.names."
-        )
-
-    # --- 4. Design matrix at y_fid  ---------------
-    # NOTE: compute_design_matrix returns shape (n_toas, n_free [+ 1 offset]).
-    # We need columns indexed by name in over, not by free-parameter position.
-    # So we build the FULL Jacobian here via the same internal trick.
-    from jaxpint.fitters._base import compute_time_residuals
-
+    # --- Design matrix + cached Woodbury block at y_fid -------------------
+    # Empty marg set -> block is None; the wrapper passes None through
+    # concat_woodbury_blocks so the user's external_cov flows through unchanged.
     over_indices = tuple(fiducial_params.param_index(n) for n in over_list)
+    J_full, M_marg, Phi_marg = _marg_woodbury_block(
+        timing_model, toa_data, fiducial_params, over_indices
+    )
+    marg_cov_cached = None if M_marg is None else (M_marg, Phi_marg)
 
-    if len(over_indices) == 0:
-        # Empty marg set: skip Jacobian entirely. The wrapper passes None
-        # through concat_woodbury_blocks so the user's external_cov flows
-        # through unchanged (no spurious empty column appended).
-        J_full = None
-        M_marg = None
-        marg_cov_cached = None
-    else:
-
-        def _resid_fn(values):
-            p = fiducial_params.with_values(values)
-            return compute_time_residuals(timing_model, toa_data, p)
-
-        # Forward-mode: the design matrix dr/dy is tall (n_toas >> n_params),
-        # so jacfwd costs O(n_toas * n_params); reverse mode (jax.jacobian)
-        # vmaps n_toas backward passes -> O(n_toas**2) and OOMs on
-        # high-cadence pulsars (e.g. 35k TOAs).
-        J_full = jax.jacfwd(_resid_fn)(fiducial_params.values)
-        marg_idx_array = jnp.asarray(over_indices, dtype=jnp.int32)
-        M_marg = -J_full[:, marg_idx_array]  # (n_toas, n_marg)
-        Phi_marg = jnp.full(len(over_indices), 1e40, dtype=jnp.float64)
-        marg_cov_cached = (M_marg, Phi_marg)
-
-    # --- 6. Linearity check  -------------------------------
-    if validate_linearity and len(over_indices) > 0:
-        # len(over_indices) > 0 means the Jacobian branch above ran.
-        assert J_full is not None and M_marg is not None
-        # Trust radii for each marginalized param.
+    if validate_linearity and M_marg is not None:
         Ndiag = noise_model.scaled_sigma(toa_data, fiducial_params) ** 2
-        trust_radii = jnp.asarray(
-            [
-                _trust_radius_for_prior(priors[n], i, J_full, Ndiag)
-                for n, i in zip(over_list, over_indices)
-            ]
+        trust_radii = _marg_trust_radii(
+            priors, over_list, over_indices, J_full, Ndiag
         )
         flagged = _check_linearity(
             timing_model,
@@ -414,47 +506,16 @@ def marginalize_single_pulsar(
             M_full_cols=M_marg,
             tol=laplace_error_tol,
         )
-        if flagged:
-            if not allow_nonlinear:
-                msg = "\n".join(
-                    f"  - {name}: Laplace error ratio = {ratio:.2e} > tol = {laplace_error_tol:.2e}"
-                    for name, ratio in flagged
-                )
-                raise NotImplementedError(
-                    "marginalize: cannot analytically marginalize parameter(s) "
-                    "whose Laplace-approximation error exceeds the tolerance "
-                    "within the prior support (i.e., the residual's second-order "
-                    "Taylor term is not negligible compared to its linear term "
-                    "over one prior-σ step from fiducial_params):\n"
-                    f"{msg}\n\n"
-                    "Options:\n"
-                    "  - Remove these from `over` and sample them instead.\n"
-                    "  - Pass allow_nonlinear=True to accept the Laplace approximation\n"
-                    "    around fiducial_params (matches discovery's behavior).\n"
-                    "  - Raise laplace_error_tol if you've assessed the error and find it acceptable."
-                )
-            else:
-                msg = "; ".join(
-                    f"{name} (ratio={ratio:.2e})" for name, ratio in flagged
-                )
-                warnings.warn(
-                    f"marginalize: marginalizing nonlinear parameter(s) via "
-                    f"Laplace approximation around fiducial_params: {msg}. "
-                    "Marginalized likelihood is accurate to O((y - y_fid)^2). "
-                    "For exact treatment, sample these parameters instead.",
-                    stacklevel=2,
-                )
+        _raise_or_warn_nonlinear(
+            flagged, allow_nonlinear=allow_nonlinear, tol=laplace_error_tol
+        )
 
-    # --- 7. Build the sampled_priors dict ----------------------------
     sampled_priors: dict[str, Prior] = {
         n: p for n, p in priors.items() if n not in over_set
     }
 
-    # 8. Reconstruct ParameterVector with the marginalized_mask updated
-    full_skeleton = fiducial_params.with_marginalized(over_set)
-    reduced_skeleton = full_skeleton
+    reduced_skeleton = fiducial_params.with_marginalized(over_set)
 
-    # --- 9. Build the wrapper ---------------------------------------
     def likelihood_marg(
         reduced_params: ParameterVector,
         *,
@@ -465,8 +526,8 @@ def marginalize_single_pulsar(
     ) -> Float[Array, ""]:
         # Reconstruct the full parameter vector: kept entries come from the
         # user-supplied reduced_params; marg'd entries stay at y_fid (the
-        # values cached inside full_skeleton).
-        full = full_skeleton.with_free_values(reduced_params.free_values())
+        # values cached inside reduced_skeleton).
+        full = reduced_skeleton.with_free_values(reduced_params.free_values())
         # Compose user's external_cov with the cached marg'd block.
         ext_cov = concat_woodbury_blocks(external_cov, marg_cov_cached)
         return single_pulsar_logL(
@@ -692,12 +753,9 @@ def marginalize_pta(
         parameter, or a parameter that fails the linearity check when
         ``allow_nonlinear=False``.
     """
-    from jaxpint.fitters._base import compute_time_residuals
-
     over_set = set(over)
     n_psr = len(pulsar_names)
 
-    # --- 1. Validate setup ---------------------------------------------------
     if len(fiducial_pulsar_params) != n_psr:
         raise ValueError(
             f"marginalize: pulsar_names has length {n_psr} but "
@@ -708,31 +766,8 @@ def marginalize_pta(
             f"marginalize: pulsar_names has length {n_psr} but "
             f"config has {config.n_pulsars} pulsars."
         )
+    _validate_marg_inputs(over_set, priors)
 
-    # --- 2. Completeness check ----------------------------------------------
-    missing = over_set - set(priors.keys())
-    if missing:
-        raise PriorValidationError(
-            f"marginalize: priors dict is missing entries for {sorted(missing)} "
-            f"(found in `over` but not in `priors`)."
-        )
-
-    # --- 3. Prior-shape check (ImproperPrior only) --------------------------
-    bad = [
-        (n, type(priors[n]).__name__)
-        for n in sorted(over_set)
-        if not isinstance(priors[n], ImproperPrior)
-    ]
-    if bad:
-        raise NotImplementedError(
-            "marginalize() phase 1 supports only ImproperPrior in `over`. "
-            f"Got non-Improper priors for: {bad}. "
-            "Keep these parameters sampled (combine_log_prob will apply their "
-            "priors), or assign ImproperPrior() if you want analytic "
-            "marginalization with no prior information."
-        )
-
-    # --- 4. Resolve over → per-pulsar (bare, index) lists ------------------
     bare_names_per_pulsar, bare_indices_per_pulsar = _resolve_pta_marg_targets(
         over_set,
         pulsar_names,
@@ -740,40 +775,23 @@ def marginalize_pta(
         fiducial_global_params,
     )
 
-    # --- 5. Per-pulsar Jacobian + cached Woodbury blocks --------------------
+    # Retain per-pulsar M_p and J_full_p for the linearity check below.
     cached_blocks: list[
         Optional[tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]]
     ] = []
-    # For the linearity check we also retain per-pulsar M_p and over_indices.
     per_pulsar_M: list[Optional[Float[Array, "n_toas n_marg_p"]]] = []
     per_pulsar_J_full: list[Optional[Float[Array, "n_toas n_params_p"]]] = []
     for p in range(n_psr):
-        bare_indices = bare_indices_per_pulsar[p]
-        if len(bare_indices) == 0:
-            cached_blocks.append(None)
-            per_pulsar_M.append(None)
-            per_pulsar_J_full.append(None)
-            continue
-
-        timing_model_p = config.timing_models[p]
-        toa_data_p = config.toa_data_list[p]
-        fiducial_p = fiducial_pulsar_params[p]
-
-        def _resid_fn(values, _tm=timing_model_p, _td=toa_data_p, _fp=fiducial_p):
-            params = _fp.with_values(values)
-            return compute_time_residuals(_tm, _td, params)
-
-        # Forward-mode (see marginalize_single_pulsar): tall design matrix,
-        # so jacfwd is O(n_toas * n_params) vs jacrev's O(n_toas**2) blowup.
-        J_full_p = jax.jacfwd(_resid_fn)(fiducial_p.values)
-        idx_array = jnp.asarray(bare_indices, dtype=jnp.int32)
-        M_p = -J_full_p[:, idx_array]
-        Phi_p = jnp.full(len(bare_indices), 1e40, dtype=jnp.float64)
-        cached_blocks.append((M_p, Phi_p))
+        J_full_p, M_p, Phi_p = _marg_woodbury_block(
+            config.timing_models[p],
+            config.toa_data_list[p],
+            fiducial_pulsar_params[p],
+            tuple(bare_indices_per_pulsar[p]),
+        )
+        cached_blocks.append(None if M_p is None else (M_p, Phi_p))
         per_pulsar_M.append(M_p)
         per_pulsar_J_full.append(J_full_p)
 
-    # --- 6. Linearity check (per pulsar) ------------------------------------
     if validate_linearity:
         flagged_all: list[tuple[str, float]] = []
         for p in range(n_psr):
@@ -785,64 +803,29 @@ def marginalize_pta(
             M_p = per_pulsar_M[p]
             assert J_full_p is not None and M_p is not None  # have marg targets
 
-            noise_model_p = config.noise_models[p]
             toa_data_p = config.toa_data_list[p]
             fiducial_p = fiducial_pulsar_params[p]
-
-            Ndiag_p = noise_model_p.scaled_sigma(toa_data_p, fiducial_p) ** 2
-            trust_radii_p = jnp.asarray(
-                [
-                    _trust_radius_for_prior(priors[fqn], idx, J_full_p, Ndiag_p)
-                    for fqn, idx in zip(
-                        (f"{pulsar_names[p]}_{bare}" for bare in bare_names),
-                        bare_indices,
-                    )
-                ]
+            fqns = tuple(f"{pulsar_names[p]}_{bare}" for bare in bare_names)
+            Ndiag_p = config.noise_models[p].scaled_sigma(toa_data_p, fiducial_p) ** 2
+            trust_radii_p = _marg_trust_radii(
+                priors, fqns, bare_indices, J_full_p, Ndiag_p
             )
             flagged_p = _check_linearity(
                 config.timing_models[p],
                 toa_data_p,
                 fiducial_p,
                 over_indices=tuple(bare_indices),
-                over_names=tuple(f"{pulsar_names[p]}_{bare}" for bare in bare_names),
+                over_names=fqns,
                 trust_radii=trust_radii_p,
                 M_full_cols=M_p,
                 tol=laplace_error_tol,
             )
             flagged_all.extend(flagged_p)
 
-        if flagged_all:
-            if not allow_nonlinear:
-                msg = "\n".join(
-                    f"  - {name}: Laplace error ratio = {ratio:.2e} > tol = {laplace_error_tol:.2e}"
-                    for name, ratio in flagged_all
-                )
-                raise NotImplementedError(
-                    "marginalize: cannot analytically marginalize parameter(s) "
-                    "whose Laplace-approximation error exceeds the tolerance "
-                    "within the prior support (i.e., the residual's second-order "
-                    "Taylor term is not negligible compared to its linear term "
-                    "over one prior-σ step from fiducial):\n"
-                    f"{msg}\n\n"
-                    "Options:\n"
-                    "  - Remove these from `over` and sample them instead.\n"
-                    "  - Pass allow_nonlinear=True to accept the Laplace approximation\n"
-                    "    around the fiducial parameters (matches discovery's behavior).\n"
-                    "  - Raise laplace_error_tol if you've assessed the error and find it acceptable."
-                )
-            else:
-                msg = "; ".join(
-                    f"{name} (ratio={ratio:.2e})" for name, ratio in flagged_all
-                )
-                warnings.warn(
-                    f"marginalize: marginalizing nonlinear parameter(s) via "
-                    f"Laplace approximation around fiducial: {msg}. "
-                    "Marginalized likelihood is accurate to O((y - y_fid)^2). "
-                    "For exact treatment, sample these parameters instead.",
-                    stacklevel=2,
-                )
+        _raise_or_warn_nonlinear(
+            flagged_all, allow_nonlinear=allow_nonlinear, tol=laplace_error_tol
+        )
 
-    # --- 7. Build modified config with marg injector appended --------------
     marg_injector = _MarginalizationInjector(tuple(cached_blocks))
     # ``signal_injectors`` is a static-field tuple of ``SignalInjector``
     # instances.  ``eqx.tree_at`` interprets ``c.signal_injectors`` as a
@@ -854,18 +837,15 @@ def marginalize_pta(
         signal_injectors=config.signal_injectors + (marg_injector,),
     )
 
-    # --- 8. Reduced per-pulsar skeletons -----------------------------------
     reduced_pulsar_skeletons = tuple(
         fiducial_pulsar_params[p].with_marginalized(bare_names_per_pulsar[p])
         for p in range(n_psr)
     )
 
-    # --- 9. Sampled priors --------------------------------------------------
     sampled_priors: dict[str, Prior] = {
         n: pri for n, pri in priors.items() if n not in over_set
     }
 
-    # --- 10. Build the wrapper ---------------------------------------------
     def likelihood_marg_pta(
         global_params: GlobalParams,
         reduced_pulsar_params: tuple[ParameterVector, ...],
