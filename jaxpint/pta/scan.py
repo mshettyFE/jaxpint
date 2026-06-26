@@ -127,6 +127,19 @@ def _dep_axes_for_pulsar(p: int, axes: Sequence[ScanAxis]) -> tuple[int, ...]:
 
     Rule: ``PerPulsarScanAxis(pulsar_idx=q)`` affects only pulsar ``q``;
     ``GlobalScanAxis`` affects every pulsar.
+
+    Parameters
+    ----------
+    p
+        Pulsar index.
+    axes
+        The full scan-axis sequence.
+
+    Returns
+    -------
+    tuple of int
+        Indices into ``axes`` (in input order) of the axes pulsar ``p``
+        depends on; empty if ``p`` is constant across the whole scan.
     """
     out = []
     for i, ax in enumerate(axes):
@@ -152,6 +165,17 @@ def _injectors_contribute_covariance(
     Woodbury covariance (and thus invalidate a precomputed factor).
     Conservative: if even one injector overrides ``covariance``, treat
     every global axis as covariance-touching.
+
+    Parameters
+    ----------
+    injectors
+        The PTA's per-pulsar signal injectors (``config.signal_injectors``).
+
+    Returns
+    -------
+    bool
+        ``True`` if at least one injector overrides ``covariance`` (i.e. can
+        contribute a stochastic ``(U, Phi)`` block).
     """
     return any(
         type(inj).covariance is not SignalInjector.covariance for inj in injectors
@@ -179,6 +203,26 @@ def _axes_touch_covariance(
     (every injector inherits the default ``covariance`` returning
     ``None``). Mixed setups with stochastic injectors fall back to the
     full path.
+
+    Parameters
+    ----------
+    p
+        Pulsar index.
+    axes
+        The full scan-axis sequence.
+    dep_p
+        Indices (into ``axes``) of the axes that affect pulsar ``p``, as
+        returned by :func:`_dep_axes_for_pulsar`.
+    config
+        The PTA configuration (read for ``noise_models[p]`` and
+        ``signal_injectors``).
+
+    Returns
+    -------
+    bool
+        ``True`` if pulsar ``p``'s Woodbury factor may change along some axis
+        in ``dep_p`` (so it must be recomputed per cell); ``False`` if the
+        factor can be precomputed once and reused.
     """
     nm_p = config.noise_models[p]
     noise_params: set[str] = set()
@@ -227,19 +271,52 @@ def _build_per_pulsar_array(
     Caller is responsible for verifying the factor is valid — see
     :func:`_axes_touch_covariance`.
 
-    Implements step (3) of :func:`scan_logL`: build a closure ``f_p`` of
-    ``len(dep_p)`` scalar arguments, then nest :func:`jax.vmap` from the
-    last argument inward so the resulting array's leading axis
-    corresponds to ``dep_p[0]`` and trailing axis to ``dep_p[-1]``.
-    """
-    K = len(dep_p)
-    assert K > 0, "use the constant fast path when dep_p is empty"
+    Implements step (3) of :func:`scan_logL`: build the outer-product grid of
+    the dependency axes with :func:`jax.numpy.meshgrid` (in ``'ij'`` order),
+    flatten it to one row of ``K = len(dep_p)`` parameter values per cell,
+    evaluate the per-cell log-likelihood at every row, and reshape back to the
+    grid. The evaluation uses :func:`jax.vmap` (all cells at once) or
+    :func:`jax.lax.map` with ``batch_size=chunk_size`` to cap memory.
 
-    def _substitute(ax_values):
-        """Apply this cell's axis values onto pulsar ``p``'s base params."""
+    Parameters
+    ----------
+    p
+        Pulsar index.
+    base_global_params, base_pulsar_params_p
+        Reference parameters; axis values are substituted onto copies of
+        these per grid cell.
+    config
+        The PTA configuration.
+    axes
+        The full scan-axis sequence.
+    dep_p
+        Indices (into ``axes``) of the axes affecting pulsar ``p``; must be
+        non-empty (the caller handles the constant case separately).
+    use_factor
+        If ``True``, precompute the noise-side Woodbury factor once and reuse
+        it (valid only when :func:`_axes_touch_covariance` is ``False``).
+    chunk_size
+        If set, evaluate the flattened grid with :func:`jax.lax.map` in
+        batches of this many cells (a compiled scan over batches) to cap peak
+        memory; ``None`` vmaps all cells at once.
+
+    Returns
+    -------
+    array
+        ``len(dep_p)``-dimensional array of pulsar ``p``'s
+        :func:`single_pulsar_pta_logL` over the grid of its dependency axes,
+        in ``'ij'`` order (leading axis = ``dep_p[0]``).
+    """
+    assert dep_p, "use the constant fast path when dep_p is empty"
+
+    def _substitute(cell):
+        """Apply one grid cell onto pulsar ``p``'s base params.
+
+        ``cell`` holds one value per dependency axis, in ``dep_p`` order.
+        """
         gp = base_global_params
         pp_p = base_pulsar_params_p
-        for axis_idx, val in zip(dep_p, ax_values):
+        for axis_idx, val in zip(dep_p, cell):
             ax = axes[axis_idx]
             if isinstance(ax, PerPulsarScanAxis):
                 pp_p = pp_p.with_value(ax.param_name, val)
@@ -247,48 +324,36 @@ def _build_per_pulsar_array(
                 gp = gp.with_value(ax.param_name, val)
         return gp, pp_p
 
-    if use_factor:
-        factor = precompute_single_pulsar_pta_factor(
+    factor = (
+        precompute_single_pulsar_pta_factor(
             p, base_global_params, base_pulsar_params_p, config
         )
+        if use_factor
+        else None
+    )
 
-        def f_p(*ax_values):
-            gp, pp_p = _substitute(ax_values)
+    def f_cell(cell):
+        """Log-likelihood at one grid cell."""
+        gp, pp_p = _substitute(cell)
+        if use_factor:
             return single_pulsar_pta_logL_with_factor(p, gp, pp_p, factor, config)
-    else:
+        return single_pulsar_pta_logL(p, gp, pp_p, config)
 
-        def f_p(*ax_values):
-            gp, pp_p = _substitute(ax_values)
-            return single_pulsar_pta_logL(p, gp, pp_p, config)
-
-    # Nested vmap: innermost over the last argument (dep_p[-1]),
-    # outermost over the first (dep_p[0]). After nesting, the output's
-    # leading axis is dep_p[0] and trailing is dep_p[-1].
-    f_vmapped = f_p
-    for k in range(K - 1, -1, -1):
-        in_axes = tuple(0 if i == k else None for i in range(K))
-        f_vmapped = jax.vmap(f_vmapped, in_axes=in_axes)
-
+    # Enumerate every grid cell as a row of K = len(dep_p) parameter values, in
+    # 'ij' (outer-product) order; evaluate the log-likelihood at each, then
+    # reshape back to the grid. jax.vmap evaluates all cells at once;
+    # jax.lax.map with batch_size processes `chunk_size` cells per batch (a
+    # compiled scan over batches) to cap peak memory.
     ax_values = tuple(axes[i].values for i in dep_p)
+    grid_shape = tuple(v.shape[0] for v in ax_values)
+    mesh = jnp.meshgrid(*ax_values, indexing="ij")
+    cells = jnp.stack([m.ravel() for m in mesh], axis=-1)
 
-    n_outer = int(axes[dep_p[0]].values.shape[0])
-    if chunk_size is None or chunk_size >= n_outer:
-        return f_vmapped(*ax_values)
-
-    # Chunked path: split the outermost dependency axis into contiguous
-    # chunks of length `chunk_size` (final chunk may be shorter), vmap
-    # within each chunk, then concatenate. This caps the per-chunk
-    # working set to chunk_size × (per-cell intermediate size), at the
-    # cost of issuing ceil(n_outer / chunk_size) sequential dispatches.
-    outer_values = ax_values[0]
-    rest_values = ax_values[1:]
-    chunks = []
-    for start in range(0, n_outer, chunk_size):
-        stop = min(start + chunk_size, n_outer)
-        chunks.append(
-            f_vmapped(outer_values[start:stop], *rest_values),
-        )
-    return jnp.concatenate(chunks, axis=0)
+    if chunk_size is None or chunk_size >= cells.shape[0]:
+        flat = jax.vmap(f_cell)(cells)
+    else:
+        flat = jax.lax.map(f_cell, cells, batch_size=chunk_size)
+    return flat.reshape(grid_shape)
 
 
 def _inflate_to_full_ij_shape(
@@ -302,6 +367,22 @@ def _inflate_to_full_ij_shape(
     output has shape ``full_axis_sizes`` with size-1 dims at every
     position not in ``dep_p`` (so it broadcasts when summed with arrays
     that depend on different axis subsets).
+
+    Parameters
+    ----------
+    arr
+        Per-pulsar array from :func:`_build_per_pulsar_array`, with one dim
+        per entry of ``dep_p`` (in order).
+    dep_p
+        Indices (into the full axis list) of the axes ``arr`` varies over.
+    full_axis_sizes
+        Sizes of *all* scan axes, in input order.
+
+    Returns
+    -------
+    array
+        ``arr`` reshaped to ``len(full_axis_sizes)`` dims: its own sizes at
+        the ``dep_p`` positions and size 1 elsewhere (broadcast-ready).
     """
     n_axes = len(full_axis_sizes)
     if not dep_p:
@@ -361,20 +442,17 @@ def scan_logL(
     indexing
         ``"xy"`` (default) or ``"ij"``. See above.
     chunk_size
-        If set, the outermost dependency axis (``dep_p[0]``) of each
-        per-pulsar :func:`jax.vmap`'d body is split into contiguous
-        chunks of this many cells. Within each chunk, all axes are
-        :func:`jax.vmap`-ed; chunks are issued sequentially and
-        concatenated. Caps per-dispatch GPU memory roughly linearly in
-        ``chunk_size`` at the cost of ``ceil(n_outer / chunk_size)``
-        sequential dispatches.
+        If set, each per-pulsar dependency grid is flattened to one cell per
+        row and evaluated with :func:`jax.lax.map` in batches of this many
+        cells (a compiled scan over batches), rather than a single
+        :func:`jax.vmap` over the whole grid. Caps peak GPU memory roughly
+        linearly in ``chunk_size``.
 
-        Pick this when a single full-axis :func:`jax.vmap` OOMs on the
-        target device — typically because the timing-model phase
-        computation has many ``(n_toas,)`` intermediates and one of the
-        scanned pulsars has a long TOA list. Leave ``None`` for the
-        unchunked default; values larger than the outer axis are
-        ignored.
+        Pick this when a single full :func:`jax.vmap` OOMs on the target
+        device — typically because the timing-model phase computation has many
+        ``(n_toas,)`` intermediates and a scanned pulsar has a long TOA list.
+        Leave ``None`` for the unchunked default; values ``>=`` the total
+        number of grid cells are equivalent to ``None``.
 
     Returns
     -------
@@ -387,6 +465,39 @@ def scan_logL(
     ------
     ValueError
         If ``indexing`` is not ``"xy"`` or ``"ij"``.
+
+    Examples
+    --------
+    A 2-D distance scan varying two pulsars' parallaxes (``PX``)
+    independently — ``base_global_params``/``base_pulsar_params``/``config``
+    come from the bridge or loader layer::
+
+        from jaxpint.pta import PerPulsarScanAxis, scan_logL
+
+        px0 = jnp.linspace(0.5, 2.0, 200)   # pulsar 0 parallax grid (x)
+        px1 = jnp.linspace(0.3, 1.5, 200)   # pulsar 1 parallax grid (y)
+        grid = scan_logL(
+            base_global_params,
+            base_pulsar_params,
+            config,
+            axes=[
+                PerPulsarScanAxis(pulsar_idx=0, param_name="PX", values=px0),
+                PerPulsarScanAxis(pulsar_idx=1, param_name="PX", values=px1),
+            ],
+        )
+        # grid.shape == (200, 200)  (indexing="xy" → (n_y, n_x))
+
+    A global axis (affects every pulsar) mixed with a per-pulsar one::
+
+        from jaxpint.pta import GlobalScanAxis
+
+        grid = scan_logL(
+            base_global_params, base_pulsar_params, config,
+            axes=[
+                GlobalScanAxis(param_name="cw0_log10_h", values=h_grid),
+                PerPulsarScanAxis(pulsar_idx=1, param_name="PX", values=px_grid),
+            ],
+        )
     """
     if indexing not in ("xy", "ij"):
         raise ValueError(f"indexing must be 'xy' or 'ij', got {indexing!r}")
@@ -396,6 +507,36 @@ def scan_logL(
         return pta_logL(base_global_params, base_pulsar_params, config)
 
     n_pulsars = len(base_pulsar_params)
+
+    # Validate every axis up front: a typo'd param_name otherwise surfaces as a
+    # deep KeyError inside `with_value` during tracing, and an out-of-range
+    # pulsar_idx is silently dropped (the axis matches no pulsar and varies
+    # nothing). Fail here with a message that names the offending axis.
+    for i, ax in enumerate(axes):
+        if isinstance(ax, GlobalScanAxis):
+            if ax.param_name not in base_global_params:
+                raise ValueError(
+                    f"axes[{i}]: global param {ax.param_name!r} is not in "
+                    f"base_global_params (have {tuple(base_global_params.names)})."
+                )
+        elif isinstance(ax, PerPulsarScanAxis):
+            if not (0 <= ax.pulsar_idx < n_pulsars):
+                raise ValueError(
+                    f"axes[{i}]: pulsar_idx {ax.pulsar_idx} is out of range "
+                    f"[0, {n_pulsars})."
+                )
+            pp = base_pulsar_params[ax.pulsar_idx]
+            if ax.param_name not in pp:
+                raise ValueError(
+                    f"axes[{i}]: param {ax.param_name!r} is not in pulsar "
+                    f"{ax.pulsar_idx}'s ParameterVector (have {tuple(pp.names)})."
+                )
+        else:
+            raise TypeError(
+                f"axes[{i}] has unexpected type {type(ax).__name__}; "
+                f"expected PerPulsarScanAxis or GlobalScanAxis."
+            )
+
     full_axis_sizes = tuple(int(ax.values.shape[0]) for ax in axes)
 
     constants_total = jnp.float64(0.0)

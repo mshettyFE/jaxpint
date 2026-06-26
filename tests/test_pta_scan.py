@@ -443,6 +443,39 @@ class TestScanLogLValidation:
         with pytest.raises(ValueError, match="indexing must be"):
             scan_logL(gp, pp, config, axes=[], indexing="bogus")
 
+    def test_unknown_per_pulsar_param_raises(self):
+        """A typo'd PerPulsarScanAxis param fails early, not as a deep KeyError."""
+        toa, tm, nm, pp, gp = _make_setup(n_pulsars=3)
+        config = _build_config(toa, tm, nm)
+        grid = jnp.linspace(0.0, 1.0, 3)
+        with pytest.raises(ValueError, match="not in pulsar"):
+            scan_logL(
+                gp, pp, config,
+                axes=[PerPulsarScanAxis(pulsar_idx=1, param_name="NOPE", values=grid)],
+            )
+
+    def test_pulsar_idx_out_of_range_raises(self):
+        """An out-of-range pulsar_idx fails early instead of being silently dropped."""
+        toa, tm, nm, pp, gp = _make_setup(n_pulsars=3)
+        config = _build_config(toa, tm, nm)
+        grid = jnp.linspace(0.0, 1.0, 3)
+        with pytest.raises(ValueError, match="out of range"):
+            scan_logL(
+                gp, pp, config,
+                axes=[PerPulsarScanAxis(pulsar_idx=99, param_name="F0", values=grid)],
+            )
+
+    def test_unknown_global_param_raises(self):
+        """A GlobalScanAxis naming an absent global param fails early."""
+        toa, tm, nm, pp, gp = _make_setup(n_pulsars=2)  # gp == GlobalParams.empty()
+        config = _build_config(toa, tm, nm)
+        grid = jnp.linspace(0.0, 1.0, 3)
+        with pytest.raises(ValueError, match="base_global_params"):
+            scan_logL(
+                gp, pp, config,
+                axes=[GlobalScanAxis(param_name="nope", values=grid)],
+            )
+
 
 class TestScanLogLChunking:
     """Chunked outer-axis evaluation must match the unchunked result."""
