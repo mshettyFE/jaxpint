@@ -76,9 +76,7 @@ class PhaseJump(PhaseComponent):
         phase = jnp.zeros(toa_data.n_toas)
 
         for jump_name in self.jump_param_names:
-            mask = toa_data.flag_masks.get(
-                jump_name, jnp.zeros(toa_data.n_toas, dtype=jnp.bool_)
-            )
+            mask = toa_data.flag_mask(jump_name, default=False)
             jump_val = params.param_value(jump_name)
             phase = jnp.where(mask, phase + jump_val * f0, phase)
 

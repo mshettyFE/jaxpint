@@ -83,14 +83,14 @@ class ScaleToaError(NoiseComponent):
         sigma_sq = toa_data.error**2
 
         for equad_name in self.equad_names:
-            mask = toa_data.flag_masks[equad_name]
+            mask = toa_data.flag_mask(equad_name)
             equad_val = params.param_value(equad_name)
             sigma_sq = jnp.where(mask, sigma_sq + equad_val**2, sigma_sq)
 
         sigma = jnp.sqrt(sigma_sq)
 
         for efac_name in self.efac_names:
-            mask = toa_data.flag_masks[efac_name]
+            mask = toa_data.flag_mask(efac_name)
             efac_val = params.param_value(efac_name)
             sigma = jnp.where(mask, sigma * efac_val, sigma)
 

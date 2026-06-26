@@ -496,9 +496,7 @@ def cw_delay_from_array(
 
     fp, fc = _fplus_fcross_costheta(pos, cos_theta, sin_theta, gwphi)
 
-    toas_s = (
-        toa_data.tdb_int.astype(jnp.float64) * 86400.0 + toa_data.tdb_frac * 86400.0
-    )
+    toas_s = toa_data.tdb_seconds
 
     # Main contribution of pulsar distance is the phase as measured at earth and pulsar
     phase_earth = phase0 + 2.0 * jnp.pi * f0 * (toas_s - _TREF)

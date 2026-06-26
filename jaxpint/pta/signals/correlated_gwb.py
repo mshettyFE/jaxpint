@@ -95,9 +95,7 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
         self,
         toa_data: TOAData,
     ) -> Float[Array, "n_toas n_basis"]:
-        toas_seconds = (
-            toa_data.tdb_int.astype(jnp.float64) * 86400.0 + toa_data.tdb_frac * 86400.0
-        )
+        toas_seconds = toa_data.tdb_seconds
         F, _ = fourier_basis(toas_seconds, self.n_components, self.T_span)
         return F
 
