@@ -1,14 +1,11 @@
 """Spindown phase component: polynomial spin model.
 
-Ports PINT's ``Spindown`` class as a pure Equinox module.  The pulse phase
-is modelled as a Taylor expansion of frequency derivatives about PEPOCH:
+The pulse phase is modelled as a Taylor expansion of frequency derivatives about PEPOCH:
 
     phase(t) = F0*dt + F1*dt^2/2! + F2*dt^3/3! + ...
 
 where dt = (t_TDB - PEPOCH) in seconds, minus accumulated delay.
 
-All hand-coded derivatives are omitted; ``jax.jacobian`` through
-``__call__`` replaces PINT's ``d_phase_d_F`` and ``d_spindown_phase_d_delay``.
 """
 
 from __future__ import annotations

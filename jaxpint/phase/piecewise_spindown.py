@@ -1,12 +1,10 @@
 """Piecewise spindown phase component.
 
-Ports PINT's ``PiecewiseSpindown`` class as a pure Equinox module.  The
-phase is modelled as a Taylor expansion within user-defined time bins:
+The phase is modelled as a Taylor expansion within user-defined time bins:
 
     phase(t) = Σ_n [ PWPH_n + PWF0_n*dt + PWF1_n*dt^2/2! + PWF2_n*dt^3/3! ]
                for t in [PWSTART_n, PWSTOP_n)  where dt = t - PWEP_n
 
-All derivatives are handled by ``jax.jacobian`` through ``__call__``.
 """
 
 from __future__ import annotations

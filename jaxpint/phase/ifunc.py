@@ -1,7 +1,6 @@
 """Interpolation function phase component (IFunc).
 
-Ports PINT's ``IFunc`` class as a pure Equinox module.  The phase is
-modelled by interpolating tabulated (MJD, delay) pairs and converting
+The phase is modelled by interpolating tabulated (MJD, delay) pairs and converting
 to phase via F0:
 
     phase(t) = interp(t) * F0
@@ -11,7 +10,6 @@ Supports piecewise-constant (SIFUNC=0) and linear (SIFUNC=2) interpolation.
 The control points are pre-extracted at bridge time and stored as fixed
 arrays (not fittable parameters).
 
-All derivatives w.r.t. F0 are handled by ``jax.jacobian`` through ``__call__``.
 """
 
 from __future__ import annotations

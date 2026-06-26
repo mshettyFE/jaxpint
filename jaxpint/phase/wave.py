@@ -1,7 +1,6 @@
 """Legacy WAVE timing noise phase component.
 
-Ports PINT's ``Wave`` class as a pure Equinox module.  The phase is
-modelled as a sum of harmonics of a base angular frequency:
+The phase is modelled as a sum of harmonics of a base angular frequency:
 
     phase(t) = F0 * Σ_n (a_n * sin((n+1)*ω*(t - WAVEEPOCH - delay))
                         + b_n * cos((n+1)*ω*(t - WAVEEPOCH - delay)))
@@ -11,7 +10,6 @@ and F0 is the spin frequency.
 
 Note: this is superseded by WaveX but retained for backward compatibility.
 
-All derivatives are handled by ``jax.jacobian`` through ``__call__``.
 """
 
 from __future__ import annotations
