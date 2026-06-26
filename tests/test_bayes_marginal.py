@@ -507,6 +507,25 @@ class TestLinearityCheck:
         )
 
 
+class TestSinglePulsarValidation:
+    def test_unknown_name_in_over_raises_value_error(self, synth_objects):
+        """A name in `over` absent from fiducial_params raises ValueError."""
+        jax_model, noise_model, toa_data, params = synth_objects
+        # Present in `priors` (so the completeness check passes) but not a
+        # real parameter, so the name-validation branch is what fires.
+        priors = {"NOT_A_PARAM": ImproperPrior()}
+        with pytest.raises(ValueError, match="not present in the fiducial"):
+            marginalize_single_pulsar(
+                over={"NOT_A_PARAM"},
+                priors=priors,
+                toa_data=toa_data,
+                timing_model=jax_model,
+                noise_model=noise_model,
+                fiducial_params=params,
+                validate_linearity=False,
+            )
+
+
 # ---------------------------------------------------------------------------
 # PTA marginalization
 # ---------------------------------------------------------------------------
