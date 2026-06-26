@@ -23,7 +23,7 @@ from ..clock.observatory import resolve_observatory
 from ..clock.posvels import compute_posvels
 from ..clock.timescale import to_tdb
 from ..constants import PLANETS
-from ..delay._barycentric import barycentric_radio_freq
+from ..utils import barycentric_radio_freq
 from ..par.components import Component
 from ..par.result import ParResult
 from ..tim import RawTOA, read_tim, select_toa_mask
@@ -205,20 +205,7 @@ def native_toas_to_jax(
         toa_data_topo = _assemble(
             core, freq, to_jnp, planet_positions=core.planet_positions
         )
-        ecl = Component.ASTROMETRY_ECLIPTIC in par_result.component_set
-        freq = np.asarray(
-            barycentric_radio_freq(
-                toa_data_topo,
-                par_result.params,
-                ecliptic=ecl,
-                pmra_name=_opt(par_result, "PMRA"),
-                pmdec_name=_opt(par_result, "PMDEC"),
-                pmelong_name=_opt(par_result, "PMELONG"),
-                pmelat_name=_opt(par_result, "PMELAT"),
-                posepoch_name=_posepoch(par_result),
-                obliquity_arcsec=_obliquity(par_result),
-            )
-        )
+        freq = np.asarray(_barycentric_freq(toa_data_topo, par_result))
 
     flag_masks = _build_flag_masks(core, par_result)
     tzr = (
@@ -440,22 +427,7 @@ def _extract_tzr_fields(
             obs_names=("",),
             obs_indices=jnp.zeros(1, dtype=jnp.int32),
         )
-        ecl = Component.ASTROMETRY_ECLIPTIC in par_result.component_set
-        tzr_freq = float(
-            np.asarray(
-                barycentric_radio_freq(
-                    tzr_topo,
-                    par_result.params,
-                    ecliptic=ecl,
-                    pmra_name=_opt(par_result, "PMRA"),
-                    pmdec_name=_opt(par_result, "PMDEC"),
-                    pmelong_name=_opt(par_result, "PMELONG"),
-                    pmelat_name=_opt(par_result, "PMELAT"),
-                    posepoch_name=_posepoch(par_result),
-                    obliquity_arcsec=_obliquity(par_result),
-                )
-            )[0]
-        )
+        tzr_freq = float(np.asarray(_barycentric_freq(tzr_topo, par_result))[0])
 
     return {
         "tzr_tdb_int": float(tdb_int),
@@ -562,3 +534,23 @@ def _obliquity(par: ParResult) -> float:
 
     ecl = par.metadata.get("ECL", "IERS2010")
     return float(OBLIQUITY_ARCSEC.get(ecl, OBLIQUITY_ARCSEC["IERS2010"]))
+
+
+def _barycentric_freq(toa_data: TOAData, par: ParResult):
+    """Doppler-corrected barycentric radio frequency from the .par astrometry.
+
+    Resolves the astrometry parameter names (equatorial vs ecliptic, proper
+    motion, POSEPOCH, obliquity) from *par* and applies the Doppler factor to
+    the topocentric ``toa_data.freq`` -- the one place the loader needs them.
+    """
+    return barycentric_radio_freq(
+        toa_data,
+        par.params,
+        ecliptic=Component.ASTROMETRY_ECLIPTIC in par.component_set,
+        pmra_name=_opt(par, "PMRA"),
+        pmdec_name=_opt(par, "PMDEC"),
+        pmelong_name=_opt(par, "PMELONG"),
+        pmelat_name=_opt(par, "PMELAT"),
+        posepoch_name=_posepoch(par),
+        obliquity_arcsec=_obliquity(par),
+    )
