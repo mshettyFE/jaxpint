@@ -57,7 +57,7 @@ from jaxpint.pta.likelihood import (
     single_pulsar_pta_logL,
     single_pulsar_pta_logL_with_factor,
 )
-from jaxpint.pta.params import GlobalParams
+from jaxpint.types import GlobalParams
 from jaxpint.types import ParameterVector
 
 

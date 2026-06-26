@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     # to avoid pulling in the full ``jaxpint.types`` / ``jaxpint.pta``
     # modules at import time and to keep ``jaxpint.bayes`` cleanly
     # decoupled from the rest of the package's import graph.
-    from jaxpint.pta.params import GlobalParams
+    from jaxpint.types import GlobalParams
     from jaxpint.types import ParameterVector
 
 
@@ -117,7 +117,7 @@ def collect_param_names(
         Per-pulsar :class:`~jaxpint.types.ParameterVector` objects.  Each
         contributes ``f"{psr}_{name}"`` for every name in ``pp.names``.
     global_params
-        Optional :class:`~jaxpint.pta.params.GlobalParams`.  Each name in
+        Optional :class:`~jaxpint.types.GlobalParams`.  Each name in
         ``global_params.names`` is added verbatim (these names already
         carry their own prefixes, e.g. ``cw_log10_h0``).
 
@@ -421,7 +421,7 @@ def cw_priors(prefix: str = "cw_") -> dict[str, Prior]:
     ----------
     prefix
         Name prefix used by the CW injector when registering its
-        parameters into :class:`~jaxpint.pta.params.GlobalParams`.
+        parameters into :class:`~jaxpint.types.GlobalParams`.
         Defaults to ``"cw_"``, matching :class:`~jaxpint.pta.CWInjector`'s default.
 
     Returns

@@ -39,7 +39,7 @@ from jaxpint.likelihood import single_pulsar_logL
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.pta.likelihood import PTAConfig, SignalInjector, pta_logL
-from jaxpint.pta.params import GlobalParams
+from jaxpint.types import GlobalParams
 from jaxpint.types import ParameterVector, TOAData
 from jaxpint.utils import concat_woodbury_blocks
 

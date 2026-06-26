@@ -68,7 +68,7 @@ def validate_priors(
     --------
     jaxpint.bayes.collect_param_names :
         Build the ``expected_params`` list from a pulsar collection plus
-        an optional :class:`~jaxpint.pta.params.GlobalParams`.
+        an optional :class:`~jaxpint.types.GlobalParams`.
     """
     expected = list(expected_params)
 

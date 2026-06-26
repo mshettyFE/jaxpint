@@ -70,7 +70,7 @@ def single_pulsar_logL(
     use_qr : bool
         If True, evaluate the Woodbury quadratic form / log-determinant with
         :func:`~jaxpint.utils.woodbury_dot_qr` (square-root form) instead of
-        :func:`~jaxpint.utils.woodbury_dot` (Cholesky of the Gram). 
+        :func:`~jaxpint.utils.woodbury_dot` (Cholesky of the Gram).
         Use if covariance is genuinely collinear
         for multi-parameter MSPs, which cuases the Gram form loses several digits).
 

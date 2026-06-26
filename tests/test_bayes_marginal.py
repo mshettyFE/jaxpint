@@ -30,7 +30,7 @@ from jaxpint.bridge import build_timing_model, pint_model_to_params, pint_toas_t
 from jaxpint.fitters import compute_time_residuals
 from jaxpint.likelihood import single_pulsar_logL
 from jaxpint.pta.likelihood import PTAConfig, pta_logL
-from jaxpint.pta.params import GlobalParams
+from jaxpint.types import GlobalParams
 from jaxpint.pta.signals.correlated_gwb import HDCorrelatedGWBInjector
 
 from tests.helpers import make_simple_pulsar

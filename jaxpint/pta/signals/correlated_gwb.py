@@ -17,7 +17,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.types import TOAData
-from jaxpint.pta.params import GlobalParams
+from jaxpint.types import GlobalParams
 from jaxpint.pta.likelihood import CorrelatedSignalInjector
 from jaxpint.pta.signals.gwb import (
     CURN_PARAM_DEFAULTS,

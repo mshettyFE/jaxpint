@@ -55,6 +55,7 @@ def apply_delay_to_toas(
         (new_mjd.int, new_mjd.frac, new_tdb.int, new_tdb.frac),
     )
 
+
 def zero_residuals(
     model: TimingModel,
     toa_data: TOAData,
