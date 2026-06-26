@@ -123,11 +123,6 @@ class GlobalScanAxis:
 ScanAxis = Union[PerPulsarScanAxis, GlobalScanAxis]
 
 
-# ---------------------------------------------------------------------------
-# Internal: dependency analysis + per-pulsar vmap construction
-# ---------------------------------------------------------------------------
-
-
 def _dep_axes_for_pulsar(p: int, axes: Sequence[ScanAxis]) -> tuple[int, ...]:
     """Return the indices (into ``axes``) of axes that affect pulsar ``p``.
 

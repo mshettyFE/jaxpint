@@ -124,6 +124,43 @@ class PTAConfig(eqx.Module):
 # ---------------------------------------------------------------------------
 
 
+def _collect_injector_ext_delay(
+    p: int,
+    toa_data_p: TOAData,
+    pulsar_params_p: ParameterVector,
+    global_params: GlobalParams,
+    signal_injectors,
+) -> Optional[Float[Array, " n_toas"]]:
+    """Sum per-pulsar deterministic-delay contributions from injectors.
+
+    Returns the summed delay or ``None`` (if no injector contributes).
+    """
+    delays = [
+        inj.delay(p, toa_data_p, pulsar_params_p, global_params)
+        for inj in signal_injectors
+    ]
+    delays = [d for d in delays if d is not None]
+    return cast(Float[Array, " n_toas"], sum(delays)) if delays else None
+
+
+def _collect_injector_ext_cov(
+    p: int,
+    toa_data_p: TOAData,
+    pulsar_params_p: ParameterVector,
+    global_params: GlobalParams,
+    signal_injectors,
+):
+    """Concatenate per-pulsar covariance contributions from injectors.
+
+    Returns ``(U_ext, Phi_ext)`` or ``None`` (if no injector contributes).
+    """
+    covs = [
+        inj.covariance(p, toa_data_p, pulsar_params_p, global_params)
+        for inj in signal_injectors
+    ]
+    return concat_woodbury_blocks(*covs)
+
+
 def _collect_per_pulsar_external_inputs(
     p: int,
     toa_data: TOAData,
@@ -135,6 +172,10 @@ def _collect_per_pulsar_external_inputs(
     Optional[tuple[Float[Array, "n_toas k"], Float[Array, " k"]]],
 ]:
     """Aggregate per-pulsar ``(ext_delay, ext_cov)`` from all signal injectors.
+
+    The combined form used by :func:`pta_logL`; a thin composition of
+    :func:`_collect_injector_ext_delay` and :func:`_collect_injector_ext_cov`,
+    which are also callable individually by paths that need only one.
     """
     return (
         _collect_injector_ext_delay(
@@ -482,42 +523,6 @@ def single_pulsar_pta_logL(
     )
 
 
-def _collect_injector_ext_cov(
-    p: int,
-    toa_data_p: TOAData,
-    pulsar_params_p: ParameterVector,
-    global_params: GlobalParams,
-    signal_injectors,
-):
-    """Concatenate per-pulsar covariance contributions from injectors.
-
-    Returns ``(U_ext, Phi_ext)`` or ``None`` (if no injector contributes).
-    """
-    covs = [
-        inj.covariance(p, toa_data_p, pulsar_params_p, global_params)
-        for inj in signal_injectors
-    ]
-    return concat_woodbury_blocks(*covs)
-
-def _collect_injector_ext_delay(
-    p: int,
-    toa_data_p: TOAData,
-    pulsar_params_p: ParameterVector,
-    global_params: GlobalParams,
-    signal_injectors,
-) -> Optional[Float[Array, " n_toas"]]:
-    """Sum per-pulsar deterministic-delay contributions from injectors.
-
-    Returns the summed delay or ``None`` (if no injector contributes).
-    """
-    delays = [
-        inj.delay(p, toa_data_p, pulsar_params_p, global_params)
-        for inj in signal_injectors
-    ]
-    delays = [d for d in delays if d is not None]
-    return cast(Float[Array, " n_toas"], sum(delays)) if delays else None
-
-
 def precompute_single_pulsar_pta_factor(
     p: int,
     global_params: GlobalParams,
@@ -645,7 +650,20 @@ def pta_logL(
     """
     n_psr = config.n_pulsars
 
-    # ---- Shared: per-pulsar SignalInjector contributions ----
+    # ---- Fast path: no correlated injectors → sum of independent per-pulsar logL.
+    #      Same per-pulsar primitive that scan.scan_logL sums, so the two entry
+    #      points stay in lockstep. ----
+    if config.correlated_injectors == ():
+        total = jnp.float64(0.0)
+        for p in range(n_psr):
+            total = total + single_pulsar_pta_logL(
+                p, global_params, pulsar_params[p], config
+            )
+        return total
+
+    # ---- Correlated path: collect each pulsar's SignalInjector contributions
+    #      once (shared across the inner-tier solves below), then ONE joint
+    #      outer-tier solve over all correlated injectors. ----
     per_pulsar_delays: list[Optional[Float[Array, " n_toas"]]] = []
     per_pulsar_covs: list[
         Optional[tuple[Float[Array, "n_toas n_ext"], Float[Array, " n_ext"]]]
@@ -661,21 +679,6 @@ def pta_logL(
         per_pulsar_delays.append(ext_delay)
         per_pulsar_covs.append(ext_cov)
 
-    # ---- Fast path: no correlated injectors → sum of independent per-pulsar logL ----
-    if config.correlated_injectors == ():
-        total = jnp.float64(0.0)
-        for p in range(n_psr):
-            total += single_pulsar_logL(
-                config.toa_data_list[p],
-                config.timing_models[p],
-                config.noise_models[p],
-                pulsar_params[p],
-                external_delay=per_pulsar_delays[p],
-                external_cov=per_pulsar_covs[p],
-            )
-        return total
-
-    # ---- Correlated path: ONE joint outer-tier solve over all correlated injectors ----
     n_basis_per_k = _n_basis_per_injector(
         config.correlated_injectors, config.toa_data_list[0]
     )
