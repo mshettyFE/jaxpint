@@ -11,9 +11,12 @@ from jaxpint.types.dual_float import DualFloat
 from jaxpint.phase.spin import Spindown
 from jaxpint.delay.dispersion_dm import DispersionDM
 from jaxpint.model import TimingModel, _reconstruct_tzr_toa
-from jaxpint.model_builder import _validate_referenced_params
+from jaxpint.model_builder import _validate_referenced_params, _validate_flag_masks
+from jaxpint.par.result import ParResult, MaskInfo
 from jaxpint.noise import NoiseModel
-from tests.helpers import make_gbt_toa_data, make_spindown_params, make_params
+from tests.helpers import (
+    make_gbt_toa_data, make_spindown_params, make_params, make_toa_data,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -627,3 +630,35 @@ class TestValidateReferencedParams:
         params = _make_full_params()  # has F0/PEPOCH/DM/DMEPOCH but not PHOFF
         with pytest.raises(ValueError, match="PHOFF"):
             _validate_referenced_params(model, self._empty_noise(), params)
+
+
+class TestValidateFlagMasks:
+    """build_model's build-time check that the TOAData carries a flag mask for
+    every masked parameter declared in the par."""
+
+    @staticmethod
+    def _par(mask_names):
+        names = list(mask_names) or ["F0"]
+        return ParResult(
+            params=make_params(names, [1.0] * len(names), units=("",) * len(names)),
+            mask_info={
+                n: MaskInfo(name=n, key="-fe", key_value="430") for n in mask_names
+            },
+        )
+
+    def test_missing_mask_raises(self):
+        # par declares EFAC1 as a mask param, but the TOAData carries no mask for it.
+        par = self._par(["EFAC1"])
+        toa = make_toa_data(n_toas=4, flag_masks={})
+        with pytest.raises(ValueError, match="EFAC1"):
+            _validate_flag_masks(par, toa)
+
+    def test_present_mask_ok(self):
+        par = self._par(["EFAC1"])
+        toa = make_toa_data(n_toas=4, flag_masks={"EFAC1": jnp.ones(4, dtype=bool)})
+        _validate_flag_masks(par, toa)  # no raise
+
+    def test_no_masks_ok(self):
+        par = self._par([])
+        toa = make_toa_data(n_toas=4, flag_masks={})
+        _validate_flag_masks(par, toa)  # no raise
