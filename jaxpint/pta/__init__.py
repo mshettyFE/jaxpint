@@ -8,10 +8,9 @@ same :func:`pta_logL` entry point via the
 """
 
 from jaxpint.types import GlobalParams
+from jaxpint.pta.injectors import CorrelatedSignalInjector, SignalInjector
 from jaxpint.pta.likelihood import (
-    CorrelatedSignalInjector,
     PTAConfig,
-    SignalInjector,
     precompute_single_pulsar_pta_factor,
     pta_logL,
 )
