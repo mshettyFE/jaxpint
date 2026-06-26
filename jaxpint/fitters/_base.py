@@ -468,7 +468,7 @@ def lstsq_step_fullcov(
     U : jax.Array, shape (n_toas, n_epochs)
         Basis matrix for correlated noise components.
     Phidiag : jax.Array, shape (n_epochs,)
-        Diagonal prior covariance of the correlated noise amplitudes.
+        Diagonal covariance of the correlated-noise random effects.
     M : jax.Array, shape (n_toas, n_free)
         Design matrix (free-parameter columns only).
     threshold : float
@@ -507,10 +507,18 @@ def lstsq_step_augmented(
     Float[Array, " n_aug"],
     Float[Array, " n_epochs"],
 ]:
-    """One GLS solve via the augmented design-matrix approach.
+    """One GLS solve via the augmented (mixed-model) normal equations.
 
-    Augments the design matrix as ``M_aug = [M | U]`` and solves with
-    diagonal weighting ``N^{-1}`` plus a prior on noise amplitudes.
+    The timing parameters are **fixed effects** (estimated by least squares) and the
+    correlated-noise amplitudes are **random effects** with covariance ``Phi``.
+    Stacking ``M_aug = [M | U]`` and solving
+
+        (M_augᵀ N⁻¹ M_aug + diag(precision)) x = M_augᵀ N⁻¹ r
+
+    yields the timing-parameter estimates and the random-effect predictions in
+    one shot. It is algebraically equivalent to :func:`lstsq_step_fullcov`,
+    which instead folds ``Phi`` into the noise covariance ``C = N + U Phi Uᵀ``
+    and does plain GLS ; the two give identical ``dpars``.
 
     Parameters
     ----------
@@ -519,9 +527,10 @@ def lstsq_step_augmented(
     Ndiag : jax.Array, shape (n_toas,)
         Diagonal of the white-noise covariance matrix (variances).
     U : jax.Array, shape (n_toas, n_epochs)
-        Basis matrix for correlated noise components.
+        Basis matrix for the correlated-noise random effects.
     Phidiag : jax.Array, shape (n_epochs,)
-        Diagonal prior covariance of the correlated noise amplitudes.
+        Diagonal covariance of the correlated-noise random effects (the
+        noise-process variance per basis column).
     M : jax.Array, shape (n_toas, n_free)
         Design matrix (free-parameter columns only).
     threshold : float
@@ -530,13 +539,13 @@ def lstsq_step_augmented(
     Returns
     -------
     dpars : jax.Array, shape (n_free,)
-        Timing parameter updates.
+        Timing parameter updates (fixed-effect estimates).
     covariance : jax.Array, shape (n_free, n_free)
         Timing parameter covariance.
     norms : jax.Array, shape (n_free + n_epochs,)
         Column norms of the augmented system (diagnostic).
     noise_realizations : jax.Array, shape (n_epochs,)
-        MAP noise amplitude estimates.
+        BLUP (best linear unbiased predictor) of the random-effect amplitudes.
     """
     n_free = M.shape[1]
 
@@ -552,18 +561,22 @@ def lstsq_step_augmented(
     mtcm = M_aug.T @ M_w  # (n_aug, n_aug)
     mtcy = M_aug.T @ r_w  # (n_aug,)
 
-    # Add prior: uninformative (1e-40) on timing cols, 1/Phi on noise cols
-    prior_inv = jnp.concatenate(
+    # Mixed-model regularization: add each column's inverse variance to the
+    # normal matrix (the G⁻¹ block of Henderson's equations). Random-effect
+    # (noise) columns get 1/Phi; fixed-effect (timing) columns get ~0 -- a tiny
+    # 1e-40 floor only to keep the matrix positive-definite -- so the timing fit
+    # is unregularized GLS.
+    precision_diag = jnp.concatenate(
         [
             jnp.full(n_free, 1e-40),
             1.0 / Phidiag,
         ]
     )
-    mtcm = mtcm + jnp.diag(prior_inv)
+    mtcm = mtcm + jnp.diag(precision_diag)
 
     xhat, xvar, norms = _normalized_svd_solve(mtcm, mtcy, threshold)
 
-    # Extract timing parameters and noise realizations
+    # Split into fixed-effect (timing) estimates and random-effect predictions.
     dpars = xhat[:n_free]
     noise_realizations = xhat[n_free:]
     covariance = xvar[:n_free, :n_free]
@@ -591,7 +604,7 @@ def compute_chi2_cov(
     U : jax.Array, shape (n_toas, n_epochs)
         Basis matrix for correlated noise components.
     Phidiag : jax.Array, shape (n_epochs,)
-        Diagonal prior covariance of the correlated noise amplitudes.
+        Diagonal covariance of the correlated-noise random effects.
 
     Returns
     -------
