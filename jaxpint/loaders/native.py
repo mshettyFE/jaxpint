@@ -177,7 +177,7 @@ def native_toas_to_jax(
     limits: str = "warn",
 ) -> TOAData:
     """Build a :class:`TOAData` natively from a ``.tim`` (+ optional ``.par``)."""
-    # Config: explicit args win, else from .par, else PINT-like defaults.
+    # Config: explicit args first, else from .par, else PINT-like defaults.
     md = par_result.metadata if par_result else {}
     bp = par_result.bool_params if par_result else {}
     if ephem is None:
@@ -403,29 +403,13 @@ def _extract_tzr_fields(
     # --- barycentric TZR frequency (Doppler applied once, at build) ---------
     tzr_freq = tzr_frq
     if _has_astrometry(par_result) and np.isfinite(tzr_frq):
-        to_jnp = lambda a: jnp.asarray(np.asarray(a), dtype=jnp.float64)  # noqa: E731
-        tzr_topo = TOAData(
-            mjd_int=to_jnp([tdb_int]),
-            mjd_frac=to_jnp([tdb_frac]),
-            tdb_int=to_jnp([tdb_int]),
-            tdb_frac=to_jnp([tdb_frac]),
-            error=to_jnp([1.0]),
-            freq=to_jnp([tzr_frq]),
-            delta_pulse_number=to_jnp([0.0]),
-            flag_masks={},
-            ssb_obs_pos=to_jnp(ssb_obs_pos[None, :]),
-            ssb_obs_vel=to_jnp(ssb_obs_vel[None, :]),
-            obs_sun_pos=to_jnp(obs_sun_pos[None, :]),
-            planet_positions=None,
-            dm_values=None,
-            dm_errors=None,
-            tropo_alt=None,
-            tropo_alt_valid=None,
-            obs_geodetic_lat=None,
-            obs_height_km=None,
-            n_toas=1,
-            obs_names=("",),
-            obs_indices=jnp.zeros(1, dtype=jnp.int32),
+        tzr_topo = TOAData.single(
+            tdb_int=tdb_int,
+            tdb_frac=tdb_frac,
+            freq=tzr_frq,
+            ssb_obs_pos=ssb_obs_pos,
+            ssb_obs_vel=ssb_obs_vel,
+            obs_sun_pos=obs_sun_pos,
         )
         tzr_freq = float(np.asarray(_barycentric_freq(tzr_topo, par_result))[0])
 

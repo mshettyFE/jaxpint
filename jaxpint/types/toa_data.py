@@ -134,3 +134,65 @@ class TOAData(eqx.Module):
         if default is None:
             raise KeyError(name)
         return jnp.full(self.n_toas, default, dtype=jnp.bool_)
+
+    # -- Single-TOA factory --
+
+    @classmethod
+    def single(
+        cls,
+        *,
+        tdb_int,
+        tdb_frac,
+        freq,
+        ssb_obs_pos,
+        obs_sun_pos,
+        ssb_obs_vel=None,
+        planet_positions=None,
+        obs_name: str = "",
+    ) -> "TOAData":
+        """Build a one-TOA TOAData from scalar values (e.g. a TZR reference TOA).
+
+        Only the physically-meaningful fields are supplied; per-TOA scalars take
+        neutral defaults (``error=1``, ``delta_pulse_number=0``), masks /
+        wideband DM / troposphere are empty, the ``tzr_*`` back-reference fields
+        are cleared, and ``mjd`` mirrors ``tdb`` (a TZR carries only TDB).
+        ``ssb_obs_vel`` defaults to zero (irrelevant when ``freq`` is already
+        barycentric). Inputs may be NumPy or JAX arrays / Python scalars; vector
+        inputs are ``(3,)`` and are broadcast to ``(1, 3)``.
+        """
+        sca = lambda x: jnp.reshape(jnp.asarray(x, dtype=jnp.float64), (1,))  # noqa: E731
+        vec = lambda v: jnp.reshape(jnp.asarray(v, dtype=jnp.float64), (1, 3))  # noqa: E731
+        tdb_i, tdb_f = sca(tdb_int), sca(tdb_frac)
+        return cls(
+            mjd_int=tdb_i,
+            mjd_frac=tdb_f,
+            tdb_int=tdb_i,
+            tdb_frac=tdb_f,
+            error=jnp.ones(1),
+            freq=sca(freq),
+            delta_pulse_number=jnp.zeros(1),
+            ssb_obs_pos=vec(ssb_obs_pos),
+            ssb_obs_vel=jnp.zeros((1, 3)) if ssb_obs_vel is None else vec(ssb_obs_vel),
+            obs_sun_pos=vec(obs_sun_pos),
+            obs_indices=jnp.zeros(1, dtype=jnp.int32),
+            flag_masks={},
+            planet_positions=(
+                None
+                if planet_positions is None
+                else {k: vec(v) for k, v in planet_positions.items()}
+            ),
+            dm_values=None,
+            dm_errors=None,
+            tropo_alt=None,
+            tropo_alt_valid=None,
+            obs_geodetic_lat=None,
+            obs_height_km=None,
+            n_toas=1,
+            obs_names=(obs_name,),
+            tzr_tdb_int=None,
+            tzr_tdb_frac=None,
+            tzr_freq=None,
+            tzr_ssb_obs_pos=None,
+            tzr_obs_sun_pos=None,
+            tzr_planet_positions=None,
+        )
