@@ -3,11 +3,6 @@
     read_tim  ->  clock.correct  ->  clock.timescale.to_tdb
               ->  clock.posvels.compute_posvels  ->  TOAData
 
-The result reproduces what ``bridge.pint_toas_to_jax(get_TOAs(...))`` produces,
-without PINT, including ``flag_masks`` (per masked-parameter TOA selection), the
-TZR absolute-phase anchor, and troposphere geometry when a ``.par`` is supplied;
-wideband DM is read straight from the ``.tim`` flags.
-
 A parsed ``.par`` (:class:`~jaxpint.par.result.ParResult`) is optional: it
 supplies the barycentric-frequency astrometry direction and can override the run
 config (ephemeris / BIPM / planets).  With no ``.par`` the frequency stays

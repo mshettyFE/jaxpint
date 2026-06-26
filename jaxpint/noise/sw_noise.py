@@ -8,13 +8,13 @@ The noise covariance is decomposed as::
 
     C_sw = F_sw · diag(w) · F_swᵀ
 
-where *F_sw* is the Fourier design matrix scaled at runtime by the
-solar wind geometry factor and ``DMCONST / f_obs²``, and *w* are
-the power-law PSD weights.
-
-The geometry factor depends on the pulsar direction and observer-Sun
-position, so it must be computed at runtime.  This component reuses
-the geometry functions from :mod:`jaxpint.delay.solar_wind`.
+where *F_sw* is the Fourier design matrix scaled at runtime by the solar wind
+geometry factor and ``DMCONST / f_obs²``, and *w* are the power-law PSD weights.
+The geometry factor depends on the pulsar direction and observer-Sun position
+(and fitted astrometry), so the basis is computed at runtime (dynamic-basis
+component) reusing the geometry functions from :mod:`jaxpint.delay.solar_wind`.
+Shared machinery lives in
+:class:`~jaxpint.noise._power_law._PowerLawFourierNoise`.
 
 References
 ----------
@@ -27,27 +27,26 @@ from __future__ import annotations
 from typing import Optional
 
 import equinox as eqx
-import jax
-import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import NoiseComponent, ParamDecl
-from jaxpint.constants import DMCONST, FYR
+from jaxpint.components import ParamDecl
+from jaxpint.constants import DMCONST
 from jaxpint.delay.solar_wind import (
     _solar_wind_geometry_swm0,
     _solar_wind_geometry_swm1,
     _sun_angle_and_distance,
 )
+from jaxpint.noise._power_law import _PowerLawFourierNoise
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
 
 
-class PLSWNoise(NoiseComponent):
+class PLSWNoise(_PowerLawFourierNoise):
     """Power-law solar wind DM noise.
 
-    The raw Fourier design matrix is stored unscaled.  At each call the
-    basis is multiplied by ``geometry_pc · DMCONST / f_obs²`` where the
-    geometry factor is computed from the solar wind model (SWM=0 or 1).
+    The raw Fourier design matrix is scaled per TOA by
+    ``geometry_pc · DMCONST / f_obs²`` (geometry from the SWM=0 or SWM=1 model),
+    so this is a dynamic-basis component.
 
     Parameters
     ----------
@@ -75,9 +74,6 @@ class PLSWNoise(NoiseComponent):
         Obliquity in arcseconds (set when using ecliptic coordinates).
     """
 
-    fourier_basis: Float[Array, "n_toas n_basis"]
-    freqs: Float[Array, " n_freqs"]
-    freq_bin_widths: Float[Array, " n_freqs"]
     PARAMS = (
         ParamDecl("TNSWAMP"),
         ParamDecl("TNSWGAM"),
@@ -95,36 +91,13 @@ class PLSWNoise(NoiseComponent):
     posepoch_name: Optional[str] = eqx.field(static=True, default=None)
     obliquity_arcsec: Optional[float] = eqx.field(static=True, default=None)
 
-    def psd_weights(
-        self,
-        params: ParameterVector,
-    ) -> Float[Array, " n_basis"]:
-        """Compute power-law PSD weights for the solar wind noise Fourier basis.
+    @property
+    def _amp_name(self) -> str:
+        return self.tnswamp_name
 
-        The power spectral density follows the convention::
-
-            P(f) = (A² / 12π²) · f_yr^(γ-3) · f^(-γ)
-
-        Each weight is ``P(f) · Δf``, repeated twice for the sin/cos
-        pair at that frequency.
-
-        Parameters
-        ----------
-        params : ParameterVector
-            Must contain values for ``TNSWAMP`` (log10 amplitude)
-            and ``TNSWGAM`` (spectral index).
-
-        Returns
-        -------
-        weights : (2 * n_freqs,)
-            PSD weights for each basis column.
-        """
-        log10_A = params.param_value(self.tnswamp_name)
-        gamma = params.param_value(self.tnswgam_name)
-        A = 10.0**log10_A
-
-        psd = A**2 / (12.0 * jnp.pi**2) * FYR ** (gamma - 3.0) * self.freqs ** (-gamma)
-        return jnp.repeat(psd * self.freq_bin_widths, 2)
+    @property
+    def _gam_name(self) -> str:
+        return self.tnswgam_name
 
     def _sw_scaling(
         self,
@@ -163,78 +136,11 @@ class PLSWNoise(NoiseComponent):
         # 4. Solar wind DM scaling (same as PINT: geometry * DMconst / freq^2).
         return geometry_pc * DMCONST / toa_data.freq**2
 
-    def _scaled_basis(
+    def _basis(
         self,
         toa_data: TOAData,
         params: ParameterVector,
     ) -> Float[Array, "n_toas n_basis"]:
-        """Return Fourier basis scaled by solar wind geometry."""
+        """Fourier basis scaled per TOA by the solar wind geometry factor."""
         D = self._sw_scaling(toa_data, params)  # (n_toas,)
-        return self.fourier_basis * D[:, None]
-
-    def covariance(
-        self,
-        toa_data: TOAData,
-        params: ParameterVector,
-    ) -> tuple[
-        Float[Array, " n_toas"],
-        Float[Array, "n_toas n_basis"],
-        Float[Array, " n_basis"],
-    ]:
-        """Return the Woodbury ``(Ndiag, U, Phidiag)`` triple for solar wind noise.
-
-        Solar wind noise is purely low-rank: ``Ndiag = 0``. The basis is
-        scaled at runtime by the solar wind geometry factor and
-        ``DMCONST / f_obs^2``.
-
-        Parameters
-        ----------
-        toa_data : TOAData
-            Observed TOA data including Sun positions and radio frequencies.
-        params : ParameterVector
-            Current parameter values for amplitude, spectral index, and
-            astrometry parameters.
-
-        Returns
-        -------
-        Ndiag : (n_toas,)
-            Zero diagonal (solar wind noise has no white component).
-        U : (n_toas, 2 * n_freqs)
-            Solar-wind-geometry-scaled Fourier design matrix.
-        Phidiag : (2 * n_freqs,)
-            Power-law PSD weights.
-        """
-        Ndiag = jnp.zeros(toa_data.n_toas)
-        return Ndiag, self._scaled_basis(toa_data, params), self.psd_weights(params)
-
-    def generate(
-        self,
-        toa_data: TOAData,
-        params: ParameterVector,
-        key: jax.Array,
-    ) -> Float[Array, " n_toas"]:
-        """Draw a random solar wind noise realization.
-
-        Draws standard-normal Fourier amplitudes and projects them
-        through the SW-geometry-scaled basis matrix.
-
-        Parameters
-        ----------
-        toa_data : TOAData
-            Observed TOA data including Sun positions and radio frequencies.
-        params : ParameterVector
-            Current parameter values for amplitude, spectral index, and
-            astrometry parameters.
-        key : jax.Array
-            PRNG key for random sampling.
-
-        Returns
-        -------
-        noise : (n_toas,)
-            Solar wind noise realization in seconds.
-        """
-        weights = self.psd_weights(params)
-        basis = self._scaled_basis(toa_data, params)
-        n_basis = basis.shape[1]
-        a = jax.random.normal(key, shape=(n_basis,))
-        return basis @ (jnp.sqrt(weights) * a)
+        return self._fourier_basis_jax * D[:, None]
