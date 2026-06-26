@@ -413,70 +413,27 @@ class TimingModel(eqx.Module):
 def _reconstruct_tzr_toa(toa_data: TOAData) -> TOAData:
     """Construct a single-element TOAData for the TZR reference TOA.
 
-    Uses the TZR fields stored on *toa_data*.  Fields not relevant to
-    the TZR evaluation (e.g. observatory indices) are set to zeros.
-    Note: ``flag_masks`` is empty (TZR should have no jumps applied).
-
+    Uses the TZR fields stored on *toa_data*. ``ssb_obs_vel`` is left at zero
+    (irrelevant to the phase evaluation, since ``tzr_freq`` is already
+    barycentric) and ``flag_masks`` is empty (TZR has no jumps applied).
+    ``planet_positions`` is forwarded from ``toa_data.tzr_planet_positions``
+    when populated by the bridge -- required for SolarSystemShapiroDelay with
+    PLANET_SHAPIRO to evaluate against the TZR.
     """
-    one = jnp.ones(1)
-    zero = jnp.zeros(1)
-    zero3 = jnp.zeros((1, 3))
-
-    tdb_int = jnp.array([toa_data.tzr_tdb_int])
-    tdb_frac = jnp.array([toa_data.tzr_tdb_frac])
-
-    freq = (
-        jnp.array([toa_data.tzr_freq])
-        if toa_data.tzr_freq is not None
-        else jnp.inf * one
-    )
-
-    ssb_obs_pos = (
-        toa_data.tzr_ssb_obs_pos[None, :]
-        if toa_data.tzr_ssb_obs_pos is not None
-        else zero3
-    )
-
-    obs_sun_pos = (
-        toa_data.tzr_obs_sun_pos[None, :]
-        if toa_data.tzr_obs_sun_pos is not None
-        else zero3
-    )
-    # ``planet_positions`` is forwarded from ``toa_data.tzr_planet_positions``
-    # when populated by the bridge — required for SolarSystemShapiroDelay
-    # with PLANET_SHAPIRO Y to evaluate against the TZR.
-    planet_positions = (
-        {k: v[None, :] for k, v in toa_data.tzr_planet_positions.items()}
-        if toa_data.tzr_planet_positions is not None
-        else None
-    )
-
-    return TOAData(
-        mjd_int=tdb_int,
-        mjd_frac=tdb_frac,
-        tdb_int=tdb_int,
-        tdb_frac=tdb_frac,
-        error=one,
-        freq=freq,
-        delta_pulse_number=zero,
-        ssb_obs_pos=ssb_obs_pos,
-        ssb_obs_vel=zero3,
-        obs_sun_pos=obs_sun_pos,
-        obs_indices=jnp.zeros(1, dtype=jnp.int32),
-        flag_masks={},
-        planet_positions=planet_positions,
-        dm_values=None,
-        dm_errors=None,
-        tropo_alt=None,
-        tropo_alt_valid=None,
-        obs_geodetic_lat=None,
-        obs_height_km=None,
-        n_toas=1,
-        obs_names=toa_data.obs_names[:1] if toa_data.obs_names else ("",),
-        tzr_tdb_int=None,
-        tzr_tdb_frac=None,
-        tzr_freq=None,
-        tzr_ssb_obs_pos=None,
-        tzr_obs_sun_pos=None,
-        tzr_planet_positions=None,
+    return TOAData.single(
+        tdb_int=toa_data.tzr_tdb_int,
+        tdb_frac=toa_data.tzr_tdb_frac,
+        freq=toa_data.tzr_freq if toa_data.tzr_freq is not None else jnp.inf,
+        ssb_obs_pos=(
+            toa_data.tzr_ssb_obs_pos
+            if toa_data.tzr_ssb_obs_pos is not None
+            else jnp.zeros(3)
+        ),
+        obs_sun_pos=(
+            toa_data.tzr_obs_sun_pos
+            if toa_data.tzr_obs_sun_pos is not None
+            else jnp.zeros(3)
+        ),
+        planet_positions=toa_data.tzr_planet_positions,
+        obs_name=toa_data.obs_names[0] if toa_data.obs_names else "",
     )
