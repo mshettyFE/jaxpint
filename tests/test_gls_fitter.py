@@ -193,11 +193,11 @@ class TestWoodburySolve:
 
 
 class TestGLSChi2:
-    """Tests for compute_gls_chi2."""
+    """Tests for compute_chi2_cov."""
 
     def test_matches_explicit(self):
         """GLS chi2 via Woodbury matches explicit r^T C^{-1} r."""
-        from jaxpint.fitters import compute_gls_chi2
+        from jaxpint.fitters import compute_chi2_cov
 
         n, k = 30, 4
         key = jax.random.PRNGKey(7)
@@ -212,7 +212,7 @@ class TestGLSChi2:
         C = jnp.diag(Ndiag) + U @ jnp.diag(Phidiag) @ U.T
         chi2_explicit = r @ jnp.linalg.solve(C, r)
 
-        chi2_gls = compute_gls_chi2(r, Ndiag, U, Phidiag)
+        chi2_gls = compute_chi2_cov(r, Ndiag, U, Phidiag)
 
         npt.assert_allclose(float(chi2_gls), float(chi2_explicit), rtol=1e-10)
 
@@ -223,7 +223,7 @@ class TestGLSChi2:
 
 
 class TestGLSSteps:
-    """Tests for gls_step_fullcov and gls_step_augmented."""
+    """Tests for lstsq_step_fullcov and lstsq_step_augmented."""
 
     @pytest.fixture
     def synthetic_gls_problem(self):
@@ -255,14 +255,14 @@ class TestGLSSteps:
 
     def test_fullcov_augmented_dpars_agree(self, synthetic_gls_problem):
         """fullcov and augmented approaches give same dpars."""
-        from jaxpint.fitters.gls import gls_step_augmented, gls_step_fullcov
+        from jaxpint.fitters._base import lstsq_step_augmented, lstsq_step_fullcov
 
         residuals, Ndiag, U, Phidiag, M, threshold = synthetic_gls_problem
 
-        dpars_fc, cov_fc, _ = gls_step_fullcov(
+        dpars_fc, cov_fc, _ = lstsq_step_fullcov(
             residuals, Ndiag, U, Phidiag, M, threshold
         )
-        dpars_aug, cov_aug, _, _ = gls_step_augmented(
+        dpars_aug, cov_aug, _, _ = lstsq_step_augmented(
             residuals, Ndiag, U, Phidiag, M, threshold
         )
 

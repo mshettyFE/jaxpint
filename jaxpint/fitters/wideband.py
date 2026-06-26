@@ -19,14 +19,12 @@ from ._base import (
     BaseFitResult,
     compute_time_residuals,
     _subtract_weighted_mean,
+    _subtract_cov_weighted_mean,
     wls_step,
+    lstsq_step_fullcov,
+    lstsq_step_augmented,
     compute_chi2,
-)
-from .gls import (
-    _subtract_gls_weighted_mean,
-    gls_step_fullcov,
-    gls_step_augmented,
-    compute_gls_chi2,
+    compute_chi2_cov,
 )
 
 
@@ -180,11 +178,11 @@ def _wideband_iteration_core(
 
     noise_realizations = jnp.zeros(0)
     if full_cov:
-        dpars, covariance, _norms = gls_step_fullcov(
+        dpars, covariance, _norms = lstsq_step_fullcov(
             residuals, Ndiag, U, Phidiag, M, threshold
         )
     elif n_basis > 0:
-        dpars, covariance, _norms, noise_realizations = gls_step_augmented(
+        dpars, covariance, _norms, noise_realizations = lstsq_step_augmented(
             residuals, Ndiag, U, Phidiag, M, threshold
         )
     else:
@@ -306,7 +304,7 @@ class WidebandGLSFitter(BaseFitter):
         if n_basis > 0:
             Ndiag_toa = Ndiag[:n]
             U_toa = U[:n, :]
-            time_resid = _subtract_gls_weighted_mean(
+            time_resid = _subtract_cov_weighted_mean(
                 time_resid, Ndiag_toa, U_toa, Phidiag
             )
         else:
@@ -315,13 +313,12 @@ class WidebandGLSFitter(BaseFitter):
         residuals = jnp.concatenate([time_resid, dm_resid])
 
         if n_basis > 0:
-            chi2_val = float(compute_gls_chi2(residuals, Ndiag, U, Phidiag))
+            chi2_val = float(compute_chi2_cov(residuals, Ndiag, U, Phidiag))
         else:
             sigma_combined = jnp.sqrt(Ndiag)
             chi2_val = float(compute_chi2(residuals, sigma_combined))
 
-        n_offset = 0 if self.model.phoff_name is not None else 1
-        dof = 2 * n - params.n_free - n_offset
+        dof = self._dof(params, 2 * n)
 
         return WidebandGLSFitResult(
             params=params,
