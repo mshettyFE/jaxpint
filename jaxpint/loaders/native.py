@@ -544,14 +544,14 @@ def _has_astrometry(par: ParResult) -> bool:
     )
 
 def _opt(par: ParResult, name: str) -> Optional[str]:
-    return name if name in par.params.names else None
+    return name if name in par.params else None
 
 
 def _posepoch(par: ParResult) -> Optional[str]:
     """Proper-motion reference epoch: POSEPOCH, else PEPOCH (PINT convention)."""
-    if "POSEPOCH" in par.params.names:
+    if "POSEPOCH" in par.params:
         return "POSEPOCH"
-    if "PEPOCH" in par.params.names:
+    if "PEPOCH" in par.params:
         return "PEPOCH"
     return None
 

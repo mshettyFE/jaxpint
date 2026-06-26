@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
-import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.types import ParameterVector
@@ -74,20 +73,16 @@ def unflatten_params(
     """
     offset = 0
 
-    # Reconstruct GlobalParams
+    # Reconstruct GlobalParams (replace the values leaf, keep names/index).
     n_global = global_template.n_params
-    gp = GlobalParams(
-        flat[offset : offset + n_global],
-        global_template.names,
-        global_template._name_to_index,
-    )
+    gp = global_template.with_values(flat[offset : offset + n_global])
     offset += n_global
 
     # Reconstruct each ParameterVector
     pp_list = []
     for template in pulsar_templates:
         n = template.n_params
-        new_pp = eqx.tree_at(lambda t: t.values, template, flat[offset : offset + n])
+        new_pp = template.with_values(flat[offset : offset + n])
         pp_list.append(new_pp)
         offset += n
 
