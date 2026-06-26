@@ -39,6 +39,7 @@ from typing import (
     Iterable,
     Mapping,
     Optional,
+    Protocol,
     Sequence,
     Union,
     cast,
@@ -57,8 +58,23 @@ if TYPE_CHECKING:
     from jaxpint.types import ParameterVector
 
 
+class PulsarBundle(Protocol):
+    """Structural type for a per-pulsar bundle of names + parameter vectors.
+
+    Any object exposing these two parallel attributes is accepted by the
+    prior-dict helpers -- in practice a :class:`~jaxpint.loaders.NanogravPTA`,
+    or a lightweight ``namedtuple`` if you don't have a full one. Declared as a
+    :class:`typing.Protocol` so ``jaxpint.bayes`` stays decoupled from
+    ``loaders`` / ``notebook_utils``.
+    """
+
+    pulsar_names: tuple[str, ...]
+    pulsar_params_list: tuple[ParameterVector, ...]
+
+
 __all__ = [
     "NANOGRAV_NOISE_DEFAULTS",
+    "PulsarBundle",
     "timing_priors",
     "distance_priors",
     "from_par_file",
@@ -135,27 +151,15 @@ def collect_param_names(
     return out
 
 
-def _resolve_pulsars(psrs) -> tuple[tuple[str, ...], tuple[ParameterVector, ...]]:
-    """Return ``(names, params_list)`` tuples from a NanogravPTA-like input.
-
-    Accepts either:
-
-    - An object with ``.pulsar_names`` and ``.pulsar_params_list`` (e.g.
-      :class:`~jaxpint.loaders.NanogravPTA`,
-      :class:`~jaxpint.notebook_utils.SyntheticPTA`).
-    - An iterable of ``(name, ParameterVector)`` pairs.
-    """
-    if hasattr(psrs, "pulsar_names") and hasattr(psrs, "pulsar_params_list"):
-        return tuple(psrs.pulsar_names), tuple(psrs.pulsar_params_list)
-    pairs = tuple(psrs)
-    if not pairs:
-        return (), ()
-    names, params = zip(*pairs)
-    return tuple(names), tuple(params)
+def _resolve_pulsars(
+    psrs: PulsarBundle,
+) -> tuple[tuple[str, ...], tuple[ParameterVector, ...]]:
+    """Return ``(names, params_list)`` from a :class:`PulsarBundle`."""
+    return tuple(psrs.pulsar_names), tuple(psrs.pulsar_params_list)
 
 
 def timing_priors(
-    psrs,
+    psrs: PulsarBundle,
     prior: Optional[Prior] = None,
 ) -> dict[str, Prior]:
     """Assign ``prior`` to every timing-model parameter of every pulsar.
@@ -163,9 +167,8 @@ def timing_priors(
     Parameters
     ----------
     psrs
-        Either a :class:`~jaxpint.loaders.NanogravPTA`-like
-        container with ``.pulsar_names`` / ``.pulsar_params_list``, or
-        an iterable of ``(name, ParameterVector)`` pairs.
+        A :class:`PulsarBundle` -- any object with ``pulsar_names`` and
+        ``pulsar_params_list`` (e.g. :class:`~jaxpint.loaders.NanogravPTA`).
     prior
         :class:`Prior` to assign to *every* parameter of every pulsar.
         Defaults to :class:`~jaxpint.bayes.priors.ImproperPrior`, matching
@@ -204,7 +207,7 @@ _DistancePriorArg = Union[Prior, Callable[[object], Prior], None]
 
 
 def distance_priors(
-    psrs,
+    psrs: PulsarBundle,
     prior: _DistancePriorArg = None,
     *,
     n_sigma: float = 1.0,
@@ -234,8 +237,7 @@ def distance_priors(
     Parameters
     ----------
     psrs
-        :class:`~jaxpint.loaders.NanogravPTA`-like container or
-        iterable of ``(name, ParameterVector)`` pairs.
+        A :class:`PulsarBundle` (e.g. :class:`~jaxpint.loaders.NanogravPTA`).
     prior
         See above.
     n_sigma
@@ -281,7 +283,7 @@ def distance_priors(
     names, params = _resolve_pulsars(psrs)
     out: dict[str, Prior] = {}
     for psr_name, pp in zip(names, params, strict=True):
-        if param_name not in pp:
+        if param_name not in pp.names:
             continue
         if prior is None:
             mu, sigma = _par_file_gaussian_args(pp, param_name, n_sigma)
@@ -343,7 +345,7 @@ def _maybe_par_uncert(pp: "ParameterVector", name: str) -> Optional[float]:
 
 
 def from_par_file(
-    psrs,
+    psrs: PulsarBundle,
     parameter_values: Mapping[str, Mapping[str, tuple[float, float]]],
     *,
     n_sigma: float = 1.0,
@@ -358,10 +360,9 @@ def from_par_file(
     Parameters
     ----------
     psrs
-        :class:`~jaxpint.loaders.NanogravPTA`-like container or
-        iterable of ``(name, ParameterVector)`` pairs.  Used only to
-        validate that the keys in ``parameter_values`` correspond to
-        existing pulsars.
+        A :class:`PulsarBundle` (e.g. :class:`~jaxpint.loaders.NanogravPTA`).
+        Used only to validate that the keys in ``parameter_values``
+        correspond to existing pulsars.
     parameter_values
         Nested mapping ``{psr_name: {param_name: (mu, sigma), ...}, ...}``.
         Only entries present here generate priors.
@@ -440,7 +441,7 @@ def cw_priors(prefix: str = "cw_") -> dict[str, Prior]:
     }
 
 
-def cw_phi_psr_priors(psrs, *, prefix: str = "cw_") -> dict[str, Prior]:
+def cw_phi_psr_priors(psrs: PulsarBundle, *, prefix: str = "cw_") -> dict[str, Prior]:
     """Per-pulsar CW pulsar-term phase nuisances (discovery-style).
 
     Use this only when you have *not* parameterised the pulsar-term
@@ -452,8 +453,7 @@ def cw_phi_psr_priors(psrs, *, prefix: str = "cw_") -> dict[str, Prior]:
     Parameters
     ----------
     psrs
-        :class:`~jaxpint.loaders.NanogravPTA`-like container or
-        iterable of ``(name, ParameterVector)`` pairs.
+        A :class:`PulsarBundle` (e.g. :class:`~jaxpint.loaders.NanogravPTA`).
     prefix
         See :func:`cw_priors`.
 
@@ -475,7 +475,7 @@ def cw_phi_psr_priors(psrs, *, prefix: str = "cw_") -> dict[str, Prior]:
 
 
 def noise_priors_simple(
-    psrs,
+    psrs: PulsarBundle,
     *,
     include_red_noise: bool = True,
     defaults: Mapping[str, Prior] = NANOGRAV_NOISE_DEFAULTS,
@@ -495,8 +495,7 @@ def noise_priors_simple(
     Parameters
     ----------
     psrs
-        :class:`~jaxpint.loaders.NanogravPTA`-like container or
-        iterable of ``(name, ParameterVector)`` pairs.
+        A :class:`PulsarBundle` (e.g. :class:`~jaxpint.loaders.NanogravPTA`).
     include_red_noise
         If ``True`` (default), also assign per-pulsar red-noise
         amplitude and spectral-index priors using
