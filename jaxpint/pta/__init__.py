@@ -13,8 +13,16 @@ from jaxpint.pta.likelihood import (
     PTAConfig,
     precompute_single_pulsar_pta_factor,
     pta_logL,
+    single_pulsar_pta_logL,
+    single_pulsar_pta_logL_with_factor,
 )
 from jaxpint.pta.fisher import fisher_matrix, flatten_params, unflatten_params
+from jaxpint.pta.scan import (
+    GlobalScanAxis,
+    PerPulsarScanAxis,
+    ScanAxis,
+    scan_logL,
+)
 from jaxpint.pta.signals import (
     CW_PARAM_DEFAULTS,
     CWInjector,
@@ -38,6 +46,14 @@ __all__ = [
     "SignalInjector",
     "CorrelatedSignalInjector",
     "pta_logL",
+    "single_pulsar_pta_logL",
+    "single_pulsar_pta_logL_with_factor",
+    "precompute_single_pulsar_pta_factor",
+    # Dependency-aware grid scans
+    "scan_logL",
+    "PerPulsarScanAxis",
+    "GlobalScanAxis",
+    "ScanAxis",
     # Fisher
     "fisher_matrix",
     "flatten_params",

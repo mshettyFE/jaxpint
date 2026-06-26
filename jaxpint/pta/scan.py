@@ -48,7 +48,6 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import _collect_param_names
 from jaxpint.pta.likelihood import (
     PTAConfig,
     SignalInjector,
@@ -184,13 +183,7 @@ def _axes_touch_covariance(
     nm_p = config.noise_models[p]
     noise_params: set[str] = set()
     for comp in nm_p.components:
-        # Some noise components (e.g. ScaleDmError) are eqx.Module but
-        # don't inherit from NoiseComponent; fall back to the raw
-        # name-collection helper for those.
-        if hasattr(comp, "required_params"):
-            noise_params.update(comp.required_params())
-        else:
-            noise_params.update(_collect_param_names(comp))
+        noise_params.update(comp.required_params())
     injectors_have_cov = _injectors_contribute_covariance(
         config.signal_injectors,
     )
@@ -242,41 +235,30 @@ def _build_per_pulsar_array(
     K = len(dep_p)
     assert K > 0, "use the constant fast path when dep_p is empty"
 
+    def _substitute(ax_values):
+        """Apply this cell's axis values onto pulsar ``p``'s base params."""
+        gp = base_global_params
+        pp_p = base_pulsar_params_p
+        for axis_idx, val in zip(dep_p, ax_values):
+            ax = axes[axis_idx]
+            if isinstance(ax, PerPulsarScanAxis):
+                pp_p = pp_p.with_value(ax.param_name, val)
+            else:  # GlobalScanAxis
+                gp = gp.with_value(ax.param_name, val)
+        return gp, pp_p
+
     if use_factor:
         factor = precompute_single_pulsar_pta_factor(
-            p,
-            base_global_params,
-            base_pulsar_params_p,
-            config,
+            p, base_global_params, base_pulsar_params_p, config
         )
 
         def f_p(*ax_values):
-            gp = base_global_params
-            pp_p = base_pulsar_params_p
-            for axis_idx, val in zip(dep_p, ax_values):
-                ax = axes[axis_idx]
-                if isinstance(ax, PerPulsarScanAxis):
-                    pp_p = pp_p.with_value(ax.param_name, val)
-                else:  # GlobalScanAxis
-                    gp = gp.with_value(ax.param_name, val)
-            return single_pulsar_pta_logL_with_factor(
-                p,
-                gp,
-                pp_p,
-                factor,
-                config,
-            )
+            gp, pp_p = _substitute(ax_values)
+            return single_pulsar_pta_logL_with_factor(p, gp, pp_p, factor, config)
     else:
 
         def f_p(*ax_values):
-            gp = base_global_params
-            pp_p = base_pulsar_params_p
-            for axis_idx, val in zip(dep_p, ax_values):
-                ax = axes[axis_idx]
-                if isinstance(ax, PerPulsarScanAxis):
-                    pp_p = pp_p.with_value(ax.param_name, val)
-                else:  # GlobalScanAxis
-                    gp = gp.with_value(ax.param_name, val)
+            gp, pp_p = _substitute(ax_values)
             return single_pulsar_pta_logL(p, gp, pp_p, config)
 
     # Nested vmap: innermost over the last argument (dep_p[-1]),
@@ -333,11 +315,6 @@ def _inflate_to_full_ij_shape(
         else:
             new_shape.append(1)
     return arr.reshape(tuple(new_shape))
-
-
-# ---------------------------------------------------------------------------
-# Public: scan_logL
-# ---------------------------------------------------------------------------
 
 
 def scan_logL(
