@@ -11,8 +11,9 @@ disappears from the returned callable's signature.
 This module provides:
 
 - :func:`marg_set_from_priors` — derive an ``over`` set from a prior dict.
-- :func:`marginalize` — wrap a likelihood to integrate out the given
-  parameters; returns ``(callable, sampled_priors, reduced_skeleton)``.
+- :func:`marginalize_single_pulsar` / :func:`marginalize_pta` — integrate out
+  the given timing parameters from the single-pulsar / PTA likelihood; each
+  returns ``(callable, sampled_priors, reduced_skeleton(s))``.
 
 """
 
@@ -47,7 +48,8 @@ if TYPE_CHECKING:
 
 
 __all__ = [
-    "marginalize",
+    "marginalize_single_pulsar",
+    "marginalize_pta",
     "marg_set_from_priors",
 ]
 
@@ -173,9 +175,10 @@ def _check_linearity(
 
     Notes
     -----
-    This is the most expensive step in marginalize() setup (~O(n_params) more
+    This is the most expensive step in marginalization setup (~O(n_params) more
     expensive than the Jacobian alone).  It is skipped when the user sets
-    ``validate_linearity=False`` on :func:`marginalize`.
+    ``validate_linearity=False`` on :func:`marginalize_single_pulsar` /
+    :func:`marginalize_pta`.
     """
 
     from jaxpint.fitters._base import compute_time_residuals
@@ -239,185 +242,11 @@ def _trust_radius_for_prior(
 
 
 # ---------------------------------------------------------------------------
-# Main entry point
+# Public entry points
 # ---------------------------------------------------------------------------
 
 
-def marginalize(
-    likelihood: Callable,
-    *,
-    over: Iterable[str],
-    priors: Mapping[str, Prior],
-    # single-pulsar arguments (required when likelihood is single_pulsar_logL):
-    toa_data: Optional[TOAData] = None,
-    timing_model: Optional[TimingModel] = None,
-    noise_model: Optional[NoiseModel] = None,
-    fiducial_params: Optional[ParameterVector] = None,
-    # PTA arguments (required when likelihood is pta_logL):
-    config: Optional[PTAConfig] = None,
-    pulsar_names: Optional[tuple[str, ...]] = None,
-    fiducial_pulsar_params: Optional[tuple[ParameterVector, ...]] = None,
-    fiducial_global_params: Optional[GlobalParams] = None,
-    # common options:
-    allow_nonlinear: bool = False,
-    validate_linearity: bool = True,
-    laplace_error_tol: float = 1e-6,
-) -> tuple[Callable, dict[str, Prior], object]:
-    """Build an analytically-marginalized log-likelihood.
-
-    Dispatches on ``likelihood`` to the appropriate per-backend marg path.
-    Supports :func:`~jaxpint.likelihood.single_pulsar_logL` (per-pulsar
-    timing-model marg) and :func:`~jaxpint.pta.pta_logL`
-    (per-pulsar timing-model marg across an entire PTA, including in the
-    presence of correlated injectors).  Global-parameter marg (CW / GWB
-    hyperparameters) is intentionally not supported — discovery samples
-    those via MCMC and we follow that convention.
-
-    Returns ``(g, sampled_priors, reduced_skeleton)`` where:
-
-    - ``g(reduced_params, *, external_delay=None, external_cov=None)`` is the
-      marginalized log-likelihood callable.  The parameters in ``over`` no
-      longer appear in its parameter dict — they have been integrated out
-      analytically against their assigned priors.
-    - ``sampled_priors`` is ``priors`` with the marg'd entries removed.
-      Pass this (not the full ``priors`` dict) to
-      :func:`jaxpint.bayes.combine_log_prob` to avoid double-counting.
-    - ``reduced_skeleton`` is ``fiducial_params.with_marginalized(over)`` —
-      a :class:`ParameterVector` whose ``marginalized_mask`` is True for
-      every name in ``over``.  Use it in the sampling loop as the skeleton
-      for ``with_free_values()`` so that ``.free_values()`` returns the
-      kept-entry slice that ``g`` expects.
-
-    Currently only accepts :class:`ImproperPrior` in ``over``; Gaussian
-    and Uniform raise ``NotImplementedError`` with a clear message.
-
-    Parameters
-    ----------
-    likelihood
-        Currently must be :func:`~jaxpint.likelihood.single_pulsar_logL`
-        (or a callable with the same signature).  Multi-pulsar
-        marginalization is planned for the next phase.
-    over
-        Fully-qualified names of parameters to marginalize out.  Must be a
-        subset of ``fiducial_params.names``.
-    priors
-        Mapping from parameter name to :class:`Prior` instance.  Must
-        contain an entry for every name in ``over``.  Extras are ignored
-        (but propagated unchanged to the returned ``sampled_priors`` if
-        their name is not in ``over``).
-    toa_data, timing_model, noise_model
-        Static likelihood arguments, captured into the returned closure.
-        Required when ``likelihood is single_pulsar_logL``.
-    fiducial_params
-        The linearization point y_fid.  The design matrix
-        ``M = ∂r/∂y|_{y_fid}`` and (optional) Hessian are computed once
-        here and cached.  For the analytic Woodbury integral to be exact,
-        residuals must be linear in each marg'd parameter; the linearity
-        check (``validate_linearity=True``, the default) enforces this.
-    allow_nonlinear
-        If ``False`` (default), marg'd parameters that fail the
-        Laplace-error check raise ``NotImplementedError`` at setup.  If
-        ``True``, proceed with the Laplace approximation around ``y_fid``
-        and emit a warning naming the affected parameters and their error
-        ratios.
-    validate_linearity
-        If ``True`` (default), compute the Hessian at setup and run the
-        linearity check.  If ``False``, skip the Hessian computation
-        entirely (the user takes responsibility for linearity).
-        ``allow_nonlinear`` becomes irrelevant in that case.
-    laplace_error_tol
-        Threshold for the relative Laplace-approximation error within the
-        prior support:
-        ``max_t |H[t, i, i] * sigma_i| / max_t |M[t, i]|``,
-        where ``sigma_i`` is the prior σ (Gaussian) or the data-driven WLS
-        posterior σ (Improper).  The ratio quantifies how much the residual's
-        slope-w.r.t.-y changes over one prior-σ step away from y_fid,
-        relative to the slope itself — equivalently, the relative size of
-        the quadratic Taylor term that the linearization drops, evaluated
-        on the scale the prior gives non-negligible weight to.  Above this
-        threshold, the Woodbury integral departs measurably from the true
-        marginal.  For a perfectly linear parameter (``H = 0``), the ratio
-        is zero regardless of σ.  Defaults to ``1e-6``.
-
-    Returns
-    -------
-    g : callable
-        Marginalized log-likelihood.  Takes a :class:`ParameterVector`
-        whose ``marginalized_mask`` matches ``reduced_skeleton`` and
-        returns a scalar.  Optional ``external_delay`` and ``external_cov``
-        kwargs pass through to :func:`~jaxpint.likelihood.single_pulsar_logL` for composition
-        with signal injectors.
-    sampled_priors : dict[str, Prior]
-        ``priors`` with marg'd entries removed.
-    reduced_skeleton : ParameterVector
-        Same structure as ``fiducial_params`` but with
-        ``marginalized_mask=True`` for every name in ``over``.
-
-    Raises
-    ------
-    PriorValidationError
-        If any name in ``over`` is missing from ``priors``.
-    NotImplementedError
-        If ``likelihood`` is not a supported callable; if ``over`` contains
-        a parameter whose assigned prior is not an :class:`ImproperPrior`;
-        or if it contains a parameter that fails the linearity check when
-        ``allow_nonlinear=False``.
-    """
-    if likelihood is single_pulsar_logL:
-        if (
-            toa_data is None
-            or timing_model is None
-            or noise_model is None
-            or fiducial_params is None
-        ):
-            raise TypeError(
-                "marginalize(single_pulsar_logL, ...) requires the kwargs "
-                "`toa_data`, `timing_model`, `noise_model`, `fiducial_params`."
-            )
-        return _marginalize_single_pulsar(
-            over=over,
-            priors=priors,
-            toa_data=toa_data,
-            timing_model=timing_model,
-            noise_model=noise_model,
-            fiducial_params=fiducial_params,
-            allow_nonlinear=allow_nonlinear,
-            validate_linearity=validate_linearity,
-            laplace_error_tol=laplace_error_tol,
-        )
-
-    if likelihood is pta_logL:
-        if (
-            config is None
-            or pulsar_names is None
-            or fiducial_pulsar_params is None
-            or fiducial_global_params is None
-        ):
-            raise TypeError(
-                "marginalize(pta_logL, ...) requires the kwargs "
-                "`config`, `pulsar_names`, `fiducial_pulsar_params`, "
-                "`fiducial_global_params`."
-            )
-        return _marginalize_pta(
-            over=over,
-            priors=priors,
-            config=config,
-            pulsar_names=tuple(pulsar_names),
-            fiducial_pulsar_params=tuple(fiducial_pulsar_params),
-            fiducial_global_params=fiducial_global_params,
-            allow_nonlinear=allow_nonlinear,
-            validate_linearity=validate_linearity,
-            laplace_error_tol=laplace_error_tol,
-        )
-
-    raise NotImplementedError(
-        "marginalize() supports only single_pulsar_logL and pta_logL as the "
-        f"`likelihood` argument; got "
-        f"{getattr(likelihood, '__name__', repr(likelihood))!r}."
-    )
-
-
-def _marginalize_single_pulsar(
+def marginalize_single_pulsar(
     *,
     over: Iterable[str],
     priors: Mapping[str, Prior],
@@ -425,15 +254,78 @@ def _marginalize_single_pulsar(
     timing_model: TimingModel,
     noise_model: NoiseModel,
     fiducial_params: ParameterVector,
-    allow_nonlinear: bool,
-    validate_linearity: bool,
-    laplace_error_tol: float,
+    allow_nonlinear: bool = False,
+    validate_linearity: bool = True,
+    laplace_error_tol: float = 1e-6,
 ) -> tuple[Callable, dict[str, Prior], ParameterVector]:
-    """Single-pulsar marg implementation.
+    """Analytically marginalize single-pulsar timing parameters out of the likelihood.
 
-    Internal helper called by :func:`marginalize` when
-    ``likelihood is single_pulsar_logL``.  Same semantics as the public
-    function; see :func:`marginalize` for parameter / return documentation.
+    Wraps :func:`~jaxpint.likelihood.single_pulsar_logL`, integrating out the
+    parameters in ``over`` against their priors via the Woodbury identity (see
+    the module docstring).  The integral is exact when the residuals are linear
+    in each marginalized parameter; the linearity check
+    (``validate_linearity=True``, the default) enforces this.  Global-parameter
+    marginalization is intentionally not supported.
+
+    Returns ``(g, sampled_priors, reduced_skeleton)`` where:
+
+    - ``g(reduced_params, *, external_delay=None, external_cov=None)`` is the
+      marginalized log-likelihood.  The names in ``over`` no longer appear in
+      its parameter dict.  The ``external_delay`` / ``external_cov`` kwargs pass
+      through to :func:`~jaxpint.likelihood.single_pulsar_logL` for composition
+      with signal injectors.
+    - ``sampled_priors`` is ``priors`` with the marginalized entries removed —
+      pass this (not the full dict) to :func:`jaxpint.bayes.combine_log_prob`
+      to avoid double-counting.
+    - ``reduced_skeleton`` is ``fiducial_params.with_marginalized(over)``; use
+      it in the sampling loop so ``.free_values()`` returns the kept-entry
+      slice that ``g`` expects.
+
+    Currently only :class:`ImproperPrior` is accepted in ``over``; other prior
+    shapes raise ``NotImplementedError``.
+
+    Parameters
+    ----------
+    over
+        Fully-qualified names of parameters to marginalize out; a subset of
+        ``fiducial_params.names``.
+    priors
+        Mapping from parameter name to :class:`Prior`.  Must contain an entry
+        for every name in ``over``; extras are propagated to ``sampled_priors``.
+    toa_data, timing_model, noise_model
+        Static likelihood arguments, captured into the returned closure.
+    fiducial_params
+        The linearization point ``y_fid``; the design matrix
+        ``M = ∂r/∂y|_{y_fid}`` (and optional Hessian) is computed once here.
+    allow_nonlinear
+        If ``False`` (default), parameters that fail the Laplace-error check
+        raise ``NotImplementedError``; if ``True``, proceed with the Laplace
+        approximation around ``y_fid`` and warn.
+    validate_linearity
+        If ``True`` (default), compute the Hessian and run the linearity check;
+        if ``False``, skip it (the caller takes responsibility for linearity).
+    laplace_error_tol
+        Threshold for the relative Laplace-approximation error within the prior
+        support (default ``1e-6``); see the module docstring for the formula.
+
+    Returns
+    -------
+    g : callable
+        Marginalized log-likelihood, taking a :class:`ParameterVector` whose
+        ``marginalized_mask`` matches ``reduced_skeleton``.
+    sampled_priors : dict[str, Prior]
+        ``priors`` with the marginalized entries removed.
+    reduced_skeleton : ParameterVector
+        ``fiducial_params`` with ``marginalized_mask=True`` for every name in
+        ``over``.
+
+    Raises
+    ------
+    PriorValidationError
+        If any name in ``over`` is missing from ``priors``.
+    NotImplementedError
+        If ``over`` contains a non-:class:`ImproperPrior` prior, or a parameter
+        that fails the linearity check when ``allow_nonlinear=False``.
     """
     over_set = set(over)
     over_list = sorted(over_set)  # deterministic ordering for caching
@@ -601,7 +493,7 @@ def _marginalize_single_pulsar(
 class _MarginalizationInjector(SignalInjector):
     """Injects cached per-pulsar marg Woodbury blocks at evaluation time.
 
-    Internal helper used by :func:`_marginalize_pta`.  The block for pulsar
+    Internal helper used by :func:`marginalize_pta`.  The block for pulsar
     ``p`` is fixed at setup (computed from the fiducial Jacobian); the
     injector ignores its ``pulsar_params`` and ``global_params`` arguments
     and just returns the cached tuple.
@@ -709,7 +601,7 @@ def _resolve_pta_marg_targets(
     return bare_names_per_pulsar, bare_indices_per_pulsar
 
 
-def _marginalize_pta(
+def marginalize_pta(
     *,
     over: Iterable[str],
     priors: Mapping[str, Prior],
@@ -717,17 +609,88 @@ def _marginalize_pta(
     pulsar_names: tuple[str, ...],
     fiducial_pulsar_params: tuple[ParameterVector, ...],
     fiducial_global_params: GlobalParams,
-    allow_nonlinear: bool,
-    validate_linearity: bool,
-    laplace_error_tol: float,
+    allow_nonlinear: bool = False,
+    validate_linearity: bool = True,
+    laplace_error_tol: float = 1e-6,
 ) -> tuple[Callable, dict[str, Prior], tuple[ParameterVector, ...]]:
-    """PTA marg implementation (per-pulsar timing parameters).
+    """Analytically marginalize per-pulsar timing parameters across a PTA.
 
-    Internal helper called by :func:`marginalize` when
-    ``likelihood is pta_logL``.  Builds per-pulsar Woodbury marg blocks,
-    wraps them in a :class:`_MarginalizationInjector`, and returns a
-    callable that evaluates ``pta_logL`` against the marg-augmented
-    config.  See :func:`marginalize` for parameter / return documentation.
+    Wraps :func:`~jaxpint.pta.pta_logL`, integrating out the parameters in
+    ``over`` against their priors via the Woodbury identity (see the module
+    docstring), per pulsar, across the entire PTA — including in the presence
+    of correlated injectors.  Builds per-pulsar Woodbury marginalization blocks,
+    wraps them in an internal marginalization injector, and returns a callable
+    that evaluates ``pta_logL`` against the marg-augmented config.  Each name in
+    ``over`` is matched to the unique pulsar whose parameter vector contains it;
+    global-parameter marginalization is intentionally not supported.
+
+    Returns ``(g, sampled_priors, reduced_skeletons)`` where:
+
+    - ``g(reduced_pulsar_params, global_params)`` is the marginalized PTA
+      log-likelihood.  The names in ``over`` no longer appear in the per-pulsar
+      parameter dicts.
+    - ``sampled_priors`` is ``priors`` with the marginalized entries removed —
+      pass this (not the full dict) to :func:`jaxpint.bayes.combine_log_prob`.
+    - ``reduced_skeletons`` is a tuple of per-pulsar
+      ``fiducial_pulsar_params[p].with_marginalized(...)`` skeletons, one per
+      pulsar, each marking only that pulsar's marginalized names.
+
+    Currently only :class:`ImproperPrior` is accepted in ``over``; other prior
+    shapes raise ``NotImplementedError``.
+
+    Parameters
+    ----------
+    over
+        Fully-qualified names of parameters to marginalize out.  Each must
+        belong to exactly one pulsar's ``fiducial_pulsar_params[p].names``.
+    priors
+        Mapping from parameter name to :class:`Prior`.  Must contain an entry
+        for every name in ``over``; extras are propagated to ``sampled_priors``.
+    config
+        The PTA configuration; ``g`` evaluates ``pta_logL`` against a copy
+        augmented with the marginalization injector.
+    pulsar_names
+        Per-pulsar name prefixes used to resolve which pulsar each ``over``
+        entry belongs to.  Length must equal ``config.n_pulsars``.
+    fiducial_pulsar_params
+        Per-pulsar linearization points ``y_fid``; one design matrix (and
+        optional Hessian) is computed per pulsar.
+    fiducial_global_params
+        Fiducial shared parameters, captured into the returned closure.
+    allow_nonlinear
+        If ``False`` (default), parameters that fail the Laplace-error check
+        raise ``NotImplementedError``; if ``True``, proceed with the Laplace
+        approximation and warn.
+    validate_linearity
+        If ``True`` (default), compute the Hessian and run the linearity check;
+        if ``False``, skip it (the caller takes responsibility for linearity).
+    laplace_error_tol
+        Threshold for the relative Laplace-approximation error within the prior
+        support (default ``1e-6``); see the module docstring for the formula.
+
+    Returns
+    -------
+    g : callable
+        Marginalized PTA log-likelihood, taking the tuple of per-pulsar
+        :class:`ParameterVector` (matching ``reduced_skeletons``) and the
+        shared :class:`GlobalParams`.
+    sampled_priors : dict[str, Prior]
+        ``priors`` with the marginalized entries removed.
+    reduced_skeletons : tuple of ParameterVector
+        Per-pulsar skeletons with ``marginalized_mask=True`` for that pulsar's
+        names in ``over``.
+
+    Raises
+    ------
+    PriorValidationError
+        If any name in ``over`` is missing from ``priors``.
+    ValueError
+        If ``pulsar_names`` / ``fiducial_pulsar_params`` / ``config`` disagree
+        on pulsar count, or a name in ``over`` matches no or multiple pulsars.
+    NotImplementedError
+        If ``over`` contains a non-:class:`ImproperPrior` prior, a global
+        parameter, or a parameter that fails the linearity check when
+        ``allow_nonlinear=False``.
     """
     from jaxpint.fitters._base import compute_time_residuals
 
@@ -800,7 +763,7 @@ def _marginalize_pta(
             params = _fp.with_values(values)
             return compute_time_residuals(_tm, _td, params)
 
-        # Forward-mode (see _marginalize_single_pulsar): tall design matrix,
+        # Forward-mode (see marginalize_single_pulsar): tall design matrix,
         # so jacfwd is O(n_toas * n_params) vs jacrev's O(n_toas**2) blowup.
         J_full_p = jax.jacfwd(_resid_fn)(fiducial_p.values)
         idx_array = jnp.asarray(bare_indices, dtype=jnp.int32)

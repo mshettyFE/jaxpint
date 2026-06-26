@@ -269,7 +269,8 @@ class ParameterVector(NamedVector):
         """Return a copy with marginalized_mask=True for the given names.
 
         Values for marg'd entries are left as-is — they become the y_fid that
-        :func:`~jaxpint.bayes.marginalize` anchors its linearization on.
+        :func:`~jaxpint.bayes.marginalize_single_pulsar` /
+        :func:`~jaxpint.bayes.marginalize_pta` anchor their linearization on.
         Marginalized parameters are dropped from ``free_values()`` /
         ``with_free_values()`` (their values are held fixed at y_fid during
         likelihood evaluation, but their prior covariance is folded into the

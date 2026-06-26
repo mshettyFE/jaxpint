@@ -83,7 +83,7 @@ def extract_pulsar_bM(
 
     ``g(reduced_params, external_delay=...)`` is the single-pulsar
     timing-marginalized log-likelihood (from
-    :func:`jaxpint.bayes.marginalize`).  Injecting ``Ae·e + As·ps`` as the
+    :func:`jaxpint.bayes.marginalize_single_pulsar`).  Injecting ``Ae·e + As·ps`` as the
     external delay makes ``g`` exactly quadratic in ``(Ae, As)``; differentiating
     the *actual* ``g`` inherits the correct real-mode matched-filter sign.
     """

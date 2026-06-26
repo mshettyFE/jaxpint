@@ -23,7 +23,8 @@ from jaxpint.bayes import (
     ImproperPrior,
     Uniform,
     marg_set_from_priors,
-    marginalize,
+    marginalize_pta,
+    marginalize_single_pulsar,
 )
 from jaxpint.bayes.validate import PriorValidationError
 from jaxpint.bridge import build_timing_model, pint_model_to_params, pint_toas_to_jax
@@ -173,9 +174,7 @@ class TestAnalyticCorrectness:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        likelihood_marg, _, skel = marginalize(
-            single_pulsar_logL,
-            over={"F1"},
+        likelihood_marg, _, skel = marginalize_single_pulsar(over={"F1"},
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -259,9 +258,7 @@ class TestAnalyticCorrectness:
         priors = {n: ImproperPrior() for n in params.free_names()}
         over = {"F1", "F2"}
 
-        likelihood_marg, _, skel = marginalize(
-            single_pulsar_logL,
-            over=over,
+        likelihood_marg, _, skel = marginalize_single_pulsar(over=over,
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -352,9 +349,7 @@ class TestEmptyMargSet:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        likelihood_marg, sampled_priors, skel = marginalize(
-            single_pulsar_logL,
-            over=set(),
+        likelihood_marg, sampled_priors, skel = marginalize_single_pulsar(over=set(),
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -379,9 +374,7 @@ class TestReducedSkeleton:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        likelihood_marg, sampled_priors, skel = marginalize(
-            single_pulsar_logL,
-            over={"F0", "F1"},
+        likelihood_marg, sampled_priors, skel = marginalize_single_pulsar(over={"F0", "F1"},
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -405,9 +398,7 @@ class TestReducedSkeleton:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        _, _, skel = marginalize(
-            single_pulsar_logL,
-            over={"F0", "DM"},
+        _, _, skel = marginalize_single_pulsar(over={"F0", "DM"},
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -430,9 +421,7 @@ class TestJITAndGrad:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        likelihood_marg, _, skel = marginalize(
-            single_pulsar_logL,
-            over={"F0"},
+        likelihood_marg, _, skel = marginalize_single_pulsar(over={"F0"},
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -448,9 +437,7 @@ class TestJITAndGrad:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        likelihood_marg, _, skel = marginalize(
-            single_pulsar_logL,
-            over={"F0"},
+        likelihood_marg, _, skel = marginalize_single_pulsar(over={"F0"},
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -481,8 +468,7 @@ class TestLinearityCheck:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")    # any warning becomes a test failure
-            likelihood_marg, _, _ = marginalize( single_pulsar_logL,
-                over=set(params.free_names()),
+            likelihood_marg, _, _ = marginalize_single_pulsar(over=set(params.free_names()),
                 priors=priors,
                 toa_data=toa_data,
                 timing_model=jax_model,
@@ -491,8 +477,7 @@ class TestLinearityCheck:
                 # defaults: allow_nonlinear=False, validate_linearity=True
             )
         # Ensure the result is well-defined too.
-        _, _, skel = marginalize(
-            single_pulsar_logL, over=set(params.free_names()),
+        _, _, skel = marginalize_single_pulsar(over=set(params.free_names()),
             priors=priors, toa_data=toa_data, timing_model=jax_model,
             noise_model=noise_model, fiducial_params=params,
         )
@@ -504,14 +489,12 @@ class TestLinearityCheck:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        likelihood_marg_check, _, skel_check = marginalize(
-            single_pulsar_logL, over={"F0"},
+        likelihood_marg_check, _, skel_check = marginalize_single_pulsar(over={"F0"},
             priors=priors, toa_data=toa_data, timing_model=jax_model,
             noise_model=noise_model, fiducial_params=params,
             validate_linearity=True,
         )
-        likelihood_marg_skip, _, skel_skip = marginalize(
-            single_pulsar_logL, over={"F0"},
+        likelihood_marg_skip, _, skel_skip = marginalize_single_pulsar(over={"F0"},
             priors=priors, toa_data=toa_data, timing_model=jax_model,
             noise_model=noise_model, fiducial_params=params,
             validate_linearity=False,
@@ -586,9 +569,7 @@ def _per_pulsar_marg_logL(
     marg log-likelihoods.
     """
     priors = {n: ImproperPrior() for n in bare_names}
-    g, _, skel = marginalize(
-        single_pulsar_logL,
-        over=set(bare_names),
+    g, _, skel = marginalize_single_pulsar(over=set(bare_names),
         priors=priors,
         toa_data=toa_data,
         timing_model=timing_model,
@@ -750,9 +731,7 @@ class TestPTAMarg:
         }
         priors = {n: ImproperPrior() for n in over}
 
-        g, sampled, reduced_skeletons = marginalize(
-            pta_logL,
-            over=over,
+        g, sampled, reduced_skeletons = marginalize_pta(over=over,
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
@@ -804,9 +783,7 @@ class TestPTAMarg:
         }
         priors = {n: ImproperPrior() for n in over}
 
-        g, _, reduced_skeletons = marginalize(
-            pta_logL,
-            over=over,
+        g, _, reduced_skeletons = marginalize_pta(over=over,
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
@@ -842,9 +819,7 @@ class TestPTAMarg:
         )
         global_params = GlobalParams.empty()
 
-        g, sampled, reduced_skeletons = marginalize(
-            pta_logL,
-            over=set(),
+        g, sampled, reduced_skeletons = marginalize_pta(over=set(),
             priors={},
             config=config,
             pulsar_names=pulsar_names,
@@ -888,9 +863,7 @@ class TestPTAMarg:
         priors = {"gwb_log10_A": ImproperPrior()}
 
         with pytest.raises(NotImplementedError, match="global-parameter"):
-            marginalize(
-                pta_logL,
-                over={"gwb_log10_A"},
+            marginalize_pta(over={"gwb_log10_A"},
                 priors=priors,
                 config=config,
                 pulsar_names=pulsar_names,
@@ -916,9 +889,7 @@ class TestPTAMarg:
         priors = {"nonsense_param": ImproperPrior()}
 
         with pytest.raises(ValueError, match="matches no pulsar"):
-            marginalize(
-                pta_logL,
-                over={"nonsense_param"},
+            marginalize_pta(over={"nonsense_param"},
                 priors=priors,
                 config=config,
                 pulsar_names=pulsar_names,
@@ -947,9 +918,7 @@ class TestPTAMarg:
         # starts with "J1234_" too, but the bare name "extra_F0" is NOT in
         # pulsar 0's params; so the resolver must pick pulsar 1.
         priors = {"J1234_extra_F0": ImproperPrior()}
-        g, _, reduced_skeletons = marginalize(
-            pta_logL,
-            over={"J1234_extra_F0"},
+        g, _, reduced_skeletons = marginalize_pta(over={"J1234_extra_F0"},
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
@@ -978,9 +947,7 @@ class TestPTAMarg:
         over = {f"{pn}_F0" for pn in pulsar_names} | {f"{pulsar_names[1]}_F1"}
         priors = {n: ImproperPrior() for n in over}
 
-        _, sampled, reduced_skeletons = marginalize(
-            pta_logL,
-            over=over,
+        _, sampled, reduced_skeletons = marginalize_pta(over=over,
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
@@ -1027,9 +994,7 @@ class TestPTAMarg:
         over = {f"{pn}_F0" for pn in pulsar_names}
         priors = {n: ImproperPrior() for n in over}
 
-        g, _, reduced_skeletons = marginalize(
-            pta_logL,
-            over=over,
+        g, _, reduced_skeletons = marginalize_pta(over=over,
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
@@ -1072,9 +1037,7 @@ class TestPTAMarg:
         # The linearity test does not fire for linear params even at small
         # tol, since the Hessian is exactly zero.  Confirm: with the default
         # tol it passes silently.
-        marginalize(
-            pta_logL,
-            over=over,
+        marginalize_pta(over=over,
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
