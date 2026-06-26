@@ -149,8 +149,7 @@ class WLSFitter(BaseFitter):
         final_resid = _subtract_weighted_mean(final_resid, sigma)
         chi2_val = float(compute_chi2(final_resid, sigma))
 
-        n_offset = 0 if self.model.phoff_name is not None else 1
-        dof = self.toa_data.n_toas - params.n_free - n_offset
+        dof = self._dof(params, self.toa_data.n_toas)
 
         return WLSFitResult(
             params=params,

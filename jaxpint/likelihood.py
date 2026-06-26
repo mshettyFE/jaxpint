@@ -70,10 +70,9 @@ def single_pulsar_logL(
     use_qr : bool
         If True, evaluate the Woodbury quadratic form / log-determinant with
         :func:`~jaxpint.utils.woodbury_dot_qr` (square-root form) instead of
-        :func:`~jaxpint.utils.woodbury_dot` (Cholesky of the Gram). Set by
-        :func:`~jaxpint.bayes.marginalize`, whose ``external_cov`` carries the
-        timing design matrix at ``Φ = 1e40``: that block is genuinely collinear
-        for multi-parameter MSPs, where the Gram form loses several digits.
+        :func:`~jaxpint.utils.woodbury_dot` (Cholesky of the Gram). 
+        Use if covariance is genuinely collinear
+        for multi-parameter MSPs, which cuases the Gram form loses several digits).
 
     Returns
     -------

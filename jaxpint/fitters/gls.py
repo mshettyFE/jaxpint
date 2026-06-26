@@ -13,232 +13,19 @@ from jaxtyping import Array, Float
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.utils import woodbury_dot, woodbury_solve
 
 from ._base import (
     BaseFitter,
     BaseFitResult,
     compute_time_residuals,
     _subtract_weighted_mean,
+    _subtract_cov_weighted_mean,
     wls_step,
+    lstsq_step_fullcov,
+    lstsq_step_augmented,
     compute_chi2,
+    compute_chi2_cov,
 )
-
-
-# ---------------------------------------------------------------------------
-# GLS helper functions
-# ---------------------------------------------------------------------------
-
-
-def _subtract_gls_weighted_mean(
-    residuals: Float[Array, " n"],
-    Ndiag: Float[Array, " n"],
-    U: Float[Array, "n k"],
-    Phidiag: Float[Array, " k"],
-) -> Float[Array, " n"]:
-    """Subtract the GLS-weighted mean from *residuals*.
-
-    The GLS weighted mean is ``(1^T C^{-1} r) / (1^T C^{-1} 1)``
-    where ``C = diag(N) + U diag(Phi) U^T``.
-    """
-    ones = jnp.ones_like(residuals)
-    numerator, _ = woodbury_dot(Ndiag, U, Phidiag, ones, residuals)
-    denominator, _ = woodbury_dot(Ndiag, U, Phidiag, ones, ones)
-    wmean = numerator / denominator
-    return residuals - wmean
-
-
-def gls_step_fullcov(
-    residuals: Float[Array, " n_toas"],
-    Ndiag: Float[Array, " n_toas"],
-    U: Float[Array, "n_toas n_epochs"],
-    Phidiag: Float[Array, " n_epochs"],
-    M: Float[Array, "n_toas n_free"],
-    threshold: float,
-) -> tuple[
-    Float[Array, " n_free"],
-    Float[Array, "n_free n_free"],
-    Float[Array, " n_free"],
-]:
-    """One GLS solve via full (Woodbury) covariance inversion + SVD.
-
-    Computes ``M^T C^{-1} M`` and ``M^T C^{-1} r`` using
-    :func:`~jaxpint.utils.woodbury_solve`, then SVD-solves the
-    ``(n_free, n_free)`` normal equations.
-
-    Parameters
-    ----------
-    residuals : jax.Array, shape (n_toas,)
-        Time residuals in seconds (GLS-weighted mean already subtracted).
-    Ndiag : jax.Array, shape (n_toas,)
-        Diagonal of the white-noise covariance matrix (variances).
-    U : jax.Array, shape (n_toas, n_epochs)
-        Basis matrix for correlated noise components.
-    Phidiag : jax.Array, shape (n_epochs,)
-        Diagonal prior covariance of the correlated noise amplitudes.
-    M : jax.Array, shape (n_toas, n_free)
-        Design matrix (free-parameter columns only).
-    threshold : float
-        Singular values below ``threshold * S_max`` are discarded.
-
-    Returns
-    -------
-    dpars : jax.Array, shape (n_free,)
-        Parameter updates.
-    covariance : jax.Array, shape (n_free, n_free)
-        Parameter covariance matrix.
-    norms : jax.Array, shape (n_free,)
-        Column norms used for normalisation (diagnostic).
-    """
-    # C^{-1} M  and  C^{-1} r  via Woodbury (never forms n_toas×n_toas)
-    Mr = jnp.column_stack([M, residuals[:, None]])  # (n, n_free+1)
-    Cinv_Mr = woodbury_solve(Ndiag, U, Phidiag, Mr)  # (n, n_free+1)
-    Cinv_M = Cinv_Mr[:, :-1]  # (n, n_free)
-    Cinv_r = Cinv_Mr[:, -1]  # (n,)
-
-    mtcm = M.T @ Cinv_M  # (n_free, n_free)
-    mtcy = M.T @ Cinv_r  # (n_free,)
-
-    # Normalize for numerical stability
-    # normalize_designmatrix works on (n, p) — we want column norms of mtcm
-    # but mtcm is square (n_free, n_free).  Use column norms directly.
-    col_norms = jnp.sqrt(jnp.diag(mtcm))
-    col_norms = jnp.where(col_norms == 0.0, 1.0, col_norms)
-    mtcm_normalized = mtcm / col_norms / col_norms[:, None]
-    mtcy_normalized = mtcy / col_norms
-
-    # SVD solve of the (n_free, n_free) system
-    U_svd, S, Vt = jnp.linalg.svd(mtcm_normalized, full_matrices=False)
-    S_safe = jnp.where(S <= threshold * S[0], jnp.inf, S)
-
-    dpars_normalized = Vt.T @ ((U_svd.T @ mtcy_normalized) / S_safe)
-    dpars = dpars_normalized / col_norms
-
-    cov_normalized = (Vt.T / S_safe**2) @ Vt
-    covariance = (cov_normalized / col_norms).T / col_norms
-
-    return dpars, covariance, col_norms
-
-
-def gls_step_augmented(
-    residuals: Float[Array, " n_toas"],
-    Ndiag: Float[Array, " n_toas"],
-    U: Float[Array, "n_toas n_epochs"],
-    Phidiag: Float[Array, " n_epochs"],
-    M: Float[Array, "n_toas n_free"],
-    threshold: float,
-) -> tuple[
-    Float[Array, " n_free"],
-    Float[Array, "n_free n_free"],
-    Float[Array, " n_aug"],
-    Float[Array, " n_epochs"],
-]:
-    """One GLS solve via the augmented design-matrix approach.
-
-    Augments the design matrix as ``M_aug = [M | U]`` and solves with
-    diagonal weighting ``N^{-1}`` plus a prior on noise amplitudes.
-
-    Parameters
-    ----------
-    residuals : jax.Array, shape (n_toas,)
-        Time residuals in seconds (GLS-weighted mean already subtracted).
-    Ndiag : jax.Array, shape (n_toas,)
-        Diagonal of the white-noise covariance matrix (variances).
-    U : jax.Array, shape (n_toas, n_epochs)
-        Basis matrix for correlated noise components.
-    Phidiag : jax.Array, shape (n_epochs,)
-        Diagonal prior covariance of the correlated noise amplitudes.
-    M : jax.Array, shape (n_toas, n_free)
-        Design matrix (free-parameter columns only).
-    threshold : float
-        Singular values below ``threshold * S_max`` are discarded.
-
-    Returns
-    -------
-    dpars : jax.Array, shape (n_free,)
-        Timing parameter updates.
-    covariance : jax.Array, shape (n_free, n_free)
-        Timing parameter covariance.
-    norms : jax.Array, shape (n_free + n_epochs,)
-        Column norms of the augmented system (diagnostic).
-    noise_realizations : jax.Array, shape (n_epochs,)
-        MAP noise amplitude estimates.
-    """
-    n_free = M.shape[1]
-
-    # Augmented design matrix
-    M_aug = jnp.concatenate([M, U], axis=1)  # (n_toas, n_aug)
-
-    # Diagonal weighting
-    Ninv = 1.0 / Ndiag
-    r_w = residuals * Ninv
-    M_w = M_aug * Ninv[:, None]
-
-    # M_aug^T N^{-1} M_aug
-    mtcm = M_aug.T @ M_w  # (n_aug, n_aug)
-    mtcy = M_aug.T @ r_w  # (n_aug,)
-
-    # Add prior: uninformative (1e-40) on timing cols, 1/Phi on noise cols
-    prior_inv = jnp.concatenate(
-        [
-            jnp.full(n_free, 1e-40),
-            1.0 / Phidiag,
-        ]
-    )
-    mtcm = mtcm + jnp.diag(prior_inv)
-
-    # Normalize columns
-    norms = jnp.sqrt(jnp.diag(mtcm))
-    norms = jnp.where(norms == 0.0, 1.0, norms)
-    mtcm_normalized = mtcm / norms / norms[:, None]
-    mtcy_normalized = mtcy / norms
-
-    U_svd, S, Vt = jnp.linalg.svd(mtcm_normalized, full_matrices=False)
-    S_safe = jnp.where(S <= threshold * S[0], jnp.inf, S)
-
-    xhat_normalized = Vt.T @ ((U_svd.T @ mtcy_normalized) / S_safe)
-    xhat = xhat_normalized / norms
-
-    xvar_normalized = (Vt.T / S_safe**2) @ Vt
-    xvar = (xvar_normalized / norms).T / norms
-
-    # Extract timing parameters and noise realizations
-    dpars = xhat[:n_free]
-    noise_realizations = xhat[n_free:]
-    covariance = xvar[:n_free, :n_free]
-
-    return dpars, covariance, norms, noise_realizations
-
-
-def compute_gls_chi2(
-    residuals: Float[Array, " n_toas"],
-    Ndiag: Float[Array, " n_toas"],
-    U: Float[Array, "n_toas n_epochs"],
-    Phidiag: Float[Array, " n_epochs"],
-) -> Float[Array, ""]:
-    """Compute the GLS chi-squared statistic: ``r^T C^{-1} r``.
-
-    The covariance ``C = diag(N) + U diag(Phi) U^T`` is inverted via
-    the Woodbury identity without forming the full matrix.
-
-    Parameters
-    ----------
-    residuals : jax.Array, shape (n_toas,)
-        Time residuals in seconds.
-    Ndiag : jax.Array, shape (n_toas,)
-        Diagonal of the white-noise covariance matrix (variances).
-    U : jax.Array, shape (n_toas, n_epochs)
-        Basis matrix for correlated noise components.
-    Phidiag : jax.Array, shape (n_epochs,)
-        Diagonal prior covariance of the correlated noise amplitudes.
-
-    Returns
-    -------
-    chi2 : jax.Array, shape ()
-        Scalar GLS chi-squared value.
-    """
-    chi2, _ = woodbury_dot(Ndiag, U, Phidiag, residuals, residuals)
-    return chi2
 
 
 # ---------------------------------------------------------------------------
@@ -294,11 +81,11 @@ def _gls_iteration_core(
 
     noise_realizations = jnp.zeros(0)
     if full_cov:
-        dpars, covariance, _norms = gls_step_fullcov(
+        dpars, covariance, _norms = lstsq_step_fullcov(
             time_resid, Ndiag, U, Phidiag, M, threshold
         )
     elif n_basis > 0:
-        dpars, covariance, _norms, noise_realizations = gls_step_augmented(
+        dpars, covariance, _norms, noise_realizations = lstsq_step_augmented(
             time_resid, Ndiag, U, Phidiag, M, threshold
         )
     else:
@@ -412,17 +199,16 @@ class GLSFitter(BaseFitter):
 
         final_resid = compute_time_residuals(self.model, self.toa_data, params)
         if n_basis > 0:
-            final_resid = _subtract_gls_weighted_mean(final_resid, Ndiag, U, Phidiag)
+            final_resid = _subtract_cov_weighted_mean(final_resid, Ndiag, U, Phidiag)
         else:
             final_resid = _subtract_weighted_mean(final_resid, sigma)
 
         if n_basis > 0:
-            chi2_val = float(compute_gls_chi2(final_resid, Ndiag, U, Phidiag))
+            chi2_val = float(compute_chi2_cov(final_resid, Ndiag, U, Phidiag))
         else:
             chi2_val = float(compute_chi2(final_resid, sigma))
 
-        n_offset = 0 if self.model.phoff_name is not None else 1
-        dof = self.toa_data.n_toas - params.n_free - n_offset
+        dof = self._dof(params, self.toa_data.n_toas)
 
         return GLSFitResult(
             params=params,
