@@ -14,11 +14,11 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import ParamDecl
+from jaxpint.components import NoiseComponent, ParamDecl
 from jaxpint.types import TOAData, ParameterVector
 
 
-class ScaleDmError(eqx.Module):
+class ScaleDmError(NoiseComponent):
     """White noise scaling of wideband DM uncertainties (DMEFAC/DMEQUAD).
 
     Parameters

@@ -45,6 +45,16 @@ def _has_param(par: ParResult, name: str) -> bool:
     return name in par.params._name_to_index
 
 
+def _value(par: ParResult, name: str) -> float:
+    """Float value of parameter *name* (caller guarantees it exists)."""
+    return float(par.params.values[par.params._name_to_index[name]])
+
+
+def _epoch_or_pepoch(par: ParResult, name: str) -> str:
+    """Epoch parameter *name* if present, else fall back to ``PEPOCH`` (PINT)."""
+    return name if _has_param(par, name) else "PEPOCH"
+
+
 def _match_group1(pattern: str, s: str) -> str:
     """First capture group of ``pattern`` against ``s`` (caller guarantees a match)."""
     m = re.match(pattern, s)
@@ -96,7 +106,7 @@ def _resolve_astrometry(par: ParResult):
             pmdec = "PMDEC"
 
     if pmra is not None or pmdec is not None:
-        posepoch = "POSEPOCH" if _has_param(par, "POSEPOCH") else "PEPOCH"
+        posepoch = _epoch_or_pepoch(par, "POSEPOCH")
 
     return raj, decj, pmra, pmdec, posepoch, obliquity_arcsec
 
@@ -116,7 +126,7 @@ def _span_seconds(par: ParResult, tdb_s, tspan_param: Optional[str] = None) -> f
     """
     T = float(np.max(tdb_s) - np.min(tdb_s))
     if tspan_param is not None and _has_param(par, tspan_param):
-        tspan_days = float(par.params.values[par.params._name_to_index[tspan_param]])
+        tspan_days = _value(par, tspan_param)
         T = tspan_days * 86400.0
     return T
 
@@ -177,7 +187,7 @@ def _ell1_common_kwargs(par: ParResult) -> dict:
     )
 
 
-def _build_binary(par: ParResult, astro_info: dict) -> object:
+def _build_binary(ctx: BuildContext) -> object:
     """Construct the appropriate binary delay component."""
     from jaxpint.binary.bt import BinaryBT
     from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
@@ -186,6 +196,7 @@ def _build_binary(par: ParResult, astro_info: dict) -> object:
     from jaxpint.binary.ddgr import BinaryDDGR
     from jaxpint.binary.ell1 import BinaryELL1
 
+    par = ctx.par
     bname = par.binary_model
     if bname is None:
         raise ValueError("No BINARY model specified in .par file")
@@ -279,11 +290,11 @@ def _build_binary(par: ParResult, astro_info: dict) -> object:
                 kin_name="KIN",
                 kom_name="KOM",
                 px_name="PX",
-                raj_name=astro_info.get("raj_name", "RAJ"),
-                decj_name=astro_info.get("decj_name", "DECJ"),
-                pmra_name=astro_info.get("pmra_name"),
-                pmdec_name=astro_info.get("pmdec_name"),
-                posepoch_name=astro_info.get("posepoch_name"),
+                raj_name=ctx.raj,
+                decj_name=ctx.decj,
+                pmra_name=ctx.pmra,
+                pmdec_name=ctx.pmdec,
+                posepoch_name=ctx.posepoch,
                 k96=k96,
             )
 
@@ -401,17 +412,16 @@ def _build_solar_wind(ctx: BuildContext):
     ne_sw_names = ["NE_SW"]
     for pname in par.params.names:
         if pname.startswith("NE_SW") and pname != "NE_SW":
-            val = float(par.params.values[par.params._name_to_index[pname]])
-            if val != 0.0:
+            if _value(par, pname) != 0.0:
                 ne_sw_names.append(pname)
     ne_sw_names.sort()
 
-    ne_sw_val = float(par.params.values[par.params._name_to_index.get("NE_SW", 0)])
+    ne_sw_val = _value(par, "NE_SW") if _has_param(par, "NE_SW") else 0.0
     if not (len(ne_sw_names) > 1 or ne_sw_val != 0.0):
         return None
 
     swm = par.int_params.get("SWM", 0)
-    swepoch_name = "SWEPOCH" if _has_param(par, "SWEPOCH") else "PEPOCH"
+    swepoch_name = _epoch_or_pepoch(par, "SWEPOCH")
     swp_name = "SWP" if swm == 1 else None
 
     return SolarWindDispersion(
@@ -471,7 +481,7 @@ def _build_dispersion_dm(ctx: BuildContext):
                 dm_names.append(pname)
     dm_names.sort(key=lambda n: int(n[2:]) if n != "DM" else 0)
 
-    dmepoch_name = "DMEPOCH" if _has_param(par, "DMEPOCH") else "PEPOCH"
+    dmepoch_name = _epoch_or_pepoch(par, "DMEPOCH")
 
     return DispersionDM(
         dm_param_names=tuple(dm_names),
@@ -503,14 +513,7 @@ def _build_dispersion_jump(ctx: BuildContext):
 
 
 def _build_binary_comp(ctx: BuildContext):
-    astro_info = {
-        "raj_name": ctx.raj,
-        "decj_name": ctx.decj,
-        "pmra_name": ctx.pmra,
-        "pmdec_name": ctx.pmdec,
-        "posepoch_name": ctx.posepoch,
-    }
-    return _build_binary(ctx.par, astro_info=astro_info)
+    return _build_binary(ctx)
 
 
 def _build_frequency_dependent(ctx: BuildContext):
@@ -558,7 +561,7 @@ def _build_chromatic_cm(ctx: BuildContext):
                 cm_names.append(pname)
     cm_names.sort(key=lambda n: int(n[2:]) if n != "CM" else 0)
 
-    cmepoch_name = "CMEPOCH" if _has_param(par, "CMEPOCH") else "PEPOCH"
+    cmepoch_name = _epoch_or_pepoch(par, "CMEPOCH")
     return ChromaticCM(
         cm_param_names=tuple(cm_names),
         cmepoch_name=cmepoch_name,
@@ -606,7 +609,7 @@ def _build_wave_x(ctx: BuildContext):
     wx_indices = _collect_prefix_indices(ctx.par, "WXFREQ_")
     if not wx_indices:
         return None
-    wxepoch_name = "WXEPOCH" if _has_param(ctx.par, "WXEPOCH") else "PEPOCH"
+    wxepoch_name = _epoch_or_pepoch(ctx.par, "WXEPOCH")
     return WaveX(
         n_components=len(wx_indices),
         wxepoch_name=wxepoch_name,
@@ -622,7 +625,7 @@ def _build_dm_wave_x(ctx: BuildContext):
     dmwx_indices = _collect_prefix_indices(ctx.par, "DMWXFREQ_")
     if not dmwx_indices:
         return None
-    dmwxepoch_name = "DMWXEPOCH" if _has_param(ctx.par, "DMWXEPOCH") else "PEPOCH"
+    dmwxepoch_name = _epoch_or_pepoch(ctx.par, "DMWXEPOCH")
     return DMWaveX(
         n_components=len(dmwx_indices),
         dmwxepoch_name=dmwxepoch_name,
@@ -638,7 +641,7 @@ def _build_cm_wave_x(ctx: BuildContext):
     cmwx_indices = _collect_prefix_indices(ctx.par, "CMWXFREQ_")
     if not cmwx_indices:
         return None
-    cmwxepoch_name = "CMWXEPOCH" if _has_param(ctx.par, "CMWXEPOCH") else "PEPOCH"
+    cmwxepoch_name = _epoch_or_pepoch(ctx.par, "CMWXEPOCH")
     return CMWaveX(
         n_components=len(cmwx_indices),
         cmwxepoch_name=cmwxepoch_name,
@@ -720,7 +723,7 @@ def _build_wave(ctx: BuildContext):
     if not wave_a_names:
         return None
     wave_indices = [int(_match_group1(r"WAVE(\d+)_A", n)) for n in wave_a_names]
-    waveepoch_name = "WAVEEPOCH" if _has_param(par, "WAVEEPOCH") else "PEPOCH"
+    waveepoch_name = _epoch_or_pepoch(par, "WAVEEPOCH")
     return Wave(
         n_terms=len(wave_indices),
         waveepoch_name=waveepoch_name,
@@ -745,8 +748,8 @@ def _build_ifunc(ctx: BuildContext):
     delays = []
     for a_name in ifunc_a_names:
         b_name = a_name.replace("_A", "_B")
-        mjd_val = float(par.params.values[par.params._name_to_index[a_name]])
-        delay_val = float(par.params.values[par.params._name_to_index[b_name]])
+        mjd_val = _value(par, a_name)
+        delay_val = _value(par, b_name)
         mjds.append(mjd_val)
         delays.append(delay_val)
 
@@ -1113,7 +1116,7 @@ def build_model(
             delay_components.append(obj)
         elif isinstance(obj, PhaseComponent):
             phase_components.append(obj)
-        elif isinstance(obj, (NoiseComponent, ScaleDmError)):
+        elif isinstance(obj, NoiseComponent):
             noise_components.append(obj)
         else:
             raise TypeError(

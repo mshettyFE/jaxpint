@@ -1,11 +1,9 @@
 """Phase jump component: arbitrary phase offsets for TOA subsets.
 
-Ports PINT's ``PhaseJump`` class as a pure Equinox module.  Each JUMP
-parameter stores a time offset in seconds and is converted to phase by
+Each JUMP parameter stores a time offset in seconds and is converted to phase by
 multiplying by F0 (spin frequency).  Boolean masks in ``TOAData.flag_masks``
 select which TOAs each jump applies to.
 
-All derivatives are computed via JAX autodiff (d_phase/d_JUMP = F0).
 """
 
 from __future__ import annotations

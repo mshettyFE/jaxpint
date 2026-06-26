@@ -57,10 +57,7 @@ class BaseFitResult:
 
 
 class BaseFitter(ABC):
-    """Abstract base for all JaxPINT fitters.
-
-    Subclasses must implement :meth:`fit_toas` (the main entry point)
-    and typically also implement ``_iteration`` and ``_build_result``.
+    """Base for all JaxPINT fitters.
 
     Parameters
     ----------

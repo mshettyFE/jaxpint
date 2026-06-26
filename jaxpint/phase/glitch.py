@@ -1,7 +1,6 @@
 """Glitch phase component: models pulsar spin-down glitches.
 
-Ports PINT's ``Glitch`` class as a pure Equinox module.  Each glitch N
-contributes phase only for TOAs after its epoch (GLEP_N):
+Each Glitch contributes phase only for TOAs after its epoch (GLEP_N):
 
     phase = GLPH + GLF0*dt + 0.5*GLF1*dt^2 + (1/6)*GLF2*dt^3
           + GLF0D * tau * (1 - exp(-dt / tau))
