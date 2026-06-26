@@ -17,6 +17,7 @@ from jaxpint.types import TOAData, ParameterVector
 from ._base import (
     BaseFitter,
     BaseFitResult,
+    IterationState,
     compute_time_residuals,
     _subtract_weighted_mean,
     wls_step,
@@ -114,13 +115,8 @@ class WLSFitter(BaseFitter):
         self,
         params: ParameterVector,
         threshold: float,
-    ) -> tuple[ParameterVector, Float[Array, "n_free n_free"]]:
-        """Run one Gauss-Newton iteration.
-
-        Returns
-        -------
-        (new_params, covariance)
-        """
+    ) -> IterationState:
+        """Run one Gauss-Newton iteration."""
         new_values, covariance = _wls_iteration_core(
             self.model,
             self.toa_data,
@@ -129,13 +125,9 @@ class WLSFitter(BaseFitter):
             threshold,
         )
         new_params = eqx.tree_at(lambda pv: pv.values, params, new_values)
-        return new_params, covariance
+        return IterationState(new_params, covariance)
 
-    def _build_result(
-        self,
-        params: ParameterVector,
-        covariance: Float[Array, "n_free n_free"],
-    ) -> WLSFitResult:
+    def _build_result(self, state: IterationState) -> WLSFitResult:
         """Compute final residuals/chi2 and return a result object.
 
         Final residuals are still mean-subtracted (matches PINT's
@@ -143,6 +135,8 @@ class WLSFitter(BaseFitter):
         is invariant to the implicit constant DOF.  The dof count subtracts
         one for the Offset column when applicable (matches PINT).
         """
+        params = state.params
+        covariance = state.covariance
         sigma = self._get_sigma(params)
 
         final_resid = compute_time_residuals(self.model, self.toa_data, params)
@@ -182,12 +176,6 @@ class WLSFitter(BaseFitter):
         if threshold is None:
             threshold = 1e-14 * max(self.toa_data.n_toas, self.params.n_free)
 
-        params = self.params
-        covariance = None
-        safe_maxiter = 1 if maxiter < 1 else maxiter
-
-        for _ in range(safe_maxiter):
-            params, covariance = self._iteration(params, threshold)
-
-        assert covariance is not None  # safe_maxiter >= 1, so the loop always runs
-        return self._build_result(params, covariance)
+        return self._build_result(
+            self._gauss_newton(maxiter, threshold, self._iteration)
+        )

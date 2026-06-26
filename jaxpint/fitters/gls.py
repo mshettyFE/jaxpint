@@ -17,6 +17,7 @@ from jaxpint.types import TOAData, ParameterVector
 from ._base import (
     BaseFitter,
     BaseFitResult,
+    IterationState,
     compute_time_residuals,
     _subtract_weighted_mean,
     _subtract_cov_weighted_mean,
@@ -159,17 +160,8 @@ class GLSFitter(BaseFitter):
         params: ParameterVector,
         threshold: float,
         full_cov: bool,
-    ) -> tuple[
-        ParameterVector,
-        Float[Array, "n_free n_free"],
-        Optional[Float[Array, " n_basis"]],
-    ]:
-        """Run one Gauss-Newton iteration.
-
-        Returns
-        -------
-        (new_params, covariance, noise_realizations)
-        """
+    ) -> IterationState:
+        """Run one Gauss-Newton iteration."""
         new_values, covariance, noise_real = _gls_iteration_core(
             self.model,
             self.toa_data,
@@ -180,20 +172,16 @@ class GLSFitter(BaseFitter):
         )
         new_params = eqx.tree_at(lambda pv: pv.values, params, new_values)
         noise_realizations = noise_real if noise_real.size > 0 else None
-        return new_params, covariance, noise_realizations
+        return IterationState(new_params, covariance, noise_realizations)
 
-    def _build_result(
-        self,
-        params: ParameterVector,
-        covariance: Float[Array, "n_free n_free"],
-        noise_realizations: Optional[Float[Array, " n_basis"]],
-    ) -> GLSFitResult:
+    def _build_result(self, state: IterationState) -> GLSFitResult:
         """Compute final residuals/chi2 and return a result object.
 
         Final residuals are still mean-subtracted (matches PINT's
         ``Residuals(subtract_mean=True)`` default).  The dof count
         subtracts one for the implicit Offset column when applicable.
         """
+        params = state.params
         sigma, Ndiag, U, Phidiag = self._get_noise(params)
         n_basis = U.shape[1]
 
@@ -212,11 +200,11 @@ class GLSFitter(BaseFitter):
 
         return GLSFitResult(
             params=params,
-            covariance_matrix=covariance,
+            covariance_matrix=state.covariance,
             chi2=chi2_val,
             dof=dof,
             residuals=final_resid,
-            noise_realizations=noise_realizations,
+            noise_realizations=state.noise_realizations,
         )
 
     def fit_toas(
@@ -259,14 +247,7 @@ class GLSFitter(BaseFitter):
                 dim = self.params.n_free + n_basis
             threshold = 1e-14 * max(n_toas, dim)
 
-        safe_maxiter = 1 if maxiter < 1 else maxiter
-        params = self.params
-        covariance = None
-        noise_realizations = None
-        for _ in range(safe_maxiter):
-            params, covariance, noise_realizations = self._iteration(
-                params, threshold, full_cov
-            )
-
-        assert covariance is not None  # safe_maxiter >= 1, so the loop always runs
-        return self._build_result(params, covariance, noise_realizations)
+        state = self._gauss_newton(
+            maxiter, threshold, lambda p, t: self._iteration(p, t, full_cov)
+        )
+        return self._build_result(state)
