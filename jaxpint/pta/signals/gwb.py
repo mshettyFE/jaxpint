@@ -142,9 +142,7 @@ def gwb_covariance(
     Phi : (2 * n_components,) array
         PSD values for each basis function.
     """
-    toas_seconds = (
-        toa_data.tdb_int.astype(jnp.float64) * 86400.0 + toa_data.tdb_frac * 86400.0
-    )
+    toas_seconds = toa_data.tdb_seconds
     F, freqs = fourier_basis(toas_seconds, n_components, T_span)
     df = 1.0 / T_span
     psd = powerlaw_psd(freqs, log10_A, gamma) * df

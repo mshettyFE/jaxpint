@@ -65,14 +65,14 @@ class ScaleDmError(NoiseComponent):
         sigma_sq = toa_data.dm_errors**2
 
         for dmequad_name in self.dmequad_names:
-            mask = toa_data.flag_masks[dmequad_name]
+            mask = toa_data.flag_mask(dmequad_name)
             dmequad_val = params.param_value(dmequad_name)
             sigma_sq = jnp.where(mask, sigma_sq + dmequad_val**2, sigma_sq)
 
         sigma = jnp.sqrt(sigma_sq)
 
         for dmefac_name in self.dmefac_names:
-            mask = toa_data.flag_masks[dmefac_name]
+            mask = toa_data.flag_mask(dmefac_name)
             dmefac_val = params.param_value(dmefac_name)
             sigma = jnp.where(mask, sigma * dmefac_val, sigma)
 

@@ -146,9 +146,7 @@ class FDJump(DelayComponent):
         result = jnp.zeros(toa_data.n_toas)
 
         for name, fd_idx in zip(self.fdjump_param_names, self.fdjump_fd_indices):
-            mask = toa_data.flag_masks.get(
-                name, jnp.zeros(toa_data.n_toas, dtype=jnp.bool_)
-            )
+            mask = toa_data.flag_mask(name, default=False)
             coeff = params.param_value(name)
             result = jnp.where(mask, result + coeff * y**fd_idx, result)
 

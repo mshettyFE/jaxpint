@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 import equinox as eqx
+import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
 
 from jaxpint.types.dual_float import DualFloat
@@ -105,3 +106,31 @@ class TOAData(eqx.Module):
     def mjd(self) -> DualFloat:
         """MJD timestamp as a DualFloat (int day + fractional day)."""
         return DualFloat(int=self.mjd_int, frac=self.mjd_frac)
+
+    @property
+    def tdb_seconds(self) -> Float[Array, " n_toas"]:
+        """TDB time in seconds.
+
+        Multiply-then-add (rather than ``(tdb_int + tdb_frac) * 86400``)
+        Loses long double precision in the process.
+        For us computations, this is fine.
+        """
+        return self.tdb_int * 86400.0 + self.tdb_frac * 86400.0
+
+    # -- Flag masks --
+
+    def flag_mask(
+        self, name: str, default: bool | None = None
+    ) -> Bool[Array, " n_toas"]:
+        """Per-TOA boolean mask for parameter ``name``.
+
+        Present -> the stored mask. Absent -> a constant ``(n_toas,)`` array
+        filled with ``default``; if ``default`` is None (the implicit "required"
+        case) a ``KeyError`` is raised. JIT-safe for a static ``name`` (the
+        dict-key lookup is static structure; the mask arrays are traced leaves).
+        """
+        if name in self.flag_masks:
+            return self.flag_masks[name]
+        if default is None:
+            raise KeyError(name)
+        return jnp.full(self.n_toas, default, dtype=jnp.bool_)

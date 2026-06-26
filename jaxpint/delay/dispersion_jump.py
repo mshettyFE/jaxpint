@@ -57,7 +57,7 @@ class DispersionJump(DispersionDelayComponent):
         """
         dm = jnp.zeros(toa_data.n_toas)
         for name in self.dmjump_names:
-            mask = toa_data.flag_masks[name]
+            mask = toa_data.flag_mask(name)
             val = params.param_value(name)
             dm = jnp.where(mask, dm - val, dm)
         return dm
