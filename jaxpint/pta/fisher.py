@@ -20,7 +20,7 @@ from jaxpint.pta.likelihood import PTAConfig, pta_logL
 def flatten_params(
     global_params: GlobalParams,
     pulsar_params: tuple[ParameterVector, ...],
-) -> Float[Array, " n_total"]:
+) -> Float[Array, " n_params_total"]:
     """Pack all differentiable parameters into a single flat array.
 
     Layout: ``[global_params.values | pp[0].values | pp[1].values | ...]``
@@ -34,15 +34,15 @@ def flatten_params(
 
     Returns
     -------
-    flat : (n_total,) array
+    flat : (n_params_total,) array
         Concatenated parameter values, where
-        ``n_total = n_global + sum(n_pp_i)``.
+        ``n_params_total = n_global + sum(n_pp_i)``.
     """
     return jnp.concatenate([global_params.values] + [pp.values for pp in pulsar_params])
 
 
 def unflatten_params(
-    flat: Float[Array, " n_total"],
+    flat: Float[Array, " n_params_total"],
     global_template: GlobalParams,
     pulsar_templates: tuple[ParameterVector, ...],
 ) -> tuple[GlobalParams, tuple[ParameterVector, ...]]:
@@ -60,7 +60,7 @@ def unflatten_params(
 
     Parameters
     ----------
-    flat : (n_total,) array
+    flat : (n_params_total,) array
         Flat parameter vector.
     global_template : GlobalParams
         Template with correct static metadata for the global params.
@@ -95,7 +95,7 @@ def fisher_matrix(
     global_params: GlobalParams,
     pulsar_params: tuple[ParameterVector, ...],
     config: PTAConfig,
-) -> Float[Array, "n_total n_total"]:
+) -> Float[Array, "n_params_total n_params_total"]:
     """Compute the Fisher information matrix via ``jax.hessian``.
 
     Internally flattens all parameters into a single array, wraps
@@ -113,8 +113,8 @@ def fisher_matrix(
 
     Returns
     -------
-    fisher : (n_total, n_total) array
-        Fisher matrix, where ``n_total = n_global + sum(n_pp_i)``.
+    fisher : (n_params_total, n_params_total) array
+        Fisher matrix, where ``n_params_total = n_global + sum(n_pp_i)``.
     """
     flat = flatten_params(global_params, pulsar_params)
 

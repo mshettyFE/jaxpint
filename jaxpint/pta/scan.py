@@ -326,12 +326,12 @@ def _inflate_to_full_ij_shape(
     position not in ``dep_p`` (so it broadcasts when summed with arrays
     that depend on different axis subsets).
     """
-    n_total = len(full_axis_sizes)
+    n_axes = len(full_axis_sizes)
     if not dep_p:
-        return arr.reshape((1,) * n_total)
+        return arr.reshape((1,) * n_axes)
     new_shape = []
     arr_dim = 0
-    for axis in range(n_total):
+    for axis in range(n_axes):
         if axis in dep_p:
             new_shape.append(arr.shape[arr_dim])
             arr_dim += 1

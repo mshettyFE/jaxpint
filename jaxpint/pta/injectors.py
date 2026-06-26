@@ -3,8 +3,8 @@
 A *signal injector* contributes shared PTA parameters and either a deterministic
 delay, a per-pulsar stochastic covariance, or -- for correlated signals -- the
 ingredients of a cross-pulsar covariance.  These abstract base classes are the
-interface that :func:`jaxpint.pta.pta_logL` / ``pta_logL_correlated`` consume and
-that the concrete implementations in :mod:`jaxpint.pta.signals` provide.
+interface that :func:`jaxpint.pta.pta_logL` consumes and that the concrete
+implementations in :mod:`jaxpint.pta.signals` provide.
 
 They live in their own leaf module (depending only on the core data types) so
 both the likelihood engine and the signal implementations can import the
