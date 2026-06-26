@@ -73,21 +73,33 @@ class NamedVector(eqx.Module):
         """
         return tuple(sorted(n for n in self.names if n.startswith(prefix)))
 
-    def prefix_indices(self, prefix: str) -> tuple[int, ...]:
-        """Sorted unique integer suffixes of names matching ``prefix``.
+    def indexed_family(self, base: str, suffix: str = "") -> tuple[int, ...]:
+        """Sorted unique integer indices ``i`` for names ``f"{base}{i}{suffix}"``.
 
-        For indexed prefix families, e.g. ``prefix="DMX_"`` over
-        ``DMX_0001, DMX_0002, ...`` -> ``(1, 2, ...)``. Names whose suffix is
-        not an integer are ignored.
+        For integer-indexed families whose index is wrapped by a fixed prefix
+        and (optionally) a fixed suffix, e.g. ``base="WAVE", suffix="_A"`` over
+        ``WAVE1_A, WAVE2_A, ...`` -> ``(1, 2, ...)``. Names that don't carry a
+        pure-integer index in that slot are ignored, so it cleanly skips longer
+        siblings (e.g. ``base="FD"`` skips ``FDJUMP1``).
         """
         out: set[int] = set()
+        end = -len(suffix) if suffix else None
         for name in self.names:
-            if name.startswith(prefix):
+            if name.startswith(base) and name.endswith(suffix):
                 try:
-                    out.add(int(name[len(prefix) :]))
+                    out.add(int(name[len(base):end]))
                 except ValueError:
                     pass
         return tuple(sorted(out))
+
+    def prefix_indices(self, prefix: str) -> tuple[int, ...]:
+        """Sorted unique integer suffixes of names matching ``prefix``.
+
+        The suffix-free special case of :meth:`indexed_family`, e.g.
+        ``prefix="DMX_"`` over ``DMX_0001, DMX_0002, ...`` -> ``(1, 2, ...)``.
+        Names whose suffix is not an integer are ignored.
+        """
+        return self.indexed_family(prefix)
 
     # -- Functional updates --
 
