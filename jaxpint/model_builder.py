@@ -31,28 +31,21 @@ log = logging.getLogger(__name__)
 
 def _param_is_set(par: ParResult, name: str) -> bool:
     """Check whether *name* exists in the ParameterVector and is non-zero."""
-    idx = par.params._name_to_index.get(name)
-    if idx is None:
-        return False
-    return float(par.params.values[idx]) != 0.0
+    return name in par.params and float(par.params.param_value(name)) != 0.0
 
 
 def _opt_name(par: ParResult, name: str) -> Optional[str]:
     return name if _param_is_set(par, name) else None
 
 
-def _has_param(par: ParResult, name: str) -> bool:
-    return name in par.params._name_to_index
-
-
 def _value(par: ParResult, name: str) -> float:
     """Float value of parameter *name* (caller guarantees it exists)."""
-    return float(par.params.values[par.params._name_to_index[name]])
+    return float(par.params.param_value(name))
 
 
 def _epoch_or_pepoch(par: ParResult, name: str) -> str:
     """Epoch parameter *name* if present, else fall back to ``PEPOCH`` (PINT)."""
-    return name if _has_param(par, name) else "PEPOCH"
+    return name if (name in par.params) else "PEPOCH"
 
 
 def _match_group1(pattern: str, s: str) -> str:
@@ -60,19 +53,6 @@ def _match_group1(pattern: str, s: str) -> str:
     m = re.match(pattern, s)
     assert m is not None
     return m.group(1)
-
-
-def _collect_prefix_indices(par: ParResult, prefix: str) -> list[int]:
-    """Collect sorted integer indices for a prefix family (e.g. 'DMX_')."""
-    indices = set()
-    for pname in par.params.names:
-        if pname.startswith(prefix):
-            suffix = pname[len(prefix) :]
-            try:
-                indices.add(int(suffix))
-            except ValueError:
-                pass
-    return sorted(indices)
 
 
 def _resolve_astrometry(par: ParResult):
@@ -125,7 +105,7 @@ def _span_seconds(par: ParResult, tdb_s, tspan_param: Optional[str] = None) -> f
     parameter (in days), when present, overrides it (matches PINT).
     """
     T = float(np.max(tdb_s) - np.min(tdb_s))
-    if tspan_param is not None and _has_param(par, tspan_param):
+    if tspan_param is not None and (tspan_param in par.params):
         tspan_days = _value(par, tspan_param)
         T = tspan_days * 86400.0
     return T
@@ -316,10 +296,10 @@ def _build_binary(ctx: BuildContext) -> object:
             )
 
         case BinaryModel.BT_PIECEWISE:
-            t0x_names = sorted(n for n in par.params.names if n.startswith("T0X_"))
-            a1x_names = sorted(n for n in par.params.names if n.startswith("A1X_"))
-            xr1_names = sorted(n for n in par.params.names if n.startswith("XR1_"))
-            xr2_names = sorted(n for n in par.params.names if n.startswith("XR2_"))
+            t0x_names = par.params.names_with_prefix("T0X_")
+            a1x_names = par.params.names_with_prefix("A1X_")
+            xr1_names = par.params.names_with_prefix("XR1_")
+            xr2_names = par.params.names_with_prefix("XR2_")
             n_pieces = len(xr1_names)
 
             return BinaryBTPiecewise(
@@ -416,7 +396,7 @@ def _build_solar_wind(ctx: BuildContext):
                 ne_sw_names.append(pname)
     ne_sw_names.sort()
 
-    ne_sw_val = _value(par, "NE_SW") if _has_param(par, "NE_SW") else 0.0
+    ne_sw_val = _value(par, "NE_SW") if ("NE_SW" in par.params) else 0.0
     if not (len(ne_sw_names) > 1 or ne_sw_val != 0.0):
         return None
 
@@ -442,7 +422,7 @@ def _build_solar_wind_x(ctx: BuildContext):
     from jaxpint.delay.solar_wind_x import SolarWindDispersionX
 
     par = ctx.par
-    swx_indices = _collect_prefix_indices(par, "SWXDM_")
+    swx_indices = par.params.prefix_indices("SWXDM_")
     if not swx_indices:
         return None
 
@@ -492,7 +472,7 @@ def _build_dispersion_dm(ctx: BuildContext):
 def _build_dispersion_dmx(ctx: BuildContext):
     from jaxpint.delay.dispersion_dmx import DispersionDMX
 
-    dmx_indices = _collect_prefix_indices(ctx.par, "DMX_")
+    dmx_indices = ctx.par.params.prefix_indices("DMX_")
     if not dmx_indices:
         return None
     return DispersionDMX(
@@ -572,7 +552,7 @@ def _build_chromatic_cm(ctx: BuildContext):
 def _build_chromatic_cmx(ctx: BuildContext):
     from jaxpint.delay.chromatic_cmx import ChromaticCMX
 
-    cmx_indices = _collect_prefix_indices(ctx.par, "CMX_")
+    cmx_indices = ctx.par.params.prefix_indices("CMX_")
     if not cmx_indices:
         return None
     return ChromaticCMX(
@@ -587,9 +567,9 @@ def _build_chromatic_cmx(ctx: BuildContext):
 def _build_exponential_dip(ctx: BuildContext):
     from jaxpint.delay.exponential_dip import ExponentialDip
 
-    dip_indices = _collect_prefix_indices(ctx.par, "EXPDIPEPOCH_")
+    dip_indices = ctx.par.params.prefix_indices("EXPDIPEPOCH_")
     if not dip_indices:
-        dip_indices = _collect_prefix_indices(ctx.par, "EXPDIPEP_")
+        dip_indices = ctx.par.params.prefix_indices("EXPDIPEP_")
     if not dip_indices:
         return None
     return ExponentialDip(
@@ -606,7 +586,7 @@ def _build_exponential_dip(ctx: BuildContext):
 def _build_wave_x(ctx: BuildContext):
     from jaxpint.delay.wavex import WaveX
 
-    wx_indices = _collect_prefix_indices(ctx.par, "WXFREQ_")
+    wx_indices = ctx.par.params.prefix_indices("WXFREQ_")
     if not wx_indices:
         return None
     wxepoch_name = _epoch_or_pepoch(ctx.par, "WXEPOCH")
@@ -622,7 +602,7 @@ def _build_wave_x(ctx: BuildContext):
 def _build_dm_wave_x(ctx: BuildContext):
     from jaxpint.delay.dmwavex import DMWaveX
 
-    dmwx_indices = _collect_prefix_indices(ctx.par, "DMWXFREQ_")
+    dmwx_indices = ctx.par.params.prefix_indices("DMWXFREQ_")
     if not dmwx_indices:
         return None
     dmwxepoch_name = _epoch_or_pepoch(ctx.par, "DMWXEPOCH")
@@ -638,7 +618,7 @@ def _build_dm_wave_x(ctx: BuildContext):
 def _build_cm_wave_x(ctx: BuildContext):
     from jaxpint.delay.cmwavex import CMWaveX
 
-    cmwx_indices = _collect_prefix_indices(ctx.par, "CMWXFREQ_")
+    cmwx_indices = ctx.par.params.prefix_indices("CMWXFREQ_")
     if not cmwx_indices:
         return None
     cmwxepoch_name = _epoch_or_pepoch(ctx.par, "CMWXEPOCH")
@@ -670,7 +650,7 @@ def _build_spindown(ctx: BuildContext):
 def _build_glitch(ctx: BuildContext):
     from jaxpint.phase.glitch import Glitch
 
-    glep_indices = _collect_prefix_indices(ctx.par, "GLEP_")
+    glep_indices = ctx.par.params.prefix_indices("GLEP_")
     if not glep_indices:
         return None
     return Glitch(
@@ -688,7 +668,7 @@ def _build_glitch(ctx: BuildContext):
 def _build_piecewise_spindown(ctx: BuildContext):
     from jaxpint.phase.piecewise_spindown import PiecewiseSpindown
 
-    pw_indices = _collect_prefix_indices(ctx.par, "PWEP_")
+    pw_indices = ctx.par.params.prefix_indices("PWEP_")
     if not pw_indices:
         return None
     return PiecewiseSpindown(
@@ -769,8 +749,8 @@ def _build_scale_toa_error(ctx: BuildContext):
     from jaxpint.noise.white import ScaleToaError
 
     par = ctx.par
-    efac_names = tuple(sorted(n for n in par.params.names if n.startswith("EFAC")))
-    equad_names = tuple(sorted(n for n in par.params.names if n.startswith("EQUAD")))
+    efac_names = par.params.names_with_prefix("EFAC")
+    equad_names = par.params.names_with_prefix("EQUAD")
     return ScaleToaError(efac_names=efac_names, equad_names=equad_names)
 
 
@@ -778,10 +758,8 @@ def _build_scale_dm_error(ctx: BuildContext):
     from jaxpint.noise.dm_white import ScaleDmError
 
     par = ctx.par
-    dmefac_names = tuple(sorted(n for n in par.params.names if n.startswith("DMEFAC")))
-    dmequad_names = tuple(
-        sorted(n for n in par.params.names if n.startswith("DMEQUAD"))
-    )
+    dmefac_names = par.params.names_with_prefix("DMEFAC")
+    dmequad_names = par.params.names_with_prefix("DMEQUAD")
     return ScaleDmError(dmefac_names=dmefac_names, dmequad_names=dmequad_names)
 
 
@@ -1017,20 +995,21 @@ def _validate_referenced_params(timing_model, noise_model, params) -> None:
         If any component (timing or noise) -- or the model's ``PHOFF`` binding --
         references a name not present in ``params``.
     """
-    known = params._name_to_index  # epoch params (PEPOCH/T0/...) are present here too
+    # `name in params` uses NamedVector.__contains__; epoch params (PEPOCH/T0/...)
+    # are present in the vector too.
     missing: list[tuple[str, str]] = []  # (component label, parameter name)
 
     def _check(components, labels):
         for comp, label in zip(components, labels):
             for pname in comp.required_params():  # public API; skips unset Optionals
-                if pname not in known:
+                if pname not in params:
                     missing.append((label, pname))
 
     _check(timing_model.components, timing_model.component_names)
     _check(noise_model.components, noise_model.component_names)
 
     # PHOFF is the one name-bearing field on TimingModel itself, not a sub-component.
-    if timing_model.phoff_name is not None and timing_model.phoff_name not in known:
+    if timing_model.phoff_name is not None and timing_model.phoff_name not in params:
         missing.append(("TimingModel", timing_model.phoff_name))
 
     if missing:
