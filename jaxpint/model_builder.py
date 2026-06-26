@@ -744,18 +744,12 @@ def _build_ecorr(ctx: BuildContext):
     ecorr_names = tuple(sorted(n for n in par.params.names if n.startswith("ECORR")))
     if toa_data is not None and len(ecorr_names) > 0:
         tdb_s = _tdb_seconds(toa_data)
-        ecorr_masks = {}
-        for ename in ecorr_names:
-            if hasattr(toa_data, "flag_masks") and toa_data.flag_masks is not None:
-                mask = np.asarray(
-                    toa_data.flag_masks.get(
-                        ename,
-                        np.zeros(len(tdb_s), dtype=bool),
-                    )
-                )
-            else:
-                mask = np.ones(len(tdb_s), dtype=bool)
-            ecorr_masks[ename] = mask
+        # Missing mask -> all-False (this ECORR group selects no TOAs); the
+        # build-time _validate_flag_masks check flags genuinely-absent masks.
+        ecorr_masks = {
+            ename: np.asarray(toa_data.flag_mask(ename, default=False))
+            for ename in ecorr_names
+        }
 
         U, eslices = _build_quantization_matrix(tdb_s, ecorr_masks)
         ecorr_epoch_slices = tuple(eslices[n] for n in ecorr_names)
@@ -999,6 +993,33 @@ def _validate_referenced_params(timing_model, noise_model, params) -> None:
         )
 
 
+def _validate_flag_masks(par: ParResult, toa_data: TOAData) -> None:
+    """Verify the TOAData carries a flag mask for every masked parameter.
+
+    The native loader builds ``toa_data.flag_masks`` with exactly the keys in
+    ``par.mask_info``, so for native-loaded data this always holds. It can break
+    when the TOAData comes from a different source than the par (the bridge path,
+    or a hand-built TOAData): a masked parameter (EFAC/EQUAD/JUMP/...) would then
+    either raise a ``KeyError`` deep in a jitted evaluation (the no-default
+    ``flag_mask(name)`` consumers in white/dm_white/dispersion_jump) or silently
+    contribute nothing (the ``default=False`` consumers). This check fails early
+    with a clear message instead.
+
+    Raises
+    ------
+    ValueError
+        If any masked parameter declared in ``par`` lacks a mask in ``toa_data``.
+    """
+    missing = sorted(set(par.mask_info) - set(toa_data.flag_masks))
+    if missing:
+        raise ValueError(
+            "build_model: TOAData is missing flag masks for masked parameter(s) "
+            f"{missing} declared in the par. This usually means the TOAData was "
+            "built from a different source than the par (e.g. the bridge path or "
+            f"a hand-built TOAData). Masks present: {sorted(toa_data.flag_masks)}"
+        )
+
+
 def build_model(
     par: ParResult,
     toa_data: Optional[TOAData] = None,
@@ -1107,4 +1128,6 @@ def build_model(
     )
 
     _validate_referenced_params(timing_model, combined_noise, par.params)
+    if toa_data is not None:
+        _validate_flag_masks(par, toa_data)
     return timing_model, combined_noise
