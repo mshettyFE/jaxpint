@@ -389,3 +389,72 @@ class TestIntegration:
         expected_dt = 11000.0 + expected_frac
         err_split = abs(float(dt_split) - expected_dt)
         assert err_split < one_ns_in_days, f"Split error {err_split} exceeds 1ns"
+
+
+# ===========================================================================
+# NamedVector shared interface (ParameterVector + GlobalParams)
+# ===========================================================================
+
+
+class TestNamedVectorAPI:
+    """The shared name-indexed API provided by NamedVector."""
+
+    def test_is_named_vector(self):
+        from jaxpint.types import NamedVector, GlobalParams
+
+        assert isinstance(_make_param_vector(), NamedVector)
+        assert isinstance(GlobalParams.empty(), NamedVector)
+
+    def test_contains(self):
+        pv = _make_param_vector()
+        assert "F0" in pv
+        assert "PEPOCH" in pv  # epoch params are present in the index too
+        assert "NOPE" not in pv
+
+    def test_param_values_order(self):
+        pv = _make_param_vector()
+        got = pv.param_values(("DM", "F0"))
+        assert float(got[0]) == 15.0 and float(got[1]) == 200.0
+
+    def test_param_value_or(self):
+        pv = _make_param_vector()
+        assert float(pv.param_value_or("DM")) == 15.0
+        assert pv.param_value_or(None, default=-1.0) == -1.0
+
+    def test_with_values_replaces_leaf_keeps_metadata(self):
+        pv = _make_param_vector()
+        new = pv.with_values(jnp.zeros(pv.n_params))
+        assert type(new) is ParameterVector
+        assert bool(jnp.all(new.values == 0.0))
+        # static metadata preserved
+        assert new.names == pv.names
+        assert new.frozen_mask == pv.frozen_mask
+        assert new.epoch_int_values == pv.epoch_int_values
+
+    def test_names_with_prefix(self):
+        names = ("EFAC1", "EFAC2", "EQUAD1", "F0")
+        pv = ParameterVector(
+            values=jnp.zeros(4), frozen_mask=(False,) * 4, names=names,
+            units=("",) * 4, epoch_int_values={},
+        )
+        assert pv.names_with_prefix("EFAC") == ("EFAC1", "EFAC2")
+        assert pv.names_with_prefix("Z") == ()
+
+    def test_prefix_indices(self):
+        names = ("DMX_0001", "DMX_0003", "DMX_0002", "DMXR1_0001", "DM")
+        pv = ParameterVector(
+            values=jnp.zeros(5), frozen_mask=(False,) * 5, names=names,
+            units=("",) * 5, epoch_int_values={},
+        )
+        # sorted unique integer suffixes; non-integer suffix ("DM") ignored
+        assert pv.prefix_indices("DMX_") == (1, 2, 3)
+        assert pv.prefix_indices("DMXR1_") == (1,)
+
+    def test_globalparams_shares_api(self):
+        from jaxpint.types import GlobalParams
+
+        gp = GlobalParams.empty().add_params(["GW_A", "GW_G"], [-15.0, 4.33])
+        assert "GW_A" in gp
+        assert float(gp.param_value("GW_G")) == 4.33
+        assert list(map(float, gp.param_values(("GW_G", "GW_A")))) == [4.33, -15.0]
+        assert type(gp.with_values(jnp.zeros(2))) is GlobalParams

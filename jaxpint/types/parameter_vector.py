@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import equinox as eqx
 import jax.numpy as jnp
-from jax.typing import ArrayLike
 from jaxtyping import Array, Float, Int
 
 from jaxpint.types.dual_float import DualFloat
+from jaxpint.types.named_vector import NamedVector
 
 
-class ParameterVector(eqx.Module):
+class ParameterVector(NamedVector):
     """Timing model parameters as a flat JAX array with metadata.
 
     Stores ALL parameters (free and frozen) in a single array. Epoch-type
@@ -160,54 +160,7 @@ class ParameterVector(eqx.Module):
 
     # -- Lookup helpers --
 
-    def param_index(self, name: str) -> int:
-        """Index of parameter ``name`` in the values array.
-
-        Parameters
-        ----------
-        name : str
-            Parameter name.
-
-        Returns
-        -------
-        int
-            Zero-based index into ``values``.
-        """
-        return self._name_to_index[name]
-
-    def param_value(self, name: str) -> Float[Array, ""]:
-        """Value of a single parameter. JIT-compatible if ``name`` is a static string.
-
-        Parameters
-        ----------
-        name : str
-            Parameter name.
-
-        Returns
-        -------
-        scalar
-            The parameter's current value.
-        """
-        return self.values[self._name_to_index[name]]
-
-    def param_values(self, names) -> Float[Array, " k"]:
-        """Values of several parameters as a 1-D array, in the given order.
-
-        Plural companion to :meth:`param_value`, convenient for gathering a
-        Taylor-coefficient vector (e.g. ``[DM, DM1, DM2]``). JIT-compatible
-        when ``names`` is a static sequence of strings.
-
-        Parameters
-        ----------
-        names : sequence of str
-            Parameter names.
-
-        Returns
-        -------
-        array, shape (len(names),)
-            The parameters' current values, in order.
-        """
-        return jnp.array([self.values[self._name_to_index[n]] for n in names])
+    # param_index / param_value / param_values inherited from NamedVector.
 
     def param_uncertainty(self, name: str) -> float:
         """1-sigma fit uncertainty of a parameter (static metadata, in the same
@@ -230,17 +183,7 @@ class ParameterVector(eqx.Module):
         """
         return self.uncertainties[self._name_to_index[name]]
 
-    def param_value_or(self, name: str | None, default: float = 0.0):
-        """Value of a parameter if *name* is not None, otherwise *default*.
-
-        Convenient for optional parameters stored as ``Optional[str]``
-        field names on components::
-
-            pbdot = params.param_value_or(self.pbdot_name, 0.0)
-        """
-        if name is None:
-            return default
-        return self.values[self._name_to_index[name]]
+    # param_value_or inherited from NamedVector.
 
     def epoch_value(self, name: str) -> tuple[float, Float[Array, ""]]:
         """For epoch parameters: returns (integer_mjd_day, fractional_day).
@@ -320,24 +263,7 @@ class ParameterVector(eqx.Module):
         new_values = self.values.at[indices].set(new_free)
         return eqx.tree_at(lambda pv: pv.values, self, new_values)
 
-    def with_value(self, name: str, val: ArrayLike) -> ParameterVector:
-        """Return a new ParameterVector with one parameter updated.
-
-        Parameters
-        ----------
-        name : str
-            Parameter name.
-        val : float
-            New value.
-
-        Returns
-        -------
-        ParameterVector
-            Copy with the specified parameter updated.
-        """
-        idx = self._name_to_index[name]
-        new_values = self.values.at[idx].set(val)
-        return eqx.tree_at(lambda pv: pv.values, self, new_values)
+    # with_value inherited from NamedVector.
 
     def with_marginalized(self, names) -> ParameterVector:
         """Return a copy with marginalized_mask=True for the given names.
@@ -384,9 +310,7 @@ class ParameterVector(eqx.Module):
             uncertainties=self.uncertainties,
         )
 
-    @property
-    def n_params(self) -> int:
-        return len(self.names)
+    # n_params inherited from NamedVector.
 
     @property
     def n_free(self) -> int:
