@@ -18,12 +18,19 @@ provide the attributes the methods below rely on:
 
 from __future__ import annotations
 
-from typing import Self
+from typing import TypeVar
 
 import equinox as eqx
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 from jaxtyping import Array, Float
+
+# Self-type for the functional-update methods: returns the concrete subclass.
+# A bound TypeVar (rather than ``typing.Self``) keeps precise subclass typing
+# while remaining compatible with the test-time beartype import hook, which
+# decorates methods individually -- PEP 673 ``Self`` requires the whole class to
+# be ``@beartype``-decorated and otherwise raises at import.
+_NV = TypeVar("_NV", bound="NamedVector")
 
 
 class NamedVector(eqx.Module):
@@ -103,12 +110,12 @@ class NamedVector(eqx.Module):
 
     # -- Functional updates --
 
-    def with_value(self, name: str, val: ArrayLike) -> Self:
+    def with_value(self: _NV, name: str, val: ArrayLike) -> _NV:
         """Return a copy with one parameter replaced (all other fields preserved)."""
         new_values = self.values.at[self._name_to_index[name]].set(val)
         return eqx.tree_at(lambda v: v.values, self, new_values)
 
-    def with_values(self, values: Float[Array, " n_params"]) -> Self:
+    def with_values(self: _NV, values: Float[Array, " n_params"]) -> _NV:
         """Return a copy with the entire ``values`` leaf replaced.
 
         All static metadata (``names``, ``_name_to_index``, and any subclass

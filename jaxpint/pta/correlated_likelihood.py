@@ -30,7 +30,8 @@ from typing import Optional, cast
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jaxtyping import Array, Float
+from beartype import beartype
+from jaxtyping import Array, Float, jaxtyped
 
 from jaxpint.fitters import compute_time_residuals
 from jaxpint.model import TimingModel
@@ -172,6 +173,7 @@ class CorrelatedPTAConfig(eqx.Module):
 # ---------------------------------------------------------------------------
 
 
+@jaxtyped(typechecker=beartype)
 def _per_pulsar_intermediates(
     toa_data: TOAData,
     timing_model: TimingModel,
