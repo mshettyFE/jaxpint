@@ -349,12 +349,13 @@ where :math:`\Delta t` is the concatenation of all per-pulsar residuals and the 
 
 with :math:`D = \mathrm{blockdiag}(C_1, \ldots, C_N)` (the per-pulsar noise), :math:`V = \mathrm{blockdiag}(F_1, \ldots, F_N)` (the per-pulsar Fourier bases), :math:`\Gamma` the ORF matrix of shape ``(n_pulsars, n_pulsars)``, and :math:`S` the GWB power-law PSD.
 
-This is what ``pta_logL_correlated`` computes, using a two-tier Woodbury scheme:
+This is what ``pta_logL`` computes when ``config.correlated_injectors`` is
+non-empty, using a two-tier Woodbury scheme:
 
 1. An **inner** per-pulsar Woodbury solve handles :math:`D` (white + per-pulsar correlated noise).
 2. An **outer** dense Cholesky on the compressed Fourier-basis system couples pulsars through :math:`\Gamma`.
 
-This avoids ever forming :math:`C` itself (which would be :math:`n_\mathrm{tot}\times n_\mathrm{tot}`) while still capturing the cross-pulsar physics. The static bundle is ``CorrelatedPTAConfig``, and the corresponding injector ABC is :class:`~jaxpint.pta.CorrelatedSignalInjector`.
+This avoids ever forming :math:`C` itself (which would be :math:`n_\mathrm{tot}\times n_\mathrm{tot}`) while still capturing the cross-pulsar physics. The static bundle is the same :class:`~jaxpint.pta.PTAConfig` (via its ``correlated_injectors`` field), and the corresponding injector ABC is :class:`~jaxpint.pta.CorrelatedSignalInjector`.
 
 Correlated injector shipped today:
 
@@ -375,7 +376,7 @@ A minimal end-to-end PTA log-likelihood evaluation:
 .. code-block:: python
 
    from jaxpint.pta.likelihood import PTAConfig, pta_logL
-   from jaxpint.pta.params import GlobalParams
+   from jaxpint.types import GlobalParams
    from jaxpint.pta.signals.cw import CWInjector
 
    # one entry per pulsar (from the bridge layer)
@@ -393,4 +394,4 @@ A minimal end-to-end PTA log-likelihood evaluation:
 
    logL = pta_logL(global_params, pulsar_params, config)  # scalar jax.Array
 
-Swapping ``pta_logL`` for ``pta_logL_correlated`` (with a ``CorrelatedPTAConfig`` and one or more correlated injectors) turns on the Hellings-Downs coupling. Because both functions are pure JAX, the whole thing plays nicely with ``jax.jit``, ``jax.grad``, and downstream samplers like BlackJAX.
+Adding one or more correlated injectors to ``PTAConfig``'s ``correlated_injectors`` field turns on the Hellings-Downs coupling — the same ``pta_logL`` then runs the two-tier scheme. Because it is pure JAX, the whole thing plays nicely with ``jax.jit``, ``jax.grad``, and downstream samplers like BlackJAX.

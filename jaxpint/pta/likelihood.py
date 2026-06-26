@@ -36,7 +36,8 @@ from typing import Optional, cast
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jaxtyping import Array, Float
+from beartype import beartype
+from jaxtyping import Array, Float, jaxtyped
 
 from jaxpint.fitters import compute_time_residuals
 from jaxpint.likelihood import (
@@ -134,25 +135,15 @@ def _collect_per_pulsar_external_inputs(
     Optional[tuple[Float[Array, "n_toas k"], Float[Array, " k"]]],
 ]:
     """Aggregate per-pulsar ``(ext_delay, ext_cov)`` from all signal injectors.
-
-    Shared across :func:`pta_logL` and the correlated counterparts so the
-    per-pulsar injector dispatch lives in one place.
     """
-    delays = [
-        inj.delay(p, toa_data, pulsar_params, global_params) for inj in signal_injectors
-    ]
-    delays = [d for d in delays if d is not None]
-    # sum() of a non-empty list of arrays is an Array; the Literal[0] empty-sum
-    # case is guarded by `if delays`.
-    ext_delay = cast(Float[Array, " n_toas"], sum(delays)) if delays else None
-
-    covs = [
-        inj.covariance(p, toa_data, pulsar_params, global_params)
-        for inj in signal_injectors
-    ]
-    ext_cov = concat_woodbury_blocks(*covs)
-
-    return ext_delay, ext_cov
+    return (
+        _collect_injector_ext_delay(
+            p, toa_data, pulsar_params, global_params, signal_injectors
+        ),
+        _collect_injector_ext_cov(
+            p, toa_data, pulsar_params, global_params, signal_injectors
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +151,7 @@ def _collect_per_pulsar_external_inputs(
 # ---------------------------------------------------------------------------
 
 
+@jaxtyped(typechecker=beartype)
 def _per_pulsar_intermediates(
     toa_data: TOAData,
     timing_model: TimingModel,
@@ -266,7 +258,7 @@ def _per_pulsar_intermediates(
 # Two derived sizes show up everywhere:
 #
 #   n_basis_total = sum_k n_basis_k          (length of the stacked per-pulsar basis)
-#   n_total       = sum_k n_psr * n_basis_k  (size of the joint outer-tier system)
+#   n_joint       = sum_k n_psr * n_basis_k  (size of the joint outer-tier system)
 #
 # Two natural orderings of the joint outer-tier index space appear:
 #
@@ -324,7 +316,7 @@ def _n_basis_per_injector(
 def _phi_and_phi_inv_joint(
     correlated_injectors: tuple[CorrelatedSignalInjector, ...],
     global_params: GlobalParams,
-) -> tuple[Float[Array, "n_total n_total"], Float[Array, "n_total n_total"]]:
+) -> tuple[Float[Array, "n_joint n_joint"], Float[Array, "n_joint n_joint"]]:
     """Build joint ``(Phi_joint, Phi_joint_inv)`` in (k, p, b) ordering.
 
     ``Phi_joint = blockdiag_k( Γ_k ⊗ diag(S_k) )``.  The K diagonal blocks
@@ -333,7 +325,7 @@ def _phi_and_phi_inv_joint(
     and basis functions are independent (diagonal in b).
 
     Each block has shape ``(n_psr * n_basis_k, n_psr * n_basis_k)``.  The
-    full matrix has shape ``(n_total, n_total)``.
+    full matrix has shape ``(n_joint, n_joint)``.
     """
     Phi_blocks = []
     Phi_inv_blocks = []
@@ -352,7 +344,7 @@ def _assemble_basis_overlap_joint_kpb(
     basis_overlap_per_pulsar: list,
     n_basis_per_k: tuple[int, ...],
     n_psr: int,
-) -> Float[Array, "n_total n_total"]:
+) -> Float[Array, "n_joint n_joint"]:
     """Assemble joint ``basis_overlap_joint`` in (k, p, b) layout.
 
     Each per-pulsar slab ``basis_overlap_per_pulsar[p] = F_stack_pᵀ C_p⁻¹
@@ -365,7 +357,7 @@ def _assemble_basis_overlap_joint_kpb(
     The result is the K×K block matrix whose ``(k_a, k_b)`` outer block is
     block-diagonal across pulsars with per-pulsar entries
     ``F_{k_a,p}ᵀ C_p⁻¹ F_{k_b,p}``.  The full matrix has shape
-    ``(n_total, n_total)`` and matches :func:`_phi_and_phi_inv_joint`'s
+    ``(n_joint, n_joint)`` and matches :func:`_phi_and_phi_inv_joint`'s
     (k, p, b) layout so that ``Σ_joint = Phi_joint_inv + basis_overlap_joint``
     is a legal addition.
     """
@@ -397,7 +389,7 @@ def _assemble_basis_proj_residual_joint_kpb(
     basis_proj_residual_per_pulsar: list,
     n_basis_per_k: tuple[int, ...],
     n_psr: int,
-) -> Float[Array, " n_total"]:
+) -> Float[Array, " n_joint"]:
     """Assemble joint ``basis_proj_residual_joint`` in (k, p, b) layout.
 
     Each per-pulsar slab ``basis_proj_residual_per_pulsar[p] = F_stack_pᵀ
@@ -476,27 +468,9 @@ def single_pulsar_pta_logL(
     timing_model_p = config.timing_models[p]
     noise_model_p = config.noise_models[p]
 
-    delays = [
-        inj.delay(p, toa_data_p, pulsar_params_p, global_params)
-        for inj in config.signal_injectors
-    ]
-    delays = [d for d in delays if d is not None]
-    # sum() of a non-empty list of arrays is an Array; the Literal[0] empty-sum
-    # case is guarded by `if delays`.
-    ext_delay = cast(Float[Array, " n_toas"], sum(delays)) if delays else None
-
-    covs = [
-        inj.covariance(p, toa_data_p, pulsar_params_p, global_params)
-        for inj in config.signal_injectors
-    ]
-    covs = [c for c in covs if c is not None]
-    if covs:
-        ext_cov = (
-            jnp.concatenate([U for U, _ in covs], axis=1),
-            jnp.concatenate([Phi for _, Phi in covs]),
-        )
-    else:
-        ext_cov = None
+    ext_delay, ext_cov = _collect_per_pulsar_external_inputs(
+        p, toa_data_p, pulsar_params_p, global_params, config.signal_injectors
+    )
 
     return single_pulsar_logL(
         toa_data_p,
@@ -523,14 +497,7 @@ def _collect_injector_ext_cov(
         inj.covariance(p, toa_data_p, pulsar_params_p, global_params)
         for inj in signal_injectors
     ]
-    covs = [c for c in covs if c is not None]
-    if not covs:
-        return None
-    return (
-        jnp.concatenate([U for U, _ in covs], axis=1),
-        jnp.concatenate([Phi for _, Phi in covs]),
-    )
-
+    return concat_woodbury_blocks(*covs)
 
 def _collect_injector_ext_delay(
     p: int,
@@ -771,10 +738,10 @@ def pta_logL(
     logdet_Phi_joint = 2.0 * jnp.sum(jnp.log(jnp.abs(jnp.diag(Phi_joint_cf[0]))))
     logdet_Sigma_joint = 2.0 * jnp.sum(jnp.log(jnp.diag(Sigma_cf[0])))
 
-    n_total = sum(td.n_toas for td in config.toa_data_list)
+    n_toas_total = sum(td.n_toas for td in config.toa_data_list)
     total_logL = (
         -0.5 * (sum_rCr - correction)
         - 0.5 * (sum_logdetC + logdet_Phi_joint + logdet_Sigma_joint)
-        - 0.5 * n_total * jnp.log(2.0 * jnp.pi)
+        - 0.5 * n_toas_total * jnp.log(2.0 * jnp.pi)
     )
     return total_logL
