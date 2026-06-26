@@ -450,6 +450,25 @@ class TestNamedVectorAPI:
         assert pv.prefix_indices("DMX_") == (1, 2, 3)
         assert pv.prefix_indices("DMXR1_") == (1,)
 
+    def test_indexed_family(self):
+        names = (
+            "WAVE1_A", "WAVE10_A", "WAVE2_A",   # base+int+suffix
+            "WAVE1_B",                           # different suffix -> excluded for _A
+            "WAVEEPOCH",                         # non-int index slot -> ignored
+            "FD1", "FD2", "FDJUMP1", "FD1JUMP1",  # suffix="" must skip FD*JUMP*
+        )
+        pv = ParameterVector(
+            values=jnp.zeros(len(names)), frozen_mask=(False,) * len(names),
+            names=names, units=("",) * len(names), epoch_int_values={},
+        )
+        # numeric (not lexicographic) ordering of the integer index
+        assert pv.indexed_family("WAVE", "_A") == (1, 2, 10)
+        assert pv.indexed_family("WAVE", "_B") == (1,)
+        # suffix-free: skips FDJUMP1 / FD1JUMP1 (non-int in the index slot)
+        assert pv.indexed_family("FD") == (1, 2)
+        # prefix_indices is the suffix-free special case
+        assert pv.prefix_indices("FD") == pv.indexed_family("FD")
+
     def test_globalparams_shares_api(self):
         from jaxpint.types import GlobalParams
 
