@@ -543,7 +543,6 @@ def _has_astrometry(par: ParResult) -> bool:
         & par.component_set
     )
 
-
 def _opt(par: ParResult, name: str) -> Optional[str]:
     return name if name in par.params.names else None
 
