@@ -15,7 +15,6 @@ where alpha = TNCHROMIDX.
 from __future__ import annotations
 
 import equinox as eqx
-import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, ParamDecl
@@ -101,9 +100,9 @@ class CMWaveX(DelayComponent):
         epoch = params.epoch_dual(self.cmwxepoch_name)
         dt_days = (toa_data.tdb - epoch).total
 
-        freqs = jnp.array([params.param_value(n) for n in self.cmwxfreq_names])
-        sins = jnp.array([params.param_value(n) for n in self.cmwxsin_names])
-        coses = jnp.array([params.param_value(n) for n in self.cmwxcos_names])
+        freqs = params.param_values(self.cmwxfreq_names)
+        sins = params.param_values(self.cmwxsin_names)
+        coses = params.param_values(self.cmwxcos_names)
 
         cm = fourier_sum(dt_days, freqs, sins, coses)
         alpha = params.param_value(self.tnchromidx_name)

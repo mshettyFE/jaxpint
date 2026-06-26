@@ -48,13 +48,6 @@ def _epoch_or_pepoch(par: ParResult, name: str) -> str:
     return name if (name in par.params) else "PEPOCH"
 
 
-def _match_group1(pattern: str, s: str) -> str:
-    """First capture group of ``pattern`` against ``s`` (caller guarantees a match)."""
-    m = re.match(pattern, s)
-    assert m is not None
-    return m.group(1)
-
-
 def _resolve_astrometry(par: ParResult):
     """Resolve astrometry parameter names once, before the build loop.
 
@@ -389,12 +382,14 @@ def _build_solar_wind(ctx: BuildContext):
     from jaxpint.delay.solar_wind import SolarWindDispersion
 
     par = ctx.par
+    # NE_SW Taylor coefficients: base NE_SW (order 0) plus NE_SW{i} that are
+    # actually set (nonzero). indexed_family gives them in numeric order, which
+    # the Taylor sum requires (tuple position == derivative order).
     ne_sw_names = ["NE_SW"]
-    for pname in par.params.names:
-        if pname.startswith("NE_SW") and pname != "NE_SW":
-            if _value(par, pname) != 0.0:
-                ne_sw_names.append(pname)
-    ne_sw_names.sort()
+    for i in par.params.indexed_family("NE_SW"):
+        name = f"NE_SW{i}"
+        if _value(par, name) != 0.0:
+            ne_sw_names.append(name)
 
     ne_sw_val = _value(par, "NE_SW") if ("NE_SW" in par.params) else 0.0
     if not (len(ne_sw_names) > 1 or ne_sw_val != 0.0):
@@ -453,13 +448,8 @@ def _build_dispersion_dm(ctx: BuildContext):
     from jaxpint.delay.dispersion_dm import DispersionDM
 
     par = ctx.par
-    dm_names = ["DM"]
-    for pname in par.params.names:
-        if pname.startswith("DM") and pname != "DM" and pname != "DMEPOCH":
-            suffix = pname[2:]
-            if suffix.isdigit():
-                dm_names.append(pname)
-    dm_names.sort(key=lambda n: int(n[2:]) if n != "DM" else 0)
+    # Taylor coefficients: base DM (order 0) then DM1, DM2, ... in numeric order.
+    dm_names = ["DM"] + [f"DM{i}" for i in par.params.indexed_family("DM")]
 
     dmepoch_name = _epoch_or_pepoch(par, "DMEPOCH")
 
@@ -499,13 +489,12 @@ def _build_binary_comp(ctx: BuildContext):
 def _build_frequency_dependent(ctx: BuildContext):
     from jaxpint.delay.frequency_dependent import FrequencyDependent
 
-    fd_names = sorted(
-        (n for n in ctx.par.params.names if re.match(r"^FD\d+$", n)),
-        key=lambda n: int(n[2:]),
-    )
-    if not fd_names:
+    fd_indices = ctx.par.params.prefix_indices("FD")
+    if not fd_indices:
         return None
-    return FrequencyDependent(fd_param_names=tuple(fd_names))
+    return FrequencyDependent(
+        fd_param_names=tuple(f"FD{i}" for i in fd_indices)
+    )
 
 
 def _build_fd_jump(ctx: BuildContext):
@@ -533,13 +522,8 @@ def _build_chromatic_cm(ctx: BuildContext):
     from jaxpint.delay.chromatic_cm import ChromaticCM
 
     par = ctx.par
-    cm_names = ["CM"]
-    for pname in par.params.names:
-        if pname.startswith("CM") and pname != "CM" and pname != "CMEPOCH":
-            suffix = pname[2:]
-            if suffix.isdigit():
-                cm_names.append(pname)
-    cm_names.sort(key=lambda n: int(n[2:]) if n != "CM" else 0)
+    # Taylor coefficients: base CM (order 0) then CM1, CM2, ... in numeric order.
+    cm_names = ["CM"] + [f"CM{i}" for i in par.params.indexed_family("CM")]
 
     cmepoch_name = _epoch_or_pepoch(par, "CMEPOCH")
     return ChromaticCM(
@@ -639,11 +623,10 @@ def _build_spindown(ctx: BuildContext):
     from jaxpint.phase.spin import Spindown
 
     par = ctx.par
-    spin_names = ["F0"]
-    for pname in par.params.names:
-        if pname.startswith("F") and pname != "F0" and pname[1:].isdigit():
-            spin_names.append(pname)
-    spin_names.sort(key=lambda n: int(n[1:]))
+    # Spin Taylor coefficients: base F0 (order 0) then F1, F2, ... numeric order.
+    spin_names = ["F0"] + [
+        f"F{i}" for i in par.params.prefix_indices("F") if i != 0
+    ]
     return Spindown(spin_param_names=tuple(spin_names))
 
 
@@ -696,13 +679,9 @@ def _build_wave(ctx: BuildContext):
     from jaxpint.phase.wave import Wave
 
     par = ctx.par
-    wave_a_names = sorted(
-        (n for n in par.params.names if re.match(r"^WAVE\d+_A$", n)),
-        key=lambda n: int(_match_group1(r"WAVE(\d+)_A", n)),
-    )
-    if not wave_a_names:
+    wave_indices = par.params.indexed_family("WAVE", "_A")
+    if not wave_indices:
         return None
-    wave_indices = [int(_match_group1(r"WAVE(\d+)_A", n)) for n in wave_a_names]
     waveepoch_name = _epoch_or_pepoch(par, "WAVEEPOCH")
     return Wave(
         n_terms=len(wave_indices),
@@ -717,21 +696,15 @@ def _build_ifunc(ctx: BuildContext):
     from jaxpint.phase.ifunc import IFunc
 
     par = ctx.par
-    ifunc_a_names = sorted(
-        (n for n in par.params.names if re.match(r"^IFUNC\d+_A$", n)),
-        key=lambda n: int(_match_group1(r"IFUNC(\d+)_A", n)),
-    )
-    if not ifunc_a_names:
+    ifunc_indices = par.params.indexed_family("IFUNC", "_A")
+    if not ifunc_indices:
         return None
     interp_type = par.int_params.get("SIFUNC", 0)
     mjds = []
     delays = []
-    for a_name in ifunc_a_names:
-        b_name = a_name.replace("_A", "_B")
-        mjd_val = _value(par, a_name)
-        delay_val = _value(par, b_name)
-        mjds.append(mjd_val)
-        delays.append(delay_val)
+    for i in ifunc_indices:
+        mjds.append(_value(par, f"IFUNC{i}_A"))
+        delays.append(_value(par, f"IFUNC{i}_B"))
 
     sorted_pairs = sorted(zip(mjds, delays))
     sorted_mjds, sorted_delays = zip(*sorted_pairs)

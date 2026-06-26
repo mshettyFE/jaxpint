@@ -68,7 +68,7 @@ def _gls_iteration_core(
     time_resid = compute_time_residuals(model, toa_data, params)
 
     def time_resid_fn(all_values: Float[Array, " n_params"]):
-        p = eqx.tree_at(lambda pv: pv.values, params, all_values)
+        p = params.with_values(all_values)
         return compute_time_residuals(model, toa_data, p)
 
     J = jax.jacobian(time_resid_fn)(params.values)
@@ -170,7 +170,7 @@ class GLSFitter(BaseFitter):
             threshold,
             full_cov,
         )
-        new_params = eqx.tree_at(lambda pv: pv.values, params, new_values)
+        new_params = params.with_values(new_values)
         noise_realizations = noise_real if noise_real.size > 0 else None
         return IterationState(new_params, covariance, noise_realizations)
 

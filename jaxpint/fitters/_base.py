@@ -285,7 +285,7 @@ def _compute_jacobian_and_design(
     free_indices = params.free_indices_array()
 
     def time_resid_fn(all_values: Float[Array, " n_params"]):
-        p = eqx.tree_at(lambda pv: pv.values, params, all_values)
+        p = params.with_values(all_values)
         return compute_time_residuals(model, toa_data, p)
 
     J = jax.jacobian(time_resid_fn)(params.values)

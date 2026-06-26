@@ -11,7 +11,6 @@ The DM is modelled as a Fourier sum and converted to delay via DM dispersion:
 from __future__ import annotations
 
 import equinox as eqx
-import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent, ParamDecl
@@ -94,9 +93,9 @@ class DMWaveX(DispersionDelayComponent):
         epoch = params.epoch_dual(self.dmwxepoch_name)
         dt_days = (toa_data.tdb - epoch).total
 
-        freqs = jnp.array([params.param_value(n) for n in self.dmwxfreq_names])
-        sins = jnp.array([params.param_value(n) for n in self.dmwxsin_names])
-        coses = jnp.array([params.param_value(n) for n in self.dmwxcos_names])
+        freqs = params.param_values(self.dmwxfreq_names)
+        sins = params.param_values(self.dmwxsin_names)
+        coses = params.param_values(self.dmwxcos_names)
 
         return fourier_sum(dt_days, freqs, sins, coses)
 
