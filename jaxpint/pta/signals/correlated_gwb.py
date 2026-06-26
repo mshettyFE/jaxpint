@@ -18,7 +18,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.types import TOAData
 from jaxpint.types import GlobalParams
-from jaxpint.pta.likelihood import CorrelatedSignalInjector
+from jaxpint.pta.injectors import CorrelatedSignalInjector
 from jaxpint.pta.signals.gwb import (
     CURN_PARAM_DEFAULTS,
     fourier_basis,

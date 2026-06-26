@@ -26,7 +26,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.types import TOAData
-from jaxpint.pta.likelihood import SignalInjector
+from jaxpint.pta.injectors import SignalInjector
 
 # Year in seconds (NANOGrav convention)
 FYR: float = 1.0 / (365.25 * 86400.0)

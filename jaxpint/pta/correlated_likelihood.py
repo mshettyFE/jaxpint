@@ -24,7 +24,6 @@ References
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from typing import Optional, cast
 
 import jax
@@ -40,94 +39,7 @@ from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import woodbury_dot, woodbury_solve
 
 from jaxpint.types import GlobalParams
-from jaxpint.pta.likelihood import SignalInjector
-
-
-# ---------------------------------------------------------------------------
-# Correlated signal injector ABC
-# ---------------------------------------------------------------------------
-
-
-class CorrelatedSignalInjector(ABC):
-    """Abstract base class for cross-pulsar correlated signal components.
-
-    Unlike :class:`~jaxpint.pta.likelihood.SignalInjector`, which produces
-    per-pulsar covariance contributions, a ``CorrelatedSignalInjector``
-    provides the ingredients to build a PTA-wide covariance matrix with
-    inter-pulsar correlations.
-
-    """
-
-    @abstractmethod
-    def register_params(self, global_params: GlobalParams) -> GlobalParams:
-        """Append this signal's parameters to *global_params*.
-
-        Parameters
-        ----------
-        global_params : GlobalParams
-            Accumulator of shared PTA parameters.
-
-        Returns
-        -------
-        GlobalParams
-            Updated copy with this signal's parameters appended.
-        """
-        ...
-
-    @abstractmethod
-    def get_fourier_basis(
-        self,
-        toa_data: TOAData,
-    ) -> Float[Array, "n_toas n_basis"]:
-        """Return the Fourier design matrix for a single pulsar.
-
-        Parameters
-        ----------
-        toa_data : TOAData
-            Pulse time-of-arrival data for one pulsar.
-
-        Returns
-        -------
-        F : (n_toas, n_basis) array
-            Fourier design matrix (sin/cos columns).
-        """
-        ...
-
-    @abstractmethod
-    def get_psd(
-        self,
-        global_params: GlobalParams,
-    ) -> Float[Array, " n_basis"]:
-        """Return the GWB power spectral density vector.
-
-        Parameters
-        ----------
-        global_params : GlobalParams
-            Shared PTA parameters (amplitude, spectral index, etc.).
-
-        Returns
-        -------
-        S : (n_basis,) array
-            PSD values for each Fourier basis function (sin and cos each
-            get the same value for their frequency).
-        """
-        ...
-
-    @abstractmethod
-    def get_orf_matrix(self) -> Float[Array, "n_psr n_psr"]:
-        """Return the overlap reduction function matrix.
-
-        The matrix must be invertible (full rank). Rank-deficient ORFs
-        such as the monopole (all ones) are not supported by the
-        two-tier Woodbury scheme.
-
-        Returns
-        -------
-        Gamma : (n_psr, n_psr) array
-            Symmetric, positive-definite ORF matrix. ``Gamma[a, b]``
-            is the correlation coefficient between pulsars *a* and *b*.
-        """
-        ...
+from jaxpint.pta.injectors import SignalInjector, CorrelatedSignalInjector
 
 
 # ---------------------------------------------------------------------------

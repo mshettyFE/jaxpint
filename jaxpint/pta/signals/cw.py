@@ -31,7 +31,7 @@ from jax.typing import ArrayLike
 from jaxtyping import Array, Float
 
 from jaxpint.types import TOAData
-from jaxpint.pta.likelihood import SignalInjector
+from jaxpint.pta.injectors import SignalInjector
 
 # Speed of light (m/s) and kpc → metres conversion
 _C: float = 299_792_458.0
