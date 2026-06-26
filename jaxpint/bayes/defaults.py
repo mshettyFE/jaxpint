@@ -141,6 +141,16 @@ def collect_param_names(
     -------
     list of str
         Fully-qualified parameter names, in pulsar-then-global order.
+
+    Notes
+    -----
+    The returned names are assumed unique -- this is the precondition that
+    :func:`~jaxpint.bayes.validate_priors` relies on (it compares name *sets*).
+    Uniqueness holds as long as ``pulsar_names`` are distinct (so the
+    ``f"{psr}_{name}"`` keys can't collide) and no ``global_params`` name
+    coincides with a per-pulsar key. ``load_nanograv_pta`` already dedups
+    duplicate pulsar names, so this holds for any real PTA; it is only a
+    concern for hand-built name lists.
     """
     out: list[str] = []
     for psr_name, pp in zip(pulsar_names, pulsar_params_list, strict=True):

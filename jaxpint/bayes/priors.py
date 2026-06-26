@@ -17,7 +17,6 @@ All priors are :class:`equinox.Module` subclasses, so they are
 automatically registered as JAX pytrees and compose with ``jax.jit``,
 ``jax.grad``, and ``jax.vmap``.
 
-See ``Plans/priors_design.md`` for the full design rationale.
 """
 
 from __future__ import annotations
@@ -263,7 +262,7 @@ class ImproperPrior(Prior):
     parameters in NANOGrav workflows).  Inside
     :func:`jaxpint.bayes.marginalize`, an :class:`ImproperPrior`
     triggers the ``Phi = 1e40`` Woodbury regularizer that produces the
-    discovery-equivalent flat-prior projection. (TODO)
+    discovery-equivalent flat-prior projection.
 
     Notes
     -----
