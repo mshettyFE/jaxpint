@@ -98,10 +98,6 @@ def fisher_matrix(
 ) -> Float[Array, "n_params_total n_params_total"]:
     """Compute the Fisher information matrix via ``jax.hessian``.
 
-    Internally flattens all parameters into a single array, wraps
-    :func:`pta_logL` in a closure that unflattens, and calls
-    ``jax.hessian`` on the flat function.
-
     Parameters
     ----------
     global_params : GlobalParams
