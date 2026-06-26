@@ -10,7 +10,6 @@ The delay is modelled as a sum of sinusoids at specified frequencies:
 from __future__ import annotations
 
 import equinox as eqx
-import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, ParamDecl
@@ -92,8 +91,8 @@ class WaveX(DelayComponent):
         epoch = params.epoch_dual(self.wxepoch_name)
         dt_days = (toa_data.tdb - epoch).total - delay / SECS_PER_DAY
 
-        freqs = jnp.array([params.param_value(n) for n in self.wxfreq_names])
-        sins = jnp.array([params.param_value(n) for n in self.wxsin_names])
-        coses = jnp.array([params.param_value(n) for n in self.wxcos_names])
+        freqs = params.param_values(self.wxfreq_names)
+        sins = params.param_values(self.wxsin_names)
+        coses = params.param_values(self.wxcos_names)
 
         return fourier_sum(dt_days, freqs, sins, coses)

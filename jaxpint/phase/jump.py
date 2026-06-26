@@ -22,7 +22,7 @@ class PhaseJump(PhaseComponent):
 
     Each jump parameter value is in seconds and is converted to phase
     (cycles) by multiplying by F0.  The boolean mask for each jump is
-    looked up from ``toa_data.flag_masks[jump_name]``.
+    looked up via ``toa_data.flag_mask(jump_name, default=False)``.
 
     Parameters
     ----------

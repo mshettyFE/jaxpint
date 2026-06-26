@@ -261,7 +261,7 @@ class ParameterVector(NamedVector):
         """
         indices = self.free_indices_array()
         new_values = self.values.at[indices].set(new_free)
-        return eqx.tree_at(lambda pv: pv.values, self, new_values)
+        return self.with_values(new_values)
 
     # with_value inherited from NamedVector.
 

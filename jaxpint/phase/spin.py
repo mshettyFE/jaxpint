@@ -63,9 +63,7 @@ class Spindown(PhaseComponent):
 
         The leading zero is the constant phase term (no phase offset at PEPOCH).
         """
-        f_values = jnp.array(
-            [params.param_value(name) for name in self.spin_param_names]
-        )
+        f_values = params.param_values(self.spin_param_names)
         return jnp.concatenate([jnp.zeros(1), f_values])
 
     def _get_spin_coeffs_scaled(
@@ -78,9 +76,7 @@ class Spindown(PhaseComponent):
         per-step division — keeping ``c_int * x_int_s`` an exact
         integer × integer product.
         """
-        f_values = jnp.array(
-            [params.param_value(name) for name in self.spin_param_names]
-        )
+        f_values = params.param_values(self.spin_param_names)
         n = f_values.shape[0]
         # cumprod([1, 2, 3, ..., n]) = [1!, 2!, 3!, ..., n!]
         factorials = jnp.cumprod(jnp.arange(1, n + 1, dtype=jnp.float64))

@@ -164,9 +164,7 @@ def cw_delay(
     # amplitude mode passes a list whose first entry is the linear strain.
     if param_names is None:
         param_names = tuple(CW_PARAM_DEFAULTS)
-    cw_params = jnp.array(
-        [global_params.param_value(f"{prefix}{name}") for name in param_names]
-    )
+    cw_params = global_params.param_values([f"{prefix}{name}" for name in param_names])
     return cw_delay_from_array(
         toa_data,
         pos,

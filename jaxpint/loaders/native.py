@@ -249,8 +249,8 @@ def _build_flag_masks(core, par_result: Optional[ParResult]) -> dict:
     """Boolean TOA masks for every masked parameter in ``par_result.mask_info``.
 
     An entry is produced for *every* masked parameter (not just those with
-    matches): the noise/jump components index ``flag_masks[name]`` directly, so a
-    missing key is a KeyError.
+    matches): the noise/jump components access ``toa_data.flag_mask(name)``
+    (no default), so a missing key is a KeyError.
     """
     if par_result is None or not par_result.mask_info:
         return {}

@@ -28,7 +28,6 @@ from typing import (
     Optional,
 )
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
@@ -150,7 +149,7 @@ def _check_linearity(
     from jaxpint.fitters._base import compute_time_residuals
 
     def time_resid_fn(values):
-        p = eqx.tree_at(lambda pv: pv.values, fiducial_params, values)
+        p = fiducial_params.with_values(values)
         return compute_time_residuals(timing_model, toa_data, p)
 
     # Hessian is shape (n_toas, n_params, n_params).  We only need the
@@ -449,7 +448,7 @@ def _marginalize_single_pulsar(
     else:
 
         def _resid_fn(values):
-            p = eqx.tree_at(lambda pv: pv.values, fiducial_params, values)
+            p = fiducial_params.with_values(values)
             return compute_time_residuals(timing_model, toa_data, p)
 
         # Forward-mode: the design matrix dr/dy is tall (n_toas >> n_params),
@@ -759,7 +758,7 @@ def _marginalize_pta(
         fiducial_p = fiducial_pulsar_params[p]
 
         def _resid_fn(values, _tm=timing_model_p, _td=toa_data_p, _fp=fiducial_p):
-            params = eqx.tree_at(lambda pv: pv.values, _fp, values)
+            params = _fp.with_values(values)
             return compute_time_residuals(_tm, _td, params)
 
         # Forward-mode (see _marginalize_single_pulsar): tall design matrix,
