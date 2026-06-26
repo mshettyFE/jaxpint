@@ -2,7 +2,7 @@
 
 Covers TT(BIPM)->TDB (`jaxpint.clock.timescale`), barycentric posvels
 (`jaxpint.clock.posvels`), and the barycentric-freq Doppler helper
-(`jaxpint.delay._barycentric`). Network (ephemeris) is required only for the
+(`jaxpint.utils`). Network (ephemeris) is required only for the
 posvel tests, which are marked slow.
 """
 
@@ -50,7 +50,7 @@ def test_to_tdb_matches_astropy_pulsar_mjd():
 
 
 def test_doppler_shift_basic():
-    from jaxpint.delay._barycentric import doppler_shift_freq
+    from jaxpint.utils import doppler_shift_freq
     from jaxpint.constants import C_KM_PER_S
 
     freq = np.array([1400.0])
@@ -68,13 +68,13 @@ def test_precompute_staleness_below_ns():
     """Precomputing barycentric freq with build-time astrometry is safe.
 
     The Doppler-shifted freq is baked into ``TOAData.freq`` at build time (see
-    jaxpint/delay/_barycentric.py) and is not refreshed if astrometry is refit.
+    jaxpint/utils.py) and is not refreshed if astrometry is refit.
     Real ``.par`` astrometry uncertainties are sub-arcsec, so take 1" as a
     generous worst-case fit step, push the Doppler factor at the max observatory
     speed (~30 km/s), and confirm the resulting frequency-dependent-delay error
     stays well below ns-level timing precision.
     """
-    from jaxpint.delay._barycentric import doppler_shift_freq
+    from jaxpint.utils import doppler_shift_freq
 
     f_topo = np.array([1400.0])           # MHz
     v_obs = np.array([[30.0, 0.0, 0.0]])  # km/s (max observatory speed scale)
