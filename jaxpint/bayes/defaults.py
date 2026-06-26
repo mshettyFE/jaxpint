@@ -43,6 +43,7 @@ from typing import (
     Sequence,
     Union,
     cast,
+    runtime_checkable,
 )
 
 import jax.numpy as jnp
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
     from jaxpint.types import ParameterVector
 
 
+@runtime_checkable
 class PulsarBundle(Protocol):
     """Structural type for a per-pulsar bundle of names + parameter vectors.
 

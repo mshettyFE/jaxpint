@@ -18,6 +18,28 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 
+# Test-time runtime shape checking, scoped to the JAX-array core.
+# jaxtyping shape annotations are documentation unless a runtime typechecker is
+# installed; this import hook wraps the listed modules' functions with beartype
+# so their Float[Array, "..."] shapes (and shared dim names across args) are
+# verified whenever a test exercises them.  Must run before those modules are
+# first imported (conftest loads before any test module).
+#
+# Scoped to ``jaxpint.utils`` -- the pure-JAX-array numerical core, where the
+# annotations are exact and beartype runs clean.  Broadening package-wide was
+# tried and is NOT currently viable: beartype surfaces pervasive *annotation
+# imprecision* (not shape bugs) across the rest of the codebase, e.g.
+#   * ``: float`` params that receive a JAX tracer under jax.grad/jit (binary),
+#   * ``Float[Array, ...]`` returns that are actually NumPy arrays (noise ECORR),
+#   * ``np.ndarray`` annotations standing in for ``np.float64`` scalars (bridge),
+#   * int literals passed to ``: float`` Prior constructors -- ``Uniform(0, 1)``
+#     -- (bayes; beartype doesn't apply the PEP 484 numeric tower by default).
+# All are harmless at runtime but rejected by strict checking, so expanding the
+# scope is a deliberate annotation-cleanup project, not a one-line change.
+from jaxtyping import install_import_hook
+
+install_import_hook("jaxpint.utils", "beartype.beartype")
+
 import pytest
 import hypothesis
 

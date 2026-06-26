@@ -9,7 +9,8 @@ from typing import Callable, Optional
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+from beartype import beartype
+from jaxtyping import Array, Float, jaxtyped
 
 from jaxpint.model import TimingModel
 from jaxpint.types.dual_float import DualFloat
@@ -225,6 +226,7 @@ def compute_time_residuals(
     return phase_resid / f0
 
 
+@jaxtyped(typechecker=beartype)
 def compute_design_matrix(
     model: TimingModel,
     toa_data: TOAData,
@@ -308,6 +310,7 @@ def _subtract_weighted_mean(
     return residuals - wmean
 
 
+@jaxtyped(typechecker=beartype)
 def wls_step(
     residuals: Float[Array, " n_toas"],
     sigma: Float[Array, " n_toas"],
@@ -411,6 +414,7 @@ def _subtract_cov_weighted_mean(
     return residuals - wmean
 
 
+@jaxtyped(typechecker=beartype)
 def _normalized_svd_solve(
     mtcm: Float[Array, "p p"],
     mtcy: Float[Array, " p"],
@@ -441,6 +445,7 @@ def _normalized_svd_solve(
     return xhat, covariance, norms
 
 
+@jaxtyped(typechecker=beartype)
 def lstsq_step_fullcov(
     residuals: Float[Array, " n_toas"],
     Ndiag: Float[Array, " n_toas"],
@@ -494,6 +499,7 @@ def lstsq_step_fullcov(
     return _normalized_svd_solve(mtcm, mtcy, threshold)
 
 
+@jaxtyped(typechecker=beartype)
 def lstsq_step_augmented(
     residuals: Float[Array, " n_toas"],
     Ndiag: Float[Array, " n_toas"],
@@ -584,6 +590,7 @@ def lstsq_step_augmented(
     return dpars, covariance, norms, noise_realizations
 
 
+@jaxtyped(typechecker=beartype)
 def compute_chi2_cov(
     residuals: Float[Array, " n_toas"],
     Ndiag: Float[Array, " n_toas"],

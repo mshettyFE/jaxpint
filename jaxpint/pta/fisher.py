@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+from beartype import beartype
+from jaxtyping import Array, Float, jaxtyped
 
 from jaxpint.types import ParameterVector
 from jaxpint.types import GlobalParams
@@ -89,6 +90,7 @@ def unflatten_params(
     return gp, tuple(pp_list)
 
 
+@jaxtyped(typechecker=beartype)
 def fisher_matrix(
     global_params: GlobalParams,
     pulsar_params: tuple[ParameterVector, ...],
