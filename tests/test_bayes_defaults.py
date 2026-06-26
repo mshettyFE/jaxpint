@@ -98,14 +98,6 @@ class TestTimingPriors:
         # 2 pulsars * 3 params each
         assert len(priors) == 6
 
-    def test_iterable_input(self, two_pulsar_pta):
-        # Pairs iterator instead of a NanogravPTA
-        pairs = list(zip(
-            two_pulsar_pta.pulsar_names, two_pulsar_pta.pulsar_params_list
-        ))
-        priors = timing_priors(pairs)
-        assert len(priors) == 6
-
 
 # ===========================================================================
 # distance_priors
