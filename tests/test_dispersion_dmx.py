@@ -186,14 +186,18 @@ class TestJIT:
 
     def test_jit_same_trace_different_params(self):
         comp = _single_bin_component()
-        params1 = make_dmx_params([0.5], [58900.0], [59100.0])
-        params2 = make_dmx_params([1.0], [58900.0], [59100.0])
+        params = make_dmx_params([0.5], [58900.0], [59100.0])
         toa_data = make_gbt_toa_data(n_toas=1, tdb_int=59000.0, tdb_frac=0.0,
                                   freq=1400.0)
 
         jitted = jax.jit(comp)
-        r1 = jitted(toa_data, params1, jnp.zeros(1))
-        r2 = jitted(toa_data, params2, jnp.zeros(1))
+        r1 = jitted(toa_data, params, jnp.zeros(1))  # first call compiles one variant
+        # Same structure, different value -> cache hit, must not recompile.
+        r2 = jitted(toa_data, params.with_value("DMX_0001", 1.0), jnp.zeros(1))
+
+        assert jitted._cache_size() == 1, (
+            f"recompiled on same-structure inputs: {jitted._cache_size()} variants"
+        )
         assert not jnp.array_equal(r1, r2)
 
 

@@ -157,8 +157,9 @@ class TestBinaryDDKvsPINT:
         assert np.max(np.abs(pint_k96 - pint_nok96)) > 1e-9, "K96 should change the delay"
 
     @pytest.mark.slow
-    def test_ddk_large_px_matches_dd(self, ddk_params):
-        """With large PX (far distance), DDK should reduce to DD with SINI=sin(KIN)."""
+    def test_ddk_no_parallax_matches_dd(self, ddk_params):
+        """With zero observer position (no parallax/Kopeikin term), DDK
+        reduces to DD with SINI=sin(KIN)."""
         from jaxpint.binary.ddk import BinaryDDK
         from jaxpint.binary.dd import BinaryDD
 

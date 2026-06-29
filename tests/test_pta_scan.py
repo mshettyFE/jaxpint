@@ -635,8 +635,7 @@ class TestScanLogLPrecomputeDispatch:
         for comp in nm[0].components:
             if hasattr(comp, "required_params"):
                 noise_params.extend(comp.required_params())
-        if not noise_params:
-            pytest.skip("simple-pulsar fixture has no noise params to scan over")
+        assert noise_params, "fixture must expose noise params to scan over"
         param_name = noise_params[0]
         # Confirm the dispatch helper marks the axis as noise-touching.
         ax = PerPulsarScanAxis(

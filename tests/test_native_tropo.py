@@ -27,20 +27,27 @@ def _tropo_par(tmp_path, enabled: bool):
     return str(out), examplefile("B1855+09_NANOGrav_dfg+12.tim")
 
 
-def _load(parp, timp):
+def _load_pint(parp, timp):
+    """PINT reference (model + TOAs). Skip-guarded: may need ephemeris/example data."""
     import pint.models as pm
     import pint.toa as pt
-
-    from jaxpint.loaders.native import native_toas_to_jax
-    import jaxpint.par as par
 
     model = pm.get_model(parp)
     toas = pt.get_TOAs(timp, model=model, ephem=EPHEM,
                        include_bipm=True, bipm_version=BIPM, planets=False)
+    return model, toas
+
+
+def _load_native(parp, timp):
+    """Native par + TOAData (the code under test). NOT skip-guarded -- a failure
+    here is a real bug and must surface, not be swallowed as a skip."""
+    from jaxpint.loaders.native import native_toas_to_jax
+    import jaxpint.par as par
+
     pr = par.get_model(parp)
     td = native_toas_to_jax(timp, pr, ephem=EPHEM, include_bipm=True,
                             bipm_version=BIPM, planets=False)
-    return model, toas, pr, td
+    return pr, td
 
 
 def _align(td, toas):
@@ -58,9 +65,10 @@ def test_tropo_field_parity_vs_bridge(tmp_path, _pinned_clock):
 
     parp, timp = _tropo_par(tmp_path, enabled=True)
     try:
-        model, toas, pr, td = _load(parp, timp)
-    except Exception as exc:  # pragma: no cover
+        model, toas = _load_pint(parp, timp)
+    except OSError as exc:  # missing example file / ephemeris download
         pytest.skip(f"PINT could not load: {exc}")
+    pr, td = _load_native(parp, timp)
 
     assert pr.bool_params.get("CORRECT_TROPOSPHERE") is True
     ref = pint_toas_to_jax(toas, model=model)
@@ -88,9 +96,10 @@ def test_tropo_delay_parity_vs_pint(tmp_path, _pinned_clock):
 
     parp, timp = _tropo_par(tmp_path, enabled=True)
     try:
-        model, toas, pr, td = _load(parp, timp)
-    except Exception as exc:  # pragma: no cover
+        model, toas = _load_pint(parp, timp)
+    except OSError as exc:  # missing example file / ephemeris download
         pytest.skip(f"PINT could not load: {exc}")
+    pr, td = _load_native(parp, timp)
 
     pint_delay = model.components["TroposphereDelay"].troposphere_delay(toas).to_value(u.s)
     nat_delay = np.asarray(TroposphereDelay()(td, pr.params, np.zeros(td.n_toas)))
@@ -111,9 +120,10 @@ def test_tropo_off_leaves_fields_none(tmp_path, _pinned_clock):
 
     parp, timp = _tropo_par(tmp_path, enabled=False)
     try:
-        _model, _toas, pr, td = _load(parp, timp)
-    except Exception as exc:  # pragma: no cover
+        _load_pint(parp, timp)
+    except OSError as exc:  # missing example file / ephemeris download
         pytest.skip(f"PINT could not load: {exc}")
+    pr, td = _load_native(parp, timp)
 
     assert td.tropo_alt is None
     assert td.tropo_alt_valid is None
