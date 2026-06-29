@@ -275,6 +275,7 @@ class TestPLRedNoiseVsPINT:
                 plred_jax = comp
                 break
 
+        assert plred_jax is not None
         _, U, Phi = plred_jax.covariance(toa_data, params)
         jax_cov = np.array(U @ jnp.diag(Phi) @ U.T)
 
@@ -376,6 +377,7 @@ class TestPLDMNoiseVsPINT:
                 pldm_jax = comp
                 break
 
+        assert pldm_jax is not None
         _, U, Phi = pldm_jax.covariance(toa_data, params)
         jax_cov = np.array(U @ jnp.diag(Phi) @ U.T)
 
@@ -519,6 +521,7 @@ class TestPLChromNoiseVsPINT:
                 plchrom_jax = comp
                 break
 
+        assert plchrom_jax is not None
         _, U, Phi = plchrom_jax.covariance(toa_data, params)
         jax_cov = np.array(U @ jnp.diag(Phi) @ U.T)
 
@@ -625,6 +628,7 @@ class TestPLSWNoiseVsPINT:
                 plsw_jax = comp
                 break
 
+        assert plsw_jax is not None
         _, U, Phi = plsw_jax.covariance(toa_data, params)
         jax_cov = np.array(U @ jnp.diag(Phi) @ U.T)
 

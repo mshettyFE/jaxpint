@@ -107,8 +107,6 @@ class TestBinaryDDGRvsPINT:
         from jaxpint.binary.ddgr import BinaryDDGR
         from jaxpint.binary.dd import BinaryDD
 
-        _DEG_YR_TO_RAD_S = np.pi / 180.0 / (365.25 * 86400.0)
-
         # Get PK values from PINT DDGR
         bm = DDGRmodel()
         pint_params = {

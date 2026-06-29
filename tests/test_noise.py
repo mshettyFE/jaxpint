@@ -189,7 +189,6 @@ class TestScaleToaErrorVsPINT:
     def synthetic_with_noise(self):
         """Create a synthetic pulsar with EFAC/EQUAD noise parameters."""
         import io
-        import numpy as np
         import pint.models as models
         import pint.toa as toa
         from pint.simulation import make_fake_toas_uniform
@@ -236,7 +235,6 @@ UNITS         TDB
     @pytest.mark.slow
     def test_scaled_sigma_matches_pint(self, synthetic_with_noise):
         """JaxPINT scaled sigma matches PINT's scaled_toa_uncertainty."""
-        import astropy.units as u
         from jaxpint.bridge import (
             build_timing_model,
             pint_model_to_params,
