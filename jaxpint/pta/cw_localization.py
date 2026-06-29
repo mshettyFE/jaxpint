@@ -3,12 +3,7 @@
 Companion to :mod:`jaxpint.pta.cw_upper_limit` (which gives analytic upper
 limits on strain). Here we go the other way: assume a *known* signal of
 amplitude ``h0`` and compute the per-pixel 2-D Fisher information for the GW
-sky position ``(cos_gwtheta, gwphi)``. The 90% credible localization area is
-``pi * 4.605 * sqrt(det Sigma)`` steradians where ``Sigma = (-Hessian)^{-1}``;
-``(cos_gwtheta, gwphi)`` is the area-preserving sky parameterization (the
-solid-angle element is ``d(cos theta) d phi`` with no extra Jacobian), so the
-area maps cleanly to deg^2 via the standard ``(180/pi)^2`` factor.
-
+sky position ``(cos_gwtheta, gwphi)``.
 The intended use is reproducing arXiv:2603.28897 (Wen et al. 2026) style
 anchor-pulsar scaling plots — for each anchor configuration, build a CWInjector
 with the matching ``pulsar_term_mask``, set ``h0`` per pixel so the optimal SNR
@@ -24,16 +19,14 @@ no-anchor regime, prefer sampling-based methods.
 
 from __future__ import annotations
 
-from typing import Callable, cast
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
+from jaxpint.bayes.credible import gaussian_credible_area
 
-# Chi^2 quantile at p=0.9 for 2 d.o.f.: Δχ² = -2 ln(1-p) = 4.605... — sets the
-# scale of the 90% credible ellipse for a 2-D Gaussian posterior.
-_DCHI2_90 = -2.0 * jnp.log(0.1)
 
 # Solid-angle conversion: (180/π)² deg² per steradian.
 _STR_TO_DEG2 = (180.0 / jnp.pi) ** 2
@@ -45,39 +38,10 @@ def h0_for_snr(
 ) -> Float[Array, ""]:
     """Calibrate ``h0`` so the optimal matched-filter SNR² equals ``snr_target²``.
 
-    ``Y = (s_hat | s_hat)`` (from :func:`jaxpint.pta.cw_upper_limit.quadratic_coeffs`)
-    is the unit-strain signal power; the optimal SNR² of a signal of amplitude
-    ``h0`` is ``h0² * Y``. Setting that equal to ``snr_target²`` gives
-    ``h0 = snr_target / sqrt(Y)``.
+    ``Y = (s_hat | s_hat)``, so need sqrt(Y) for scaling
     """
     Y = jnp.maximum(Y, jnp.finfo(jnp.float64).tiny)
     return snr_target / jnp.sqrt(Y)
-
-
-def sky_fisher(
-    logL_of_sky: Callable[[Float[Array, " 2"]], Float[Array, ""]],
-    sky_truth: Float[Array, " 2"],
-) -> Float[Array, "2 2"]:
-    """The 2x2 sky Fisher information at the truth point.
-
-    Parameters
-    ----------
-    logL_of_sky
-        Scalar log-likelihood as a function of the 2-vector
-        ``(cos_gwtheta, gwphi)``. Should close over the (timing-marginalized)
-        PTA likelihood with all other CW parameters — amplitude, orientation,
-        frequency — held at their truth values.
-    sky_truth
-        The injected sky position, ``[cos_gwtheta, gwphi]``.
-
-    Returns
-    -------
-    F : (2, 2) array
-        Observed Fisher information matrix ``F = -d² logL / d sky²`` at the
-        truth. Under the Gaussian likelihood approximation, the posterior on
-        the sky around the truth is ``N(sky_truth, F^{-1})``.
-    """
-    return -jax.hessian(logL_of_sky)(sky_truth)
 
 
 def gram_at_pixel(
@@ -87,46 +51,7 @@ def gram_at_pixel(
     ],
     sky_pixel: Float[Array, " 2"],
 ) -> Float[Array, "2 2"]:
-    r"""The 2x2 sky Gram matrix at ``sky_pixel`` — proper expected Fisher / h0^2.
-
-    Computes
-
-    .. math::
-        \mathrm{Gram}_{ij}(\theta) = \big(\partial_i \hat s(\theta)\,\big|\,
-                                          \partial_j \hat s(\theta)\big)_N
-
-    — the noise-weighted Gram matrix of signal gradients.  By construction this
-    is positive semi-definite, so ``F = h0^2 * Gram`` is the proper PSD Fisher
-    information for sky parameters under Wen-style signal-injection sensitivity
-    forecasts.  Unlike ``0.5*h0^2*Hessian_sky(Y)`` (which is ``Gram + Curv``,
-    sign-indefinite in ``Curv``) and unlike data-injection ``-Hessian(logL)``
-    (which equals ``h0^2 * Gram`` only *in expectation* over noise), this is
-    exact per realization and noise-independent.
-
-    Construction: ``logL_2sky(h_a, h_b, sky_a, sky_b)`` is the timing-marginalized
-    log-likelihood with *two* CW injectors active (amplitudes ``h_a, h_b``, sky
-    positions ``sky_a, sky_b``).  Since the Gaussian likelihood is *exactly
-    bilinear* in ``(h_a, h_b)``,
-
-    .. math::
-        \log L = \text{const} + h_a X_a + h_b X_b - \tfrac{1}{2} h_a^2 Y_a
-                 - \tfrac{1}{2} h_b^2 Y_b - h_a h_b Z(\theta_a, \theta_b),
-
-    where ``Z(\theta_a, \theta_b) = (\hat s(\theta_a) | \hat s(\theta_b))_N``
-    is the cross-template inner product.  Taking the mixed amplitude derivative
-    isolates the cross-coefficient
-
-    .. math::
-        Z(\theta_a, \theta_b) = -\frac{\partial^2 \log L}{\partial h_a\,\partial h_b}\bigg|_{h_a = h_b = 0}.
-
-    Then
-
-    .. math::
-        \mathrm{Gram}_{ij}(\theta) = \frac{\partial^2 Z}{\partial \theta_{a,i}\,
-                                          \partial \theta_{b,j}}\bigg|_{\theta_a = \theta_b = \theta}.
-
-    Total autodiff: 4th-order mixed (2 in amplitudes, 2 in sky).  Works given
-    the slogdet and arccos refactors landed in jaxpint earlier.
+    r"""The 2x2 sky Gram matrix at ``sky_pixel`` — the same-source (diagonal) case.
 
     Parameters
     ----------
@@ -143,16 +68,7 @@ def gram_at_pixel(
         The 2x2 Gram matrix at ``sky_pixel``.  Multiply by ``h0_target**2`` to
         get the sky Fisher information.
     """
-
-    def Z(sky_a, sky_b):
-        # Bilinear in (h_a, h_b) ⇒ ∂²/∂h_a∂h_b extracts -Z exactly.  Evaluate at
-        # (0, 0) for convenience; any (h_a, h_b) gives the same constant.
-        f = lambda h_a, h_b: logL_2sky(h_a, h_b, sky_a, sky_b)
-        return -jax.grad(jax.grad(f, argnums=0), argnums=1)(
-            jnp.float64(0.0), jnp.float64(0.0)
-        )
-
-    return jax.jacfwd(jax.jacrev(Z, argnums=0), argnums=1)(sky_pixel, sky_pixel)
+    return gram_block_at_pair(logL_2sky, sky_pixel, sky_pixel)
 
 
 def gram_block_at_pair(
@@ -163,14 +79,32 @@ def gram_block_at_pair(
     sky_a_truth: Float[Array, " 2"],
     sky_b_truth: Float[Array, " 2"],
 ) -> Float[Array, "2 2"]:
-    r"""Cross-template Gram block evaluated at two distinct sky positions.
+    r"""Cross-template sky Gram block (per ``h_a h_b``) at two sky positions.
 
-    Generalization of :func:`gram_at_pixel` for multi-source forecasting.  Same
-    mixed-derivative trick — `Z(\theta_a, \theta_b) = -\partial^2 \log L /
-    \partial h_a \partial h_b` is extracted via the bilinearity of the
-    Gaussian likelihood in the two amplitudes; the mixed sky-Hessian then
-    gives the off-diagonal Gram block.  Reduces exactly to :func:`gram_at_pixel`
-    when ``sky_a_truth == sky_b_truth`` (same source on both sides).
+    The noise-weighted Gram of signal sky-gradients,
+
+    .. math::
+        \mathrm{Gram}_{ij} = \frac{\partial^2 Z}{\partial \theta_{a,i}\,
+                                  \partial \theta_{b,j}},
+        \qquad
+        Z(\theta_a, \theta_b) = (\hat s(\theta_a) \,|\, \hat s(\theta_b))_N,
+
+    the building block of the joint multi-source Fisher; the diagonal
+    (``sky_a == sky_b``, both injectors on one source) is :func:`gram_at_pixel`.
+
+    Construction: ``logL_2sky(h_a, h_b, sky_a, sky_b)`` is the timing-marginalized
+    log-likelihood with *two* CW injectors active.  The Gaussian likelihood is
+    *exactly bilinear* in ``(h_a, h_b)``,
+
+    .. math::
+        \log L = \text{const} + h_a X_a + h_b X_b - \tfrac{1}{2} h_a^2 Y_a
+                 - \tfrac{1}{2} h_b^2 Y_b - h_a h_b\, Z(\theta_a, \theta_b),
+
+    so the mixed amplitude derivative isolates the cross-template inner product
+
+    .. math::
+        Z(\theta_a, \theta_b)
+            = -\frac{\partial^2 \log L}{\partial h_a\,\partial h_b}\bigg|_{h_a = h_b = 0},
 
     The two CWInjectors that ``logL_2sky`` closes over should represent the
     *two source templates whose cross-coupling this block measures*:
@@ -223,11 +157,6 @@ def assemble_joint_fisher(
     .. math::
         F_{(a,i),(b,j)} = h_{0,a}\,h_{0,b}\,(\partial_i \hat s_a | \partial_j \hat s_b)_N,
 
-    so each ``2 x 2`` Gram block scales by the product of the two sources'
-    calibrated amplitudes.  Caller only needs to provide unique blocks
-    (``a <= b``); the function symmetrizes off-diagonals into the joint matrix
-    automatically.
-
     Parameters
     ----------
     gram_blocks : dict
@@ -244,10 +173,34 @@ def assemble_joint_fisher(
     F : (2K, 2K) array
         Symmetric joint Fisher information matrix.  ``F[2a:2a+2, 2b:2b+2]``
         is the ``(a, b)``-block contribution.
+
+    Raises
+    ------
+    ValueError
+        If ``gram_blocks`` is not exactly the ``K(K+1)/2`` upper-triangular
+        pairs ``(a, b)`` with ``0 <= a <= b < K`` (a block missing, out of
+        range, or otherwise not one-per-sub-matrix), or if
+        ``len(h0_targets) != K``.
     """
+    expected_keys = {(a, b) for a in range(K) for b in range(a, K)}
+    keys = set(gram_blocks)
+    if keys != expected_keys:
+        missing = sorted(expected_keys - keys)
+        unexpected = sorted(keys - expected_keys)
+        raise ValueError(
+            "assemble_joint_fisher: gram_blocks must contain exactly the "
+            f"{K * (K + 1) // 2} upper-triangular pairs (a, b) with "
+            f"0 <= a <= b < {K} (one per sub-matrix). "
+            f"Missing: {missing}. Unexpected: {unexpected}."
+        )
+    if h0_targets.shape[0] != K:
+        raise ValueError(
+            f"assemble_joint_fisher: h0_targets has length "
+            f"{h0_targets.shape[0]}, expected K = {K}."
+        )
+
     F = jnp.zeros((2 * K, 2 * K), dtype=jnp.float64)
     for (a, b), G_ab in gram_blocks.items():
-        assert a <= b, f"gram_blocks keys must satisfy a <= b; got ({a}, {b})"
         scaled = h0_targets[a] * h0_targets[b] * G_ab
         F = F.at[2 * a : 2 * a + 2, 2 * b : 2 * b + 2].set(scaled)
         if a != b:
@@ -262,16 +215,10 @@ def per_source_credible_areas_deg2(
 ) -> Float[Array, " K"]:
     r"""Per-source marginal credible area from the joint Fisher matrix.
 
-    Inverts the joint Fisher to get ``Sigma = F^{-1}``, slices the ``2 x 2``
-    marginal sky covariance per source ``Sigma_k = Sigma[2k:2k+2, 2k:2k+2]``,
-    inverts to get the marginal Fisher per source, and computes the credible
-    area via :func:`credible_area_deg2`.
-
-    The marginal per-source Fisher is *strictly smaller* than the
-    corresponding diagonal block ``F[2k:2k+2, 2k:2k+2]`` whenever the
-    off-diagonal blocks of ``F`` are non-zero — this is the **source-confusion
-    penalty**: simultaneous sources degrade each other's localization through
-    the joint posterior's covariance, even at fixed per-source SNR.
+    Inverts the joint Fisher to get ``Sigma = F^{-1}``,
+    slices the ``2 x 2`` marginal sky covariance per source
+    ``Sigma_k = Sigma[2k:2k+2, 2k:2k+2]``, and computes its credible area from
+    ``det Sigma_k`` via :func:`~jaxpint.bayes.gaussian_credible_area`.
 
     Returns ``inf`` for sources where the marginal covariance is degenerate
     (e.g., coincident sources, or any other case where the joint Fisher is
@@ -291,20 +238,17 @@ def per_source_credible_areas_deg2(
     areas : (K,) array
         Per-source marginal credible localization area in deg^2.
     """
-    Sigma = jnp.linalg.inv(F)
+    # F is positive semi definite
+    Sigma = jax.scipy.linalg.cho_solve(
+        jax.scipy.linalg.cho_factor(F), jnp.eye(2 * K, dtype=F.dtype)
+    )
     out = []
     for k in range(K):
         Sigma_k = Sigma[2 * k : 2 * k + 2, 2 * k : 2 * k + 2]
-        # Marginal Fisher = inverse of marginal covariance.  credible_area_deg2
-        # handles non-PSD / singular cases by returning inf.
         det_Sigma_k = jnp.linalg.det(Sigma_k)
-        # Direct: area = pi * Delta_chi2 * sqrt(det Sigma_k) * (180/pi)^2.
-        dchi2 = -2.0 * jnp.log(1.0 - level)
-        det_safe = cast(Array, jnp.where(det_Sigma_k > 0.0, det_Sigma_k, jnp.inf))
-        area_str = jnp.pi * dchi2 * jnp.sqrt(det_safe)
-        out.append(area_str * _STR_TO_DEG2)
+        det_safe = jnp.where(det_Sigma_k > 0.0, det_Sigma_k, jnp.inf)
+        out.append(gaussian_credible_area(det_safe, level) * _STR_TO_DEG2)
     return jnp.stack(out)
-
 
 def credible_area_deg2(
     F: Float[Array, "2 2"],
@@ -318,18 +262,11 @@ def credible_area_deg2(
     .. math::
         A = \pi \cdot \Delta\chi^2 \cdot \sqrt{\det \Sigma},
 
-    with ``Δχ² = -2 ln(1 - level)`` (4.605 at 90%, 2 d.o.f.). The result is in
-    the *parameter* units of ``F``. Since ``(cos_gwtheta, gwphi)`` is the
-    area-preserving sky parameterization, this is also the solid-angle area in
-    steradians — convert to deg² with the standard ``(180/pi)²`` factor.
-
     Returns ``inf`` for a singular / negative-determinant Fisher (degenerate /
     unphysical posterior) rather than raising — convenient when vmapping over
     a sky grid where a handful of pixels can degenerate.
     """
-    dchi2 = -2.0 * jnp.log(1.0 - level)
     det_F = jnp.linalg.det(F)
     # det Sigma = 1 / det F; det F <= 0 → unphysical (non-positive-definite).
-    det_sigma = cast(Array, jnp.where(det_F > 0.0, 1.0 / det_F, jnp.inf))
-    area_str = jnp.pi * dchi2 * jnp.sqrt(det_sigma)
-    return area_str * _STR_TO_DEG2
+    det_sigma = jnp.where(det_F > 0.0, 1.0 / det_F, jnp.inf)
+    return gaussian_credible_area(det_sigma, level) * _STR_TO_DEG2
