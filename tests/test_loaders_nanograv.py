@@ -300,13 +300,30 @@ def _ell1h_par_result(*, h3=False, h4=False, stigma=False, nharms=None):
     )
 
 
+def _ell1h_ctx(**kwargs):
+    """Wrap an ELL1H ParResult in a BuildContext for ``_build_binary``.
+
+    ``_build_binary`` takes a single ``BuildContext``; the ELL1H branch only
+    reads ``ctx.par``, so the astrometry fields are placeholders.
+    """
+    from jaxpint.model_builder import BuildContext
+
+    return BuildContext(
+        par=_ell1h_par_result(**kwargs),
+        toa_data=None,
+        raj="RAJ", decj="DECJ",
+        pmra=None, pmdec=None, posepoch=None,
+        obliquity_arcsec=None,
+    )
+
+
 def test_ell1h_no_shapiro_params_uses_none_mode():
     """ELL1H par with no H3/H4/STIGMA must produce shapiro_mode='none' so
     the binary model never tries to read an absent H3 at logL time. Mirrors
     NANOGrav 15-yr J1802-2124 (BINARY ELL1H, NHARMS only)."""
     from jaxpint.model_builder import _build_binary
 
-    binary = _build_binary(_ell1h_par_result(), astro_info={})
+    binary = _build_binary(_ell1h_ctx())
     assert binary.shapiro_mode == "none"
     assert binary.h3_name is None
     assert binary.stigma_name is None
@@ -319,7 +336,7 @@ def test_ell1h_with_h3_only_uses_h3nharms():
     no STIGMA/H4)."""
     from jaxpint.model_builder import _build_binary
 
-    binary = _build_binary(_ell1h_par_result(h3=True, nharms=3), astro_info={})
+    binary = _build_binary(_ell1h_ctx(h3=True, nharms=3))
     assert binary.shapiro_mode == "h3nharms"
     assert binary.h3_name == "H3"
     assert binary.nharms == 3
@@ -329,14 +346,14 @@ def test_ell1h_h3_only_default_nharms_is_seven():
     """Without NHARMS in int_params, the bridge falls back to 7 (PINT default)."""
     from jaxpint.model_builder import _build_binary
 
-    binary = _build_binary(_ell1h_par_result(h3=True), astro_info={})
+    binary = _build_binary(_ell1h_ctx(h3=True))
     assert binary.nharms == 7
 
 
 def test_ell1h_with_h3_h4_uses_h3h4():
     from jaxpint.model_builder import _build_binary
 
-    binary = _build_binary(_ell1h_par_result(h3=True, h4=True), astro_info={})
+    binary = _build_binary(_ell1h_ctx(h3=True, h4=True))
     assert binary.shapiro_mode == "h3h4"
     assert binary.h4_name == "H4"
 
@@ -344,7 +361,7 @@ def test_ell1h_with_h3_h4_uses_h3h4():
 def test_ell1h_with_stigma_uses_h3stigma():
     from jaxpint.model_builder import _build_binary
 
-    binary = _build_binary(_ell1h_par_result(h3=True, stigma=True), astro_info={})
+    binary = _build_binary(_ell1h_ctx(h3=True, stigma=True))
     assert binary.shapiro_mode == "h3stigma"
     assert binary.stigma_name == "STIGMA"
 
