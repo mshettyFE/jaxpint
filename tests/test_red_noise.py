@@ -61,8 +61,10 @@ class TestPLRedNoiseBasic:
         """Lower frequencies should have higher PSD (red spectrum)."""
         plred, params, _, _, _, _ = _make_plred(n_freqs=10)
         weights = plred.psd_weights(params)
-        # Even indices are sin weights; compare consecutive frequencies
-        for i in range(0, 16, 2):
+        # Even indices are sin weights; compare consecutive frequencies. Derive
+        # the bound from the actual length (2*n_freqs) so no frequency pair is
+        # silently skipped.
+        for i in range(0, weights.shape[0] - 2, 2):
             assert weights[i] > weights[i + 2]
 
     def test_basis_is_fourier_matrix(self):

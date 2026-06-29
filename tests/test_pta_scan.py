@@ -8,6 +8,7 @@ output-shape conventions against :func:`numpy.meshgrid`.
 
 from __future__ import annotations
 
+from collections import Counter
 from unittest.mock import patch
 
 import jax
@@ -148,51 +149,52 @@ class TestScanLogLDependencyAnalysis:
         target = 2
         grid = jnp.linspace(199.0, 201.0, 5)
 
-        # Patch both the constant path (`single_pulsar_pta_logL`) and the
-        # factor path (`single_pulsar_pta_logL_with_factor`) so we can
-        # see whichever the dispatcher picks. Constant pulsars go via the
-        # plain function once; the target pulsar goes via the factor
-        # path inside vmap (traced once).
-        call_counts = {p: 0 for p in range(4)}
+        # Wrap both dispatch paths -- the constant path (`single_pulsar_pta_logL`)
+        # and the factor path (`single_pulsar_pta_logL_with_factor`) -- keeping
+        # their real behavior. The pulsar index is the first positional arg of
+        # each call, so call_args_list tells us how many times each pulsar's
+        # logL was evaluated.
         from jaxpint.pta import scan as scan_module
-        real_plain = scan_module.single_pulsar_pta_logL
-        real_factor = scan_module.single_pulsar_pta_logL_with_factor
-
-        def counting_plain(p, *args, **kwargs):
-            call_counts[p] += 1
-            return real_plain(p, *args, **kwargs)
-
-        def counting_factor(p, *args, **kwargs):
-            call_counts[p] += 1
-            return real_factor(p, *args, **kwargs)
-
         with (
             patch.object(scan_module, "single_pulsar_pta_logL",
-                         side_effect=counting_plain),
+                         wraps=scan_module.single_pulsar_pta_logL) as plain,
             patch.object(scan_module, "single_pulsar_pta_logL_with_factor",
-                         side_effect=counting_factor),
+                         wraps=scan_module.single_pulsar_pta_logL_with_factor) as factor,
         ):
             _ = scan_logL(
                 gp, pp, config,
                 axes=[PerPulsarScanAxis(pulsar_idx=target, param_name="F0", values=grid)],
             )
 
-        # Each pulsar's logL is invoked exactly once (constants once,
-        # target once because vmap traces the body once).
-        assert call_counts[0] == 1
-        assert call_counts[1] == 1
-        assert call_counts[3] == 1
-        assert call_counts[target] == 1
+        # Each pulsar's logL is invoked exactly once: constants via the plain
+        # path, the target via the factor path inside vmap (traced once).
+        traced = Counter(c.args[0] for c in (*plain.call_args_list,
+                                             *factor.call_args_list))
+        assert traced == {0: 1, 1: 1, 2: 1, 3: 1}
 
     def test_one_global_axis_all_pulsars_traced(self):
         toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=3, n_cw_sources=1)
         config = _build_config(toa, tm, nm, signal_injectors=injectors)
         grid = jnp.linspace(-15.0, -13.0, 4)
 
-        result = scan_logL(
-            gp, pp, config,
-            axes=[GlobalScanAxis(param_name="cw0_log10_h", values=grid)],
-        )
+        # A global axis perturbs every pulsar, so all of them must be (re)traced
+        # -- unlike a per-pulsar axis where only the target is. Wrap both
+        # dispatch paths and read off which pulsar indices were evaluated.
+        from jaxpint.pta import scan as scan_module
+        with (
+            patch.object(scan_module, "single_pulsar_pta_logL",
+                         wraps=scan_module.single_pulsar_pta_logL) as plain,
+            patch.object(scan_module, "single_pulsar_pta_logL_with_factor",
+                         wraps=scan_module.single_pulsar_pta_logL_with_factor) as factor,
+        ):
+            result = scan_logL(
+                gp, pp, config,
+                axes=[GlobalScanAxis(param_name="cw0_log10_h", values=grid)],
+            )
+
+        # Every pulsar is traced (a global parameter touches all of them).
+        traced = {c.args[0] for c in (*plain.call_args_list, *factor.call_args_list)}
+        assert traced >= {0, 1, 2}, traced
         # 1D output → shape (4,).
         assert result.shape == (4,)
 

@@ -434,17 +434,21 @@ class TestDispersionJump:
 
     @pytest.mark.slow
     def test_dmjump_zero_delay(self, jax_wb):
-        """DMJUMP should contribute zero timing delay."""
+        """DMJUMP affects DM only -- its timing-delay contribution is zero."""
         from jaxpint.delay.dispersion_jump import DispersionJump
 
         jax_model, toa_data, params, _ = jax_wb
-        for comp in jax_model.delay_components:
-            if isinstance(comp, DispersionJump):
-                delay = comp(
-                    toa_data, params, jnp.zeros(toa_data.n_toas)
-                )
-                npt.assert_array_equal(np.array(delay), 0.0)
-                break
+        # DMJUMP lives in dispersion_components (it is a DispersionDelayComponent),
+        # NOT delay_components -- iterating the latter would never match and the
+        # assertion would silently never run.
+        dmjump = next(
+            (c for c in jax_model.dispersion_components
+             if isinstance(c, DispersionJump)),
+            None,
+        )
+        assert dmjump is not None, "no DispersionJump in dispersion_components"
+        delay = dmjump(toa_data, params, jnp.zeros(toa_data.n_toas))
+        npt.assert_array_equal(np.array(delay), 0.0)
 
     @pytest.mark.slow
     def test_dmjump_nonzero_dm(self, jax_wb):
@@ -452,13 +456,14 @@ class TestDispersionJump:
         from jaxpint.delay.dispersion_jump import DispersionJump
 
         jax_model, toa_data, params, _ = jax_wb
-        for comp in jax_model.dispersion_components:
-            if isinstance(comp, DispersionJump):
-                dm = comp.compute_dm(
-                    toa_data, params, jnp.zeros(toa_data.n_toas)
-                )
-                assert jnp.any(dm != 0.0)
-                break
+        dmjump = next(
+            (c for c in jax_model.dispersion_components
+             if isinstance(c, DispersionJump)),
+            None,
+        )
+        assert dmjump is not None, "no DispersionJump in dispersion_components"
+        dm = dmjump.compute_dm(toa_data, params, jnp.zeros(toa_data.n_toas))
+        assert jnp.any(dm != 0.0)
 
 
 # ---------------------------------------------------------------------------

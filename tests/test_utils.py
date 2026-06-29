@@ -257,14 +257,16 @@ class TestShermanMorrisonDot:
         assert jnp.isclose(result, ref_result, rtol=1e-10)
         assert jnp.isclose(logdet, ref_logdet, rtol=1e-10)
 
-    def test_symmetric(self):
+    def test_positive_definite(self):
+        # x^T C^{-1} x > 0 for x != 0, since C = diag(Ndiag) + w v v^T is
+        # positive definite (Ndiag > 0, w > 0). (Named for what it asserts --
+        # this is a positive-definiteness check, not a symmetry check.)
         key = jax.random.PRNGKey(1)
         k1, k2, k3 = jax.random.split(key, 3)
         n = 5
         Ndiag = jnp.abs(jax.random.normal(k1, (n,))) + 1.0
         v = jax.random.normal(k2, (n,))
         x = jax.random.normal(k3, (n,))
-        # x^T C^{-1} x should be positive (C is positive definite)
         result, _ = sherman_morrison_dot(Ndiag, v, jnp.array(1.0), x, x)
         assert result > 0
 

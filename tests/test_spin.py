@@ -242,10 +242,13 @@ class TestJIT:
         jitted = jax.jit(spindown)
         r1 = jitted(toa_data, params, delay)
 
-        # Change param value but not structure -> no retrace
+        # Change param value but not structure -> cache hit, must not recompile.
         params2 = params.with_value("F0", 200.0)
         r2 = jitted(toa_data, params2, delay)
 
+        assert jitted._cache_size() == 1, (
+            f"recompiled on same-structure inputs: {jitted._cache_size()} variants"
+        )
         assert not jnp.array_equal(r1.total, r2.total)
 
 

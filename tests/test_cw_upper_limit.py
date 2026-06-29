@@ -221,7 +221,10 @@ class TestBasisReductionConsistency:
     def test_gram_matrix_is_psd(self):
         logL = self._toy_pta_logL()
         M, _ = basis_quadratics(logL)
-        # M = (basis|basis) is symmetric PSD; full rank with 2 distinct pulsars.
+        # M = (basis|basis) is symmetric and positive *definite* (hence full
+        # rank) with 2 distinct pulsars -- assert the full-rank claim, not just
+        # PSD: the smallest eigenvalue is strictly positive.
         assert jnp.allclose(M, M.T, atol=1e-10)
         eigs = jnp.linalg.eigvalsh(M)
-        assert jnp.all(eigs > -1e-8)
+        assert jnp.all(eigs > 1e-8 * eigs[-1])
+        assert jnp.linalg.matrix_rank(M) == M.shape[0]
