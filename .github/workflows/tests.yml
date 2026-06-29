@@ -125,3 +125,8 @@ jobs:
 
       - name: Run ruff
         run: uv run --extra cpu --extra dev ruff check
+
+      # Fail on unformatted code, so formatting drift can't accumulate from
+      # contributors who haven't installed the (local, opt-in) pre-commit hooks.
+      - name: Run ruff format check
+        run: uv run --extra cpu --extra dev ruff format --check

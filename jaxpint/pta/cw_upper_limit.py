@@ -187,6 +187,7 @@ def h0_to_distance(
 # Ellis, Siemens & Creighton 2012 (arXiv:1204.4218); Taylor, Ellis & Gair 2014
 # (arXiv:1406.5224).
 
+
 def orientation_coeffs(
     cos_inc: Float[Array, ""],
     psi: Float[Array, ""],
@@ -324,18 +325,16 @@ def h0_95_marginalized(
     n_iter : int
         Bisection iterations (default 60 -> float64-tight).
     """
-#    The constant ``logL(0)`` cancels in the normalized CDF (never exponentiated).
-#    Component weights ``exp(0.5 X_k^2/Y_k)`` are stabilized by subtracting the
-#    max in log-space (cancels in the CDF ratio);
+    #    The constant ``logL(0)`` cancels in the normalized CDF (never exponentiated).
+    #    Component weights ``exp(0.5 X_k^2/Y_k)`` are stabilized by subtracting the
+    #    max in log-space (cancels in the CDF ratio);
 
     Ys = jnp.maximum(Ys, jnp.finfo(jnp.float64).tiny)
     mu = Xs / Ys
     sigma = 1.0 / jnp.sqrt(Ys)
     # Per-orientation mixture weight, up to a common additive constant.
     log_weights = 0.5 * Xs * Xs / Ys + jnp.log(sigma)
-    return mixture_truncated_gaussian_upper_limit(
-        mu, sigma, log_weights, level, n_iter
-    )
+    return mixture_truncated_gaussian_upper_limit(mu, sigma, log_weights, level, n_iter)
 
 
 def fstat(M: Float[Array, "4 4"], b: Float[Array, " 4"]) -> Float[Array, ""]:

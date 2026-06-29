@@ -37,10 +37,8 @@ docs_build() {
     sphinx-build -W --keep-going -b html docs docs/_build/html
 }
 
-# NOTE: CI gates lint via `ruff check` (below); code *formatting* is enforced by
-# the pre-commit ruff-format hook (auto-fixed on commit), not the CI workflow, so
-# it is intentionally not a gate here. Run `ruff format` yourself for a one-shot.
 step "ruff (lint)"         uv run --extra cpu --extra dev ruff check
+step "ruff (format)"       uv run --extra cpu --extra dev ruff format --check
 step "pyright"             uv run --extra cpu --extra dev pyright
 step "import without dev"  uv run --extra cpu --extra pint python -c "import jaxpint"
 step "docs (-W)"           docs_build

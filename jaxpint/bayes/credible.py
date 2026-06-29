@@ -39,8 +39,8 @@ def truncated_gaussian_upper_limit(
     with ``p = level``.  Exact while the data constrain ``x`` (``sigma`` small);
     see the callers for the finite-``x_max`` caveat.
     """
-    assert(level > 0)
-    assert (level < 1.0)
+    assert level > 0
+    assert level < 1.0
     phi_lo = ndtr(-mu / sigma)  # Phi(-mu/sigma): mass below the x=0 wall
     q = level + (1.0 - level) * phi_lo
     return mu + sigma * ndtri(q)
