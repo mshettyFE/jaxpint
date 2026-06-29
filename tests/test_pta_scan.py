@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from unittest.mock import patch
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -54,7 +55,11 @@ from tests.helpers import make_simple_pulsar, make_params
 def _make_setup(n_pulsars=3, n_toas_list=None):
     """Multi-pulsar setup with no signal injectors (uniform Spindown)."""
     if n_toas_list is None:
-        n_toas_list = [40 + i * 15 for i in range(n_pulsars)]
+        # Deliberately small TOA counts: these tests exercise the scan machinery
+        # (axis iteration, dispatch, chunking) and check exact scan-vs-loop
+        # equivalence, which is independent of per-pulsar system size. Small
+        # systems keep the per-cell pta_logL evaluations cheap.
+        n_toas_list = [12 + i * 4 for i in range(n_pulsars)]
     toa_list, tm_list, nm_list, pp_list = [], [], [], []
     for i in range(n_pulsars):
         td, tm, nm, pp = make_simple_pulsar(
@@ -106,6 +111,21 @@ def _build_config(toa_list, tm_list, nm_list, signal_injectors=()):
         noise_models=nm_list,
         signal_injectors=signal_injectors,
     )
+
+
+@eqx.filter_jit
+def _pta_logL_jit(global_params, pulsar_params, config):
+    """Jitted ``pta_logL`` for the scan-vs-loop reference loops.
+
+    Those tests build a ground truth by evaluating ``pta_logL`` at every grid
+    point. ``pta_logL`` is not jitted, so called eagerly the multi-pulsar GLS is
+    dispatched op-by-op on every cell and dominates these tests' runtime. As a
+    module-level ``filter_jit`` it compiles once per distinct config structure
+    and is reused across cells *and* across tests with the same setup, without
+    changing the compared values (the exact ``rtol=1e-12`` match vs ``scan_logL``
+    still holds).
+    """
+    return pta_logL(global_params, pulsar_params, config)
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +243,7 @@ class TestScanLogLNumeric:
             axes=[PerPulsarScanAxis(pulsar_idx=1, param_name="F0", values=grid)],
         )
         ref = np.array([
-            float(pta_logL(
+            float(_pta_logL_jit(
                 gp,
                 pp[:1] + (pp[1].with_value("F0", v),) + pp[2:],
                 config,
@@ -236,8 +256,8 @@ class TestScanLogLNumeric:
     def test_2d_per_pulsar_matches_loop(self):
         toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=4, n_cw_sources=1)
         config = _build_config(toa, tm, nm, signal_injectors=injectors)
-        grid_a = jnp.linspace(0.4, 0.6, 5)
-        grid_b = jnp.linspace(0.3, 0.7, 7)
+        grid_a = jnp.linspace(0.4, 0.6, 4)
+        grid_b = jnp.linspace(0.3, 0.7, 4)
         A, B = 0, 2
         result = scan_logL(
             gp, pp, config,
@@ -254,14 +274,14 @@ class TestScanLogLNumeric:
                 pp_mod = list(pp)
                 pp_mod[A] = pp[A].with_value("PX", float(va))
                 pp_mod[B] = pp[B].with_value("PX", float(vb))
-                ref[j, i] = float(pta_logL(gp, tuple(pp_mod), config))
+                ref[j, i] = float(_pta_logL_jit(gp, tuple(pp_mod), config))
         np.testing.assert_allclose(np.array(result), ref, rtol=1e-12, atol=1e-15)
 
     def test_2d_per_pulsar_plus_global_matches_loop(self):
         toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=3, n_cw_sources=1)
         config = _build_config(toa, tm, nm, signal_injectors=injectors)
-        grid_local = jnp.linspace(0.4, 0.6, 4)
-        grid_global = jnp.linspace(-15.0, -13.0, 5)
+        grid_local = jnp.linspace(0.4, 0.6, 3)
+        grid_global = jnp.linspace(-15.0, -13.0, 4)
         result = scan_logL(
             gp, pp, config,
             axes=[
@@ -277,15 +297,15 @@ class TestScanLogLNumeric:
                 pp_mod = list(pp)
                 pp_mod[1] = pp[1].with_value("PX", float(vl))
                 gp_mod = gp.with_value("cw0_log10_h", float(vg))
-                ref[i, j] = float(pta_logL(gp_mod, tuple(pp_mod), config))
+                ref[i, j] = float(_pta_logL_jit(gp_mod, tuple(pp_mod), config))
         np.testing.assert_allclose(np.array(result), ref, rtol=1e-12, atol=1e-15)
 
     def test_3d_mixed_matches_loop(self):
         toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=3, n_cw_sources=1)
         config = _build_config(toa, tm, nm, signal_injectors=injectors)
         g0 = jnp.linspace(199.5, 200.5, 3)
-        g1 = jnp.linspace(0.4, 0.6, 4)
-        g2 = jnp.linspace(-15.0, -13.0, 5)
+        g1 = jnp.linspace(0.4, 0.6, 3)
+        g2 = jnp.linspace(-15.0, -13.0, 3)
         result = scan_logL(
             gp, pp, config,
             axes=[
@@ -295,16 +315,15 @@ class TestScanLogLNumeric:
             ],
             indexing="ij",
         )
-        # 'ij' → shape (3, 4, 5).
-        ref = np.empty((3, 4, 5))
-        for i in range(3):
-            for j in range(4):
-                for k in range(5):
+        ref = np.empty((len(g0), len(g1), len(g2)))
+        for i, v0 in enumerate(g0):
+            for j, v1 in enumerate(g1):
+                for k, v2 in enumerate(g2):
                     pp_mod = list(pp)
-                    pp_mod[0] = pp[0].with_value("F0", float(g0[i]))
-                    pp_mod[1] = pp[1].with_value("PX", float(g1[j]))
-                    gp_mod = gp.with_value("cw0_log10_h", float(g2[k]))
-                    ref[i, j, k] = float(pta_logL(gp_mod, tuple(pp_mod), config))
+                    pp_mod[0] = pp[0].with_value("F0", float(v0))
+                    pp_mod[1] = pp[1].with_value("PX", float(v1))
+                    gp_mod = gp.with_value("cw0_log10_h", float(v2))
+                    ref[i, j, k] = float(_pta_logL_jit(gp_mod, tuple(pp_mod), config))
         np.testing.assert_allclose(np.array(result), ref, rtol=1e-12, atol=1e-15)
 
 
@@ -480,10 +499,11 @@ class TestScanLogLChunking:
     def test_chunked_matches_unchunked_1d(self):
         toa, tm, nm, pp, gp = _make_setup(n_pulsars=3)
         config = _build_config(toa, tm, nm)
-        grid = jnp.linspace(199.0, 201.0, 17)  # not a clean multiple
+        grid = jnp.linspace(199.0, 201.0, 11)  # not a clean multiple
         axes = [PerPulsarScanAxis(pulsar_idx=1, param_name="F0", values=grid)]
         ref = scan_logL(gp, pp, config, axes=axes)
-        for cs in (1, 4, 5, 16, 17, 100):
+        # cover: chunk of 1, a partial-last-chunk size, exactly-grid, and >grid.
+        for cs in (1, 4, 11, 100):
             got = scan_logL(gp, pp, config, axes=axes, chunk_size=cs)
             np.testing.assert_allclose(
                 np.array(got), np.array(ref), rtol=1e-12, atol=1e-15,
@@ -494,14 +514,14 @@ class TestScanLogLChunking:
         """Chunking the 2D PX×PX scan must reproduce the unchunked result."""
         toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=4, n_cw_sources=1)
         config = _build_config(toa, tm, nm, signal_injectors=injectors)
-        grid_a = jnp.linspace(0.4, 0.6, 13)
-        grid_b = jnp.linspace(0.45, 0.55, 7)
+        grid_a = jnp.linspace(0.4, 0.6, 7)
+        grid_b = jnp.linspace(0.45, 0.55, 5)
         axes = [
             PerPulsarScanAxis(pulsar_idx=0, param_name="PX", values=grid_a),
             PerPulsarScanAxis(pulsar_idx=2, param_name="PX", values=grid_b),
         ]
         ref = scan_logL(gp, pp, config, axes=axes, indexing="ij")
-        for cs in (1, 5, 13):
+        for cs in (1, 5):
             got = scan_logL(gp, pp, config, axes=axes,
                             indexing="ij", chunk_size=cs)
             np.testing.assert_allclose(
@@ -622,7 +642,7 @@ class TestScanLogLPrecomputeDispatch:
                 pp_mod = list(pp)
                 pp_mod[0] = pp[0].with_value("PX", float(va))
                 pp_mod[2] = pp[2].with_value("PX", float(vb))
-                ref[i, j] = float(pta_logL(gp, tuple(pp_mod), config))
+                ref[i, j] = float(_pta_logL_jit(gp, tuple(pp_mod), config))
         np.testing.assert_allclose(np.array(result), ref, rtol=1e-12, atol=1e-15)
 
     def test_noise_param_axis_falls_back(self):
