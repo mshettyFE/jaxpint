@@ -263,14 +263,16 @@ class TestCURNEquivalence:
         log10_A = -14.0
         gamma = 4.33
 
-        # Build correlated injector, then manually override ORF to identity
         gwb_corr = HDCorrelatedGWBInjector(
             pulsar_positions=positions,
             n_components=n_components,
             T_span=T_span,
             initial_values={"log10_A": log10_A, "gamma": gamma},
         )
-        # Override the ORF matrix to be the identity
+        # Deliberately replace the precomputed HD ORF with the identity so the
+        # injector is uncorrelated across pulsars (== CURN).  This pokes a
+        # private field on purpose: forcing a non-HD ORF is a test-only
+        # manipulation, not behaviour the public HD API should expose.
         n_psr = positions.shape[0]
         gwb_corr._orf_matrix = jnp.eye(n_psr)
 
@@ -403,11 +405,7 @@ class TestGradients:
         )
 
         def logL_fn(gp_values):
-            gp = GlobalParams(
-                values=gp_values,
-                names=global_params.names,
-                _name_to_index=global_params._name_to_index,
-            )
+            gp = global_params.with_values(gp_values)
             return pta_logL(gp, pulsar_params, config)
 
         grad = jax.grad(logL_fn)(global_params.values)

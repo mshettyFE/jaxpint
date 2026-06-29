@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 
 import jax
 import jax.numpy as jnp
@@ -12,7 +11,12 @@ import pytest
 
 from jaxpint.noise import NoiseModel, ScaleToaError
 from jaxpint.noise.dm_noise import PLDMNoise
-from tests.helpers import make_fourier_basis, make_params, make_toa_data
+from tests.helpers import (
+    make_fourier_basis,
+    make_params,
+    make_toa_data,
+    run_gls_whitening,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -189,18 +193,15 @@ class TestGLSWithDMNoise:
 
     @pytest.fixture(scope="class")
     def gls_fit_result(self):
-        from jaxpint.fitters import GLSFitter
-        from jaxpint.model import TimingModel
-        from jaxpint.phase.spin import Spindown
         from jaxpint.delay.dispersion_dm import DispersionDM
 
         n_toas = 200
         n_freqs = 10
         T = 3.0 * 365.25 * 86400.0
 
-        F_raw, freqs, df, t = make_fourier_basis(n_toas, n_freqs, T)
+        F_raw, freqs, df, _ = make_fourier_basis(n_toas, n_freqs, T)
 
-        # Multi-frequency TOAs
+        # Multi-frequency TOAs; scale the Fourier basis to DM (nu^-2).
         obs_freqs = np.where(np.arange(n_toas) % 2 == 0, 800.0, 1400.0)
         D = (FREF / obs_freqs) ** 2
         F_dm = F_raw * jnp.asarray(D)[:, None]
@@ -213,63 +214,19 @@ class TestGLSWithDMNoise:
             tndmgam_name="TNDMGAM",
         )
 
-        efac_val = 1.0
-        error = 1e-6
-        mask = np.ones(n_toas, dtype=bool)
-
-        t_mjd = np.linspace(53000.0, 53000.0 + T / 86400.0, n_toas)
-        toa_data = make_toa_data(
-            t_mjd=t_mjd,
-            error=error,
-            freq=obs_freqs,
-            flag_masks={"EFAC1": mask},
-            tzr_tdb_int=53000.0,
-            tzr_tdb_frac=0.0,
-            tzr_freq=1400.0,
-            tzr_ssb_obs_pos=np.zeros(3),
-        )
-
-        white = ScaleToaError(efac_names=("EFAC1",), equad_names=())
-        noise_model = NoiseModel(white_noise=white, correlated=(pldm,))
-
-        spin = Spindown(spin_param_names=("F0", "F1"))
+        # Reuse the shared GLS driver, adding a DispersionDM delay + free DM.
         dm_delay = DispersionDM(dm_param_names=("DM",), dmepoch_name="PEPOCH")
-        timing_model = TimingModel(
+        return run_gls_whitening(
+            pldm,
+            param_names=("TNDMAMP", "TNDMGAM"),
+            param_values=(-13.0, 3.5),
+            param_units=("", ""),
+            freq=obs_freqs,
+            n_toas=n_toas,
+            seed=2024,
             delay_components=(dm_delay,),
-            phase_components=(spin,),
+            extra_free_params=(("DM", 15.0, "pc/cm^3"),),
         )
-
-        params = make_params(
-            ("F0", "F1", "PEPOCH", "DM", "EFAC1", "TNDMAMP", "TNDMGAM"),
-            [100.0, -1e-15, 0.0, 15.0, efac_val, -13.0, 3.5],
-            units=("Hz", "Hz/s", "day", "pc/cm^3", "", "", ""),
-            frozen_mask=(False, False, True, False, True, True, True),
-            epoch_int_values={"PEPOCH": 53000.0},
-        )
-
-        from jaxpint.simulation import make_fake_toas
-        key = jax.random.PRNGKey(2024)
-        fake_toa_data = make_fake_toas(
-            timing_model, toa_data, params, key,
-            noise_components=[white, pldm],
-        )
-
-        fit_params = copy.deepcopy(params)
-        fitter = GLSFitter(
-            timing_model, fake_toa_data, fit_params,
-            noise_model=noise_model,
-        )
-        result = fitter.fit_toas(maxiter=3)
-        sigma = noise_model.scaled_sigma(fake_toa_data, result.params)
-
-        if noise_model.has_correlated and result.noise_realizations is not None:
-            _, U, _ = noise_model.covariance(fake_toa_data, result.params)
-            rc = U @ result.noise_realizations
-            whitened = (result.residuals - rc) / sigma
-        else:
-            whitened = result.residuals / sigma
-
-        return whitened, result
 
     @pytest.mark.slow
     def test_whitened_std(self, gls_fit_result):
