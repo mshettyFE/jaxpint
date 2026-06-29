@@ -5,33 +5,16 @@
     C = diag(Ndiag) + U · diag(Phidiag) · Uᵀ
 
 where ``Ndiag`` comes from white noise and ``U`` / ``Phidiag`` are
-horizontally concatenated from all correlated noise components.
-
-Parameter-independent bases (red noise, DM noise, ECORR quantization) are
-pre-hstacked at construction time into ``_U_static`` so that the JIT
-graph sees a single constant basis matrix, regardless of how many
-correlated components were passed in. Prevents per-component basis ops from
-multiplying the HLO graph size on every likelihood call.
-
-``_U_static`` is stored as a *numpy* array (host RAM), not a
-``jax.Array`` on device — that's the source of truth, used only at
-construction time to derive the host-resident stacked basis. The hot
-path uses a lazily-built JAX-converted view exposed via
-:attr:`NoiseModel._U_static_jax`, a ``functools.cached_property`` that
-mirrors :mod:`discovery.matrix.WoodburyKernel`'s ``jnparray()``-in-closure
-pattern: the device buffer is created on first access and cached for
-the lifetime of the ``NoiseModel`` instance, so MCMC-style repeated
-calls amortize the host→device transfer to a one-time cost.
+horizontally concatenated from all correlated noise components, each
+recomputed per call by :meth:`NoiseModel.covariance`.
 """
 
 from __future__ import annotations
 
-import functools
 from typing import Optional
 
 import equinox as eqx
 import jax.numpy as jnp
-import numpy as np
 from jaxtyping import Array, Float
 
 from jaxpint.components import NoiseComponent, _make_component_names
@@ -51,17 +34,6 @@ class NoiseModel(eqx.Module):
     uncertainties) and ``U`` / ``Phidiag`` are horizontally concatenated
     from all correlated noise components (ECORR, red noise, etc.).
 
-    At construction the correlated components are partitioned into:
-
-    - **static-basis** components (those with :meth:`~jaxpint.components.NoiseComponent.static_basis`
-      returning a non-``None`` array) — their bases are hstacked once into
-      ``_U_static``.
-    - **dynamic-basis** components — their bases are recomputed per call.
-
-    The compiled likelihood thus sees a single pre-stacked constant
-    basis (plus, optionally, a few small dynamic bases) instead of one
-    constant per component.
-
     Parameters
     ----------
     white_noise : ScaleToaError or None
@@ -75,61 +47,6 @@ class NoiseModel(eqx.Module):
     white_noise: Optional[ScaleToaError]
     correlated: tuple[NoiseComponent, ...]
     dm_white_noise: Optional[ScaleDmError] = None
-
-    # ------------------------------------------------------------------
-    # Computed in __post_init__ — see module docstring.
-    # ------------------------------------------------------------------
-    _U_static: Optional[Float[Array, "n_toas n_static_basis"]] = eqx.field(
-        init=False, default=None
-    )
-    _static_indices: tuple[int, ...] = eqx.field(init=False, static=True, default=())
-    _dynamic_indices: tuple[int, ...] = eqx.field(init=False, static=True, default=())
-
-    def __post_init__(self):
-        static_idx: list[int] = []
-        dynamic_idx: list[int] = []
-        # Bring each component's static basis to host RAM (numpy) before
-        # stacking, so the concatenated U_static lives on the host. JAX
-        # treats it as a pytree leaf and transfers to the JIT's device
-        # on demand — meaning at full-PTA scale only one pulsar's
-        # U_static is on GPU at a time, instead of all ``n_pulsars`` of
-        # them sitting in device RAM forever.
-        static_bases_np: list[np.ndarray] = []
-        for i, comp in enumerate(self.correlated):
-            sb = comp.static_basis()
-            if sb is not None:
-                static_idx.append(i)
-                static_bases_np.append(np.asarray(sb))
-            else:
-                dynamic_idx.append(i)
-
-        U_static = np.concatenate(static_bases_np, axis=1) if static_bases_np else None
-
-        object.__setattr__(self, "_U_static", U_static)
-        object.__setattr__(self, "_static_indices", tuple(static_idx))
-        object.__setattr__(self, "_dynamic_indices", tuple(dynamic_idx))
-
-    @functools.cached_property
-    def _U_static_jax(self) -> Optional[Float[Array, "n_toas n_static_basis"]]:
-        """Lazy device-converted view of ``_U_static``.
-
-        Returns ``None`` if there are no static-basis components.
-        Otherwise returns ``jnp.asarray(self._U_static)``, cached on
-        ``self.__dict__`` for the lifetime of this ``NoiseModel``. The
-        device buffer is created at first access (one host→device
-        transfer per pulsar per session) and reused on every subsequent
-        ``covariance(...)`` call — see module docstring.
-
-        Note: the cached value lives in ``__dict__`` and is therefore
-        invisible to JAX's pytree machinery. Operations that round-trip
-        the module through :func:`jax.tree_util.tree_map` /
-        :func:`equinox.tree_at` produce a new instance with an empty
-        cache; the device buffer is rebuilt on first access of the new
-        instance.
-        """
-        if self._U_static is None:
-            return None
-        return jnp.asarray(self._U_static)
 
     def scaled_sigma(
         self,
