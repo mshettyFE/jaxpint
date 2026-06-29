@@ -14,15 +14,6 @@ EPHEM = "DE440"
 BIPM = "BIPM2023"
 
 
-@pytest.fixture
-def _pinned_clock(monkeypatch):
-    from jaxpint.clock import SEED_CLOCK_REF, clock_dir, ensure_fresh
-
-    monkeypatch.setenv("JAXPINT_CLOCK_REF", SEED_CLOCK_REF)
-    ensure_fresh(force=True)
-    monkeypatch.setenv("PINT_CLOCK_OVERRIDE", str(clock_dir()))
-
-
 def _tropo_par(tmp_path, enabled: bool):
     """Copy B1855 dfg+12 with CORRECT_TROPOSPHERE set to Y/N."""
     from pint.config import examplefile

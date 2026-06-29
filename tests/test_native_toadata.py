@@ -20,15 +20,6 @@ _CORPUS = [
 ]
 
 
-@pytest.fixture
-def _pinned_clock(monkeypatch):
-    from jaxpint.clock import SEED_CLOCK_REF, clock_dir, ensure_fresh
-
-    monkeypatch.setenv("JAXPINT_CLOCK_REF", SEED_CLOCK_REF)
-    ensure_fresh(force=True)
-    monkeypatch.setenv("PINT_CLOCK_OVERRIDE", str(clock_dir()))
-
-
 def _load_pint(timname, model):
     import pint.toa as pt
     from pint.config import examplefile

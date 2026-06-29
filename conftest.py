@@ -99,3 +99,19 @@ _VALID_PROFILES = {"interactive", "ci", "fuzzing"}
 _requested = os.environ.get("HYPOTHESIS_PROFILE", "interactive")
 default = _requested if _requested in _VALID_PROFILES else "interactive"
 hypothesis.settings.load_profile(default)
+
+
+@pytest.fixture
+def _pinned_clock(monkeypatch):
+    """Pin both JaxPINT and PINT to the seed clock snapshot.
+
+    Sets ``JAXPINT_CLOCK_REF`` to the committed seed ref, ensures that
+    snapshot is present, and points PINT at the same directory via
+    ``PINT_CLOCK_OVERRIDE`` so native-vs-PINT parity tests use identical
+    clock corrections.  Shared by all native/parity test modules.
+    """
+    from jaxpint.clock import SEED_CLOCK_REF, clock_dir, ensure_fresh
+
+    monkeypatch.setenv("JAXPINT_CLOCK_REF", SEED_CLOCK_REF)
+    ensure_fresh(force=True)
+    monkeypatch.setenv("PINT_CLOCK_OVERRIDE", str(clock_dir()))

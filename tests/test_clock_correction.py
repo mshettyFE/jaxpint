@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from jaxpint.clock import SEED_CLOCK_REF, correct
+from jaxpint.clock import correct
 from jaxpint.tim.raw_toa import RawTOA
 
 
@@ -71,19 +71,9 @@ _CORPUS = [
 ]
 
 
-@pytest.fixture
-def _pint_uses_our_snapshot(monkeypatch):
-    """Point PINT at our pinned snapshot and pin JaxPINT to the same ref."""
-    from jaxpint.clock import clock_dir, ensure_fresh
-
-    monkeypatch.setenv("JAXPINT_CLOCK_REF", SEED_CLOCK_REF)
-    ensure_fresh(force=True)  # make sure the snapshot is present
-    monkeypatch.setenv("PINT_CLOCK_OVERRIDE", str(clock_dir()))
-
-
 @pytest.mark.slow
 @pytest.mark.parametrize("timname", _CORPUS)
-def test_clkcorr_parity_vs_pint(timname, _pint_uses_our_snapshot):
+def test_clkcorr_parity_vs_pint(timname, _pinned_clock):
     import pint.toa as pt
     from pint.config import examplefile
 
@@ -115,7 +105,7 @@ def test_clkcorr_parity_vs_pint(timname, _pint_uses_our_snapshot):
 
 
 @pytest.mark.slow
-def test_include_bipm_false_parity(_pint_uses_our_snapshot):
+def test_include_bipm_false_parity(_pinned_clock):
     import pint.toa as pt
     from pint.config import examplefile
 
