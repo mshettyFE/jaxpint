@@ -14,15 +14,6 @@ EPHEM = "DE440"
 BIPM = "BIPM2023"
 
 
-@pytest.fixture
-def _pinned_clock(monkeypatch):
-    from jaxpint.clock import SEED_CLOCK_REF, clock_dir, ensure_fresh
-
-    monkeypatch.setenv("JAXPINT_CLOCK_REF", SEED_CLOCK_REF)
-    ensure_fresh(force=True)
-    monkeypatch.setenv("PINT_CLOCK_OVERRIDE", str(clock_dir()))
-
-
 def _native_tzr(parp, timp, planets=False):
     from jaxpint.loaders.native import topocentric_core, _extract_tzr_fields
     import jaxpint.par as par
