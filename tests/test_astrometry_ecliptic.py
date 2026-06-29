@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+pytest.importorskip("pint")  # optional dependency; skip module if absent
 from pint.models import get_model
 from pint.fitter import WLSFitter as PINTWLSFitter
 from pint.simulation import make_fake_toas_uniform

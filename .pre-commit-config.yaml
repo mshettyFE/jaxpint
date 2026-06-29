@@ -3,8 +3,9 @@
 #   pre-commit install --hook-type pre-push  # pyright + import guard on push
 #
 # Commit stage: ruff (lint + format) on changed files; scope/ignores come from
-# [tool.ruff] in pyproject.toml (tests and notebooks are excluded there). The
-# ruff-pre-commit hooks already pass --force-exclude in their own entry, so that
+# [tool.ruff] in pyproject.toml (notebooks excluded everywhere; tests are linted
+# but excluded from the formatter via [tool.ruff.format]). The ruff-pre-commit
+# hooks already pass --force-exclude in their own entry, so that
 # exclude is honored even when pre-commit hands them explicit paths -- don't add
 # --force-exclude here too (it errors: "cannot be used multiple times").
 #

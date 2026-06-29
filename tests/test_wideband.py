@@ -15,6 +15,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+pytest.importorskip("pint")  # optional dependency; skip module if absent
 import pint.models as pm
 from pint.config import examplefile
 from pint.toa import get_TOAs

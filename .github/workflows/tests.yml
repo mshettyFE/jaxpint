@@ -103,8 +103,8 @@ jobs:
         run: uv run --extra cpu --extra dev pyright
 
   # Lint (ruff). Static and fast; gates PRs alongside the suite. Rules and scope
-  # live in [tool.ruff] in pyproject.toml (tests + notebooks excluded). The format
-  # check (`ruff format --check`) is added with the one-time reformat commit.
+  # live in [tool.ruff] in pyproject.toml (notebooks excluded; tests linted but not
+  # formatted). The format check (`ruff format --check`) skips tests and notebooks.
   lint:
     runs-on: ubuntu-latest
     steps:

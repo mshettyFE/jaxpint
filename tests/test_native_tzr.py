@@ -83,8 +83,8 @@ def test_tzr_auto_pepoch_vs_pint(tmp_path, _pinned_clock):
     # Strip the TZR* lines so both sides fall back to the PEPOCH rule.
     stripped = tmp_path / "no_tzr.par"
     stripped.write_text(
-        "\n".join(l for l in open(parp)
-                  if not l.strip().startswith(("TZRMJD", "TZRSITE", "TZRFRQ")))
+        "\n".join(line for line in open(parp)
+                  if not line.strip().startswith(("TZRMJD", "TZRSITE", "TZRFRQ")))
     )
     try:
         model = pm.get_model(str(stripped))
@@ -112,11 +112,11 @@ def test_tzr_barycenter_site(tmp_path, _pinned_clock):
     timp = examplefile("B1855+09_NANOGrav_dfg+12.tim")
     bary = tmp_path / "ssb_tzr.par"
     lines = []
-    for l in open(parp):
-        if l.strip().startswith("TZRSITE"):
+    for line in open(parp):
+        if line.strip().startswith("TZRSITE"):
             lines.append("TZRSITE        ssb\n")
         else:
-            lines.append(l)
+            lines.append(line)
     bary.write_text("".join(lines))
     try:
         model = pm.get_model(str(bary))
