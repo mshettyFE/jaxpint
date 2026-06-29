@@ -237,7 +237,7 @@ class TestGrad:
 # ===========================================================================
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def b1855_9yv1():
     """B1855+09 NANOGrav 9yr v1 (1 JUMP on -fe L-wide)."""
     pytest.importorskip("pint")
@@ -250,7 +250,7 @@ def b1855_9yv1():
     return model, toas
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def b1855_dfg12():
     """B1855+09 dfg+12 (21 JUMPs on -chanid flags)."""
     pytest.importorskip("pint")

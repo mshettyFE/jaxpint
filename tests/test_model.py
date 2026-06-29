@@ -414,7 +414,7 @@ class TestJitAndGrad:
 class TestVsPINT:
     """Compare JaxPINT model output against PINT."""
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def ngc6440e(self):
         """Load NGC6440E dataset via PINT."""
         import pint.models as models

@@ -9,7 +9,7 @@ import pytest
 
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def b1855():
     """Load B1855+09 (DD binary) from PINT example data."""
     pytest.importorskip("pint")

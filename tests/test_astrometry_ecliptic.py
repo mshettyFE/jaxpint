@@ -105,19 +105,19 @@ def _make_setup(par_str, ntoas=50):
     return toa_data, params, pint_delay, model
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def ecl_simple():
     """Ecliptic astrometry without proper motion or parallax."""
     return _make_setup(_PAR_ECL_SIMPLE)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def ecl_pm():
     """Ecliptic astrometry with proper motion."""
     return _make_setup(_PAR_ECL_PM)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def ecl_px():
     """Ecliptic astrometry with proper motion and parallax."""
     return _make_setup(_PAR_ECL_PX)
@@ -449,7 +449,7 @@ class TestFitMatchesPINT:
 class TestB1855Delay:
     """Compare AstrometryEcliptic delay against PINT for the real B1855+09."""
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def b1855(self):
         """Load B1855+09 from PINT examples."""
         import pint.toa as toa
