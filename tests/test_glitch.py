@@ -318,7 +318,7 @@ class TestVsPINT:
         GLF1_2         -4.82e-14
     """
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def glitch_model(self):
         """Build a glitch model from inline par and generate fake TOAs."""
         from io import StringIO

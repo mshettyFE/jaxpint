@@ -86,7 +86,7 @@ class TestWhiteNoiseGenerate:
 
         n_draws = 5000
         keys = jax.random.split(jax.random.PRNGKey(0), n_draws)
-        draws = jnp.stack([noise.generate(toa_data, params, k) for k in keys])
+        draws = jax.vmap(lambda k: noise.generate(toa_data, params, k))(keys)
         empirical_var = jnp.var(draws, axis=0)
 
         npt.assert_allclose(
@@ -159,16 +159,13 @@ class TestEcorrNoiseGenerate:
         n_draws = 5000
         keys = jax.random.split(jax.random.PRNGKey(0), n_draws)
 
-        # Collect the noise value for one TOA per epoch
-        epoch_samples = {0: [], 1: [], 2: []}
-        for k in keys:
-            draw = ecorr.generate(toa_data, params, k)
-            epoch_samples[0].append(float(draw[0]))   # epoch 0
-            epoch_samples[1].append(float(draw[4]))   # epoch 1
-            epoch_samples[2].append(float(draw[8]))   # epoch 2
+        # One draw per key (vmapped), then read one TOA per epoch. Columns
+        # 0/4/8 index epoch 0/1/2.
+        draws = jax.vmap(lambda k: ecorr.generate(toa_data, params, k))(keys)
+        epoch_cols = {0: 0, 1: 4, 2: 8}
 
         for ep in range(3):
-            samples = np.array(epoch_samples[ep])
+            samples = np.array(draws[:, epoch_cols[ep]])
             npt.assert_allclose(
                 np.var(samples), ecorr_val ** 2,
                 rtol=0.15,
@@ -226,13 +223,11 @@ class TestSimulateNoise:
 
         n_draws = 2000
         keys = jax.random.split(jax.random.PRNGKey(123), n_draws)
-        whitened_all = []
-        for k in keys:
+        def _whiten(k):
             delays = simulate_noise(toa_data, params, k, [white, ecorr])
-            w = jax.scipy.linalg.solve_triangular(L, delays, lower=True)
-            whitened_all.append(w)
+            return jax.scipy.linalg.solve_triangular(L, delays, lower=True)
 
-        whitened = jnp.stack(whitened_all)
+        whitened = jax.vmap(_whiten)(keys)
 
         assert np.isclose(np.std(whitened), 1.0, atol=0.1)
         assert np.isclose(np.mean(whitened), 0.0, atol=0.05)

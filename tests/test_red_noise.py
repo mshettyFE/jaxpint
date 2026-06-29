@@ -103,7 +103,7 @@ class TestPLRedNoiseWhitening:
 
         n_draws = 10_000
         keys = jax.random.split(jax.random.PRNGKey(123), n_draws)
-        draws = jnp.stack([plred.generate(toa_data, params, k) for k in keys])
+        draws = jax.vmap(lambda k: plred.generate(toa_data, params, k))(keys)
         empirical_var = jnp.var(draws, axis=0)
 
         # SE(var) = sigma^2 * sqrt(2/N) ~ 1.4%.  With 60 elements,
@@ -154,13 +154,11 @@ class TestPLRedNoiseWhitening:
         # SE(mean) ~ 1/sqrt(300000) ~ 0.0018.  atol=0.02 gives ~11 sigma.
         n_draws = 5000
         keys = jax.random.split(jax.random.PRNGKey(456), n_draws)
-        whitened_all = []
-        for k in keys:
+        def _whiten(k):
             delays = simulate_noise(toa_data, params, k, [white, plred])
-            w = jax.scipy.linalg.solve_triangular(L, delays, lower=True)
-            whitened_all.append(w)
+            return jax.scipy.linalg.solve_triangular(L, delays, lower=True)
 
-        whitened = jnp.stack(whitened_all)
+        whitened = jax.vmap(_whiten)(keys)
 
         assert np.isclose(np.std(whitened), 1.0, atol=0.02), (
             f"std = {np.std(whitened):.4f}, expected ~1.0"
