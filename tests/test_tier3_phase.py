@@ -104,13 +104,16 @@ class TestPiecewiseSpindownvsPINT:
         from pint.simulation import make_fake_toas_uniform
         from pint.residuals import Residuals
 
+        # Non-zero piecewise coefficients so the segment actually perturbs the
+        # phase; with all-zero coeffs the component is inert and this test would
+        # only re-check the base model.
         par = _BASE_PAR + """\
 PWEP_1        54750
 PWSTART_1     54500
 PWSTOP_1      55000
 PWPH_1        0.0
-PWF0_1        0.0
-PWF1_1        0.0
+PWF0_1        1e-9
+PWF1_1        1e-18
 PWF2_1        0.0
 """
         model = get_model(StringIO(par))
@@ -123,8 +126,13 @@ PWF2_1        0.0
         toas.compute_TDBs()
         toas.compute_posvels()
 
+        # subtract_mean=False matches JaxPINT's compute_phase_residuals, which
+        # returns frac(phase) without removing a (weighted) mean.  PINT's
+        # default subtract_mean=True would otherwise shift every residual by a
+        # constant, manifesting as a spurious mismatch.
         pint_resids = np.array(
-            Residuals(toas, model).phase_resids.value, dtype=np.float64,
+            Residuals(toas, model, subtract_mean=False).phase_resids.value,
+            dtype=np.float64,
         )
 
         toa_data = pint_toas_to_jax(toas, model)
@@ -135,13 +143,13 @@ PWF2_1        0.0
 
     @pytest.mark.slow
     def test_residuals_match_pint(self, pint_setup):
-        """Residuals match PINT."""
+        """Residuals match PINT (JaxPINT float64 vs PINT longdouble)."""
         jax_model, toa_data, params, pint_resids, _ = pint_setup
         jax_resids = np.array(compute_phase_residuals(jax_model, toa_data, params))
         np.testing.assert_allclose(
             jax_resids,
             pint_resids,
-            rtol=0.1, atol=1e-6,
+            rtol=1e-6, atol=1e-9,
         )
 
     @pytest.mark.slow
@@ -193,8 +201,13 @@ WAVE2         0.3e-6 0.8e-6
         toas.compute_TDBs()
         toas.compute_posvels()
 
+        # subtract_mean=False matches JaxPINT's compute_phase_residuals, which
+        # returns frac(phase) without removing a (weighted) mean.  PINT's
+        # default subtract_mean=True would otherwise shift every residual by a
+        # constant, manifesting as a spurious mismatch.
         pint_resids = np.array(
-            Residuals(toas, model).phase_resids.value, dtype=np.float64,
+            Residuals(toas, model, subtract_mean=False).phase_resids.value,
+            dtype=np.float64,
         )
 
         toa_data = pint_toas_to_jax(toas, model)
@@ -205,13 +218,13 @@ WAVE2         0.3e-6 0.8e-6
 
     @pytest.mark.slow
     def test_residuals_match_pint(self, pint_setup):
-        """Residuals match PINT."""
+        """Residuals match PINT (JaxPINT float64 vs PINT longdouble)."""
         jax_model, toa_data, params, pint_resids, _ = pint_setup
         jax_resids = np.array(compute_phase_residuals(jax_model, toa_data, params))
         np.testing.assert_allclose(
             jax_resids,
             pint_resids,
-            rtol=0.1, atol=1e-6,
+            rtol=1e-6, atol=1e-9,
         )
 
     @pytest.mark.slow
@@ -267,8 +280,13 @@ IFUNC5        55400 -1e-6
         toas.compute_TDBs()
         toas.compute_posvels()
 
+        # subtract_mean=False matches JaxPINT's compute_phase_residuals, which
+        # returns frac(phase) without removing a (weighted) mean.  PINT's
+        # default subtract_mean=True would otherwise shift every residual by a
+        # constant, manifesting as a spurious mismatch.
         pint_resids = np.array(
-            Residuals(toas, model).phase_resids.value, dtype=np.float64,
+            Residuals(toas, model, subtract_mean=False).phase_resids.value,
+            dtype=np.float64,
         )
 
         toa_data = pint_toas_to_jax(toas, model)
@@ -279,13 +297,13 @@ IFUNC5        55400 -1e-6
 
     @pytest.mark.slow
     def test_residuals_match_pint(self, pint_setup):
-        """Residuals match PINT."""
+        """Residuals match PINT (JaxPINT float64 vs PINT longdouble)."""
         jax_model, toa_data, params, pint_resids, _ = pint_setup
         jax_resids = np.array(compute_phase_residuals(jax_model, toa_data, params))
         np.testing.assert_allclose(
             jax_resids,
             pint_resids,
-            rtol=0.1, atol=1e-6,
+            rtol=1e-6, atol=1e-9,
         )
 
     @pytest.mark.slow
