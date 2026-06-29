@@ -33,7 +33,7 @@ CORRECT_TROPOSPHERE  N
 """
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def sun_only_setup():
     """PINT model with solar Shapiro delay only (PLANET_SHAPIRO N)."""
     par = _PAR_BASE + "PLANET_SHAPIRO  N\n"
@@ -58,7 +58,7 @@ def sun_only_setup():
     return toa_data, params, pint_delay
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def planet_setup():
     """PINT model with planetary Shapiro delay (PLANET_SHAPIRO Y)."""
     par = _PAR_BASE + "PLANET_SHAPIRO  Y\n"

@@ -43,7 +43,7 @@ CORRECT_TROPOSPHERE  Y
 """
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def tropo_setup():
     """PINT model with troposphere correction enabled."""
     model = get_model(StringIO(_PAR))

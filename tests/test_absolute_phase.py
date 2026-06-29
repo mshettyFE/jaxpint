@@ -15,7 +15,7 @@ from pint.config import examplefile
 from jaxpint.bridge import extract_tzr_toa, pint_toas_to_jax
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def ngc6440e():
     """Load NGC6440E — has TZRMJD in par file."""
     model = models.get_model(examplefile("NGC6440E.par"))
