@@ -365,8 +365,12 @@ class TestIntegration:
         epoch_full = jnp.array(epoch_int) + epoch_frac
         dt_direct = toa_full - epoch_full
 
-        # Both should give the same large-scale answer
-        assert jnp.isclose(dt_split, dt_direct, atol=1e-8)
+        # Both should give the same large-scale answer. Use rtol=0 so the bound
+        # is a real 1e-8 absolute tolerance: with the default rtol=1e-5 on a
+        # ~11000-valued result the effective tolerance is ~0.1, which would pass
+        # even on a gross error. (The two differ only by dt_direct's ~1e-11
+        # cancellation loss, so 1e-8 is comfortably satisfied.)
+        assert jnp.isclose(dt_split, dt_direct, atol=1e-8, rtol=0.0)
 
         # But the split preserves more precision in the fractional part.
         # We can verify this by checking that the fractional subtraction

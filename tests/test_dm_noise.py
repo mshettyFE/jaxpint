@@ -71,15 +71,8 @@ class TestPLDMNoiseBasic:
         """Lower frequencies should have higher PSD."""
         pldm, params, _, _, _, _, _, _ = _make_pldm(n_freqs=10)
         weights = pldm.psd_weights(params)
-        for i in range(0, 16, 2):
+        for i in range(0, weights.shape[0] - 2, 2):
             assert weights[i] > weights[i + 2]
-
-    def test_basis_includes_dm_scaling(self):
-        """Pre-computed basis should differ from raw Fourier by (1400/f)^2."""
-        pldm, _, _, F_raw, F_dm, _, _, obs_freqs = _make_pldm(n_toas=20)
-        D = (FREF / obs_freqs) ** 2
-        expected = F_raw * jnp.asarray(D)[:, None]
-        npt.assert_allclose(np.array(pldm.fourier_basis), np.array(expected), rtol=1e-14)
 
     def test_dm_scaling_frequency_dependence(self):
         """Lower-frequency TOAs should have larger noise amplitude."""

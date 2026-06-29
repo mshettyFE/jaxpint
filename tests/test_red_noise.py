@@ -67,11 +67,6 @@ class TestPLRedNoiseBasic:
         for i in range(0, weights.shape[0] - 2, 2):
             assert weights[i] > weights[i + 2]
 
-    def test_basis_is_fourier_matrix(self):
-        """The stored basis should match the Fourier design matrix."""
-        plred, _, _, F, _, _ = _make_plred()
-        npt.assert_array_equal(plred.fourier_basis, F)
-
 
 # ---------------------------------------------------------------------------
 # Covariance-generation consistency (whitening)

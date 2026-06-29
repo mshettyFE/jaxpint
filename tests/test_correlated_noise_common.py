@@ -111,8 +111,8 @@ class TestCorrelatedNoiseShared:
         T = 5.0 * 365.25 * 86400.0
         component, params, _ = noise_spec.build(20, n_freqs, T)
 
-        log10_A = -13.0
-        gamma = 3.5
+        log10_A = float(params.param_value(component._amp_name))
+        gamma = float(params.param_value(component._gam_name))
         A = 10.0 ** log10_A
 
         freqs = component.freqs

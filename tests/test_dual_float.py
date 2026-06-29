@@ -543,13 +543,9 @@ class TestCatastrophicCancellation:
         assert float(diff.int) == 0.0
         assert abs(float(diff.frac) - eps) <= ulp_tol(eps)
 
-        # Demonstrate that plain float64 cannot do this
-        a_f64 = 1e12 + 0.3
-        b_f64 = 1e12 + 0.3 + eps
-        diff_f64 = b_f64 - a_f64
-        assert abs(diff_f64 - eps) > eps * 0.01, (
-            "float64 should lose precision here"
-        )
+        # (For contrast, plain float64 cannot resolve this: ``(1e12 + 0.3 + eps)
+        # - (1e12 + 0.3)`` loses ``eps`` entirely to rounding. That's a property
+        # of IEEE-754, not of DualFloat, so it isn't asserted here.)
 
     def test_realistic_timing_residual(self):
         """~100 ns residual at 600 Hz MSP."""
