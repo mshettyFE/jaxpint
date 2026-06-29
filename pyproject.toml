@@ -111,9 +111,10 @@ reportOperatorIssue = "none"
 [tool.ruff]
 target-version = "py312"
 line-length = 88
-# Tests aren't auto-formatted (see the format scope) and lean on test-idiom style;
-# notebooks are exploratory. Keep both out of lint/format scope.
-extend-exclude = ["tests", "*.ipynb"]
+# Notebooks are exploratory -- out of lint and format scope. Tests ARE linted
+# (real unused-import/undefined-name/typo coverage) but are NOT auto-formatted;
+# the format scope is narrowed separately under [tool.ruff.format] below.
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 # Default rule set is E, F, W.
@@ -132,10 +133,22 @@ ignore = ["F722", "E731"]
 # Example/driver scripts and conftest set os.environ / jax flags before imports.
 "examples/*.py" = ["E402"]
 "conftest.py" = ["E402"]
+# Tests legitimately run statements before imports: ``pytest.importorskip("pint")``
+# guards optional-dependency modules, and a few set jax flags (-> E402). They also
+# lean on compact ``a = ...; b = ...`` builders in reference implementations and
+# table-style setup (-> E702), the same test-idiom layout that keeps them out of
+# the formatter above. The high-value F-checks (unused/undefined names) still apply.
+"tests/**/*.py" = ["E402", "E702"]
 
 [tool.ruff.format]
 # Defaults (double quotes, magic trailing comma). The one-time reformat is applied
 # in a separate commit.
+# Tests are deliberately NOT auto-formatted -- they lean on test-idiom layout
+# (aligned tables of expected values, compact builders). Lint still covers them
+# (see [tool.ruff] above); only the formatter is scoped out here.
+# NB: the formatter's exclude needs a glob (``tests/**``); a bare ``tests`` (which
+# works for the top-level file-resolver exclude) is silently ignored here.
+exclude = ["tests/**"]
 
 [tool.coverage.run]
 source = ["jaxpint"]

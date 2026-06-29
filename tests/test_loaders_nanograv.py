@@ -12,6 +12,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+pytest.importorskip("pint")  # optional dependency; skip module if absent
 from pint.config import examplefile
 
 from jaxpint import NanogravPTA, load_nanograv_pta

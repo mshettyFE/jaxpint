@@ -15,6 +15,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+pytest.importorskip("pint")  # optional dependency; skip module if absent
 import pint.models as models
 import pint.toa as toa
 from pint.config import examplefile

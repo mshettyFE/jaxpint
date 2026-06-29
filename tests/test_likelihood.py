@@ -11,6 +11,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+pytest.importorskip("pint")  # optional dependency; skip module if absent
 import pint.models as models
 from pint.simulation import make_fake_toas_uniform
 
