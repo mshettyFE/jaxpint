@@ -174,18 +174,20 @@ class TestJIT:
         assert result.shape == (toa_data.n_toas,)
 
     def test_jit_same_trace(self):
-        """Same dm_param_names does not retrace."""
+        """Changing only the DM value reuses the trace (no retrace)."""
         disp = DispersionDM(dm_param_names=("DM",))
         params = make_dispersion_dm_params(dm=15.0)
         toa_data = make_gbt_toa_data(n_toas=3)
         delay = jnp.zeros(3)
 
         jitted = jax.jit(disp)
-        r1 = jitted(toa_data, params, delay)
+        r1 = jitted(toa_data, params, delay)  # first call compiles one variant
+        # Same structure, different value -> cache hit, must not recompile.
+        r2 = jitted(toa_data, params.with_value("DM", 30.0), delay)
 
-        params2 = params.with_value("DM", 30.0)
-        r2 = jitted(toa_data, params2, delay)
-
+        assert jitted._cache_size() == 1, (
+            f"recompiled on same-structure inputs: {jitted._cache_size()} variants"
+        )
         assert not jnp.array_equal(r1, r2)
 
 

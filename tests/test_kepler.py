@@ -30,11 +30,12 @@ class TestSolveKepler:
         npt.assert_allclose(E, M, atol=1e-14)
 
     def test_known_solution(self):
-        """For e=0, E=M; verify on scalar-like input."""
-        M = jnp.array([1.0])
-        e = jnp.array([0.0])
+        """E=pi solves M=pi for any eccentricity (sin(pi)=0), so a nonzero e
+        still recovers E=pi -- a known solution distinct from the e=0 case."""
+        M = jnp.array([jnp.pi])
+        e = jnp.array([0.5])
         E = solve_kepler(M, e)
-        npt.assert_allclose(E, M, atol=1e-15)
+        npt.assert_allclose(E, jnp.pi, atol=1e-14)
 
     def test_low_eccentricity(self):
         """Verify residual E - e*sin(E) - M is tiny for low e."""

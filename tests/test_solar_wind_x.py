@@ -294,12 +294,13 @@ class TestTOAsOutsideBins:
         jax_delay = np.array(comp(out_data, params, jnp.zeros(out_data.n_toas)))
         np.testing.assert_array_equal(jax_delay, 0.0)
 
-    def test_zero_in_gap(self, multi_setup):
+    def test_zero_outside_all_segments(self, multi_setup):
         """In-bin TOAs are nonzero; TOAs past the last segment are exactly zero.
 
-        Multi-segment covers [54000, 54800] and [54800, 55600]; the in-range
-        TOAs span [54200, 55400] (all in a bin), so we separately generate
-        probe TOAs after 55600 to exercise the zero-outside-all-bins path.
+        The two segments are contiguous ([54000, 54800] and [54800, 55600]),
+        so there is no inter-bin gap; the in-range TOAs all fall in a bin.  We
+        separately generate probe TOAs after 55600 to exercise the
+        zero-outside-all-bins path.
         """
         toa_data, params, _, model, comp = multi_setup
 

@@ -84,7 +84,7 @@ def test_clkcorr_parity_vs_pint(timname, _pinned_clock):
         toas = pt.get_TOAs(
             path, include_bipm=True, bipm_version="BIPM2023", planets=False
         )
-    except Exception as exc:  # pragma: no cover
+    except OSError as exc:  # missing example file / clock or ephemeris download
         pytest.skip(f"PINT could not load {timname}: {exc}")
 
     pint_clk = np.array(toas.get_flag_value("clkcorr", 0.0, float)[0])
@@ -114,7 +114,7 @@ def test_include_bipm_false_parity(_pinned_clock):
     try:
         path = examplefile("J1614-2230_NANOGrav_12yv3.wb.tim")
         toas = pt.get_TOAs(path, include_bipm=False, planets=False)
-    except Exception as exc:  # pragma: no cover
+    except OSError as exc:  # missing example file / clock or ephemeris download
         pytest.skip(f"PINT could not load: {exc}")
 
     pint_clk = np.array(toas.get_flag_value("clkcorr", 0.0, float)[0])
