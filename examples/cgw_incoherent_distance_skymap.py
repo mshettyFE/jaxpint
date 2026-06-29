@@ -71,7 +71,6 @@ def compute_skymap(
     from loguru import logger
 
     from jaxpint import load_nanograv_pta
-    from jaxpint.likelihood import single_pulsar_logL
     from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
     from jaxpint.pta.signals.cw import cw_delay_from_array
     from jaxpint.pta.cw_upper_limit import h0_to_distance

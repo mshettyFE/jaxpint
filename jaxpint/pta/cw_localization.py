@@ -296,7 +296,7 @@ def per_source_credible_areas_deg2(
     for k in range(K):
         Sigma_k = Sigma[2 * k : 2 * k + 2, 2 * k : 2 * k + 2]
         det_Sigma_k = jnp.linalg.det(Sigma_k)
-        det_safe = jnp.where(det_Sigma_k > 0.0, det_Sigma_k, jnp.inf)
+        det_safe = jnp.asarray(jnp.where(det_Sigma_k > 0.0, det_Sigma_k, jnp.inf))
         out.append(gaussian_credible_area(det_safe, level) * _STR_TO_DEG2)
     return jnp.stack(out)
 
@@ -318,5 +318,5 @@ def credible_area_deg2(
     """
     det_F = jnp.linalg.det(F)
     # det Sigma = 1 / det F; det F <= 0 → unphysical (non-positive-definite).
-    det_sigma = jnp.where(det_F > 0.0, 1.0 / det_F, jnp.inf)
+    det_sigma = jnp.asarray(jnp.where(det_F > 0.0, 1.0 / det_F, jnp.inf))
     return gaussian_credible_area(det_sigma, level) * _STR_TO_DEG2

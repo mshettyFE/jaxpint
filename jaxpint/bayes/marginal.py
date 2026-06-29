@@ -489,9 +489,14 @@ def marginalize_single_pulsar(
     J_full, M_marg, Phi_marg = _marg_woodbury_block(
         timing_model, toa_data, fiducial_params, over_indices
     )
-    marg_cov_cached = None if M_marg is None else (M_marg, Phi_marg)
+    if M_marg is None:
+        marg_cov_cached = None
+    else:
+        assert Phi_marg is not None  # M and Phi are returned together
+        marg_cov_cached = (M_marg, Phi_marg)
 
     if validate_linearity and M_marg is not None:
+        assert J_full is not None  # a non-empty marg block implies J_full too
         Ndiag = noise_model.scaled_sigma(toa_data, fiducial_params) ** 2
         trust_radii = _marg_trust_radii(
             priors, over_list, over_indices, J_full, Ndiag
@@ -788,7 +793,11 @@ def marginalize_pta(
             fiducial_pulsar_params[p],
             tuple(bare_indices_per_pulsar[p]),
         )
-        cached_blocks.append(None if M_p is None else (M_p, Phi_p))
+        if M_p is None:
+            cached_blocks.append(None)
+        else:
+            assert Phi_p is not None  # M and Phi are returned together
+            cached_blocks.append((M_p, Phi_p))
         per_pulsar_M.append(M_p)
         per_pulsar_J_full.append(J_full_p)
 

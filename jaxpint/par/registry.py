@@ -65,7 +65,7 @@ class Component(Enum):
 
 
 def binary_component_for(
-    name: str,
+    name: Optional[str],
 ) -> tuple[Optional[BinaryModel], Optional[Component]]:
     """Map a binary-model name to its ``(BinaryModel, Component)`` pair.
 
