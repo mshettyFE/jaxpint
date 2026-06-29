@@ -21,7 +21,7 @@ from jaxpint.types import TOAData, ParameterVector
 class PLChromNoise(_PowerLawFourierNoise):
     """Power-law chromatic noise with arbitrary chromatic index.
 
-    At each :meth:`covariance` / :meth:`generate` call the basis is multiplied
+    At each ``covariance`` / ``generate`` call the basis is multiplied
     by ``(f_ref / f_obs)^α`` (``α`` from ``TNCHROMIDX``), keeping the scaling
     differentiable through ``α``.
 

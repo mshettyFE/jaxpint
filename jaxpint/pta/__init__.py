@@ -4,7 +4,7 @@ Composes :func:`jaxpint.likelihood.single_pulsar_logL` across multiple
 pulsars with shared signal injections (CW sources, GWB, etc.).  Optional
 cross-pulsar correlations (e.g. Hellings-Downs GWB) are handled by the
 same :func:`pta_logL` entry point via the
-:class:`~jaxpint.pta.likelihood.CorrelatedSignalInjector` interface.
+:class:`~jaxpint.pta.injectors.CorrelatedSignalInjector` interface.
 """
 
 from jaxpint.types import GlobalParams

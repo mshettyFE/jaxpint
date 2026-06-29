@@ -163,7 +163,7 @@ CURN_PARAM_DEFAULTS: dict[str, float] = {
 class CURNInjector(SignalInjector):
     """Uncorrelated common red noise (CURN, Gamma = I) injector.
 
-    Subclasses :class:`~jaxpint.pta.likelihood.SignalInjector`.
+    Subclasses :class:`~jaxpint.pta.injectors.SignalInjector`.
     Registers two global parameters (with *prefix*):
     ``{prefix}log10_A`` and ``{prefix}gamma``.
 

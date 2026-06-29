@@ -82,6 +82,10 @@ nitpick_ignore_regex: list[tuple[str, str]] = [
     ("py:class", r"NoiseComponent\s*"),
     ("py:class", r"TimingModel\s*"),
     ("py:class", r"DualFloat\s*"),
+    ("py:class", r".*GlobalParams\s*"),
+    ("py:class", r".*PulsarBundle\s*"),
+    ("py:class", r".*ParamSpec\s*"),
+    ("py:class", r".*RawTOA\s*"),
     # PINT references — PINT does not publish an intersphinx objects.inv
     ("py:class", r"pint\..*"),
     ("py:func", r"pint\..*"),

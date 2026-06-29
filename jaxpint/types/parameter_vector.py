@@ -164,7 +164,7 @@ class ParameterVector(NamedVector):
 
     def param_uncertainty(self, name: str) -> float:
         """1-sigma fit uncertainty of a parameter (static metadata, in the same
-        internal unit as :meth:`param_value`).
+        internal unit as ``param_value``).
 
         Returns ``nan`` when the source par file reported no uncertainty for this
         parameter (frozen/value-only line, or a kind that does not track one).

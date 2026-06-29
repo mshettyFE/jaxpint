@@ -484,7 +484,7 @@ def single_pulsar_pta_logL(
     contribution of pulsar ``p`` to ``pta_logL``; summing over ``p``
     reproduces ``pta_logL`` exactly (the uncorrelated case).
 
-    Used as the per-pulsar primitive by :func:`jaxpint.pta.scan.scan_logL`,
+    Used as the per-pulsar primitive by ``jaxpint.pta.scan.scan_logL``,
     which exploits the per-pulsar decomposition to avoid recomputing
     contributions whose params don't vary along any scan axis.
 

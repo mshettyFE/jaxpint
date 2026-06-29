@@ -173,7 +173,7 @@ The order matters because :math:`\Delta t_k` is in general a *function of* :math
 Phase components
 ~~~~~~~~~~~~~~~~
 
-:meth:`~jaxpint.model.TimingModel.compute_phase` sums the contributions from every component in ``phase_components``. Addition is commutative, so order is irrelevant here. Each component receives the total delay from above as input, then returns its own phase contribution as a :class:`~jaxpint.dual_float.DualFloat` (an integer + fractional cycle split, kept separate to preserve double-precision over long baselines).
+:meth:`~jaxpint.model.TimingModel.compute_phase` sums the contributions from every component in ``phase_components``. Addition is commutative, so order is irrelevant here. Each component receives the total delay from above as input, then returns its own phase contribution as a :class:`~jaxpint.types.DualFloat` (an integer + fractional cycle split, kept separate to preserve double-precision over long baselines).
 
 Some examples of phase components:
 
@@ -276,14 +276,14 @@ This is what :func:`~jaxpint.pta.pta_logL` computes. It takes three things:
 
 - A :class:`~jaxpint.types.GlobalParams` -- the parameters that are shared across pulsars (e.g. CW source sky location, common red-noise spectral index, …).
 - A ``tuple`` of per-pulsar :class:`~jaxpint.types.ParameterVector` objects -- timing and noise parameters for each pulsar.
-- A :class:`~jaxpint.pta.likelihood.PTAConfig` -- a static bundle of the per-pulsar :class:`~jaxpint.types.TOAData`, :class:`~jaxpint.model.TimingModel`, :class:`~jaxpint.noise.noise_model.NoiseModel`, plus a tuple of :class:`~jaxpint.pta.likelihood.SignalInjector` objects (see below). 
+- A :class:`~jaxpint.pta.likelihood.PTAConfig` -- a static bundle of the per-pulsar :class:`~jaxpint.types.TOAData`, :class:`~jaxpint.model.TimingModel`, :class:`~jaxpint.noise.noise_model.NoiseModel`, plus a tuple of :class:`~jaxpint.pta.injectors.SignalInjector` objects (see below). 
 
 Internally, ``pta_logL`` loops over pulsars; for each one it asks every ``SignalInjector`` for (i) a deterministic delay contribution to subtract from the residuals and (ii) a ``(U, Phi)`` covariance augmentation to append to the noise model, then hands everything to :func:`~jaxpint.likelihood.single_pulsar_logL`.
 
 Signal injectors
 ^^^^^^^^^^^^^^^^
 
-:class:`~jaxpint.pta.likelihood.SignalInjector` is an abstract base class that lets you plug in PTA-wide signals without touching the core likelihood. Each injector implements one or both of:
+:class:`~jaxpint.pta.injectors.SignalInjector` is an abstract base class that lets you plug in PTA-wide signals without touching the core likelihood. Each injector implements one or both of:
 
 - ``delay(p, toa_data, pulsar_params, global_params)`` -- returns a per-TOA delay :math:`\delta t_{i,\alpha}` (shape ``(n_toas,)``) contributed by injector :math:`\alpha` to pulsar :math:`i`. Used for deterministic signals such as a single continuous-wave (CW) source.
 - ``covariance(p, toa_data, pulsar_params, global_params)`` -- returns a ``(U, Phi)`` pair that augments pulsar :math:`i`'s noise model. Used for stochastic signals such as a common-spectrum red process.

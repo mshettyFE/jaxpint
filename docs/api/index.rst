@@ -8,7 +8,6 @@ Core
    :toctree: generated
 
    jaxpint.types
-   jaxpint.dual_float
    jaxpint.components
    jaxpint.model
    jaxpint.likelihood

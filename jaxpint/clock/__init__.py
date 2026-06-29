@@ -2,14 +2,14 @@
 
 A pinned IPTA ``pulsar-clock-corrections`` snapshot is downloaded into a cache
 dir on first use and auto-refreshed on a TTL; pin via ``$JAXPINT_CLOCK_REF`` for
-reproducible runs. See :func:`jaxpint.clock.config.describe` for the env vars.
+reproducible runs. See ``jaxpint.clock.config.describe`` for the env vars.
 
 On top of that data layer, this package provides the native time
-pipeline: clock-file readers (:mod:`~jaxpint.clock.clockfile`), observatory
-resolution (:mod:`~jaxpint.clock.observatory`), the per-TOA correction chain
+pipeline: clock-file readers (``jaxpint.clock.clockfile``), observatory
+resolution (``jaxpint.clock.observatory``), the per-TOA correction chain
 (:func:`correct`, site/UTC MJD -> TT(BIPM)), TT->TDB conversion
-(:mod:`~jaxpint.clock.timescale`), and barycentric positions/velocities
-(:mod:`~jaxpint.clock.posvels`).
+(``jaxpint.clock.timescale``), and barycentric positions/velocities
+(``jaxpint.clock.posvels``).
 """
 
 from __future__ import annotations

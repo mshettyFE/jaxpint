@@ -109,7 +109,7 @@ class BuildContext:
     """Shared inputs threaded to every ``_build_<comp>`` function.
 
     Bundles the parse result, optional TOA data, and the astrometry names
-    resolved once up front (see :func:`_resolve_astrometry`).
+    resolved once up front (see ``_resolve_astrometry``).
     """
 
     par: ParResult

@@ -1,8 +1,9 @@
 """Core data types for JaxPINT.
 
 Defines the foundational types:
+
 - DualFloat: Extended-precision value as integer + fractional parts
-  (defined in :mod:`jaxpint.types.dual_float`, re-exported here for convenience)
+  (defined in ``jaxpint.types.dual_float``, re-exported here for convenience)
 - TOAData: Pre-extracted TOA data as JAX arrays
 - ParameterVector: Timing model parameters as a flat JAX array with metadata
 - GlobalParams: PTA-level shared parameters (a named-vector sibling of
