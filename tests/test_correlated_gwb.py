@@ -32,9 +32,6 @@ from jaxpint.fitters import compute_time_residuals
 from tests.helpers import make_simple_pulsar, make_params
 
 
-jax.config.update("jax_enable_x64", True)
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

@@ -197,7 +197,11 @@ class TestHelper:
         assert jnp.isclose(delay[0], 2.2682724e-3, rtol=1e-6)
 
     def test_perpendicular_direction(self):
-        """Pulsar perpendicular to Sun direction: moderate delay."""
+        """Pulsar perpendicular to the Sun direction: zero Shapiro delay.
+
+        With the line of sight perpendicular to the Sun vector, costheta=0 so
+        arg = (r - r*costheta)/r = 1 and the delay -2*T_sun*log(arg) vanishes.
+        """
         au_km = 149597870.7
         obj_pos = jnp.array([[au_km, 0.0, 0.0]])
         psr_dir = jnp.array([[0.0, 1.0, 0.0]])
@@ -205,9 +209,7 @@ class TestHelper:
 
         delay = _ss_obj_shapiro_delay(obj_pos, psr_dir, T_sun)
 
-        # r = AU, rcostheta = 0, arg = AU / AU = 1.0, log(1) = 0
-        expected = -2.0 * T_sun * jnp.log(1.0)
-        np.testing.assert_allclose(float(delay[0]), float(expected), atol=1e-20)
+        np.testing.assert_allclose(float(delay[0]), 0.0, atol=1e-20)
 
     def test_zero_position_guarded(self):
         """Zero position (TZR TOA) should not produce NaN."""

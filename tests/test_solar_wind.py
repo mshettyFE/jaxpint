@@ -231,6 +231,7 @@ class TestAutodiff:
 
         swp_idx = params.param_index("SWP")
         assert jnp.isfinite(grad_vals.values[swp_idx])
+        assert grad_vals.values[swp_idx] != 0.0
 
 
 # ---------------------------------------------------------------------------

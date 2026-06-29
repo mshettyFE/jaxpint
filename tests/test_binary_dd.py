@@ -27,10 +27,6 @@ def dd_params():
         "PBDOT": 5e-13,
         "M2": 0.3,           # solar masses
         "SINI": 0.9,
-        "A0": 1e-5,          # seconds
-        "B0": 2e-5,          # seconds
-        "DR": 1e-4,
-        "DTH": 1e-4,
     }
 
 

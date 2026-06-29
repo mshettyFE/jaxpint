@@ -8,7 +8,6 @@ import pytest
 
 from tests.helpers import make_toa_data as _make_toa_data_base, make_params
 
-_DEG_YR_TO_RAD_S = np.pi / 180.0 / (365.25 * 86400.0)
 
 
 @pytest.fixture
@@ -27,10 +26,7 @@ def ddk_params():
         "KOM": 89.0 * np.pi / 180.0,
         "PX": 0.8,               # mas
         "M2": 0.29,              # solar masses
-        "GAMMA": 0.0,
-        "RAJ_deg": 258.48,       # degrees (17h 13m ~= 258.48 deg)
         "RAJ": 258.48 * np.pi / 180.0,
-        "DECJ_deg": 7.79,        # degrees
         "DECJ": 7.79 * np.pi / 180.0,
         "PMRA": 4.917,           # mas/yr
         "PMDEC": -3.937,         # mas/yr

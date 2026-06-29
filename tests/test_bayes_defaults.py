@@ -121,6 +121,7 @@ class TestDistancePriors:
         for v in priors.values():
             assert isinstance(v, Uniform)
             assert v.low == 0.1
+            assert v.high == 100
 
     def test_improper_override(self, two_pulsar_pta):
         priors = distance_priors(two_pulsar_pta, prior=ImproperPrior())

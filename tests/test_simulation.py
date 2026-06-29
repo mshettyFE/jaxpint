@@ -66,7 +66,6 @@ def pint_toas_zeroed(pint_model):
 @pytest.fixture(scope="module")
 def pint_toas_raw(pint_model):
     """Create raw TOAs (NOT zeroed) for testing zero_residuals from scratch."""
-    import numpy as np
     import pint.toa
 
     times = np.linspace(53000, 55000, 30, dtype=np.longdouble) * u.d

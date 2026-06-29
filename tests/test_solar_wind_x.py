@@ -217,6 +217,7 @@ class TestAutodiff:
 
         swxp_idx = params.param_index("SWXP_0001")
         assert jnp.isfinite(grad_vals.values[swxp_idx])
+        assert grad_vals.values[swxp_idx] != 0.0
 
 
 # ---------------------------------------------------------------------------
