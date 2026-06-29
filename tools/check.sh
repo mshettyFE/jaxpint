@@ -6,11 +6,20 @@
 #   tools/check.sh            ruff + pyright + import-guard + docs (fast gates)
 #   tools/check.sh --tests    also run the full --runslow pytest suite (slow)
 #
-# PAIRED WITH CI -- keep the checks below in sync with the workflow `run:` steps
-# in .github/workflows/tests.yml (ruff/pyright/pytest) and docs.yml (sphinx).
-# CI is the authoritative gate; this script is a best-effort local preflight, so
-# if they drift, update whichever is behind. (The dependency *environment* is
-# already single-sourced via `uv run --extra ...` against pyproject/uv.lock.)
+# PAIRED WITH CI -- keep the *gates* below (ruff/pyright/import-guard/docs) in
+# sync with the workflow `run:` steps in .github/workflows/tests.yml and
+# docs.yml (sphinx). CI is the authoritative gate; this script is a best-effort
+# local preflight, so if they drift, update whichever is behind. (The dependency
+# *environment* is already single-sourced via `uv run --extra ...` against
+# pyproject/uv.lock.)
+#
+# EXCEPTION: the pytest runner below is deliberately NOT identical to CI. CI runs
+# on a fixed small runner where bare `-n auto` (2-4 workers) is right. Dev boxes
+# are heterogeneous -- a high-core / RAM-light machine OOMs under `-n auto` (each
+# xdist worker carries its own JAX/XLA state). So locally we size workers by
+# available RAM and enable the memory/contention mitigations (cache clearing +
+# single-threaded XLA exec). The set of tests run is the same; only the
+# parallelism profile differs.
 #
 
 set -uo pipefail
@@ -43,7 +52,23 @@ step "pyright"             uv run --extra cpu --extra dev pyright
 step "import without dev"  uv run --extra cpu --extra pint python -c "import jaxpint"
 step "docs (-W)"           docs_build
 if [[ $run_tests == 1 ]]; then
-  step "pytest --runslow"  uv run --extra cpu --extra dev pytest --runslow -n auto
+  # Cap xdist workers by *available RAM* (~2 GiB/worker), not just core count:
+  # a high-core / RAM-light box OOMs under bare `-n auto`. JAXPINT_TEST_CLEAR_CACHES
+  # bounds per-worker memory (conftest clears the JAX cache between modules) and
+  # --xla_cpu_multi_thread_eigen=false stops N workers from oversubscribing cores
+  # with execution threads. Override the worker count with PYTEST_WORKERS=N.
+  if [[ -n "${PYTEST_WORKERS:-}" ]]; then
+    workers="$PYTEST_WORKERS"
+  else
+    avail_gb=$(free -g | awk '/^Mem:/{print $7}')
+    cores=$(nproc)
+    workers=$(( avail_gb / 2 ))
+    (( workers > cores - 2 )) && workers=$(( cores - 2 ))
+    (( workers < 1 )) && workers=1
+  fi
+  step "pytest --runslow (-n $workers)" \
+    env JAXPINT_TEST_CLEAR_CACHES=1 XLA_FLAGS=--xla_cpu_multi_thread_eigen=false \
+    uv run --extra cpu --extra dev pytest --runslow -n "$workers" --dist loadscope
 fi
 
 echo
