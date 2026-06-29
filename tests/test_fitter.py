@@ -11,7 +11,6 @@ import copy
 import io
 
 import astropy.units as u
-import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest

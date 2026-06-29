@@ -17,9 +17,7 @@ from pint.simulation import make_fake_toas_uniform
 from jaxpint.bridge import build_timing_model, pint_model_to_params, pint_toas_to_jax
 from jaxpint.fitters import compute_time_residuals
 from jaxpint.likelihood import single_pulsar_logL
-from jaxpint.noise import NoiseModel, ScaleToaError
-from jaxpint.noise.red_noise import PLRedNoise
-from jaxpint.utils import build_fourier_basis, woodbury_dot
+from jaxpint.utils import woodbury_dot
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import io
 
 import astropy.units as u
@@ -11,9 +10,6 @@ import numpy as np
 import pytest
 
 import pint.models as models
-import pint.simulation
-import pint.toa as toa
-from pint.fitter import WLSFitter as PINTWLSFitter
 from pint.simulation import make_fake_toas_uniform
 
 from jaxpint.bridge import (

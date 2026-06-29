@@ -1,7 +1,6 @@
 """Tests for jaxpint.bayes.defaults: bulk-prior factories."""
 
 from collections import namedtuple
-from types import SimpleNamespace
 
 import jax.numpy as jnp
 import pytest
@@ -10,7 +9,6 @@ from jaxpint.bayes import (
     NANOGRAV_NOISE_DEFAULTS,
     Gaussian,
     ImproperPrior,
-    Prior,
     Uniform,
     cw_phi_psr_priors,
     cw_priors,

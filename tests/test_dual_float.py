@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from hypothesis import given, assume, settings
+from hypothesis import given, settings
 from hypothesis.strategies import composite, floats, integers
 
 from jaxpint.types.dual_float import DualFloat

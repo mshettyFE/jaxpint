@@ -15,11 +15,8 @@ from jaxpint.binary.common import (
     compute_ecc,
     compute_a1,
     compute_true_anomaly,
-    compute_eccentric_anomaly,
     compute_tt0,
 )
-
-# Enable float64 for JAX.
 
 
 class TestSolveKepler:

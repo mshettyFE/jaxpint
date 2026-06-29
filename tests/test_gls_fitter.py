@@ -13,7 +13,7 @@ import pytest
 import io
 
 from jaxpint.noise import EcorrNoise
-from jaxpint.utils import woodbury_dot, woodbury_solve
+from jaxpint.utils import woodbury_solve
 from tests.helpers import make_params_with_frozen_names
 
 
@@ -291,7 +291,6 @@ class TestGLSReducesToWLS:
     def synthetic_data(self):
         """Create a simple pulsar for testing."""
         import pint.models as pm
-        from pint.fitter import WLSFitter as PINTWLSFitter
         from pint.simulation import make_fake_toas_uniform
 
         par = """

@@ -7,7 +7,6 @@ import pytest
 
 
 from jaxpint.types import TOAData
-from jaxpint.types.dual_float import DualFloat
 from jaxpint.phase.spin import Spindown
 from jaxpint.delay.dispersion_dm import DispersionDM
 from jaxpint.model import TimingModel, _reconstruct_tzr_toa
@@ -529,13 +528,7 @@ class TestVsPINT:
         spin = Spindown(spin_param_names=("F0", "F1"))
         jax_model = TimingModel(delay_components=(), phase_components=(spin,))
 
-        # JaxPINT: Spindown only, no delay, no TZR
-        toa_data_no_tzr = make_gbt_toa_data(
-            n_toas=toa_data.n_toas,
-            tdb_int=float(toa_data.tdb_int[0]),
-            tdb_frac=toa_data.tdb_frac,
-        )
-        # Override with actual tdb_int values
+        # JaxPINT: Spindown only, no delay, no TZR (actual tdb_int values)
         toa_data_no_tzr = TOAData(
             mjd_int=toa_data.tdb_int,
             mjd_frac=toa_data.tdb_frac,

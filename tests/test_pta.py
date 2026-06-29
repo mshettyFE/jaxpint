@@ -25,12 +25,11 @@ from jaxpint.pta.signals.cw import (
     CWInjector, CWInjectorStack, CW_PARAM_DEFAULTS, log10_strain_from_binary,
 )
 from jaxpint.pta.signals.gwb import (
-    powerlaw_psd, fourier_basis, gwb_covariance, CURNInjector, CURN_PARAM_DEFAULTS, FYR,
+    powerlaw_psd, fourier_basis, CURNInjector, FYR,
 )
 from jaxpint.pta.signals.orf import hd_orf, dipole_orf
 from jaxpint.pta.likelihood import PTAConfig
 from jaxpint.pta.fisher import flatten_params, unflatten_params
-from jaxpint.types import ParameterVector
 
 from tests.helpers import make_toa_data, make_params
 

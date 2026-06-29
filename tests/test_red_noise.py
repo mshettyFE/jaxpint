@@ -10,7 +10,6 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from jaxpint.constants import FYR
 from jaxpint.noise import NoiseModel, ScaleToaError
 from jaxpint.noise.red_noise import PLRedNoise
 from jaxpint.simulation import simulate_noise

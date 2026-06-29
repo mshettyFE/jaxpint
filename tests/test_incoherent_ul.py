@@ -1,10 +1,8 @@
 """Tests for the incoherent (distance-marginalized) CW upper-limit machinery."""
 from __future__ import annotations
 
-import jax
 import jax.numpy as jnp
 import numpy as np
-import pytest
 
 from jaxpint.pta.signals.cw import cw_delay_from_array, _KPC_TO_M, _C
 from jaxpint.pta.incoherent_ul import (
@@ -153,7 +151,6 @@ def test_narrow_prior_localizes_vs_flat():
 def test_extract_pulsar_bM_self_consistent():
     """The recovered (b, M) reproduce the actual marginalized g at arbitrary
     amplitudes (validates the real-mode timing-marginalized GLS extraction)."""
-    from jaxpint.likelihood import single_pulsar_logL
     from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
 
     td, tm, nm, pp = make_simple_pulsar(200, f0=100.0, f1=-1e-14)
