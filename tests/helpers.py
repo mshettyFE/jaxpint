@@ -365,3 +365,100 @@ def make_params(
         units=tuple(units),
         epoch_int_values=epoch_int_values,
     )
+
+
+# ---------------------------------------------------------------------------
+# End-to-end GLS whitening (shared by the PL-noise red/DM/chrom/SW tests)
+# ---------------------------------------------------------------------------
+
+def run_gls_whitening(
+    correlated,
+    *,
+    param_names,
+    param_values,
+    param_units,
+    freq=1400.0,
+    obs_sun_pos=None,
+    n_toas=200,
+    seed=2024,
+):
+    """Simulate white + one correlated noise component, GLS-fit, and whiten.
+
+    Shared driver for the power-law-noise end-to-end GLS tests (red / DM /
+    chromatic / solar wind).  The caller builds the correlated ``component``
+    (construction is noise-type-specific) and passes its extra parameter
+    ``param_names``/``param_values``/``param_units``; the spindown +
+    white-noise scaffolding, fake-TOA simulation (fixed ``seed``), fit, and
+    whitening are identical across noise types.
+
+    ``freq`` may be a scalar or a per-TOA array; ``obs_sun_pos`` (when given)
+    replaces the TOA-data Sun positions, as the SW model needs.
+
+    Returns ``(whitened_residuals, result)``.
+    """
+    import copy
+
+    import jax
+
+    from jaxpint.fitters import GLSFitter
+    from jaxpint.model import TimingModel
+    from jaxpint.noise import NoiseModel, ScaleToaError
+    from jaxpint.phase.spin import Spindown
+    from jaxpint.simulation import make_fake_toas
+
+    T = 3.0 * 365.25 * 86400.0
+    mask = np.ones(n_toas, dtype=bool)
+    t_mjd = np.linspace(53000.0, 53000.0 + T / 86400.0, n_toas)
+    toa_data = make_toa_data(
+        t_mjd=t_mjd,
+        error=1e-6,
+        freq=freq,
+        flag_masks={"EFAC1": mask},
+        tzr_tdb_int=53000.0,
+        tzr_tdb_frac=0.0,
+        tzr_freq=1400.0,
+        tzr_ssb_obs_pos=np.zeros(3),
+    )
+    if obs_sun_pos is not None:
+        import equinox as eqx
+
+        toa_data = eqx.tree_at(
+            lambda t: t.obs_sun_pos, toa_data, jnp.asarray(obs_sun_pos)
+        )
+
+    white = ScaleToaError(efac_names=("EFAC1",), equad_names=())
+    noise_model = NoiseModel(white_noise=white, correlated=(correlated,))
+
+    spin = Spindown(spin_param_names=("F0", "F1"))
+    timing_model = TimingModel(delay_components=(), phase_components=(spin,))
+
+    params = make_params(
+        ("F0", "F1", "PEPOCH", "EFAC1", *param_names),
+        [100.0, -1e-15, 0.0, 1.0, *param_values],
+        units=("Hz", "Hz/s", "day", "", *param_units),
+        frozen_mask=(False, False, True, True) + (True,) * len(param_names),
+        epoch_int_values={"PEPOCH": 53000.0},
+    )
+
+    key = jax.random.PRNGKey(seed)
+    fake_toa_data = make_fake_toas(
+        timing_model, toa_data, params, key,
+        noise_components=[white, correlated],
+    )
+
+    fit_params = copy.deepcopy(params)
+    fitter = GLSFitter(
+        timing_model, fake_toa_data, fit_params, noise_model=noise_model,
+    )
+    result = fitter.fit_toas(maxiter=3)
+    sigma = noise_model.scaled_sigma(fake_toa_data, result.params)
+
+    # Whiten: subtract the correlated-noise realization, divide by scaled sigma.
+    if noise_model.has_correlated and result.noise_realizations is not None:
+        _, U, _ = noise_model.covariance(fake_toa_data, result.params)
+        rc = U @ result.noise_realizations
+        whitened = (result.residuals - rc) / sigma
+    else:
+        whitened = result.residuals / sigma
+
+    return whitened, result
