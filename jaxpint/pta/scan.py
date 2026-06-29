@@ -336,6 +336,7 @@ def _build_per_pulsar_array(
         """Log-likelihood at one grid cell."""
         gp, pp_p = _substitute(cell)
         if use_factor:
+            assert factor is not None  # built whenever use_factor is True
             return single_pulsar_pta_logL_with_factor(p, gp, pp_p, factor, config)
         return single_pulsar_pta_logL(p, gp, pp_p, config)
 

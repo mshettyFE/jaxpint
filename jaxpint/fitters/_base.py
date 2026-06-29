@@ -9,7 +9,10 @@ from typing import Callable, Optional
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from beartype import beartype
+try:
+    from beartype import beartype
+except ModuleNotFoundError:  # dev-only extra; without it jaxtyped is a no-op
+    beartype = None
 from jaxtyping import Array, Float, jaxtyped
 
 from jaxpint.model import TimingModel

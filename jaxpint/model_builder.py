@@ -346,6 +346,8 @@ def _build_astrometry_equatorial(ctx: BuildContext):
 def _build_astrometry_ecliptic(ctx: BuildContext):
     from jaxpint.delay.astrometry import AstrometryEcliptic
 
+    # An ecliptic-frame model always resolves obliquity in _resolve_astrometry.
+    assert ctx.obliquity_arcsec is not None
     return AstrometryEcliptic(
         elong_name=ctx.raj,
         elat_name=ctx.decj,
