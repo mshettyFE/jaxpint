@@ -8,9 +8,7 @@ quadratic* in ``h0``::
     logL(h0) = logL(0) + h0 * X - 0.5 * h0**2 * Y
 
 with ``X = (d | s_hat)`` the matched filter against the unit-strain waveform and
-``Y = (s_hat | s_hat)`` its noise-weighted power.  Both follow from a single
-gradient/Hessian of any twice-differentiable ``logL(h0)`` (see
-:func:`quadratic_coeffs`).
+``Y = (s_hat | s_hat)`` its noise-weighted power.
 
 With a uniform prior on ``h0 >= 0`` the marginal posterior is a Gaussian
 truncated at zero, so the 95% upper limit is closed form
@@ -19,9 +17,7 @@ the posterior into a Gaussian mixture in ``h0``; :func:`h0_95_marginalized`
 takes its 95th percentile.  :func:`h0_to_distance` inverts the strain-distance
 relation to convert a strain UL into a luminosity-distance lower limit.
 
-This is the no-MCMC building block for the CGW distance-reach sky map
-(``examples/cgw_distance_skymap.py``), approximating the Bayesian limit of
-Fig. 8 in the NANOGrav 15-yr individual-SMBHB paper (arXiv:2306.16222).
+Approximating the Bayesian limit of Fig. 8 in the NANOGrav 15-yr individual-SMBHB paper (arXiv:2306.16222).
 """
 
 from __future__ import annotations
@@ -30,9 +26,12 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.special import ndtr, ndtri
 from jaxtyping import Array, Float
 
+from jaxpint.bayes.credible import (
+    mixture_truncated_gaussian_upper_limit,
+    truncated_gaussian_upper_limit,
+)
 from jaxpint.pta.signals.cw import log10_strain_from_binary
 
 # The Earth-term, linear-amplitude CW template used here is provided by
@@ -47,18 +46,7 @@ def quadratic_coeffs(
 ) -> tuple[Float[Array, ""], Float[Array, ""]]:
     """Recover ``(X, Y)`` from a log-likelihood that is quadratic in amplitude.
 
-    For ``logL(A) = logL(0) + A*X - 0.5*A**2*Y`` the coefficients are the Taylor
-    expansion *about A=0*: ``X = dlogL/dA|_0`` (the matched filter ``(d|s_hat)``)
-    and ``Y = -d^2 logL/dA^2``.  Since ``logL`` is exactly quadratic, the gradient
-    is ``dlogL/dA = X - A*Y``, so:
-
-    - ``Y`` (the curvature) is constant — independent of the expansion point.
-    - ``X`` is the gradient *at the origin*; the gradient at any other point is
-      the shifted value ``X - A*Y``, not the coefficient.
-
-    Hence ``amp`` must be 0 (the default) for the returned ``X`` to equal the
-    matched filter that the upper-limit helpers expect; evaluating elsewhere
-    returns ``X - amp*Y``.
+    Assumes LogL takes form of  ``logL(A) = logL(0) + A*X - 0.5*A**2*Y``
 
     Parameters
     ----------
@@ -125,10 +113,7 @@ def h0_95_closed_form(
         F(h) = [Phi((h-mu)/s) - Phi(-mu/s)] / [Phi((h_max-mu)/s) - Phi(-mu/s)].
 
     This function takes ``h_max -> inf``: it replaces ``Phi((h_max-mu)/s)`` with
-    its limit ``1``, which is why ``q`` below carries no ``h_max`` term. That is
-    exact to machine precision *whenever the data constrain* ``h0`` — then
-    ``sigma = 1/sqrt(Y)`` is tiny and any physically sensible ``h_max`` sits many
-    sigma above the posterior, so ``Phi((h_max-mu)/sigma) = 1`` in float64. The
+    its limit ``1``, which is why ``q`` below carries no ``h_max`` term. The
     bound would bias the result only if the data were nearly *uninformative*
     (``Y -> 0`` so ``sigma -> inf``): the posterior would stay flat out to
     ``h_max`` and the limit would collapse to ``~level * h_max`` — set by the
@@ -142,11 +127,7 @@ def h0_95_closed_form(
     Y = jnp.maximum(Y, jnp.finfo(jnp.float64).tiny)
     mu = X / Y
     sigma = 1.0 / jnp.sqrt(Y)
-    phi_lo = ndtr(-mu / sigma)  # Phi(-mu/sigma): mass below the h0=0 wall
-    # q uses the prior's UPPER edge Phi((h_max-mu)/sigma) at its h_max->inf limit
-    # of 1 (see Notes "Upper-bound gotcha"); exact while the data constrain h0.
-    q = level + (1.0 - level) * phi_lo
-    return mu + sigma * ndtri(q)
+    return truncated_gaussian_upper_limit(mu, sigma, level)
 
 
 def h0_to_distance(
@@ -179,9 +160,7 @@ def h0_to_distance(
     # log10(K) once, reusing log10_strain_from_binary as the single definition
     # of the constant K.
     log10_h0_at_1mpc = log10_strain_from_binary(log10_mc, 0.0, log10_fgw)
-    # Solve that additive relation for the distance. It is monotonically
-    # decreasing in h0 (smaller strain -> larger D_L), so feeding in a 95% upper
-    # limit on h0 yields a 95% lower limit on D_L.
+    # Solve that additive relation for the distance.
     log10_dist_mpc = log10_h0_at_1mpc - jnp.log10(h0)
     return 10.0**log10_dist_mpc
 
@@ -210,7 +189,6 @@ def h0_to_distance(
 # Ellis, Siemens & Creighton 2012 (arXiv:1204.4218); Taylor, Ellis & Gair 2014
 # (arXiv:1406.5224).
 
-
 def orientation_coeffs(
     cos_inc: Float[Array, ""],
     psi: Float[Array, ""],
@@ -232,7 +210,6 @@ def orientation_coeffs(
     is absorbed consistently into ``b`` and ``M`` by :func:`basis_quadratics`,
     since the same ``c`` is used for both extraction and evaluation.
 
-    Pure function of three scalars -> a length-4 vector; vmaps over a grid.
     """
     a_i = 1.0 + cos_inc**2
     b_i = 2.0 * cos_inc
@@ -337,11 +314,6 @@ def h0_95_marginalized(
     CDF is an analytic weighted sum of normal CDFs; this returns the ``level``
     quantile by bisection.
 
-    The constant ``logL(0)`` cancels in the normalized CDF (never exponentiated).
-    Component weights ``exp(0.5 X_k^2/Y_k)`` are stabilized by subtracting the
-    max in log-space (cancels in the CDF ratio); in expected mode (``X=0``) all
-    weights are 1 and every term is bounded, so it is unconditionally stable.
-
     Reduces exactly to :func:`h0_95_closed_form` for a single orientation.
 
     Parameters
@@ -354,31 +326,18 @@ def h0_95_marginalized(
     n_iter : int
         Bisection iterations (default 60 -> float64-tight).
     """
+#    The constant ``logL(0)`` cancels in the normalized CDF (never exponentiated).
+#    Component weights ``exp(0.5 X_k^2/Y_k)`` are stabilized by subtracting the
+#    max in log-space (cancels in the CDF ratio);
+
     Ys = jnp.maximum(Ys, jnp.finfo(jnp.float64).tiny)
     mu = Xs / Ys
     sigma = 1.0 / jnp.sqrt(Ys)
-    # log weight per component, up to a common additive constant; subtract max.
-    log_w = 0.5 * Xs * Xs / Ys + jnp.log(sigma)
-    w = jnp.exp(log_w - jnp.max(log_w))
-    phi_lo = ndtr(-mu / sigma)  # mass below the h0=0 wall, per component
-    phi_hi = ndtr(mu / sigma)  # component mass over [0, inf)
-    denom = jnp.sum(w * phi_hi)
-
-    def cdf(H):
-        num = jnp.sum(w * (ndtr((H - mu) / sigma) - phi_lo))
-        return num / denom
-
-    # The mixture quantile is below max_k(mu_k) + a few sigma; bracket generously.
-    H_hi0 = jnp.max(mu) + 12.0 * jnp.max(sigma)
-
-    def body(_, bounds):
-        lo, hi = bounds
-        mid = 0.5 * (lo + hi)
-        go_up = cdf(mid) < level
-        return (jnp.where(go_up, mid, lo), jnp.where(go_up, hi, mid))
-
-    lo, hi = jax.lax.fori_loop(0, n_iter, body, (jnp.zeros_like(H_hi0), H_hi0))
-    return 0.5 * (lo + hi)
+    # Per-orientation mixture weight, up to a common additive constant.
+    log_weights = 0.5 * Xs * Xs / Ys + jnp.log(sigma)
+    return mixture_truncated_gaussian_upper_limit(
+        mu, sigma, log_weights, level, n_iter
+    )
 
 
 def fstat(M: Float[Array, "4 4"], b: Float[Array, " 4"]) -> Float[Array, ""]:

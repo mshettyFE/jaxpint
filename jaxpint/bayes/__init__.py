@@ -23,6 +23,12 @@ from jaxpint.bayes.defaults import (
     noise_priors_simple,
     timing_priors,
 )
+from jaxpint.bayes.credible import (
+    gaussian_credible_area,
+    grid_credible_upper_limit,
+    mixture_truncated_gaussian_upper_limit,
+    truncated_gaussian_upper_limit,
+)
 from jaxpint.bayes.marginal import (
     marg_set_from_priors,
     marginalize_pta,
@@ -66,4 +72,9 @@ __all__ = [
     "marginalize_single_pulsar",
     "marginalize_pta",
     "marg_set_from_priors",
+    # Credible intervals / upper limits / regions
+    "truncated_gaussian_upper_limit",
+    "mixture_truncated_gaussian_upper_limit",
+    "grid_credible_upper_limit",
+    "gaussian_credible_area",
 ]
