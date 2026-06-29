@@ -11,10 +11,8 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from jaxpint.constants import FYR
 from jaxpint.noise import NoiseModel, ScaleToaError
 from jaxpint.noise.chrom_noise import PLChromNoise
-from jaxpint.simulation import simulate_noise
 from tests.helpers import make_fourier_basis, make_params, make_toa_data
 
 

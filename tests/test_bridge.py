@@ -278,7 +278,6 @@ class TestPintModelToParams:
         assert len(pv.names) == pv.n_params
         assert len(pv.units) == pv.n_params
         assert len(pv.frozen_mask) == pv.n_params
-        assert len(pv.units) == pv.n_params
 
     @pytest.mark.slow
     def test_expected_params_present(self, ngc6440e):

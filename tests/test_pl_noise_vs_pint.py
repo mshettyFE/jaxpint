@@ -28,8 +28,6 @@ def pldm_pint_model():
     import pint.toa as toa
     from pint.simulation import make_fake_toas_uniform
 
-    np.random.seed(42)
-
     par = """\
 PSR           J0000+0000
 RAJ           05:00:00   1
@@ -68,10 +66,7 @@ def plred_pint_model():
     """PINT model with PLRedNoise parameters."""
     import astropy.units as u
     import pint.models as models
-    import pint.toa as toa
     from pint.simulation import make_fake_toas_uniform
-
-    np.random.seed(42)
 
     par = """\
 PSR           J0000+0000
@@ -107,8 +102,6 @@ def plchrom_pint_model():
     import pint.models as models
     import pint.toa as toa
     from pint.simulation import make_fake_toas_uniform
-
-    np.random.seed(42)
 
     par = """\
 PSR           J0000+0000
@@ -151,8 +144,6 @@ def plsw_pint_model():
     import pint.models as models
     import pint.toa as toa
     from pint.simulation import make_fake_toas_uniform
-
-    np.random.seed(42)
 
     par = """\
 PSR           J0000+0000
@@ -202,7 +193,7 @@ class TestPLRedNoiseVsPINT:
         PINT uses long-double TOA times for the Fourier basis while
         JaxPINT uses float64, so we allow ~1e-5 relative tolerance.
         """
-        from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params
+        from jaxpint.bridge import build_timing_model
 
         pint_model, toas = plred_pint_model
 

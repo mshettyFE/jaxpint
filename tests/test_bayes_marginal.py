@@ -26,7 +26,6 @@ from jaxpint.bayes import (
     marginalize_pta,
     marginalize_single_pulsar,
 )
-from jaxpint.bayes.validate import PriorValidationError
 from jaxpint.bridge import build_timing_model, pint_model_to_params, pint_toas_to_jax
 from jaxpint.fitters import compute_time_residuals
 from jaxpint.likelihood import single_pulsar_logL

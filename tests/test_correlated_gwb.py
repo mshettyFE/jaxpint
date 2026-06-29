@@ -13,7 +13,6 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import numpy as np
-import pytest
 
 from jaxpint.noise import NoiseModel
 from jaxpint.noise.white import ScaleToaError
@@ -22,19 +21,15 @@ from jaxpint.types import GlobalParams
 from jaxpint.pta.likelihood import (
     PTAConfig,
     pta_logL,
-    _per_pulsar_intermediates,
 )
 from jaxpint.pta.signals.gwb import (
     CURNInjector,
-    fourier_basis,
-    powerlaw_psd,
 )
 from jaxpint.pta.signals.correlated_gwb import HDCorrelatedGWBInjector
 from jaxpint.pta.signals.orf import hd_orf, dipole_orf
-from jaxpint.types import ParameterVector
 from jaxpint.fitters import compute_time_residuals
 
-from tests.helpers import make_simple_pulsar, make_toa_data, make_params
+from tests.helpers import make_simple_pulsar, make_params
 
 
 jax.config.update("jax_enable_x64", True)

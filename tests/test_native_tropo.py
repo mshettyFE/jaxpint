@@ -29,7 +29,8 @@ def _tropo_par(tmp_path, enabled: bool):
 
     src = examplefile("B1855+09_NANOGrav_dfg+12_TAI.par")
     out = tmp_path / f"tropo_{'on' if enabled else 'off'}.par"
-    lines = [l for l in open(src) if not l.strip().startswith("CORRECT_TROPOSPHERE")]
+    with open(src) as f:
+        lines = [l for l in f if not l.strip().startswith("CORRECT_TROPOSPHERE")]
     lines.append(f"CORRECT_TROPOSPHERE {'Y' if enabled else 'N'}\n")
     out.write_text("".join(lines))
     return str(out), examplefile("B1855+09_NANOGrav_dfg+12.tim")

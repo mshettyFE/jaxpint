@@ -13,7 +13,7 @@ because their assertions are structurally different.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Callable
 
 import equinox as eqx
 import jax

@@ -11,11 +11,10 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from jaxpint.constants import AU_KM, DMCONST, FYR
+from jaxpint.constants import AU_KM, DMCONST
 from jaxpint.delay.solar_wind import _solar_wind_geometry_swm0, _sun_angle_and_distance
 from jaxpint.noise import NoiseModel, ScaleToaError
 from jaxpint.noise.sw_noise import PLSWNoise
-from jaxpint.simulation import simulate_noise
 from jaxpint.utils import compute_pulsar_direction
 from tests.helpers import make_fourier_basis, make_params, make_toa_data
 

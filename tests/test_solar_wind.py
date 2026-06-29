@@ -14,7 +14,6 @@ from jaxpint.delay.solar_wind import (
     SolarWindDispersion,
     _solar_wind_geometry_swm0,
     _solar_wind_geometry_swm1,
-    _sun_angle_and_distance,
 )
 
 

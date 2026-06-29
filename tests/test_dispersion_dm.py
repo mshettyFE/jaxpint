@@ -255,7 +255,6 @@ class TestPINTOracle:
         ``barycentric_radio_freq``.
         """
         from io import StringIO
-        import astropy.units as u
         import numpy as np
         from pint.models import get_model
         from pint.simulation import make_fake_toas_uniform

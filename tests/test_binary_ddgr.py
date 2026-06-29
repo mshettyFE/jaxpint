@@ -35,9 +35,9 @@ class TestBinaryDDGRvsPINT:
         from pint.models.stand_alone_psr_binaries.DDGR_model import DDGRmodel
 
         from jaxpint.binary.ddgr import (
-            BinaryDDGR, _solve_relativistic_kepler, _GM_SUN_SI,
+            _solve_relativistic_kepler, _GM_SUN_SI,
         )
-        from jaxpint.constants import C_M_PER_S, SECS_PER_DAY, TSUN
+        from jaxpint.constants import C_M_PER_S, SECS_PER_DAY
 
         # --- PINT DDGR model ---
         bm = DDGRmodel()

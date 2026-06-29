@@ -242,7 +242,7 @@ class TestGrad:
 @pytest.fixture
 def b1855_9yv1():
     """B1855+09 NANOGrav 9yr v1 (1 JUMP on -fe L-wide)."""
-    pint = pytest.importorskip("pint")
+    pytest.importorskip("pint")
     import pint.models as models
     import pint.toa as toa
     from pint.config import examplefile
@@ -255,7 +255,7 @@ def b1855_9yv1():
 @pytest.fixture
 def b1855_dfg12():
     """B1855+09 dfg+12 (21 JUMPs on -chanid flags)."""
-    pint = pytest.importorskip("pint")
+    pytest.importorskip("pint")
     import pint.models as models
     import pint.toa as toa
     from pint.config import examplefile
@@ -323,7 +323,6 @@ class TestJumpIntegration:
     def test_phase_values_match(self, b1855_9yv1):
         """JaxPINT jump phase matches PINT for 1-JUMP data."""
         model, toas = b1855_9yv1
-        import astropy.units as u
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
 
         toa_data = pint_toas_to_jax(toas, model=model)

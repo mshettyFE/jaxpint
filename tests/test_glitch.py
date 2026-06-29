@@ -325,7 +325,6 @@ class TestVsPINT:
         """Build a glitch model from inline par and generate fake TOAs."""
         from io import StringIO
         import pint.models as models
-        import pint.toa as toa
         from pint.simulation import make_fake_toas_uniform
 
         model = models.get_model(StringIO(self.GLITCH_PAR))

@@ -36,13 +36,11 @@ from jaxpint.likelihood import (
     single_pulsar_logL_with_factor,
 )
 from jaxpint.utils import (
-    WoodburyFactor,
     apply_woodbury_dot_factor,
     precompute_woodbury_factor,
     woodbury_dot,
 )
 from jaxpint.pta.signals.cw import CWInjectorStack
-from jaxpint.types import ParameterVector
 
 from tests.helpers import make_simple_pulsar, make_params
 
