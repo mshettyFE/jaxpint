@@ -36,6 +36,7 @@ from typing import Optional, cast
 import jax
 import jax.numpy as jnp
 import equinox as eqx
+
 try:
     from beartype import beartype
 except ModuleNotFoundError:  # dev-only extra; without it jaxtyped is a no-op

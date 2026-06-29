@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
+
 try:
     from beartype import beartype
 except ModuleNotFoundError:  # dev-only extra; without it jaxtyped is a no-op

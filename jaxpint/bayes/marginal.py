@@ -179,13 +179,13 @@ def _check_linearity(
     """
 
     from jaxpint.fitters._base import compute_time_residuals
+
     assert (
         len(over_names)
         == len(over_indices)
         == trust_radii.shape[0]
         == M_full_cols.shape[1]
     )
-
 
     def time_resid_fn(values):
         p = fiducial_params.with_values(values)
@@ -498,9 +498,7 @@ def marginalize_single_pulsar(
     if validate_linearity and M_marg is not None:
         assert J_full is not None  # a non-empty marg block implies J_full too
         Ndiag = noise_model.scaled_sigma(toa_data, fiducial_params) ** 2
-        trust_radii = _marg_trust_radii(
-            priors, over_list, over_indices, J_full, Ndiag
-        )
+        trust_radii = _marg_trust_radii(priors, over_list, over_indices, J_full, Ndiag)
         flagged = _check_linearity(
             timing_model,
             toa_data,

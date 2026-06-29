@@ -300,6 +300,7 @@ def per_source_credible_areas_deg2(
         out.append(gaussian_credible_area(det_safe, level) * _STR_TO_DEG2)
     return jnp.stack(out)
 
+
 def credible_area_deg2(
     F: Float[Array, "2 2"],
     level: float = 0.9,
