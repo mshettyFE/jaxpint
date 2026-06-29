@@ -8,7 +8,7 @@ timing residual per unit strain ``h0`` is a 2-template combination::
 
 where ``e_a`` is the Earth-term residual and ``ps_a`` the pulsar-term quadrature
 (the pulsar term at phase Δ=π/2), and ``Δ`` is the pulsar-term phase lag (set by
-the pulsar distance ``L`` via ``Δ_p(L) = 2π f L (1+cos μ) / c``).  
+the pulsar distance ``L`` via ``Δ_p(L) = 2π f L (1+cos μ) / c``).
 
 Per pulsar we extract the timing-marginalized GLS projections and Gram::
 
@@ -134,7 +134,9 @@ def mixed_phase_A(
     use_dist = is_tight & (n_wrap <= n_phase / min_pts_per_cycle)
     grids = jnp.where(use_dist[:, None], dist, flat[None, :])  # (n_psr, n_phase)
     # A(Δ) = (1 − cosΔ, sinΔ) stacked over the per-pulsar phase grid.
-    return jnp.stack([1.0 - jnp.cos(grids), jnp.sin(grids)], axis=-1)  # (n_psr, n_phase, 2)
+    return jnp.stack(
+        [1.0 - jnp.cos(grids), jnp.sin(grids)], axis=-1
+    )  # (n_psr, n_phase, 2)
 
 
 # ------------------------------------------------------------------- marginal logL

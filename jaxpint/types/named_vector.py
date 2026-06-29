@@ -94,7 +94,7 @@ class NamedVector(eqx.Module):
         for name in self.names:
             if name.startswith(base) and name.endswith(suffix):
                 try:
-                    out.add(int(name[len(base):end]))
+                    out.add(int(name[len(base) : end]))
                 except ValueError:
                     pass
         return tuple(sorted(out))
