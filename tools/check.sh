@@ -57,6 +57,11 @@ if [[ $run_tests == 1 ]]; then
   # bounds per-worker memory (conftest clears the JAX cache between modules) and
   # --xla_cpu_multi_thread_eigen=false stops N workers from oversubscribing cores
   # with execution threads. Override the worker count with PYTEST_WORKERS=N.
+  #
+  # JAX_PLATFORMS=cpu is REQUIRED, not optional: `--extra cpu` only installs the
+  # CPU jaxlib, it does not stop JAX from selecting a GPU if a CUDA jaxlib happens
+  # to be present in the env. Running the suite on a (consumer) GPU under xdist
+  # both oversubscribes the card and fails f64 autotuning -- force the CPU backend.
   if [[ -n "${PYTEST_WORKERS:-}" ]]; then
     workers="$PYTEST_WORKERS"
   else
@@ -67,7 +72,8 @@ if [[ $run_tests == 1 ]]; then
     (( workers < 1 )) && workers=1
   fi
   step "pytest --runslow (-n $workers)" \
-    env JAXPINT_TEST_CLEAR_CACHES=1 XLA_FLAGS=--xla_cpu_multi_thread_eigen=false \
+    env JAX_PLATFORMS=cpu JAXPINT_TEST_CLEAR_CACHES=1 \
+        XLA_FLAGS=--xla_cpu_multi_thread_eigen=false \
     uv run --extra cpu --extra dev pytest --runslow -n "$workers" --dist loadscope
 fi
 
