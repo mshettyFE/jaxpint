@@ -150,7 +150,8 @@ def compute_skymap(
         zip(td_list, tm_list, nm_list, pp_list, jnp.asarray(positions))
     ):
         over = {n for n in pp.free_names() if n in MARG_PARAMS}
-        g, _, skel = marginalize_single_pulsar(over=over,
+        g, _, skel = marginalize_single_pulsar(
+            over=over,
             priors={n: ImproperPrior() for n in over},
             toa_data=td,
             timing_model=tm,
