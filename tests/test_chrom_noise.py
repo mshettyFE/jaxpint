@@ -151,7 +151,7 @@ class TestPLChromNoiseWhitening:
 
         n_draws = 10_000
         keys = jax.random.split(jax.random.PRNGKey(123), n_draws)
-        draws = jnp.stack([plchrom.generate(toa_data, params, k) for k in keys])
+        draws = jax.vmap(lambda k: plchrom.generate(toa_data, params, k))(keys)
         empirical_var = jnp.var(draws, axis=0)
 
         npt.assert_allclose(

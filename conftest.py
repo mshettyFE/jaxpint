@@ -150,6 +150,27 @@ default = _requested if _requested in _VALID_PROFILES else "interactive"
 hypothesis.settings.load_profile(default)
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _bound_jax_memory():
+    """Optionally drop JAX's compilation cache after each test module.
+
+    JAX/XLA caches one compiled executable per distinct jitted signature and
+    never evicts them, so a long pytest session's memory grows monotonically.
+    That's fine serially, but under ``pytest -n N`` every worker carries its own
+    copy of that growth, which can OOM a memory-constrained machine.
+
+    Setting ``JAXPINT_TEST_CLEAR_CACHES=1`` clears the cache at each module
+    boundary, bounding per-worker memory to ~one module's compilations so more
+    workers fit in RAM.  Off by default -- normal/CI runs pay no recompilation
+    overhead.
+    """
+    yield
+    if os.environ.get("JAXPINT_TEST_CLEAR_CACHES"):
+        import jax
+
+        jax.clear_caches()
+
+
 @pytest.fixture
 def _pinned_clock(monkeypatch):
     """Pin both JaxPINT and PINT to the seed clock snapshot.
