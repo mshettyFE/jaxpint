@@ -38,7 +38,9 @@ import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 from jaxtyping import Array, Float
 
+from jaxpint.bayes.credible import grid_credible_upper_limit
 from jaxpint.pta.signals.cw import _C, _KPC_TO_M
+from jaxpint.utils import quadratic_form_coeffs
 
 
 def bM2_coeffs(
@@ -47,21 +49,12 @@ def bM2_coeffs(
     """Extract ``b`` (2-vector) and ``M`` (2x2 Gram) from a 2-amplitude logL.
 
     ``logL2(Ae, As)`` must be exactly quadratic in the two linear amplitudes
-    (it is: each template enters the residual linearly).  For
-    ``logL2 = b·A − ½ AᵀMA`` the gradient is ``b − M A``, so ``M[:,j] = grad(0) −
-    grad(e_j)``.  Uses three first-order gradient evaluations (the
-    finite-difference-of-gradients trick, as in
-    :func:`jaxpint.pta.cw_upper_limit.quadratic_coeffs`) -- lighter on memory than
-    ``jax.hessian`` through the full per-pulsar likelihood.
+    (it is: each template enters the residual linearly).  The ``n=2`` case of
+    :func:`jaxpint.utils.quadratic_form_coeffs`: ``b`` is the matched filter
+    ``((d|e), (d|ps))`` and ``M`` the 2x2 noise-weighted Gram of the two
+    templates.
     """
-    grad = jax.grad(logL2, argnums=(0, 1))
-    z = jnp.float64(0.0)
-    o = jnp.float64(1.0)
-    b = jnp.asarray(grad(z, z))  # (2,) = b
-    col0 = b - jnp.asarray(grad(o, z))  # M[:,0]
-    col1 = b - jnp.asarray(grad(z, o))  # M[:,1]
-    M = jnp.stack([col0, col1], axis=1)
-    return b, 0.5 * (M + M.T)  # symmetrize tiny numerical asymmetry
+    return quadratic_form_coeffs(lambda A: logL2(A[0], A[1]), 2)
 
 
 def extract_pulsar_bM(
@@ -86,7 +79,6 @@ def extract_pulsar_bM(
     return bM2_coeffs(logL2)
 
 
-# --------------------------------------------------------------------- phase grids
 def flat_phase_grid(n_phase: int = 256) -> Float[Array, " n_phase"]:
     """Uniform midpoint grid of pulsar-term phases over ``[0, 2π)`` -- the
     flat-phase (broad-prior) limit of the distance marginalization."""
@@ -130,15 +122,8 @@ def mixed_phase_A(
     Pulsars flagged ``is_tight`` (a well-measured / hypothetically tight distance)
     marginalize the phase over their narrow distance prior via
     :func:`distance_phase_grid` (localized -> coherent contribution); the rest use
-    :func:`flat_phase_grid` over ``[0, 2π)`` (incoherent).  ``cos_mu`` and
-    ``L0_kpc`` are per pulsar (``cos_mu`` is pixel-dependent), ``sigma_L_kpc``/``k``/
-    ``f_gw`` are shared.  Stack the result over a pixel chunk in the driver.
+    :func:`flat_phase_grid` over ``[0, 2π)`` (incoherent).
 
-    Adaptive: a tight prior spanning ``N_wrap = 2 k σ_L f (1+cos μ) / c`` phase
-    cycles needs ``≥ min_pts_per_cycle`` grid points per cycle to resolve; once it
-    exceeds what ``n_phase`` resolves the distance grid would alias, so we fall back
-    to the exact flat-phase limit (a loose "tight" prior is effectively incoherent).
-    Note ``L0`` cancels out of ``N_wrap``.
     """
     flat = flat_phase_grid(n_phase)  # (n_phase,)
     dist = jax.vmap(
@@ -148,25 +133,11 @@ def mixed_phase_A(
     n_wrap = 2.0 * k * sigma_L_kpc * f_gw * _KPC_TO_M * (1.0 + cos_mu) / _C
     use_dist = is_tight & (n_wrap <= n_phase / min_pts_per_cycle)
     grids = jnp.where(use_dist[:, None], dist, flat[None, :])  # (n_psr, n_phase)
-    return _A_of_phase(grids)  # (n_psr, n_phase, 2)
+    # A(Δ) = (1 − cosΔ, sinΔ) stacked over the per-pulsar phase grid.
+    return jnp.stack([1.0 - jnp.cos(grids), jnp.sin(grids)], axis=-1)  # (n_psr, n_phase, 2)
 
 
 # ------------------------------------------------------------------- marginal logL
-def _A_of_phase(phase: Float[Array, " n"]) -> Float[Array, "n 2"]:
-    """``A(Δ) = (1 − cosΔ, sinΔ)`` stacked over a phase grid."""
-    return jnp.stack([1.0 - jnp.cos(phase), jnp.sin(phase)], axis=-1)
-
-
-def earth_only_A() -> Float[Array, "1 2"]:
-    """The single signal-coefficient vector for the Earth-term-only baseline.
-
-    With the pulsar term dropped, the signal is fixed -- ``s = h0 * e`` -- so the
-    coefficient vector is ``A = (1, 0)`` and there is nothing to marginalize.
-    Routed through the same numerical UL as the marginalized case, this gives a
-    *method-matched* Earth-term map (a controlled comparison)."""
-    return jnp.array([[1.0, 0.0]])
-
-
 def logL_pulsar_marg(
     h0: Float[Array, ""],
     b: Float[Array, " 2"],
@@ -176,9 +147,10 @@ def logL_pulsar_marg(
     """Per-pulsar log-likelihood marginalized over the supplied signal-coefficient
     vectors ``A`` (``log mean_i exp(logL_a(A_i))``).
 
-    ``A`` is the set of coefficient 2-vectors to average over: ``_A_of_phase`` of a
-    phase grid for the distance-marginalized case, or :func:`earth_only_A` (a
-    singleton ``(1,0)``) for the Earth-term-only baseline.
+    ``A`` is the set of coefficient 2-vectors ``(1 − cosΔ, sinΔ)`` to average
+    over: from a phase grid (e.g. :func:`mixed_phase_A`) for the
+    distance-marginalized case, or the singleton ``(1, 0)`` for the
+    Earth-term-only baseline.
     """
     bA = A @ b  # (n,)
     AMA = jnp.einsum("ni,ij,nj->n", A, M, A)  # (n,)
@@ -225,7 +197,5 @@ def h0_95_grid(
     logpost = jax.vmap(total_logL_marg, in_axes=(0, None, None, None))(
         h0, b_stack, M_stack, A_stack
     )
-    w = jnp.exp(logpost - jnp.max(logpost))  # uniform prior on h0>=0
-    cdf = jnp.cumsum(w)
-    cdf = cdf / cdf[-1]
-    return jnp.interp(jnp.float64(level), cdf, h0)
+    # Uniform prior on h0 >= 0 -> normalized-grid credible quantile.
+    return grid_credible_upper_limit(h0, logpost, level)

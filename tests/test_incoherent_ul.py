@@ -9,11 +9,16 @@ import pytest
 from jaxpint.pta.signals.cw import cw_delay_from_array, _KPC_TO_M, _C
 from jaxpint.pta.incoherent_ul import (
     bM2_coeffs, extract_pulsar_bM, flat_phase_grid, distance_phase_grid,
-    logL_pulsar_marg, h0_95_grid, _A_of_phase, earth_only_A, mixed_phase_A,
+    logL_pulsar_marg, h0_95_grid, mixed_phase_A,
 )
 from tests.helpers import make_toa_data, make_simple_pulsar
 
 LOG10_FGW = float(np.log10(27e-9))
+
+
+def _A_of_phase(phase):
+    """Test helper: the A(Δ) = (1 − cosΔ, sinΔ) coefficient vectors of a phase grid."""
+    return jnp.stack([1.0 - jnp.cos(phase), jnp.sin(phase)], axis=-1)
 
 
 # ----------------------------------------------------------- pure-math building blocks
@@ -40,11 +45,10 @@ def test_phase_marginal_matches_quadrature():
     assert abs(got - ref) < 1e-9
 
 
-def test_earth_only_A_is_fixed_truncated_gaussian():
-    """earth_only_A() = (1,0): no marginalization, a plain truncated-Gaussian logL
-    s = h0*e with X=b[0], Y=M[0,0]."""
-    A = earth_only_A()
-    assert np.allclose(np.asarray(A), [[1.0, 0.0]])
+def test_earth_only_baseline_is_fixed_truncated_gaussian():
+    """Earth-term-only baseline A = (1, 0): no marginalization, a plain
+    truncated-Gaussian logL s = h0*e with X=b[0], Y=M[0,0]."""
+    A = jnp.array([[1.0, 0.0]])
     b = jnp.array([0.7, -0.3]); M = jnp.array([[2.0, 0.4], [0.4, 1.5]]); h0 = 0.9
     got = float(logL_pulsar_marg(h0, b, M, A))
     assert np.isclose(got, h0 * b[0] - 0.5 * h0**2 * M[0, 0])
