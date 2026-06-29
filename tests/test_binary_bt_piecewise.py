@@ -37,7 +37,7 @@ class TestBinaryBTPiecewise:
         param_values = [bt_params["PB"], t0_frac, bt_params["A1"],
                         bt_params["ECC"], bt_params["OM"]]
 
-        p = make_params(param_names, param_values, components="BinaryBT",
+        p = make_params(param_names, param_values,
                         epoch_int_values={"T0": t0_int})
 
         t_mjd = np.linspace(55000.5, 55200.0, 100)
@@ -69,7 +69,7 @@ class TestBinaryBTPiecewise:
             bt_params["PB"], t0_frac, a1_global, bt_params["ECC"], bt_params["OM"],
             a1x, 55000.0, 55100.0,
         ]
-        p = make_params(param_names, param_values, components="BinaryBTPiecewise",
+        p = make_params(param_names, param_values,
                         epoch_int_values={"T0": t0_int})
 
         bt_pw = BinaryBTPiecewise(
@@ -94,7 +94,7 @@ class TestBinaryBTPiecewise:
         p_global = make_params(
             ("PB", "T0", "A1", "ECC", "OM"),
             [bt_params["PB"], t0_frac, a1_global, bt_params["ECC"], bt_params["OM"]],
-            components="BinaryBT", epoch_int_values={"T0": t0_int},
+            epoch_int_values={"T0": t0_int},
         )
         d_global = np.array(bt_global(toa_data, p_global, jnp.zeros(20)))
 
@@ -118,7 +118,7 @@ class TestBinaryBTPiecewise:
             bt_params["PB"], t0_frac, bt_params["A1"], bt_params["ECC"], bt_params["OM"],
             t0x_frac, 55000.0, 55100.0,
         ]
-        p = make_params(param_names, param_values, components="BinaryBTPiecewise",
+        p = make_params(param_names, param_values,
                         epoch_int_values={"T0": t0_int, "T0X_0000": t0x_int})
 
         bt_pw = BinaryBTPiecewise(
@@ -142,7 +142,7 @@ class TestBinaryBTPiecewise:
         p_global = make_params(
             ("PB", "T0", "A1", "ECC", "OM"),
             [bt_params["PB"], t0_frac, bt_params["A1"], bt_params["ECC"], bt_params["OM"]],
-            components="BinaryBT", epoch_int_values={"T0": t0_int},
+            epoch_int_values={"T0": t0_int},
         )
         d_global = np.array(bt_global(toa_data, p_global, jnp.zeros(20)))
 
@@ -172,7 +172,7 @@ class TestBinaryBTPiecewise:
             a1x_0, 55000.0, 55100.0,
             a1x_1, 55100.0, 55200.0,
         ]
-        p = make_params(param_names, param_values, components="BinaryBTPiecewise",
+        p = make_params(param_names, param_values,
                         epoch_int_values={"T0": t0_int})
 
         bt_pw = BinaryBTPiecewise(
@@ -235,7 +235,7 @@ class TestBinaryBTPiecewise:
             bt_params["PB"], t0_frac, a1_global, bt_params["ECC"], bt_params["OM"],
             t0x_frac, a1x, 55000.0, 55100.0,
         ]
-        p = make_params(param_names, param_values, components="BinaryBTPiecewise",
+        p = make_params(param_names, param_values,
                         epoch_int_values={"T0": t0_int, "T0X_0000": t0x_int})
         toa_data = make_binary_toa_data(t_all, tzr_tdb_int=55000.0)
         jax_delay = np.array(bt_pw(toa_data, p, jnp.zeros(20)))
@@ -290,7 +290,7 @@ class TestBinaryBTPiecewise:
             bt_params["PB"], t0_frac, bt_params["A1"], bt_params["ECC"], bt_params["OM"],
             bt_params["A1"] + 0.001, 55000.0, 55100.0,
         ]
-        p = make_params(param_names, param_values, components="BinaryBTPiecewise",
+        p = make_params(param_names, param_values,
                         epoch_int_values={"T0": t0_int})
 
         n = 10
@@ -322,7 +322,7 @@ class TestBinaryBTPiecewise:
             bt_params["PB"], t0_frac, bt_params["A1"], bt_params["ECC"], bt_params["OM"],
             bt_params["A1"] + 0.001, 55000.0, 55100.0,
         ]
-        p = make_params(param_names, param_values, components="BinaryBTPiecewise",
+        p = make_params(param_names, param_values,
                         epoch_int_values={"T0": t0_int})
 
         # 5 in-piece, 5 out-of-piece

@@ -122,7 +122,6 @@ class TestBinaryDDKvsPINT:
         ]
         params = make_params(
             param_names, param_values,
-            components="BinaryDDK",
             epoch_int_values={"T0": t0_int, "POSEPOCH": posepoch_int},
         )
 
@@ -192,7 +191,7 @@ class TestBinaryDDKvsPINT:
             ddk_params["KIN"], ddk_params["KOM"], ddk_params["PX"],
             ddk_params["RAJ"], ddk_params["DECJ"],
         ]
-        ddk_p = make_params(ddk_param_names, ddk_param_values, components="BinaryDDK",
+        ddk_p = make_params(ddk_param_names, ddk_param_values,
                             epoch_int_values={"T0": t0_int})
         d_ddk = np.array(ddk(toa_data, ddk_p, jnp.zeros(n)))
 
@@ -208,7 +207,7 @@ class TestBinaryDDKvsPINT:
             ddk_params["PB"], t0_frac, ddk_params["A1"],
             ddk_params["ECC"], ddk_params["OM"], ddk_params["M2"], sini,
         ]
-        dd_p = make_params(dd_param_names, dd_param_values, components="BinaryDD",
+        dd_p = make_params(dd_param_names, dd_param_values,
                            epoch_int_values={"T0": t0_int})
         d_dd = np.array(dd(toa_data, dd_p, jnp.zeros(n)))
 

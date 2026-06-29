@@ -86,7 +86,7 @@ def _bt_make_full() -> tuple:
     params = make_binary_params(
         ("PB", "T0", "A1", "ECC", "OM", "OMDOT", "GAMMA", "PBDOT"),
         [pb, t0_frac, a1, ecc, om_rad, omdot_rad_s, gamma, pbdot],
-        "BinaryBT", epoch_int_values={"T0": t0_int},
+        epoch_int_values={"T0": t0_int},
     )
     toa_data = make_binary_toa_data(t_mjd)
     return bt, params, toa_data, len(t_mjd), pint_delay, 1e-12
@@ -105,7 +105,7 @@ def _bt_make_min() -> tuple:
     params = make_binary_params(
         ("PB", "T0", "A1", "ECC", "OM"),
         [pb, t0_frac, a1, ecc, om_rad],
-        "BinaryBT", epoch_int_values={"T0": t0_int},
+        epoch_int_values={"T0": t0_int},
     )
     n = 10
     toa_data = make_binary_toa_data(np.linspace(54100.0, 54100.9, n))
@@ -167,7 +167,7 @@ def _dd_make_full() -> tuple:
          "M2", "SINI", "A0", "B0", "DR", "DTH"),
         [pb, t0_frac, a1, ecc, om_rad, omdot_rad_s, gamma, pbdot,
          m2, sini, a0, b0, dr, dth],
-        "BinaryDD", epoch_int_values={"T0": t0_int},
+        epoch_int_values={"T0": t0_int},
     )
     toa_data = make_binary_toa_data(t_mjd)
     return dd, params, toa_data, len(t_mjd), pint_delay, 1e-12
@@ -189,7 +189,7 @@ def _dd_make_min() -> tuple:
     params = make_binary_params(
         ("PB", "T0", "A1", "ECC", "OM", "M2", "SINI"),
         [pb, t0_frac, a1, ecc, om_rad, m2, sini],
-        "BinaryDD", epoch_int_values={"T0": t0_int},
+        epoch_int_values={"T0": t0_int},
     )
     n = 10
     toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
@@ -236,7 +236,7 @@ def _ddgr_make_full() -> tuple:
     params = make_binary_params(
         ("PB", "T0", "A1", "ECC", "OM", "MTOT", "M2"),
         [pb, t0_frac, a1, ecc, om_rad, mtot, m2],
-        "BinaryDDGR", epoch_int_values={"T0": t0_int},
+        epoch_int_values={"T0": t0_int},
     )
     toa_data = make_binary_toa_data(t_mjd)
     return ddgr, params, toa_data, len(t_mjd), pint_delay, 1e-11
@@ -259,7 +259,7 @@ def _ddgr_make_min() -> tuple:
     params = make_binary_params(
         ("PB", "T0", "A1", "ECC", "OM", "MTOT", "M2"),
         [pb, t0_frac, a1, ecc, om_rad, mtot, m2],
-        "BinaryDDGR", epoch_int_values={"T0": t0_int},
+        epoch_int_values={"T0": t0_int},
     )
     n = 10
     toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))
@@ -368,7 +368,6 @@ def _ddk_make_full() -> tuple:
         [pb, t0_frac, a1, ecc, om_rad, m2,
          kin_rad, kom_rad, px,
          ra_rad_p, dec_rad_p, pmra, pmdec, posepoch_frac],
-        components="BinaryDDK",
         epoch_int_values={"T0": t0_int, "POSEPOCH": posepoch_int},
     )
     toa_data = _make_toa_data_base(
@@ -404,7 +403,7 @@ def _ddk_make_min() -> tuple:
     params = make_params(
         ("PB", "T0", "A1", "ECC", "OM", "KIN", "KOM", "PX", "RAJ", "DECJ"),
         [pb, t0_frac, a1, ecc, om_rad, kin_rad, kom_rad, px, ra_rad, dec_rad],
-        components="BinaryDDK", epoch_int_values={"T0": t0_int},
+        epoch_int_values={"T0": t0_int},
     )
     n = 10
     t_mjd = np.linspace(54200.0, 54400.0, n)
@@ -453,7 +452,7 @@ def _ell1_make_full() -> tuple:
     params = make_binary_params(
         ("PB", "TASC", "A1", "EPS1", "EPS2", "M2", "SINI", "PBDOT"),
         [pb, tasc_frac, a1, eps1, eps2, m2, sini, pbdot],
-        "BinaryELL1", epoch_int_values={"TASC": tasc_int},
+        epoch_int_values={"TASC": tasc_int},
     )
     toa_data = make_binary_toa_data(t_mjd)
     return ell1, params, toa_data, len(t_mjd), pint_delay, 1e-12
@@ -476,7 +475,7 @@ def _ell1_make_min() -> tuple:
     params = make_binary_params(
         ("PB", "TASC", "A1", "EPS1", "EPS2", "M2", "SINI"),
         [pb, tasc_frac, a1, eps1, eps2, m2, sini],
-        "BinaryELL1", epoch_int_values={"TASC": tasc_int},
+        epoch_int_values={"TASC": tasc_int},
     )
     n = 10
     toa_data = make_binary_toa_data(np.linspace(54100.1, 54100.9, n))

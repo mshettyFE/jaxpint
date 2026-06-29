@@ -25,11 +25,9 @@ def _make_jump_params(
     names = ["F0"] + list(jump_names) + ["PEPOCH"]
     values = [f0] + list(jump_values) + [0.0]
     units = ["Hz"] + ["s"] * len(jump_names) + ["day"]
-    components = ["Spindown"] + ["PhaseJump"] * len(jump_names) + ["Spindown"]
     return make_params(
         names, values,
         units=tuple(units),
-        components=tuple(components),
         epoch_int_values={"PEPOCH": pepoch_int},
     )
 

@@ -152,7 +152,7 @@ class TestBinaryDDGRvsPINT:
             ddgr_params["MTOT"], ddgr_params["M2"],
         ]
         ddgr_p = make_binary_params(
-            ddgr_param_names, ddgr_param_values, "BinaryDDGR",
+            ddgr_param_names, ddgr_param_values,
             epoch_int_values={"T0": t0_int},
         )
         delay_ddgr = np.array(ddgr(toa_data, ddgr_p, jnp.zeros(n_toas)))
@@ -177,7 +177,6 @@ class TestBinaryDDGRvsPINT:
         ]
         dd_p = make_params(
             dd_param_names, dd_param_values,
-            components="BinaryDD",
             epoch_int_values={"T0": t0_int},
         )
         delay_dd = np.array(dd(toa_data, dd_p, jnp.zeros(n_toas)))
@@ -208,7 +207,7 @@ class TestBinaryDDGRvsPINT:
             ecc_name="ECC", om_name="OM",
             mtot_name="MTOT", m2_name="M2",
         )
-        params_no = make_binary_params(base_names, base_values, "BinaryDDGR", {"T0": t0_int})
+        params_no = make_binary_params(base_names, base_values, {"T0": t0_int})
         d_no = np.array(ddgr_no(toa_data, params_no, jnp.zeros(100)))
 
         # With XOMDOT
@@ -221,7 +220,7 @@ class TestBinaryDDGRvsPINT:
         xomdot_rad_s = 0.5 * _DEG_YR_TO_RAD_S
         params_x = make_binary_params(
             base_names + ("XOMDOT",), base_values + [xomdot_rad_s],
-            "BinaryDDGR", {"T0": t0_int},
+            {"T0": t0_int},
         )
         d_x = np.array(ddgr_x(toa_data, params_x, jnp.zeros(100)))
 

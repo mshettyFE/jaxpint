@@ -236,9 +236,8 @@ class TestPintToasToJax:
         """NGC6440E doesn't compute planet positions by default."""
         _, toas = ngc6440e
         td = pint_toas_to_jax(toas)
-        # planet_positions is None unless planets were computed
-        if td.planet_positions is not None:
-            assert len(td.planet_positions) == 0
+        # No planets computed by default: positions are absent (None) or empty.
+        assert not td.planet_positions
 
     @pytest.mark.slow
     def test_no_wideband_dm(self, ngc6440e):

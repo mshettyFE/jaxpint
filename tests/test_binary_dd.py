@@ -73,7 +73,7 @@ class TestBinaryDDvsPINT:
         param_names = ("PB", "T0", "A1", "ECC", "OM", "OMDOT", "GAMMA", "PBDOT")
         param_values = [dd_params["PB"], t0_frac, dd_params["A1"], dd_params["ECC"],
                         om_rad, dd_params["OMDOT"], dd_params["GAMMA"], dd_params["PBDOT"]]
-        params = make_binary_params(param_names, param_values, "BinaryDD", epoch_int_values={"T0": t0_int})
+        params = make_binary_params(param_names, param_values, epoch_int_values={"T0": t0_int})
 
         toa_data = make_binary_toa_data(np.linspace(54001.0, 54100.0, 200))
         jax_delay = np.array(dd(toa_data, params, jnp.zeros(200)))
@@ -125,7 +125,7 @@ class TestBinaryDDvsPINT:
         param_values = [dd_params["PB"], t0_frac, dd_params["A1"], dd_params["ECC"],
                         om_rad, dd_params["OMDOT"], dd_params["GAMMA"], dd_params["PBDOT"],
                         dd_params["M2"], shapmax]
-        params = make_binary_params(param_names, param_values, "BinaryDD", epoch_int_values={"T0": t0_int})
+        params = make_binary_params(param_names, param_values, epoch_int_values={"T0": t0_int})
 
         toa_data = make_binary_toa_data(np.linspace(54000.5, 54200.0, 300))
         jax_delay = np.array(dds(toa_data, params, jnp.zeros(300)))
