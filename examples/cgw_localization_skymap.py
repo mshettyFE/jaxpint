@@ -191,7 +191,6 @@ def compute_localization_skymap(
     """
     import jax
     import jax.numpy as jnp
-    import equinox as eqx
     from loguru import logger
 
     hp = _import_healpy()
@@ -199,7 +198,7 @@ def compute_localization_skymap(
 
     from jaxpint import load_nanograv_pta
     from jaxpint.pta.likelihood import PTAConfig, pta_logL
-    from jaxpint.pta.params import GlobalParams
+    from jaxpint.types import GlobalParams
     from jaxpint.bayes import ImproperPrior, marginalize_pta
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import quadratic_coeffs
@@ -207,6 +206,7 @@ def compute_localization_skymap(
         h0_for_snr,
         credible_area_deg2,
         gram_at_pixel,
+        make_logL_2sky,
     )
 
     # ---- 1. Load + filter --------------------------------------------------
@@ -289,48 +289,17 @@ def compute_localization_skymap(
     )
 
     # ---- 5. logL closure: full (h_t, h_d, sky_t, sky_d) variation ----------
-    # Both injectors carry the same fixed (cos_inc, psi, phase0, log10_fgw).
+    # Pin the fixed orientation into both injectors, then let make_logL_2sky vary
+    # only their amplitudes and sky positions (frequency stays at gp's value).
     cos_inc_fix, psi_fix, phase0_fix = (float(x) for x in orientation)
-    idx_t = {
-        k: gp._name_to_index[f"cwt_{k}"]
-        for k in ("h0", "cos_gwtheta", "gwphi", "cos_inc", "psi", "phase0")
-    }
-    idx_d = {
-        k: gp._name_to_index[f"cwd_{k}"]
-        for k in ("h0", "cos_gwtheta", "gwphi", "cos_inc", "psi", "phase0")
-    }
-    base_vals = (
-        gp.values.at[idx_t["cos_inc"]]
-        .set(cos_inc_fix)
-        .at[idx_t["psi"]]
-        .set(psi_fix)
-        .at[idx_t["phase0"]]
-        .set(phase0_fix)
-        .at[idx_d["cos_inc"]]
-        .set(cos_inc_fix)
-        .at[idx_d["psi"]]
-        .set(psi_fix)
-        .at[idx_d["phase0"]]
-        .set(phase0_fix)
-    )
-
-    def logL_full(h_t, h_d, sky_t, sky_d):
-        v = (
-            base_vals.at[idx_t["h0"]]
-            .set(h_t)
-            .at[idx_t["cos_gwtheta"]]
-            .set(sky_t[0])
-            .at[idx_t["gwphi"]]
-            .set(sky_t[1])
-            .at[idx_d["h0"]]
-            .set(h_d)
-            .at[idx_d["cos_gwtheta"]]
-            .set(sky_d[0])
-            .at[idx_d["gwphi"]]
-            .set(sky_d[1])
+    gp_fixed = gp
+    for prefix in ("cwt", "cwd"):
+        gp_fixed = (
+            gp_fixed.with_value(f"{prefix}_cos_inc", cos_inc_fix)
+            .with_value(f"{prefix}_psi", psi_fix)
+            .with_value(f"{prefix}_phase0", phase0_fix)
         )
-        gp_new = eqx.tree_at(lambda gg: gg.values, gp, v)
-        return g(gp_new, reduced_pp)
+    logL_full = make_logL_2sky(g, gp_fixed, reduced_pp, "cwt", "cwd")
 
     # ---- 6. Pixel loop: Y → h0(SNR=target) → -Hessian → area --------------
     npix = hp.nside2npix(nside)

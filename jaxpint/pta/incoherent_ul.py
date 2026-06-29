@@ -1,4 +1,4 @@
-"""Real-mode Bayesian CW distance upper limit with the pulsar term marginalized
+"""Bayesian CW distance upper limit with the pulsar term marginalized
 over the (unknown) pulsar **distance**.
 
 At a fixed sky position, GW frequency, and source orientation, each pulsar's CW
@@ -8,9 +8,7 @@ timing residual per unit strain ``h0`` is a 2-template combination::
 
 where ``e_a`` is the Earth-term residual and ``ps_a`` the pulsar-term quadrature
 (the pulsar term at phase Δ=π/2), and ``Δ`` is the pulsar-term phase lag (set by
-the pulsar distance ``L`` via ``Δ_p(L) = 2π f L (1+cos μ) / c``).  (The plan's
-third template ``pc_a`` -- the pulsar term at Δ=0 -- equals ``-e_a`` exactly, so
-this 2-template basis is the full-rank version of the same construction.)
+the pulsar distance ``L`` via ``Δ_p(L) = 2π f L (1+cos μ) / c``).  
 
 Per pulsar we extract the timing-marginalized GLS projections and Gram::
 
@@ -27,13 +25,8 @@ The Δ grid encodes the distance prior: a uniform ``[0, 2π)`` grid is the
 **flat-phase** limit (exact when the prior spans ≫1 phase cycle -- the realistic
 case for ~10% parallaxes, since Δ_p ~ 1e4-1e6 rad), while a distance-derived grid
 ``Δ_p(L_i)`` for ``L_i`` uniform in ``[1/PX − kσ_L, 1/PX + kσ_L]`` keeps the
-parallax information when the prior is sub-cycle.  The per-pulsar marginal MUST be
-formed before summing over pulsars (logsumexp does not commute with the sum).
+parallax information when the prior is sub-cycle.
 
-The posterior ``∝ exp(logL^marg(h0))`` on ``h0 ≥ 0`` is no longer a truncated
-Gaussian, so the 95% upper limit is taken numerically (:func:`h0_95_grid`), then
-converted to a luminosity-distance lower limit via
-:func:`jaxpint.pta.cw_upper_limit.h0_to_distance`.
 """
 
 from __future__ import annotations
@@ -48,7 +41,6 @@ from jaxtyping import Array, Float
 from jaxpint.pta.signals.cw import _C, _KPC_TO_M
 
 
-# --------------------------------------------------------------------------- b, M
 def bM2_coeffs(
     logL2: Callable[[Float[Array, ""], Float[Array, ""]], Float[Array, ""]],
 ) -> tuple[Float[Array, " 2"], Float[Array, "2 2"]]:
