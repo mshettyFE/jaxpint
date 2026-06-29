@@ -356,6 +356,10 @@ TZRSITE       @
 @pytest.fixture(scope="module")
 def fit_data():
     """Generate synthetic multi-frequency TOAs for an ecliptic pulsar."""
+    # Seed numpy's global RNG: make_fake_toas_uniform(add_noise=True) draws from
+    # it, so without this the fit/chi2 assertions below run on a fresh noise
+    # realization each run (flaky).
+    np.random.seed(20240629)
     m_true = get_model(StringIO(_PAR_FIT))
     toas_lo = make_fake_toas_uniform(
         54500, 55500, 30, m_true,

@@ -404,12 +404,12 @@ class TestJitAndGrad:
         params = make_spindown_params(f0=200.0)
 
         fn = jax.jit(model.compute_phase)
-        fn(toa_data, params)  # first call triggers trace
-
-        # Change values but not structure
-        params2 = params.with_value("F0", 300.0)
-        with jax.log_compiles():
-            fn(toa_data, params2)  # should not retrace
+        fn(toa_data, params)  # first call compiles one variant
+        # Same structure, different values -> cache hit, must not recompile.
+        fn(toa_data, params.with_value("F0", 300.0))
+        assert fn._cache_size() == 1, (
+            f"recompiled on same-structure inputs: {fn._cache_size()} cached variants"
+        )
 
 
 # ===========================================================================
@@ -432,12 +432,14 @@ class TestVsPINT:
         return model, toas
 
     @pytest.mark.slow
-    def test_phase_matches_pint(self, ngc6440e):
-        """Absolute phase matches PINT within float64 precision.
+    def test_phase_finite_and_bounded(self, ngc6440e):
+        """Spindown + DispersionDM phase is finite and within expected magnitude.
 
-        This test only validates Spindown + DispersionDM. Astrometry
-        delays are not yet ported, so we expect agreement only after
-        accounting for the missing delay components.
+        This is a smoke/regression check on the phase pipeline, NOT a PINT
+        parity test: PINT's absolute phase includes astrometry and other
+        components this minimal model omits, so the totals are not directly
+        comparable.  (Full PINT phase parity is covered by the bridge/native
+        parity tests.)
         """
         pint_model, toas = ngc6440e
         from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params
@@ -455,18 +457,12 @@ class TestVsPINT:
             phase_components=(spin,),
         )
 
-        # Compute JaxPINT phase
         jax_phase = jax_model.compute_phase(toa_data, params)
 
-        # Compute PINT phase (only Spindown + Dispersion, no astrometry)
-        # We can't directly compare since PINT uses all components.
-        # Instead, verify internal consistency: delay + phase pipeline
-        # produces finite, reasonable values.
         total_phase = jax_phase.int + jax_phase.frac
         assert jnp.all(jnp.isfinite(total_phase))
-        # Phase values: ~200 Hz pulsar over ~300 days ≈ 5e9 cycles.
-        # After TZR subtraction, absolute phases are pulse numbers
-        # relative to TZR epoch — order 10^9 is expected.
+        # ~200 Hz pulsar over ~300 days; pulse numbers relative to the TZR
+        # epoch are of order 1e9, comfortably under 1e11.
         assert jnp.max(jnp.abs(total_phase)) < 1e11
 
     @pytest.mark.slow
@@ -495,6 +491,8 @@ class TestVsPINT:
         shapiro = [c for c in jax_model.delay_components if isinstance(c, SolarSystemShapiroDelay)][0]
         dm = [c for c in jax_model.delay_components if isinstance(c, DispersionDM)][0]
 
+        assert astro.raj_name == "RAJ"
+        assert astro.decj_name == "DECJ"
         assert shapiro.planet_shapiro is False
         assert dm.dm_param_names == ("DM",)
         # NGC6440E has no DMEPOCH, should fall back to PEPOCH
@@ -526,7 +524,6 @@ class TestVsPINT:
         params = pint_model_to_params(pint_model).params
 
         spin = Spindown(spin_param_names=("F0", "F1"))
-        jax_model = TimingModel(delay_components=(), phase_components=(spin,))
 
         # JaxPINT: Spindown only, no delay, no TZR (actual tdb_int values)
         toa_data_no_tzr = TOAData(

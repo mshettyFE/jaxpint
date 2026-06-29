@@ -1029,12 +1029,12 @@ class TestPTAMarg:
         assert jnp.all(jnp.isfinite(grad.values))
         assert jnp.any(grad.values != 0.0)
 
-    def test_pta_marg_nonlinear_raises_without_allow_nonlinear(self):
-        """A nonlinear marg param raises NotImplementedError by default.
+    def test_pta_marg_linear_params_pass_validation(self):
+        """Linear marg params pass ``validate_linearity=True`` and give a usable result.
 
-        Spindown residuals are linear in F0/F1, so we force a failure by
-        using a tiny tol the data couldn't possibly satisfy under floating-point
-        noise (Hessian is not literally zero due to numerical artifacts).
+        Spindown residuals are exactly linear in F0/F1, so the linearity check
+        does not fire; marginalize_pta returns normally and the marginalized
+        log-likelihood is finite.
         """
         (
             pulsar_names, toa_data_list, timing_models, noise_models,
@@ -1052,10 +1052,7 @@ class TestPTAMarg:
         over = {f"{pn}_F0" for pn in pulsar_names}
         priors = {n: ImproperPrior() for n in over}
 
-        # The linearity test does not fire for linear params even at small
-        # tol, since the Hessian is exactly zero.  Confirm: with the default
-        # tol it passes silently.
-        marginalize_pta(over=over,
+        g, sampled, reduced_skeletons = marginalize_pta(over=over,
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
@@ -1063,3 +1060,7 @@ class TestPTAMarg:
             fiducial_global_params=global_params,
             validate_linearity=True,
         )
+
+        logL = float(g(global_params, reduced_skeletons))
+        assert jnp.isfinite(logL)
+        assert sampled == {}

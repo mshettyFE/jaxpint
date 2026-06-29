@@ -36,12 +36,14 @@ def test_get_model_and_toas_shape(_pinned_clock):
     try:
         parp = examplefile("B1855+09_NANOGrav_dfg+12_TAI.par")
         timp = examplefile("B1855+09_NANOGrav_dfg+12.tim")
-        out = native.get_model_and_toas(parp, timp, ephem=EPHEM,
-                                        include_bipm=True, bipm_version=BIPM)
     except Exception as exc:  # pragma: no cover
-        pytest.skip(f"PINT data unavailable: {exc}")
+        pytest.skip(f"PINT example data unavailable: {exc}")
 
-    model, noise, td = out
+    # Outside the try: a failure in the JaxPINT loader under test must fail the
+    # test, not be swallowed as a skip.
+    model, noise, td = native.get_model_and_toas(
+        parp, timp, ephem=EPHEM, include_bipm=True, bipm_version=BIPM,
+    )
     assert isinstance(model, TimingModel)
     assert isinstance(noise, NoiseModel)
     assert isinstance(td, TOAData)

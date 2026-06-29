@@ -12,7 +12,7 @@ import pytest
 @pytest.fixture
 def b1855():
     """Load B1855+09 (DD binary) from PINT example data."""
-    pint = pytest.importorskip("pint")
+    pytest.importorskip("pint")
     from pint import models, toa
     from pint.config import examplefile
 

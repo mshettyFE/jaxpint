@@ -191,9 +191,10 @@ class TestHelper:
         delay = _ss_obj_shapiro_delay(obj_pos, psr_dir, T_sun)
 
         # r = AU, rcostheta = AU, arg = (AU - AU) / AU = 0 -> clamped to 1e-100
-        # delay = -2 * T_sun * log(1e-100) ≈ -2 * 4.925e-6 * (-230.26) ≈ 2.27e-3
+        # delay = -2 * T_sun * log(1e-100) ≈ -2 * 4.925e-6 * (-230.26) ≈ 2.268e-3
         assert jnp.isfinite(delay[0])
         assert delay[0] > 0  # positive delay when pulsar is behind the Sun
+        assert jnp.isclose(delay[0], 2.2682724e-3, rtol=1e-6)
 
     def test_perpendicular_direction(self):
         """Pulsar perpendicular to Sun direction: moderate delay."""

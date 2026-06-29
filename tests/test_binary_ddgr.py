@@ -56,7 +56,8 @@ class TestBinaryDDGRvsPINT:
         # Extract PINT PK values (SINI is an array over TOAs, take first)
         pint_sini = float(np.asarray(bm.SINI.decompose().value).flat[0])
         pint_gamma = float(np.asarray(bm.GAMMA.to(u.s).value).flat[0])
-        pint_pbdot = float(np.asarray(bm.PBDOT.decompose().value).flat[0])
+        # PBDOT is out of scope here -- the JaxPINT PK derivation below covers
+        # SINI/GAMMA/k/DR/DTH only.
         pint_dr = float(np.asarray(bm.DR.decompose().value).flat[0])
         pint_dth = float(np.asarray(bm.DTH.decompose().value).flat[0])
         pint_k = float(np.asarray(bm.k.decompose().value).flat[0])
