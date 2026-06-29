@@ -11,7 +11,7 @@ Priors are *not* keyed by parameter name — they hold only the prior's
 shape and values.  Association with parameter names lives one level up,
 in the user-constructed ``dict[str, Prior]`` that downstream helpers
 (:mod:`jaxpint.bayes.defaults`, :func:`combine_log_prob`,
-:mod:`jaxpint.bayes.marginal`) consume.
+``jaxpint.bayes.marginal``) consume.
 
 All priors are :class:`equinox.Module` subclasses, so they are
 automatically registered as JAX pytrees and compose with ``jax.jit``,
@@ -212,7 +212,7 @@ class Gaussian(Prior):
 
     Used for informative priors derived from independent measurements
     (par-file fits, VLBI distances, etc.).  When marginalized analytically
-    inside :mod:`jaxpint.bayes.marginal`, ``sigma**2`` enters
+    inside ``jaxpint.bayes.marginal``, ``sigma**2`` enters
     the Woodbury regularizer in place of the improper ``1e40``.
 
     Examples
@@ -260,7 +260,7 @@ class ImproperPrior(Prior):
     Use this for parameters that should be analytically marginalized
     with no prior information (the standard treatment of timing-model
     parameters in NANOGrav workflows).  Inside the
-    :mod:`jaxpint.bayes.marginal` functions, an :class:`ImproperPrior`
+    ``jaxpint.bayes.marginal`` functions, an :class:`ImproperPrior`
     triggers the ``Phi = 1e40`` Woodbury regularizer that produces the
     discovery-equivalent flat-prior projection.
 

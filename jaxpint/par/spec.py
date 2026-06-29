@@ -14,7 +14,7 @@ the tables the parser consumes:
 - ``spec_for(name)`` -- spec for a known name (default float if undeclared-but-known)
 
 Built lazily and cached on first access: the ``(class, owner)`` pairs come from
-:mod:`jaxpint.par.registry_table`, which resolves the component classes with
+``jaxpint.par.registry_table``, which resolves the component classes with
 function-local imports.  So this is robust to import order, ``jaxpint.par`` never
 imports PINT, and there is no cycle (this module imports no component class;
 components import ``ParamDecl`` from :mod:`jaxpint.components` and never import

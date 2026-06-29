@@ -103,7 +103,7 @@ def correct(
     Parameters
     ----------
     raw_toas:
-        Parsed, pre-correction TOAs from :func:`jaxpint.tim.read_tim` (MJD still
+        Parsed, pre-correction TOAs from ``jaxpint.tim.read_tim`` (MJD still
         in the raw site/UTC time scale).
     include_bipm:
         Apply the TT(TAI)->TT(BIPM) realization refinement (default True).
@@ -111,7 +111,7 @@ def correct(
         BIPM realization, e.g. ``"BIPM2023"``; defaults to the metadata
         ``default_bipm``.
     limits:
-        Out-of-range policy passed to each :meth:`ClockFile.evaluate`
+        Out-of-range policy passed to each ``ClockFile.evaluate``
         (``"warn"`` | ``"error"`` | ``"ignore"``).
 
     Returns

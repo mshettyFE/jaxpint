@@ -38,12 +38,12 @@ class BaseFitResult:
 
     @property
     def parameter_uncertainties(self) -> Float[Array, " n_free"]:
-        """1-sigma marginal errors: square root of the covariance diagonal."""
+        """Square root of the covariance diagonal (1-sigma marginal errors)."""
         return jnp.sqrt(jnp.diag(self.covariance_matrix))
 
     @property
     def correlation_matrix(self) -> Float[Array, "n_free n_free"]:
-        """Covariance rescaled to unit diagonal: ``D^-1 C D^-1`` with
+        """Correlation matrix -- covariance rescaled to unit diagonal, ``D^-1 C D^-1`` with
         ``D = diag(sigma)``. Zero-variance rows/cols are left unscaled."""
         errors = jnp.sqrt(jnp.diag(self.covariance_matrix))
         errors_safe = jnp.where(errors == 0, 1.0, errors)
@@ -75,9 +75,9 @@ class IterationState:
 class BaseFitter(ABC):
     """Base for all JaxPINT fitters.
 
-    Subclasses implement :meth:`_build_result` (turns the final
-    :class:`IterationState` into a fitter-specific result) and :meth:`fit_toas`,
-    whose body computes the SVD threshold, runs :meth:`_gauss_newton` with a
+    Subclasses implement ``_build_result`` (turns the final
+    ``IterationState`` into a fitter-specific result) and :meth:`fit_toas`,
+    whose body computes the SVD threshold, runs ``_gauss_newton`` with a
     per-fitter step callable, and returns ``self._build_result(state)``.
 
     Parameters

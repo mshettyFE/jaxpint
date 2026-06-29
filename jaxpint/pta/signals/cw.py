@@ -247,7 +247,7 @@ def log10_strain_from_binary(
 class CWInjector(SignalInjector):
     """Injects a single continuous gravitational wave source.
 
-    Subclasses :class:`~jaxpint.pta.likelihood.SignalInjector`.  Uses a naming *prefix*
+    Subclasses :class:`~jaxpint.pta.injectors.SignalInjector`.  Uses a naming *prefix*
     (e.g. ``'cw0_'``, ``'cw1_'``) so that multiple CW sources can coexist
     in the same :class:`~jaxpint.types.GlobalParams`.
 
@@ -604,7 +604,7 @@ class CWInjectorStack(SignalInjector):
     that uses ``jax.vmap`` over sources.  JIT compilation time is O(1) in
     the number of sources instead of O(M).
 
-    Implements the :class:`~jaxpint.pta.likelihood.SignalInjector` protocol,
+    Implements the :class:`~jaxpint.pta.injectors.SignalInjector` protocol,
     so it works as a drop-in replacement in :class:`PTAConfig`.
 
     Parameters

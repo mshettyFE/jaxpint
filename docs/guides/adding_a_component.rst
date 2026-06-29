@@ -9,7 +9,7 @@ the worked example.
 
 Adding a component touches four files: the class itself, the
 :class:`~jaxpint.par.registry.Component` enum, the component table in
-:mod:`jaxpint.par.registry_table`, and the builder in
+``jaxpint.par.registry_table``, and the builder in
 :mod:`jaxpint.model_builder` (plus the package ``__init__`` exports). The table
 is the **single source of truth**: the parser vocabulary, auto-detection,
 execution order, and the optional PINT-bridge name all *derive* from one
@@ -62,7 +62,7 @@ and implement the physics:
 The ``__call__`` signature depends on the base class -- all three take
 ``(self, toa_data, params, delay)``, but a :class:`~jaxpint.components.DelayComponent`
 returns a seconds array, a :class:`~jaxpint.components.PhaseComponent` returns a
-:class:`~jaxpint.dual_float.DualFloat`, and a
+:class:`~jaxpint.types.DualFloat`, and a
 :class:`~jaxpint.components.NoiseComponent` instead implements ``covariance(...)``
 returning the Woodbury triple ``(N_diag, U, Phi_diag)``. Read the base classes
 in :mod:`jaxpint.components` for the exact contracts.
@@ -88,10 +88,10 @@ the component table, and the builder all key off:
 3. Register it in the component table
 -------------------------------------
 
-This is the consolidated step. In :mod:`jaxpint.par.registry_table` -- the
+This is the consolidated step. In ``jaxpint.par.registry_table`` -- the
 single source of truth -- do two small edits:
 
-**(a)** Add a :class:`~jaxpint.par.registry_table.ComponentSpec` to the
+**(a)** Add a ``jaxpint.par.registry_table.ComponentSpec`` to the
 ``COMPONENTS`` tuple. This one line carries the component's identity, its PINT
 class name(s) (for the optional bridge), and its execution order:
 
@@ -129,7 +129,7 @@ enum):
   ``.par`` file. You never declare triggers by hand.
 - **Execution order** -- ``DEFAULT_ORDER`` / ``PRIORITY`` in
   ``jaxpint/_component_order.py`` derive from the ``order=`` field (see step 4).
-- **PINT bridge** -- ``PINT_COMPONENT_MAP`` in :mod:`jaxpint.par.components`
+- **PINT bridge** -- ``PINT_COMPONENT_MAP`` in ``jaxpint.par.components``
   derives from the ``pint_names`` tuple; the optional bridge uses it to detect
   the component from an in-memory PINT model. Omit ``pint_names`` (defaults to
   ``()``) if there is no corresponding PINT class.
