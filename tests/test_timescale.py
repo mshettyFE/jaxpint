@@ -8,6 +8,7 @@ posvel tests, which are marked slow.
 
 from __future__ import annotations
 
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -53,14 +54,17 @@ def test_doppler_shift_basic():
     from jaxpint.utils import doppler_shift_freq
     from jaxpint.constants import C_KM_PER_S
 
-    freq = np.array([1400.0])
+    # doppler_shift_freq is in the jax-core (jaxpint.utils), which is runtime
+    # shape-checked against Float[jax.Array, ...] under conftest's hook, so the
+    # inputs must be JAX arrays.
+    freq = jnp.array([1400.0])
     # velocity purely along L_hat: shift = -v/c
-    l_hat = np.array([[1.0, 0.0, 0.0]])
-    vel = np.array([[30.0, 0.0, 0.0]])  # km/s
+    l_hat = jnp.array([[1.0, 0.0, 0.0]])
+    vel = jnp.array([[30.0, 0.0, 0.0]])  # km/s
     out = np.asarray(doppler_shift_freq(freq, vel, l_hat))
     assert out[0] == pytest.approx(1400.0 * (1 - 30.0 / C_KM_PER_S))
     # zero velocity -> topocentric unchanged
-    out0 = np.asarray(doppler_shift_freq(freq, np.zeros((1, 3)), l_hat))
+    out0 = np.asarray(doppler_shift_freq(freq, jnp.zeros((1, 3)), l_hat))
     assert out0[0] == pytest.approx(1400.0)
 
 
@@ -76,11 +80,11 @@ def test_precompute_staleness_below_ns():
     """
     from jaxpint.utils import doppler_shift_freq
 
-    f_topo = np.array([1400.0])           # MHz
-    v_obs = np.array([[30.0, 0.0, 0.0]])  # km/s (max observatory speed scale)
+    f_topo = jnp.array([1400.0])           # MHz
+    v_obs = jnp.array([[30.0, 0.0, 0.0]])  # km/s (max observatory speed scale)
 
     def lhat(ra, dec):
-        return np.array(
+        return jnp.array(
             [[np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)]]
         )
 
