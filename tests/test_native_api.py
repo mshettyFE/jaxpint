@@ -138,12 +138,13 @@ def test_get_model_omits_toa_noise(_pinned_clock):
 
     parp = examplefile("B1855+09_NANOGrav_9yv1.gls.par")  # has ECORR + red noise
     timp = examplefile("B1855+09_NANOGrav_9yv1.tim")
-    try:
-        _m_only, noise_only = native.get_model(parp)
-        _m_full, noise_full, _td = native.get_model_and_toas(
-            parp, timp, ephem=EPHEM, include_bipm=True, bipm_version=BIPM)
-    except Exception as exc:  # pragma: no cover
-        pytest.skip(f"PINT data unavailable: {exc}")
+    # native.get_model / get_model_and_toas ARE the code under test -- call them
+    # directly. A failure here is a real bug and must surface, not be swallowed
+    # as a "PINT data unavailable" skip (the example-file lookups above are the
+    # only data-availability step, and they are outside any skip guard).
+    _m_only, noise_only = native.get_model(parp)
+    _m_full, noise_full, _td = native.get_model_and_toas(
+        parp, timp, ephem=EPHEM, include_bipm=True, bipm_version=BIPM)
 
     n_only = len(getattr(noise_only, "correlated", ()) or ())
     n_full = len(getattr(noise_full, "correlated", ()) or ())

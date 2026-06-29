@@ -219,8 +219,10 @@ class TestPolymorphism:
         assert Gaussian(0, 1).is_proper is True
         assert ImproperPrior().is_proper is False
 
-    def test_uniform_dispatch(self):
-        # Same call signature works across shapes.
+    def test_log_prob_shape_preserved_across_types(self):
+        # log_prob has the same call signature and is shape-preserving across
+        # every Prior subclass (this is a dispatch/broadcasting check, not a
+        # Uniform-specific one -- it exercises Uniform, Gaussian and Improper).
         priors = [Uniform(0, 1), Gaussian(0.5, 0.1), ImproperPrior()]
         x = jnp.array(0.5)
         results = [p.log_prob(x) for p in priors]

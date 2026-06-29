@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import warnings
+from unittest.mock import patch
 
 import astropy.units as u
 import equinox as eqx
@@ -481,25 +482,40 @@ class TestLinearityCheck:
         assert jnp.isfinite(likelihood_marg(skel))
 
     def test_skip_validation_skips_hessian(self, synth_objects):
-        """validate_linearity=False should produce the same result for linear
-        params but without computing the Hessian."""
+        """validate_linearity=False must actually skip the linearity check (the
+        Hessian-based ``_check_linearity``) while producing the same result for
+        linear params.
+
+        We can't observe the skip behaviorally here -- the synthetic params
+        (F0/F1/DM) are all linear, so validation never rejects anything either
+        way -- so assert directly that the check is called when on and not when
+        off, using ``wraps=`` to keep the real behavior.
+        """
+        import jaxpint.bayes.marginal as marginal_mod
+
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
+        kwargs = dict(
+            over={"F0"}, priors=priors, toa_data=toa_data,
+            timing_model=jax_model, noise_model=noise_model,
+            fiducial_params=params,
+        )
 
-        likelihood_marg_check, _, skel_check = marginalize_single_pulsar(over={"F0"},
-            priors=priors, toa_data=toa_data, timing_model=jax_model,
-            noise_model=noise_model, fiducial_params=params,
-            validate_linearity=True,
-        )
-        likelihood_marg_skip, _, skel_skip = marginalize_single_pulsar(over={"F0"},
-            priors=priors, toa_data=toa_data, timing_model=jax_model,
-            noise_model=noise_model, fiducial_params=params,
-            validate_linearity=False,
-        )
+        with patch.object(marginal_mod, "_check_linearity",
+                          wraps=marginal_mod._check_linearity) as check:
+            likelihood_check, _, skel_check = marginalize_single_pulsar(
+                **kwargs, validate_linearity=True)
+        check.assert_called_once()
+
+        with patch.object(marginal_mod, "_check_linearity",
+                          wraps=marginal_mod._check_linearity) as check:
+            likelihood_skip, _, skel_skip = marginalize_single_pulsar(
+                **kwargs, validate_linearity=False)
+        check.assert_not_called()
 
         npt.assert_allclose(
-            float(likelihood_marg_check(skel_check)),
-            float(likelihood_marg_skip(skel_skip)),
+            float(likelihood_check(skel_check)),
+            float(likelihood_skip(skel_skip)),
             rtol=1e-12,
         )
 

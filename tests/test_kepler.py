@@ -123,7 +123,9 @@ class TestCommonOrbital:
         orbits = jnp.array([0.0, 0.5, 1.0, 1.25, 2.75])
         M = compute_mean_anomaly(orbits)
         assert jnp.all(M >= 0.0)
-        assert jnp.all(M < 2.0 * jnp.pi + 1e-10)
+        # Strict upper bound: the interval is half-open [0, 2*pi), so a failure
+        # to wrap (returning exactly/above 2*pi) must fail here.
+        assert jnp.all(M < 2.0 * jnp.pi)
 
     def test_ecc_time_dependence(self):
         """Eccentricity evolves linearly with time."""
