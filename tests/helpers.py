@@ -32,6 +32,23 @@ def make_binary_params(param_names, param_values, epoch_int_values=None):
     )
 
 
+def ddk_earth_obs_pos_km(t_mjd):
+    """Earth-orbit SSB observatory position (km), circular J2000 approximation.
+
+    Shared by the DDK binary tests (``test_binary_common.py`` /
+    ``test_binary_ddk.py``), which both need a realistic ``ssb_obs_pos`` to
+    exercise the Kopeikin (K96) terms.
+    """
+    t_mjd = np.asarray(t_mjd)
+    au_km = 149597870.7
+    phase = 2 * np.pi * (t_mjd - 51544.5) / 365.25
+    return np.column_stack([
+        au_km * np.cos(phase),
+        au_km * np.sin(phase),
+        np.zeros_like(phase),
+    ])
+
+
 def make_gbt_toa_data(
     n_toas=5, *, tdb_int=59000.0, tdb_frac=None, freq=1400.0,
     t_mjd=None,

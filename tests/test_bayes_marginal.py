@@ -186,9 +186,10 @@ class TestAnalyticCorrectness:
 
         # WLS posterior σ for F1 — sets the natural integration scale.
         idx_F1 = params.param_index("F1")
-        from jaxpint.fitters._base import compute_time_residuals as _crt
         J_full = jax.jacobian(
-            lambda v: _crt(jax_model, toa_data, eqx.tree_at(lambda p: p.values, params, v))
+            lambda v: compute_time_residuals(
+                jax_model, toa_data, eqx.tree_at(lambda p: p.values, params, v)
+            )
         )(params.values)
         M_col = J_full[:, idx_F1]
         Ndiag = noise_model.scaled_sigma(toa_data, params) ** 2
@@ -271,9 +272,10 @@ class TestAnalyticCorrectness:
         # --- Build Fisher matrix and ML offset for the (F1, F2) block ---
         idx_F1 = params.param_index("F1")
         idx_F2 = params.param_index("F2")
-        from jaxpint.fitters._base import compute_time_residuals as _crt
         J_full = jax.jacobian(
-            lambda v: _crt(jax_model, toa_data, eqx.tree_at(lambda p: p.values, params, v))
+            lambda v: compute_time_residuals(
+                jax_model, toa_data, eqx.tree_at(lambda p: p.values, params, v)
+            )
         )(params.values)
         M = J_full[:, jnp.array([idx_F1, idx_F2])]            # (n_toas, 2)
         Ndiag = noise_model.scaled_sigma(toa_data, params) ** 2

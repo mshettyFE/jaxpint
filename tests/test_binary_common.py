@@ -23,6 +23,7 @@ import numpy.testing as npt
 import pytest
 
 from tests.helpers import (
+    ddk_earth_obs_pos_km,
     make_binary_params,
     make_binary_toa_data,
     make_params,
@@ -31,7 +32,6 @@ from tests.helpers import (
 
 
 _DEG_YR_TO_RAD_S = np.pi / 180.0 / (365.25 * 86400.0)
-_AU_KM = 149597870.7
 
 
 @dataclass(frozen=True)
@@ -271,16 +271,6 @@ def _ddgr_make_min() -> tuple:
 # ---------------------------------------------------------------------------
 
 
-def _ddk_obs_pos_km(t_mjd: np.ndarray) -> np.ndarray:
-    """Earth-orbit circular approximation, J2000 epoch (matches PINT DDK setup)."""
-    phase = 2 * np.pi * (t_mjd - 51544.5) / 365.25
-    return np.column_stack([
-        _AU_KM * np.cos(phase),
-        _AU_KM * np.sin(phase),
-        np.zeros_like(phase),
-    ])
-
-
 def _ddk_toa_data_with_obs_pos(t_mjd: np.ndarray):
     toa_data = _make_toa_data_base(
         t_mjd=t_mjd,
@@ -289,7 +279,7 @@ def _ddk_toa_data_with_obs_pos(t_mjd: np.ndarray):
     )
     return eqx.tree_at(
         lambda t: t.ssb_obs_pos, toa_data,
-        jnp.array(_ddk_obs_pos_km(t_mjd)),
+        jnp.array(ddk_earth_obs_pos_km(t_mjd)),
     )
 
 
@@ -323,7 +313,7 @@ def _ddk_make_full() -> tuple:
         "PMLAT_DDK": pmdec * u.mas / u.yr,
         "K96": True,
     }
-    obs_pos_km = _ddk_obs_pos_km(t_mjd)
+    obs_pos_km = ddk_earth_obs_pos_km(t_mjd)
     obs_pos_q = obs_pos_km * u.km
     ra_rad = ra_deg * np.pi / 180.0
     dec_rad = dec_deg * np.pi / 180.0

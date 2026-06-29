@@ -69,54 +69,36 @@ class TestWidebandTOAConversion:
     """Verify wideband DM data is correctly converted to JaxPINT."""
 
     @pytest.mark.slow
-    def test_dm_values_present(self, jax_wb):
+    @pytest.mark.parametrize("attr", ["dm_values", "dm_errors"])
+    def test_dm_field_present(self, jax_wb, attr):
         _, toa_data, _, _ = jax_wb
-        assert toa_data.dm_values is not None
+        assert getattr(toa_data, attr) is not None
 
     @pytest.mark.slow
-    def test_dm_errors_present(self, jax_wb):
-        _, toa_data, _, _ = jax_wb
-        assert toa_data.dm_errors is not None
-
-    @pytest.mark.slow
-    def test_dm_values_shape(self, jax_wb, pint_wb):
+    @pytest.mark.parametrize("attr", ["dm_values", "dm_errors"])
+    def test_dm_field_shape(self, jax_wb, pint_wb, attr):
         _, toa_data, _, _ = jax_wb
         _, toas = pint_wb
-        assert toa_data.dm_values.shape == (toas.ntoas,)
+        assert getattr(toa_data, attr).shape == (toas.ntoas,)
 
     @pytest.mark.slow
-    def test_dm_errors_shape(self, jax_wb, pint_wb):
+    @pytest.mark.parametrize("attr", ["dm_values", "dm_errors"])
+    def test_dm_field_positive(self, jax_wb, attr):
         _, toa_data, _, _ = jax_wb
-        _, toas = pint_wb
-        assert toa_data.dm_errors.shape == (toas.ntoas,)
+        assert jnp.all(getattr(toa_data, attr) > 0)
 
     @pytest.mark.slow
-    def test_dm_values_match_pint(self, jax_wb, pint_wb):
+    @pytest.mark.parametrize(
+        "attr, pint_getter",
+        [("dm_values", "get_dms"), ("dm_errors", "get_dm_errors")],
+    )
+    def test_dm_field_matches_pint(self, jax_wb, pint_wb, attr, pint_getter):
         _, toa_data, _, _ = jax_wb
         _, toas = pint_wb
-        pint_dms = toas.get_dms().to(u.pc / u.cm**3).value
+        pint_vals = getattr(toas, pint_getter)().to(u.pc / u.cm**3).value
         npt.assert_allclose(
-            np.array(toa_data.dm_values), pint_dms, rtol=1e-14,
+            np.array(getattr(toa_data, attr)), pint_vals, rtol=1e-14,
         )
-
-    @pytest.mark.slow
-    def test_dm_errors_match_pint(self, jax_wb, pint_wb):
-        _, toa_data, _, _ = jax_wb
-        _, toas = pint_wb
-        pint_dme = toas.get_dm_errors().to(u.pc / u.cm**3).value
-        npt.assert_allclose(
-            np.array(toa_data.dm_errors), pint_dme, rtol=1e-14,
-        )
-
-    @pytest.mark.slow
-    def test_dm_values_positive(self, jax_wb):
-        _, toa_data, _, _ = jax_wb
-        assert jnp.all(toa_data.dm_values > 0)
-
-    @pytest.mark.slow
-    def test_dm_errors_positive(self, jax_wb):
-        _, toa_data, _, _ = jax_wb
-        assert jnp.all(toa_data.dm_errors > 0)
 
 
 # ---------------------------------------------------------------------------
@@ -641,18 +623,13 @@ class TestWidebandFitVsPINT:
         assert jax_wb_fit.chi2 < chi2_pre
 
     @pytest.mark.slow
-    def test_f0_matches(self, pint_wb_fit, jax_wb_fit):
-        pint_val = float(pint_wb_fit.model.F0.value)
-        jax_val = float(jax_wb_fit.params.param_value("F0"))
-        pint_err = float(pint_wb_fit.model.F0.uncertainty_value)
-        assert abs(jax_val - pint_val) < 3 * pint_err
-
-    @pytest.mark.slow
-    def test_f1_matches(self, pint_wb_fit, jax_wb_fit):
-        pint_val = float(pint_wb_fit.model.F1.value)
-        jax_val = float(jax_wb_fit.params.param_value("F1"))
-        pint_err = float(pint_wb_fit.model.F1.uncertainty_value)
-        assert abs(jax_val - pint_val) < 3 * pint_err
+    @pytest.mark.parametrize("name", ["F0", "F1"])
+    def test_fitted_param_matches_pint(self, pint_wb_fit, jax_wb_fit, name):
+        pint_param = getattr(pint_wb_fit.model, name)
+        pint_val = float(pint_param.value)
+        pint_err = float(pint_param.uncertainty_value)
+        jax_val = float(jax_wb_fit.params.param_value(name))
+        assert abs(jax_val - pint_val) < 3 * pint_err, name
 
     @pytest.mark.slow
     def test_uncertainties_positive(self, jax_wb_fit):

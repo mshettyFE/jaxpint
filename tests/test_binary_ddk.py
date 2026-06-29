@@ -6,7 +6,11 @@ import numpy.testing as npt
 import pytest
 
 
-from tests.helpers import make_toa_data as _make_toa_data_base, make_params
+from tests.helpers import (
+    ddk_earth_obs_pos_km,
+    make_toa_data as _make_toa_data_base,
+    make_params,
+)
 
 
 
@@ -58,15 +62,9 @@ class TestBinaryDDKvsPINT:
         }
         t = t_mjd * u.day
 
-        # Generate realistic SSB obs_pos using Earth orbit
-        # Simple circular approximation: Earth at 1 AU
-        phase = 2 * np.pi * (t_mjd - 51544.5) / 365.25  # J2000 epoch
-        AU_km = 149597870.7
-        obs_pos = np.column_stack([
-            AU_km * np.cos(phase),
-            AU_km * np.sin(phase),
-            np.zeros_like(phase),
-        ]) * u.km
+        # Realistic SSB obs_pos (Earth orbit, circular J2000 approximation) --
+        # shared with test_binary_common.py's DDK setup.
+        obs_pos = ddk_earth_obs_pos_km(t_mjd) * u.km
 
         # Pulsar direction unit vector
         ra_rad = ddk_params["RAJ"]

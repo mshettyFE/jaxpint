@@ -15,6 +15,21 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+
+def _find_correlated(noise_model, cls):
+    """Return the correlated-noise component of type ``cls`` from a JaxPINT
+    noise model, failing clearly if it is absent.
+
+    Replaces the loop/break/``X_jax = None`` pattern this file repeated for
+    each noise type -- crucially, the assertion is built in, so a model that
+    unexpectedly lacks the component fails loudly instead of passing vacuously
+    (one site previously omitted the guard entirely).
+    """
+    comp = next((c for c in noise_model.correlated if isinstance(c, cls)), None)
+    assert comp is not None, f"{cls.__name__} not found in JaxPINT noise model"
+    return comp
+
+
 # ---------------------------------------------------------------------------
 # Fixtures — synthetic PINT models with noise parameters
 # ---------------------------------------------------------------------------
@@ -209,12 +224,7 @@ class TestPLRedNoiseVsPINT:
 
         # Find PLRedNoise component
         from jaxpint.noise.red_noise import PLRedNoise
-        plred_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLRedNoise):
-                plred_jax = comp
-                break
-        assert plred_jax is not None, "PLRedNoise not found in JaxPINT noise model"
+        plred_jax = _find_correlated(noise_model, PLRedNoise)
 
         jax_basis = np.array(plred_jax.fourier_basis)
 
@@ -238,12 +248,7 @@ class TestPLRedNoiseVsPINT:
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.red_noise import PLRedNoise
-        plred_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLRedNoise):
-                plred_jax = comp
-                break
-        assert plred_jax is not None
+        plred_jax = _find_correlated(noise_model, PLRedNoise)
 
         jax_weights = np.array(plred_jax.psd_weights(params))
 
@@ -269,13 +274,8 @@ class TestPLRedNoiseVsPINT:
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.red_noise import PLRedNoise
-        plred_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLRedNoise):
-                plred_jax = comp
-                break
+        plred_jax = _find_correlated(noise_model, PLRedNoise)
 
-        assert plred_jax is not None
         _, U, Phi = plred_jax.covariance(toa_data, params)
         jax_cov = np.array(U @ jnp.diag(Phi) @ U.T)
 
@@ -312,12 +312,7 @@ class TestPLDMNoiseVsPINT:
         _tm, noise_model = build_timing_model(pint_model, toas)
 
         from jaxpint.noise.dm_noise import PLDMNoise
-        pldm_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLDMNoise):
-                pldm_jax = comp
-                break
-        assert pldm_jax is not None, "PLDMNoise not found in JaxPINT noise model"
+        pldm_jax = _find_correlated(noise_model, PLDMNoise)
 
         jax_basis = np.array(pldm_jax.fourier_basis)
 
@@ -341,12 +336,7 @@ class TestPLDMNoiseVsPINT:
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.dm_noise import PLDMNoise
-        pldm_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLDMNoise):
-                pldm_jax = comp
-                break
-        assert pldm_jax is not None
+        pldm_jax = _find_correlated(noise_model, PLDMNoise)
 
         jax_weights = np.array(pldm_jax.psd_weights(params))
 
@@ -371,13 +361,8 @@ class TestPLDMNoiseVsPINT:
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.dm_noise import PLDMNoise
-        pldm_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLDMNoise):
-                pldm_jax = comp
-                break
+        pldm_jax = _find_correlated(noise_model, PLDMNoise)
 
-        assert pldm_jax is not None
         _, U, Phi = pldm_jax.covariance(toa_data, params)
         jax_cov = np.array(U @ jnp.diag(Phi) @ U.T)
 
@@ -400,11 +385,7 @@ class TestPLDMNoiseVsPINT:
         _tm, noise_model = build_timing_model(pint_model, toas)
 
         from jaxpint.noise.dm_noise import PLDMNoise
-        pldm_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLDMNoise):
-                pldm_jax = comp
-                break
+        pldm_jax = _find_correlated(noise_model, PLDMNoise)
 
         basis = np.array(pldm_jax.fourier_basis)
 
@@ -454,12 +435,7 @@ class TestPLChromNoiseVsPINT:
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.chrom_noise import PLChromNoise
-        plchrom_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLChromNoise):
-                plchrom_jax = comp
-                break
-        assert plchrom_jax is not None, "PLChromNoise not found in JaxPINT noise model"
+        plchrom_jax = _find_correlated(noise_model, PLChromNoise)
 
         # PLChromNoise computes scaled basis at runtime
         _, U, _ = plchrom_jax.covariance(toa_data, params)
@@ -485,12 +461,7 @@ class TestPLChromNoiseVsPINT:
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.chrom_noise import PLChromNoise
-        plchrom_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLChromNoise):
-                plchrom_jax = comp
-                break
-        assert plchrom_jax is not None
+        plchrom_jax = _find_correlated(noise_model, PLChromNoise)
 
         jax_weights = np.array(plchrom_jax.psd_weights(params))
 
@@ -515,13 +486,8 @@ class TestPLChromNoiseVsPINT:
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.chrom_noise import PLChromNoise
-        plchrom_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLChromNoise):
-                plchrom_jax = comp
-                break
+        plchrom_jax = _find_correlated(noise_model, PLChromNoise)
 
-        assert plchrom_jax is not None
         _, U, Phi = plchrom_jax.covariance(toa_data, params)
         jax_cov = np.array(U @ jnp.diag(Phi) @ U.T)
 
@@ -561,12 +527,7 @@ class TestPLSWNoiseVsPINT:
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.sw_noise import PLSWNoise
-        plsw_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLSWNoise):
-                plsw_jax = comp
-                break
-        assert plsw_jax is not None, "PLSWNoise not found in JaxPINT noise model"
+        plsw_jax = _find_correlated(noise_model, PLSWNoise)
 
         # PLSWNoise computes scaled basis at runtime
         _, U, _ = plsw_jax.covariance(toa_data, params)
@@ -592,12 +553,7 @@ class TestPLSWNoiseVsPINT:
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.sw_noise import PLSWNoise
-        plsw_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLSWNoise):
-                plsw_jax = comp
-                break
-        assert plsw_jax is not None
+        plsw_jax = _find_correlated(noise_model, PLSWNoise)
 
         jax_weights = np.array(plsw_jax.psd_weights(params))
 
@@ -622,13 +578,8 @@ class TestPLSWNoiseVsPINT:
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.sw_noise import PLSWNoise
-        plsw_jax = None
-        for comp in noise_model.correlated:
-            if isinstance(comp, PLSWNoise):
-                plsw_jax = comp
-                break
+        plsw_jax = _find_correlated(noise_model, PLSWNoise)
 
-        assert plsw_jax is not None
         _, U, Phi = plsw_jax.covariance(toa_data, params)
         jax_cov = np.array(U @ jnp.diag(Phi) @ U.T)
 
