@@ -257,7 +257,7 @@ def compute_skymap(
 
     from jaxpint import load_nanograv_pta
     from jaxpint.pta.likelihood import PTAConfig, pta_logL
-    from jaxpint.pta.params import GlobalParams
+    from jaxpint.types import GlobalParams
     from jaxpint.bayes import ImproperPrior, marginalize_pta
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import (

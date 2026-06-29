@@ -26,6 +26,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.bayes.credible import gaussian_credible_area
+from jaxpint.types import GlobalParams
 
 
 # Solid-angle conversion: (180/π)² deg² per steradian.
@@ -42,6 +43,55 @@ def h0_for_snr(
     """
     Y = jnp.maximum(Y, jnp.finfo(jnp.float64).tiny)
     return snr_target / jnp.sqrt(Y)
+
+
+def make_logL_2sky(
+    g: Callable[[GlobalParams, tuple], Float[Array, ""]],
+    gp: GlobalParams,
+    reduced_pp: tuple,
+    prefix_a: str,
+    prefix_b: str,
+) -> Callable[
+    [Float[Array, ""], Float[Array, ""], Float[Array, " 2"], Float[Array, " 2"]],
+    Float[Array, ""],
+]:
+    """Build the ``(h_a, h_b, sky_a, sky_b)`` log-likelihood for the Gram helpers.
+
+    Parameters
+    ----------
+    g : callable
+        ``(global_params, reduced_pulsar_params) -> scalar`` timing-marginalized
+        PTA log-likelihood — the first return of
+        :func:`jaxpint.bayes.marginalize_pta`.
+    gp : GlobalParams
+        Base global parameters with all fixed CW parameters already set.
+    reduced_pp : tuple of ParameterVector
+        The reduced per-pulsar skeletons returned alongside ``g``; passed through
+        unchanged on every call.
+    prefix_a, prefix_b : str
+        Global-name prefixes of the two CW injectors to vary (e.g. ``"cwt"`` and
+        ``"cwd"``), i.e. their parameters are ``{prefix}_h0``,
+        ``{prefix}_cos_gwtheta``, ``{prefix}_gwphi``.
+
+    Returns
+    -------
+    logL_2sky : callable
+        ``(h_a, h_b, sky_a, sky_b) -> scalar``, ready for
+        :func:`gram_block_at_pair` / :func:`gram_at_pixel`.
+    """
+
+    def logL_2sky(h_a, h_b, sky_a, sky_b):
+        gp_new = (
+            gp.with_value(f"{prefix_a}_h0", h_a)
+            .with_value(f"{prefix_a}_cos_gwtheta", sky_a[0])
+            .with_value(f"{prefix_a}_gwphi", sky_a[1])
+            .with_value(f"{prefix_b}_h0", h_b)
+            .with_value(f"{prefix_b}_cos_gwtheta", sky_b[0])
+            .with_value(f"{prefix_b}_gwphi", sky_b[1])
+        )
+        return g(gp_new, reduced_pp)
+
+    return logL_2sky
 
 
 def gram_at_pixel(

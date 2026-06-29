@@ -274,7 +274,7 @@ When the pulsars are treated as independent (no cross-pulsar correlations), the 
 
 This is what :func:`~jaxpint.pta.pta_logL` computes. It takes three things:
 
-- A :class:`~jaxpint.pta.params.GlobalParams` -- the parameters that are shared across pulsars (e.g. CW source sky location, common red-noise spectral index, …).
+- A :class:`~jaxpint.types.GlobalParams` -- the parameters that are shared across pulsars (e.g. CW source sky location, common red-noise spectral index, …).
 - A ``tuple`` of per-pulsar :class:`~jaxpint.types.ParameterVector` objects -- timing and noise parameters for each pulsar.
 - A :class:`~jaxpint.pta.likelihood.PTAConfig` -- a static bundle of the per-pulsar :class:`~jaxpint.types.TOAData`, :class:`~jaxpint.model.TimingModel`, :class:`~jaxpint.noise.noise_model.NoiseModel`, plus a tuple of :class:`~jaxpint.pta.likelihood.SignalInjector` objects (see below). 
 

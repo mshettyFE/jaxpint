@@ -104,7 +104,6 @@ def compute_multi_source_localization_skymap(
     """
     import jax
     import jax.numpy as jnp
-    import equinox as eqx
     from loguru import logger
 
     hp = _import_healpy()
@@ -112,12 +111,13 @@ def compute_multi_source_localization_skymap(
 
     from jaxpint import load_nanograv_pta
     from jaxpint.pta.likelihood import PTAConfig, pta_logL
-    from jaxpint.pta.params import GlobalParams
+    from jaxpint.types import GlobalParams
     from jaxpint.bayes import ImproperPrior, marginalize_pta
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import quadratic_coeffs
     from jaxpint.pta.cw_localization import (
         h0_for_snr,
+        make_logL_2sky,
         gram_block_at_pair,
         assemble_joint_fisher,
         per_source_credible_areas_deg2,
@@ -202,80 +202,52 @@ def compute_multi_source_localization_skymap(
         allow_nonlinear=True,
     )
 
-    # ---- 5. Index map + base values ----------------------------------------
-    PARAM_NAMES = ("h0", "cos_gwtheta", "gwphi", "cos_inc", "psi", "phase0")
-    idx = {
-        k: {
-            tag: {p: gp._name_to_index[f"cw{k}{tag}_{p}"] for p in PARAM_NAMES}
-            for tag in ("t", "d")
-        }
-        for k in range(K)
-    }
-
+    # ---- 5. Base global params: orientation + fixed-source skies pinned -----
     cos_inc_fix, psi_fix, phase0_fix = (float(x) for x in orientation)
 
-    # base_vals starts with orientation fixed on all 2K injectors, and sky for
-    # sources 1..K-1 bound to their fixed positions. Source 0's sky and all
-    # amplitudes get overridden in the per-pixel closures.
-    base_vals = gp.values
+    def _prefix(k: int, tag: str) -> str:
+        # Global-name prefix of source k's template ("t") / data ("d") injector,
+        # i.e. its params are f"{_prefix(k, tag)}_{h0,cos_gwtheta,gwphi,...}".
+        return f"cw{k}{tag}"
+
+    # Orientation fixed on all 2K injectors; sources 1..K-1 pinned to their fixed
+    # sky positions.  Amplitudes stay at gp's value (0); source 0's sky and the
+    # active pair's amplitudes are set per pixel below.
+    gp_base = gp
     for k in range(K):
         for tag in ("t", "d"):
-            base_vals = (
-                base_vals.at[idx[k][tag]["cos_inc"]]
-                .set(cos_inc_fix)
-                .at[idx[k][tag]["psi"]]
-                .set(psi_fix)
-                .at[idx[k][tag]["phase0"]]
-                .set(phase0_fix)
+            p = _prefix(k, tag)
+            gp_base = (
+                gp_base.with_value(f"{p}_cos_inc", cos_inc_fix)
+                .with_value(f"{p}_psi", psi_fix)
+                .with_value(f"{p}_phase0", phase0_fix)
             )
-    # Bind fixed-source skies.
     for k in range(1, K):
         cgt, gphi = fixed_source_skies[k - 1]
         for tag in ("t", "d"):
-            base_vals = (
-                base_vals.at[idx[k][tag]["cos_gwtheta"]]
-                .set(float(cgt))
-                .at[idx[k][tag]["gwphi"]]
-                .set(float(gphi))
+            p = _prefix(k, tag)
+            gp_base = (
+                gp_base.with_value(f"{p}_cos_gwtheta", float(cgt))
+                .with_value(f"{p}_gwphi", float(gphi))
             )
 
-    # ---- 6. Closure factory: logL pair with source 0 sky bound -------------
-    # Returns a function logL(h_a, h_b, sky_a, sky_b) that activates one specific
-    # injector pair while keeping all other injectors at zero amplitude.
-    # The two activated injectors are at (source idx, tag) = (a_idx, tag_a) and (b_idx, tag_b).
-    # All other injectors of source 0 also have their sky bound to source_0_sky.
+    # ---- 6. Closure factory: a logL pair with source 0's sky bound ---------
+    # make_pair(a, tag_a, b, tag_b) -> (h_a, h_b, sky_a, sky_b) -> scalar, built
+    # by make_logL_2sky: it activates exactly the chosen injector pair, leaving
+    # every other injector at zero amplitude and its pinned sky.
     def make_logL_pair_factory(source_0_sky):
-        # Pre-bind source 0's sky into a copy of base_vals (still leaves the
-        # pair's amplitudes and skies to be set in the closure).
-        v_s0 = base_vals
+        gp_s0 = gp_base
         for tag in ("t", "d"):
-            v_s0 = (
-                v_s0.at[idx[0][tag]["cos_gwtheta"]]
-                .set(source_0_sky[0])
-                .at[idx[0][tag]["gwphi"]]
-                .set(source_0_sky[1])
+            p = _prefix(0, tag)
+            gp_s0 = (
+                gp_s0.with_value(f"{p}_cos_gwtheta", source_0_sky[0])
+                .with_value(f"{p}_gwphi", source_0_sky[1])
             )
 
         def make_pair(a_idx: int, tag_a: str, b_idx: int, tag_b: str):
-            def logL_pair(h_a, h_b, sky_a, sky_b):
-                v = (
-                    v_s0.at[idx[a_idx][tag_a]["h0"]]
-                    .set(h_a)
-                    .at[idx[a_idx][tag_a]["cos_gwtheta"]]
-                    .set(sky_a[0])
-                    .at[idx[a_idx][tag_a]["gwphi"]]
-                    .set(sky_a[1])
-                    .at[idx[b_idx][tag_b]["h0"]]
-                    .set(h_b)
-                    .at[idx[b_idx][tag_b]["cos_gwtheta"]]
-                    .set(sky_b[0])
-                    .at[idx[b_idx][tag_b]["gwphi"]]
-                    .set(sky_b[1])
-                )
-                gp_new = eqx.tree_at(lambda gg: gg.values, gp, v)
-                return g(gp_new, reduced_pp)
-
-            return logL_pair
+            return make_logL_2sky(
+                g, gp_s0, reduced_pp, _prefix(a_idx, tag_a), _prefix(b_idx, tag_b)
+            )
 
         return make_pair
 
