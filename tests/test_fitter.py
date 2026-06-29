@@ -166,25 +166,13 @@ class TestSyntheticFit:
         np.testing.assert_allclose(jax_chi2, pint_chi2, rtol=1e-3)
 
     @pytest.mark.slow
-    def test_f0_matches(self, pint_fit, jax_fit):
-        pint_val = float(pint_fit.model.F0.value)
-        jax_val = float(jax_fit.params.param_value("F0"))
-        pint_err = float(pint_fit.model.F0.uncertainty_value)
-        assert abs(jax_val - pint_val) < 3 * pint_err
-
-    @pytest.mark.slow
-    def test_f1_matches(self, pint_fit, jax_fit):
-        pint_val = float(pint_fit.model.F1.value)
-        jax_val = float(jax_fit.params.param_value("F1"))
-        pint_err = float(pint_fit.model.F1.uncertainty_value)
-        assert abs(jax_val - pint_val) < 3 * pint_err
-
-    @pytest.mark.slow
-    def test_dm_matches(self, pint_fit, jax_fit):
-        pint_val = float(pint_fit.model.DM.value)
-        jax_val = float(jax_fit.params.param_value("DM"))
-        pint_err = float(pint_fit.model.DM.uncertainty_value)
-        assert abs(jax_val - pint_val) < 3 * pint_err
+    @pytest.mark.parametrize("name", ["F0", "F1", "DM"])
+    def test_fitted_param_matches_pint(self, pint_fit, jax_fit, name):
+        pint_param = getattr(pint_fit.model, name)
+        pint_val = float(pint_param.value)
+        pint_err = float(pint_param.uncertainty_value)
+        jax_val = float(jax_fit.params.param_value(name))
+        assert abs(jax_val - pint_val) < 3 * pint_err, name
 
     @pytest.mark.slow
     def test_uncertainties_positive(self, jax_fit):
