@@ -467,7 +467,8 @@ class TestLinearityCheck:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")    # any warning becomes a test failure
-            likelihood_marg, _, _ = marginalize_single_pulsar(over=set(params.free_names()),
+            likelihood_marg, _, skel = marginalize_single_pulsar(
+                over=set(params.free_names()),
                 priors=priors,
                 toa_data=toa_data,
                 timing_model=jax_model,
@@ -476,10 +477,6 @@ class TestLinearityCheck:
                 # defaults: allow_nonlinear=False, validate_linearity=True
             )
         # Ensure the result is well-defined too.
-        _, _, skel = marginalize_single_pulsar(over=set(params.free_names()),
-            priors=priors, toa_data=toa_data, timing_model=jax_model,
-            noise_model=noise_model, fiducial_params=params,
-        )
         assert jnp.isfinite(likelihood_marg(skel))
 
     def test_skip_validation_skips_hessian(self, synth_objects):

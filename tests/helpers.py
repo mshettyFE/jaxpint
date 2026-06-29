@@ -361,6 +361,8 @@ def run_gls_whitening(
     obs_sun_pos=None,
     n_toas=200,
     seed=2024,
+    delay_components=(),
+    extra_free_params=(),
 ):
     """Simulate white + one correlated noise component, GLS-fit, and whiten.
 
@@ -410,13 +412,27 @@ def run_gls_whitening(
     noise_model = NoiseModel(white_noise=white, correlated=(correlated,))
 
     spin = Spindown(spin_param_names=("F0", "F1"))
-    timing_model = TimingModel(delay_components=(), phase_components=(spin,))
+    timing_model = TimingModel(
+        delay_components=tuple(delay_components), phase_components=(spin,)
+    )
+
+    # Extra free timing params (e.g. DM) fit alongside F0/F1; each is a
+    # ``(name, value, unit)`` triple.  ``param_names`` are the frozen
+    # correlated-noise params.
+    free_names = tuple(p[0] for p in extra_free_params)
+    free_values = [p[1] for p in extra_free_params]
+    free_units = tuple(p[2] for p in extra_free_params)
 
     params = make_params(
-        ("F0", "F1", "PEPOCH", "EFAC1", *param_names),
-        [100.0, -1e-15, 0.0, 1.0, *param_values],
-        units=("Hz", "Hz/s", "day", "", *param_units),
-        frozen_mask=(False, False, True, True) + (True,) * len(param_names),
+        ("F0", "F1", "PEPOCH", *free_names, "EFAC1", *param_names),
+        [100.0, -1e-15, 0.0, *free_values, 1.0, *param_values],
+        units=("Hz", "Hz/s", "day", *free_units, "", *param_units),
+        frozen_mask=(
+            (False, False, True)
+            + (False,) * len(free_names)
+            + (True,)
+            + (True,) * len(param_names)
+        ),
         epoch_int_values={"PEPOCH": 53000.0},
     )
 
