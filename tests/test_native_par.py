@@ -57,9 +57,12 @@ def test_parresult_parity_vs_pint(parname):
 
     try:
         path = examplefile(parname)
-        ref = pint_model_to_params(pm.get_model(path))
+        pmod = pm.get_model(path)
     except Exception as exc:
         pytest.skip(f"PINT could not load {parname}: {exc}")
+    # Outside the try: a bug in the JaxPINT bridge/parser under test must fail
+    # the test, not be swallowed as a skip.
+    ref = pint_model_to_params(pmod)
     nat = par.get_model(path)
 
     assert nat.component_set == ref.component_set

@@ -85,6 +85,18 @@ def _make_setup(par_str):
     return toa_data, params, pint_delay, model, jax_swx[0]
 
 
+def _toas_outside(model, startMJD, endMJD, n=10):
+    """JaxPINT TOAData spanning [startMJD, endMJD] (to probe zero-delay
+    behaviour for TOAs that fall outside every SWX bin)."""
+    toas = make_fake_toas_uniform(
+        startMJD=startMJD, endMJD=endMJD, ntoas=n, model=model,
+        freq=1400.0, add_noise=False,
+    )
+    toas.compute_TDBs()
+    toas.compute_posvels()
+    return pint_toas_to_jax(toas, model)
+
+
 @pytest.fixture
 def single_setup():
     """PINT model with a single SWX segment (p=2)."""
@@ -272,39 +284,30 @@ class TestTOAsOutsideBins:
     """TOAs outside all SWX bins get zero delay."""
 
     def test_zero_outside_bins(self, single_setup):
-        toa_data, params, _, _, comp = single_setup
-        jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
+        """TOAs after the single [54000, 56000] segment get exactly zero delay."""
+        _, params, _, model, comp = single_setup
 
-        # The single segment covers [54000, 56000].
-        # TOAs are generated from [54200, 55400], so all should be inside.
-        # Verify by checking PINT also gives nonzero for these.
-        # Now test that truly out-of-range TOAs give zero by checking
-        # that all in-range TOAs are non-zero.
-        toa_mjd = np.array(toa_data.mjd_int + toa_data.mjd_frac)
-        in_range = (toa_mjd >= 54000) & (toa_mjd <= 56000)
-        assert np.all(in_range), "All test TOAs should be in range"
+        out_data = _toas_outside(model, 56100, 56500)
+        out_mjd = np.array(out_data.mjd_int + out_data.mjd_frac)
+        assert np.all(out_mjd > 56000), "probe TOAs must be outside the segment"
+
+        jax_delay = np.array(comp(out_data, params, jnp.zeros(out_data.n_toas)))
+        np.testing.assert_array_equal(jax_delay, 0.0)
 
     def test_zero_in_gap(self, multi_setup):
-        """TOAs outside both segments get zero delay.
+        """In-bin TOAs are nonzero; TOAs past the last segment are exactly zero.
 
-        Multi-segment covers [54000, 54800] and [54800, 55600].
-        TOAs span [54200, 55400], so all should be in one of the bins.
-        TOAs before 54000 or after 55600 would get zero — we verify the
-        structure by checking that in-bin TOAs have nonzero delay.
+        Multi-segment covers [54000, 54800] and [54800, 55600]; the in-range
+        TOAs span [54200, 55400] (all in a bin), so we separately generate
+        probe TOAs after 55600 to exercise the zero-outside-all-bins path.
         """
-        toa_data, params, pint_delay, _, comp = multi_setup
-        jax_delay = np.array(
-            comp(toa_data, params, jnp.zeros(toa_data.n_toas))
-        )
+        toa_data, params, _, model, comp = multi_setup
 
+        in_delay = np.array(comp(toa_data, params, jnp.zeros(toa_data.n_toas)))
         toa_mjd = np.array(toa_data.mjd_int + toa_data.mjd_frac)
-        in_any_bin = ((toa_mjd >= 54000) & (toa_mjd <= 54800)) | (
-            (toa_mjd >= 54800) & (toa_mjd <= 55600)
-        )
+        in_any_bin = (toa_mjd >= 54000) & (toa_mjd <= 55600)
+        assert np.all(in_delay[in_any_bin] != 0.0)
 
-        # TOAs inside bins should have nonzero delay
-        assert np.all(jax_delay[in_any_bin] != 0.0)
-        # TOAs outside bins should have zero delay
-        outside = ~in_any_bin
-        if np.any(outside):
-            np.testing.assert_array_equal(jax_delay[outside], 0.0)
+        out_data = _toas_outside(model, 55700, 56100)
+        out_delay = np.array(comp(out_data, params, jnp.zeros(out_data.n_toas)))
+        np.testing.assert_array_equal(out_delay, 0.0)

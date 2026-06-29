@@ -680,15 +680,19 @@ class TestCWInjectorStack:
         for m in range(3):
             assert jnp.isclose(gp.param_value(f"cw{m}_log10_h"), -11.0)
 
-    def test_jit_time_scales_O1(self):
-        """JIT compilation time should be roughly constant regardless of n_sources."""
-        import time
+    def test_jit_compiles_o1_in_n_sources(self):
+        """Lowered HLO size is O(1) in n_sources (vmap, not an unrolled loop).
 
+        A per-source Python loop would make the compiled program grow ~linearly
+        with n_sources; vmap keeps the HLO structurally identical (only the
+        batch dimension's size changes), so the op count stays ~constant.  This
+        is a deterministic stand-in for the previous wall-clock timing check.
+        """
         positions = self._make_positions(3)
         toa_data = _make_simple_toa_data(50)
         pp = _make_pulsar_params_with_px()
 
-        def make_and_compile(n_cw):
+        def hlo_op_count(n_cw):
             per_src = self._make_per_source_values(n_cw, seed=99)
             inj = CWInjectorStack(positions, n_sources=n_cw,
                                    per_source_values=per_src)
@@ -699,18 +703,16 @@ class TestCWInjectorStack:
                 gp2 = GlobalParams(gp_vals, gp.names, gp._name_to_index)
                 return jnp.sum(inj.delay(0, toa_data, pp, gp2))
 
-            t0 = time.perf_counter()
-            jax.jit(f).lower(gp.values).compile()
-            return time.perf_counter() - t0
+            return jax.jit(f).lower(gp.values).as_text().count("stablehlo.")
 
-        t_small = make_and_compile(2)
-        t_large = make_and_compile(20)
+        ops_small = hlo_op_count(2)
+        ops_large = hlo_op_count(20)
 
-        # With vmap, 20 sources should compile in comparable time to 2.
-        # Allow up to 3x overhead (generous margin for CI variability).
-        assert t_large < t_small * 3, (
-            f"JIT time scaled too much: {t_small:.2f}s (2 CW) vs "
-            f"{t_large:.2f}s (20 CW) — ratio {t_large/t_small:.1f}x"
+        assert ops_small > 0
+        # O(1): 10x more sources must not meaningfully grow the op count.
+        assert ops_large <= ops_small * 1.5, (
+            f"HLO op count scaled with n_sources: {ops_small} (2 CW) vs "
+            f"{ops_large} (20 CW) — expected ~constant under vmap"
         )
 
 
