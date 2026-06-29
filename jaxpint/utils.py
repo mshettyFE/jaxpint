@@ -5,7 +5,7 @@ All functions are JIT-compatible and operate on raw float64 arrays (no units).
 
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
+from typing import Callable, Optional, TYPE_CHECKING
 
 import equinox as eqx
 import numpy as np
@@ -25,6 +25,51 @@ from jaxpint.constants import (
     SECS_PER_DAY,
 )
 from jaxpint.types.dual_float import DualFloat
+
+
+# ---------------------------------------------------------------------------
+# Quadratic-form (Laplace) coefficients of a likelihood
+# ---------------------------------------------------------------------------
+
+
+def quadratic_form_coeffs(
+    logL_fn: Callable[[Float[Array, " n"]], Float[Array, ""]],
+    n: int,
+) -> tuple[Float[Array, " n"], Float[Array, "n n"]]:
+    r"""Linear and quadratic coefficients of a log-likelihood quadratic in ``A``.
+
+    For ``logL(A) = c + b·A - ½ Aᵀ M A`` -- exact when the residuals are linear in
+    the amplitude vector ``A`` -- returns ``(b, M)``: ``b`` is the gradient at the
+    origin (the matched filter) and ``M`` the symmetric curvature (Fisher / Gram;
+    the log-likelihood Hessian is ``-M``).
+
+    Uses ``n + 1`` first-order gradients via the finite-difference-of-gradients
+    trick: since the gradient of a quadratic is ``∇logL(A) = b - M A``, we have
+    ``b = ∇logL(0)`` and ``M[:, j] = b - ∇logL(e_j)``.  This avoids building a
+    second-order autodiff graph (``jax.hessian``) through the full likelihood --
+    much lighter on memory, which matters when this is vmapped over a grid.
+
+    Parameters
+    ----------
+    logL_fn : callable
+        ``(A,) -> scalar`` log-likelihood, with ``A`` an ``(n,)`` amplitude
+        vector; must be exactly quadratic in ``A``.
+    n : int
+        Length of the amplitude vector ``A``.
+
+    Returns
+    -------
+    b : (n,) array
+        Linear coefficient ``∇logL(0)`` -- the matched filter.
+    M : (n, n) array
+        Symmetric quadratic coefficient (Fisher / Gram).
+    """
+    grad = jax.grad(logL_fn)
+    zero = jnp.zeros(n, dtype=jnp.float64)
+    b = grad(zero)
+    cols = [b - grad(zero.at[j].set(1.0)) for j in range(n)]
+    M = jnp.stack(cols, axis=1)
+    return b, 0.5 * (M + M.T)  # symmetrize tiny numerical asymmetry
 
 
 # ---------------------------------------------------------------------------

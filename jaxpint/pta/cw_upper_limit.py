@@ -33,6 +33,7 @@ from jaxpint.bayes.credible import (
     truncated_gaussian_upper_limit,
 )
 from jaxpint.pta.signals.cw import log10_strain_from_binary
+from jaxpint.utils import quadratic_form_coeffs
 
 # The Earth-term, linear-amplitude CW template used here is provided by
 # ``CWInjector(linear_amplitude=True, earth_term_only=True)`` in
@@ -66,19 +67,16 @@ def quadratic_coeffs(
 
     Notes
     -----
-    Uses two *first-order* gradients rather than a second derivative: since
-    ``dlogL/dA = X - A*Y``, we have ``X = grad(amp)`` and
-    ``Y = grad(amp) - grad(amp+1)``.  This avoids building a second-order
-    autodiff graph through the full PTA likelihood — much lighter on memory,
-    which matters when this is vmapped over a sky/orientation grid.
+    The scalar (``n=1``) specialization of
+    :func:`~jaxpint.utils.quadratic_form_coeffs`: it extracts the origin
+    coefficients ``(X0, Y)`` with two first-order gradients (no second-order
+    autodiff graph — much lighter on memory when vmapped over a grid), then
+    shifts to the requested expansion point via ``X = X0 - amp*Y`` (``Y`` is the
+    amp-invariant curvature).
     """
-    a = jnp.asarray(amp, dtype=jnp.float64)
-    grad_fn = jax.grad(logL_fn)
-    g_a = grad_fn(a)
-    g_a1 = grad_fn(a + 1.0)
-    X = g_a
-    Y = g_a - g_a1
-    return X, Y
+    b, M = quadratic_form_coeffs(lambda A: logL_fn(A[0]), 1)
+    X0, Y = b[0], M[0, 0]
+    return X0 - jnp.asarray(amp, dtype=jnp.float64) * Y, Y
 
 
 def h0_95_closed_form(

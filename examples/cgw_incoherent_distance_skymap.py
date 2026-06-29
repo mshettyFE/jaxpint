@@ -78,7 +78,6 @@ def compute_skymap(
     from jaxpint.pta.incoherent_ul import (
         extract_pulsar_bM,
         h0_95_grid,
-        earth_only_A,
         mixed_phase_A,
     )
 
@@ -201,7 +200,8 @@ def compute_skymap(
         [-sin_th * np.cos(phi), -sin_th * np.sin(phi), -np.cos(theta)], axis=1
     )
     cos_mu_all = jnp.asarray(omhat @ positions.T)  # (npix, n_psr)
-    earth_A = jnp.broadcast_to(earth_only_A(), (len(names), 1, 2))
+    # Earth-term-only baseline: the fixed coefficient vector A = (1, 0).
+    earth_A = jnp.broadcast_to(jnp.array([[1.0, 0.0]]), (len(names), 1, 2))
 
     # Move pixels to the leading axis so the per-pixel UL can be chunked the same
     # way the extraction is. A plain vmap over all pixels materializes
