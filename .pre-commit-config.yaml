@@ -1,14 +1,43 @@
-# Pre-commit hooks. Install once with `pre-commit install`.
-# Runs ruff (lint + format) on changed files; scope/ignores come from
-# [tool.ruff] in pyproject.toml (tests and notebooks are excluded there, and
-# --force-exclude makes the hooks honor that even when pre-commit passes paths).
-# Pyright is intentionally NOT a hook -- it needs the full dependency env and is
-# slow; it runs in CI instead.
+# Pre-commit hooks. Install with:
+#   pre-commit install                       # ruff on every commit
+#   pre-commit install --hook-type pre-push  # pyright + import guard on push
+#
+# Commit stage: ruff (lint + format) on changed files; scope/ignores come from
+# [tool.ruff] in pyproject.toml (tests and notebooks are excluded there). The
+# ruff-pre-commit hooks already pass --force-exclude in their own entry, so that
+# exclude is honored even when pre-commit hands them explicit paths -- don't add
+# --force-exclude here too (it errors: "cannot be used multiple times").
+#
+# Pre-push stage: the slower, full-environment checks that previously only ran
+# in CI -- pyright, and an "import without dev extras" guard that catches a
+# dev-only dependency leaking into library source (the failure mode that only
+# surfaces in the docs build, which installs no dev extras). A full docs build
+# is too slow for a hook; run `tools/check.sh` for that before pushing.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.19  # keep roughly in sync with the `ruff` pin in pyproject [dev]
     hooks:
       - id: ruff
-        args: [--fix, --force-exclude]
+        args: [--fix]
       - id: ruff-format
-        args: [--force-exclude]
+
+  - repo: local
+    hooks:
+      # Full-environment type check (matches the CI pyright job's extras).
+      - id: pyright
+        name: pyright (type check, full env)
+        entry: uv run --extra cpu --extra dev pyright
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]
+      # Guard: `import jaxpint` must work without the dev extras, the way the
+      # docs build imports it. Fails fast if library source imports a dev-only
+      # dependency (e.g. beartype).
+      - id: import-without-dev
+        name: import jaxpint without dev extras
+        entry: uv run --extra cpu --extra pint python -c "import jaxpint"
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

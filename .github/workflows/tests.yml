@@ -4,6 +4,10 @@
 # Mirrors the environment conventions from docs.yml: uv for installs,
 # --extra cpu (no CUDA wheels on the runner), and JAX_PLATFORMS=cpu so JAX
 # never probes for a GPU.
+#
+# The ruff/pyright/pytest `run:` steps below are mirrored locally by
+# tools/check.sh (run it before pushing to catch a red CI early). This workflow
+# is the authoritative gate; if the two drift, update whichever is behind.
 
 name: Tests
 

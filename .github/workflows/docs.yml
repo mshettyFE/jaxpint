@@ -3,6 +3,10 @@
 #
 # One-time GitHub UI setup required: Settings -> Pages -> Source = "GitHub Actions".
 # Without that, the deploy job fails with "Pages site not yet created".
+#
+# The sphinx-build `run:` step below is mirrored locally by tools/check.sh (the
+# "docs" check: same extras, -W, and a cleared docs/api/generated). This workflow
+# is the authoritative gate; if the two drift, update whichever is behind.
 
 name: Docs
 

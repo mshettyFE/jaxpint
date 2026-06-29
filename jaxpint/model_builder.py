@@ -494,9 +494,7 @@ def _build_frequency_dependent(ctx: BuildContext):
     fd_indices = ctx.par.params.prefix_indices("FD")
     if not fd_indices:
         return None
-    return FrequencyDependent(
-        fd_param_names=tuple(f"FD{i}" for i in fd_indices)
-    )
+    return FrequencyDependent(fd_param_names=tuple(f"FD{i}" for i in fd_indices))
 
 
 def _build_fd_jump(ctx: BuildContext):
@@ -626,9 +624,7 @@ def _build_spindown(ctx: BuildContext):
 
     par = ctx.par
     # Spin Taylor coefficients: base F0 (order 0) then F1, F2, ... numeric order.
-    spin_names = ["F0"] + [
-        f"F{i}" for i in par.params.prefix_indices("F") if i != 0
-    ]
+    spin_names = ["F0"] + [f"F{i}" for i in par.params.prefix_indices("F") if i != 0]
     return Spindown(spin_param_names=tuple(spin_names))
 
 
