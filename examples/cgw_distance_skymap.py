@@ -343,7 +343,8 @@ def compute_skymap(
                 over.add(fqn)
                 priors[fqn] = ImproperPrior()
     _log(f"Marginalizing {len(over)} timing params across {len(names)} pulsars...")
-    g, _, reduced_pp = marginalize_pta(over=over,
+    g, _, reduced_pp = marginalize_pta(
+        over=over,
         priors=priors,
         config=config,
         pulsar_names=tuple(names),

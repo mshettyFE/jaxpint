@@ -192,7 +192,8 @@ def compute_multi_source_localization_skymap(
                 over.add(fqn)
                 priors[fqn] = ImproperPrior()
     _log(f"Marginalizing {len(over)} timing params across {len(names)} pulsars...")
-    g, _, reduced_pp = marginalize_pta(over=over,
+    g, _, reduced_pp = marginalize_pta(
+        over=over,
         priors=priors,
         config=config,
         pulsar_names=tuple(names),
@@ -226,9 +227,8 @@ def compute_multi_source_localization_skymap(
         cgt, gphi = fixed_source_skies[k - 1]
         for tag in ("t", "d"):
             p = _prefix(k, tag)
-            gp_base = (
-                gp_base.with_value(f"{p}_cos_gwtheta", float(cgt))
-                .with_value(f"{p}_gwphi", float(gphi))
+            gp_base = gp_base.with_value(f"{p}_cos_gwtheta", float(cgt)).with_value(
+                f"{p}_gwphi", float(gphi)
             )
 
     # ---- 6. Closure factory: a logL pair with source 0's sky bound ---------
@@ -239,9 +239,8 @@ def compute_multi_source_localization_skymap(
         gp_s0 = gp_base
         for tag in ("t", "d"):
             p = _prefix(0, tag)
-            gp_s0 = (
-                gp_s0.with_value(f"{p}_cos_gwtheta", source_0_sky[0])
-                .with_value(f"{p}_gwphi", source_0_sky[1])
+            gp_s0 = gp_s0.with_value(f"{p}_cos_gwtheta", source_0_sky[0]).with_value(
+                f"{p}_gwphi", source_0_sky[1]
             )
 
         def make_pair(a_idx: int, tag_a: str, b_idx: int, tag_b: str):
