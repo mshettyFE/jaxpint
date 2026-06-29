@@ -34,7 +34,6 @@ def _make_single_glitch(
         names=("GLEP_1", "GLPH_1", "GLF0_1", "GLF1_1", "GLF2_1", "GLF0D_1", "GLTD_1"),
         values=(glep_frac, glph, glf0, glf1, glf2, glf0d, gltd),
         units=("day", "phase", "Hz", "Hz/s", "Hz/s^2", "Hz", "day"),
-        components=("Glitch",) * 7,
         epoch_int_values={"GLEP_1": glep_int},
     )
     return comp, params
@@ -201,7 +200,6 @@ class TestMultipleGlitches:
             values=(0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0,
                     0.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0),
             units=("day", "phase", "Hz", "Hz/s", "Hz/s^2", "Hz", "day") * 2,
-            components=("Glitch",) * 14,
             epoch_int_values={"GLEP_1": 59100.0, "GLEP_2": 59200.0},
         )
 

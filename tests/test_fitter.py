@@ -256,10 +256,14 @@ class TestNGC6440E:
         jax_model, _noise = build_timing_model(pint_model)
 
         fitter = WLSFitter(jax_model, toa_data, params)
+        chi2_one = fitter.fit_toas(maxiter=1).chi2
         result = fitter.fit_toas(maxiter=5)
 
-        assert result.chi2 > 0
-        assert result.reduced_chi2 < 1e6
+        # Converged: extra iterations never worsen the fit and settle to a
+        # finite chi2; the published model fits its own TOAs at reduced chi2 ~1.
+        assert jnp.isfinite(result.chi2)
+        assert result.chi2 <= chi2_one + 1e-6 * chi2_one
+        assert result.reduced_chi2 < 2.0
 
     @pytest.mark.slow
     def test_design_matrix_shape(self, ngc6440e):

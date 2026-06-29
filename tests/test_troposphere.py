@@ -215,16 +215,13 @@ class TestMonotonicity:
         comp = TroposphereDelay()
         jax_delay = np.array(comp(toa_data, params, jnp.zeros(toa_data.n_toas)))
 
-        # Sort by altitude and check delay decreases
         alts = np.array(toa_data.tropo_alt)
         valid = np.array(toa_data.tropo_alt_valid)
-        idx = np.argsort(alts[valid])
-        sorted_delays = jax_delay[valid][idx]
 
-        # Not strictly monotonic per-TOA due to different obs/time,
-        # but overall trend should be: higher alt -> smaller delay
-        # Use a simple check: delay at min alt > delay at max alt
-        assert sorted_delays[0] > sorted_delays[-1]
+        # Single observatory + source: delay strictly decreases as the target
+        # rises (air path shortens). Check every valid TOA, not just endpoints.
+        sorted_delays = jax_delay[valid][np.argsort(alts[valid])]
+        assert np.all(np.diff(sorted_delays) < 0)
 
 
 # ---------------------------------------------------------------------------

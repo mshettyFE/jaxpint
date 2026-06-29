@@ -115,8 +115,18 @@ def test_mask_parity_vs_pint(parname, _pinned_clock):
     pmj = np.asarray(toas.get_mjds().value)
     jo, po = np.argsort(nm), np.argsort(pmj)
 
-    # tel-key correctness: native canonical obs == PINT obs column
-    assert list(np.asarray(td.obs_indices))  # populated
+    # tel-key correctness: the native per-TOA observatory partition must match
+    # PINT's obs column.  Compare the *grouping* (which TOAs share an obs),
+    # robust to any observatory name-canonicalization differences.
+    native_obs = np.asarray(td.obs_indices)[jo]
+    pint_obs = np.asarray(toas.table["obs"])[po]
+    assert len(native_obs) == toas.ntoas
+    obs_map = {}
+    for n_obs, p_obs in zip(native_obs, pint_obs):
+        assert obs_map.setdefault(n_obs, p_obs) == p_obs, \
+            "native obs grouping disagrees with PINT"
+    assert len(set(obs_map.values())) == len(obs_map), \
+        "native obs not injective to PINT obs"
     # every masked param our model has matches PINT exactly
     checked = 0
     for pname in td.flag_masks:

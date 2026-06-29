@@ -59,7 +59,7 @@ class TestBinaryELL1vsPINT:
         param_names = ("PB", "TASC", "A1", "EPS1", "EPS2")
         param_values = [ell1_params["PB"], tasc_frac, ell1_params["A1"],
                         ell1_params["EPS1"], ell1_params["EPS2"]]
-        params = make_binary_params(param_names, param_values, "BinaryELL1",
+        params = make_binary_params(param_names, param_values,
                               epoch_int_values={"TASC": tasc_int})
 
         toa_data = make_binary_toa_data(np.linspace(54001.0, 54100.0, 200))

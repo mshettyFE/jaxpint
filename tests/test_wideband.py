@@ -474,7 +474,11 @@ class TestWidebandGLSFitter:
         fitter = WidebandGLSFitter(
             jax_model, toa_data, params, noise_model=noise_model
         )
-        assert fitter is not None
+        # Constructor stores the inputs it will fit against.
+        assert fitter.model is jax_model
+        assert fitter.toa_data is toa_data
+        assert fitter.params is params
+        assert fitter.noise_model is noise_model
 
     @pytest.mark.slow
     def test_fit_returns_result(self, jax_wb):
@@ -483,7 +487,10 @@ class TestWidebandGLSFitter:
             jax_model, toa_data, params, noise_model=noise_model
         )
         result = fitter.fit_toas(maxiter=1)
-        assert result is not None
+        # A real fit yields a finite, positive chi2 and a finite reduced chi2.
+        assert jnp.isfinite(result.chi2)
+        assert result.chi2 > 0
+        assert jnp.isfinite(result.reduced_chi2)
 
     @pytest.mark.slow
     def test_result_has_both_residuals(self, jax_wb):

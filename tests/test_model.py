@@ -27,22 +27,16 @@ def _make_full_params(
     pepoch_int=59000.0, pepoch_frac=0.0,
     dmepoch_int=59000.0, dmepoch_frac=0.0,
 ):
-    names = ["F0"]; values = [f0]
-    components = ["Spindown"]; units = ["Hz"]
+    names = ["F0"]; values = [f0]; units = ["Hz"]
 
     if f1 is not None:
-        names += ["F1"]; values += [f1]
-        components += ["Spindown"]; units += ["Hz/s"]
+        names += ["F1"]; values += [f1]; units += ["Hz/s"]
 
-    names += ["PEPOCH"]; values += [pepoch_frac]
-    components += ["Spindown"]; units += ["day"]
-    names += ["DM"]; values += [dm]
-    components += ["DispersionDM"]; units += ["pc cm^-3"]
-    names += ["DMEPOCH"]; values += [dmepoch_frac]
-    components += ["DispersionDM"]; units += ["day"]
+    names += ["PEPOCH"]; values += [pepoch_frac]; units += ["day"]
+    names += ["DM"]; values += [dm]; units += ["pc cm^-3"]
+    names += ["DMEPOCH"]; values += [dmepoch_frac]; units += ["day"]
 
     return make_params(names, values, units=tuple(units),
-                       components=tuple(components),
                        epoch_int_values={"PEPOCH": pepoch_int, "DMEPOCH": dmepoch_int})
 
 
