@@ -923,6 +923,49 @@ def compute_pulsar_direction_ecl(
     return L_hat_ecl @ rot
 
 
+def pulsar_unit_vector(
+    params: "ParameterVector",
+    obliquity_arcsec: float = 84381.406,  # IAU 2006 obliquity at J2000.0
+) -> Float[Array, " 3"]:
+    """Static ICRS Cartesian unit vector toward a pulsar, from its sky parameters.
+
+    The catalog direction (no proper-motion / epoch correction) -- the per-pulsar
+    position input expected by e.g. :class:`jaxpint.pta.signals.cw.CWInjector`.
+    The per-TOA, proper-motion-aware direction is :func:`compute_pulsar_direction`.
+
+    Parameters
+    ----------
+    params : ParameterVector
+        Pulsar parameters; must contain either ``RAJ``/``DECJ`` (equatorial) or
+        ``ELONG``/``ELAT`` (ecliptic), in radians (PINT convention).
+    obliquity_arcsec : float
+        Obliquity of the ecliptic in arcseconds, used only for the ecliptic case
+        to rotate to ICRS via :func:`ecl_to_icrs_rotation` (the same rotation the
+        geometric-delay components use).  Default IAU 2006 at J2000.0.
+
+    Returns
+    -------
+    (3,) array
+        ICRS Cartesian unit vector from the SSB toward the pulsar.
+
+    Raises
+    ------
+    KeyError
+        If ``params`` has neither ``(RAJ, DECJ)`` nor ``(ELONG, ELAT)``.
+    """
+    names = params.names
+    if "RAJ" in names and "DECJ" in names:
+        ra, dec = params.param_value("RAJ"), params.param_value("DECJ")
+        cd = jnp.cos(dec)
+        return jnp.stack([jnp.cos(ra) * cd, jnp.sin(ra) * cd, jnp.sin(dec)])
+    if "ELONG" in names and "ELAT" in names:
+        lon, lat = params.param_value("ELONG"), params.param_value("ELAT")
+        cl = jnp.cos(lat)
+        v_ecl = jnp.stack([jnp.cos(lon) * cl, jnp.sin(lon) * cl, jnp.sin(lat)])
+        return v_ecl @ ecl_to_icrs_rotation(obliquity_arcsec)
+    raise KeyError(f"pulsar params lack (RAJ,DECJ) and (ELONG,ELAT): {tuple(names)}")
+
+
 # ---------------------------------------------------------------------------
 # Barycentric radio frequency (Doppler correction)
 # ---------------------------------------------------------------------------
