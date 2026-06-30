@@ -34,6 +34,10 @@ from jaxpint.bayes.marginal import (
     marginalize_pta,
     marginalize_single_pulsar,
 )
+from jaxpint.bayes.grid_marginal import (
+    grid_log_marginal,
+    grid_log_profile,
+)
 from jaxpint.bayes.posterior import combine_log_prob, log_prior_sum
 from jaxpint.bayes.priors import (
     Gaussian,
@@ -68,10 +72,13 @@ __all__ = [
     # Posterior composition
     "log_prior_sum",
     "combine_log_prob",
-    # Marginalization
+    # Marginalization (analytic)
     "marginalize_single_pulsar",
     "marginalize_pta",
     "marg_set_from_priors",
+    # Marginalization (numerical / grid)
+    "grid_log_marginal",
+    "grid_log_profile",
     # Credible intervals / upper limits / regions
     "truncated_gaussian_upper_limit",
     "mixture_truncated_gaussian_upper_limit",

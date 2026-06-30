@@ -35,10 +35,10 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.special import logsumexp
 from jaxtyping import Array, Float
 
 from jaxpint.bayes.credible import grid_credible_upper_limit
+from jaxpint.bayes.grid_marginal import grid_log_marginal, grid_log_profile
 from jaxpint.pta.signals.cw import _C, _KPC_TO_M
 from jaxpint.utils import quadratic_form_coeffs
 
@@ -124,6 +124,31 @@ def mixed_phase_A(
     :func:`distance_phase_grid` (localized -> coherent contribution); the rest use
     :func:`flat_phase_grid` over ``[0, 2π)`` (incoherent).
 
+    Parameters
+    ----------
+    is_tight : (n_psr,) bool array
+        Per-pulsar flag: use the narrow distance grid (coherent) vs the flat phase
+        grid (incoherent).
+    L0_kpc : (n_psr,) array
+        Fiducial pulsar distances (kpc), used by the tight branch.
+    sigma_L_kpc : float
+        Distance-prior width (kpc).
+    k : float
+        Half-width of the distance grid in units of ``sigma_L_kpc``.
+    cos_mu : (n_psr,) array
+        Cosine of the angle between each pulsar and the GW source direction.
+    f_gw : float
+        GW frequency (Hz).
+    n_phase : int
+        Number of phase grid points per pulsar.
+    min_pts_per_cycle : float
+        A tight pulsar falls back to the flat grid unless its distance prior spans
+        few enough phase cycles to keep at least this many points per cycle.
+
+    Returns
+    -------
+    (n_psr, n_phase, 2) array
+        Per-pulsar coefficient grid ``A(Δ) = (1 − cosΔ, sinΔ)``.
     """
     flat = flat_phase_grid(n_phase)  # (n_phase,)
     dist = jax.vmap(
@@ -153,6 +178,22 @@ def _pulsar_logL_grid(
     (e.g. :func:`mixed_phase_A`) for the distance-resolved case, or the singleton
     ``(1, 0)`` for the Earth-term-only baseline.  The marginal/profile reductions
     below consume this one scan.
+
+    Parameters
+    ----------
+    h0 : scalar
+        Linear strain amplitude.
+    b : (2,) array
+        Per-pulsar matched filter ``((d|e), (d|ps))`` (from :func:`extract_pulsar_bM`).
+    M : (2, 2) array
+        Per-pulsar noise-weighted Gram of the two templates.
+    A : (n, 2) array
+        Coefficient grid ``(1 − cosΔ, sinΔ)`` over ``n`` phase points.
+
+    Returns
+    -------
+    (n,) array
+        Per-grid-point log-likelihood, relative to the no-signal baseline.
     """
     bA = A @ b  # (n,)
     AMA = jnp.einsum("ni,ij,nj->n", A, M, A)  # (n,)
@@ -167,8 +208,20 @@ def logL_pulsar_marg(
 ) -> Float[Array, ""]:
     """Per-pulsar log-likelihood **marginalized** over the grid ``A``
     (``log mean_Δ exp logL``) -- the Bayesian reduction (integrate the
-    distance/phase nuisance)."""
-    return logsumexp(_pulsar_logL_grid(h0, b, M, A)) - jnp.log(A.shape[0])
+    distance/phase nuisance), via :func:`jaxpint.bayes.grid_log_marginal` over the
+    flat (uniform-prior) phase grid.
+
+    Parameters
+    ----------
+    h0, b, M, A
+        As in :func:`_pulsar_logL_grid`.
+
+    Returns
+    -------
+    scalar
+        The phase-marginalized per-pulsar log-likelihood.
+    """
+    return grid_log_marginal(_pulsar_logL_grid(h0, b, M, A))
 
 
 def logL_pulsar_profile(
@@ -178,10 +231,21 @@ def logL_pulsar_profile(
     A: Float[Array, "n 2"],
 ) -> Float[Array, ""]:
     """Per-pulsar **profile** log-likelihood (``max_Δ logL``) -- the frequentist
-    reduction (maximize the nuisance).  The sharper but alias-prone twin of
-    :func:`logL_pulsar_marg`; for localization it is a diagnostic, not the
-    credible-region map."""
-    return jnp.max(_pulsar_logL_grid(h0, b, M, A))
+    reduction (maximize the nuisance), via :func:`jaxpint.bayes.grid_log_profile`.
+    The sharper but alias-prone twin of :func:`logL_pulsar_marg`; for localization
+    it is a diagnostic, not the credible-region map.
+
+    Parameters
+    ----------
+    h0, b, M, A
+        As in :func:`_pulsar_logL_grid`.
+
+    Returns
+    -------
+    scalar
+        The phase-profiled per-pulsar log-likelihood.
+    """
+    return grid_log_profile(_pulsar_logL_grid(h0, b, M, A))
 
 
 def total_logL_marg(
@@ -190,7 +254,27 @@ def total_logL_marg(
     M_stack: Float[Array, "n_psr 2 2"],
     A_stack: Float[Array, "n_psr n 2"],
 ) -> Float[Array, ""]:
-    """Σ over pulsars of the per-pulsar marginalized logL (factorizes)."""
+    """Σ over pulsars of the per-pulsar marginalized logL.
+
+    The full distance-marginalized log-likelihood; block-diagonal noise makes it a
+    plain sum over :func:`logL_pulsar_marg`.
+
+    Parameters
+    ----------
+    h0 : scalar
+        Linear strain amplitude.
+    b_stack : (n_psr, 2) array
+        Per-pulsar matched filters.
+    M_stack : (n_psr, 2, 2) array
+        Per-pulsar Grams.
+    A_stack : (n_psr, n, 2) array
+        Per-pulsar coefficient grids (e.g. from :func:`mixed_phase_A`).
+
+    Returns
+    -------
+    scalar
+        Total distance-marginalized log-likelihood, summed over pulsars.
+    """
     per = jax.vmap(logL_pulsar_marg, in_axes=(None, 0, 0, 0))(
         h0, b_stack, M_stack, A_stack
     )
@@ -204,7 +288,18 @@ def total_logL_profile(
     A_stack: Float[Array, "n_psr n 2"],
 ) -> Float[Array, ""]:
     """Σ over pulsars of the per-pulsar profile logL -- the max-over-grid twin of
-    :func:`total_logL_marg` (frequentist, alias-prone; a localization diagnostic)."""
+    :func:`total_logL_marg` (frequentist, alias-prone; a localization diagnostic).
+
+    Parameters
+    ----------
+    h0, b_stack, M_stack, A_stack
+        As in :func:`total_logL_marg`.
+
+    Returns
+    -------
+    scalar
+        Total profile log-likelihood, summed over pulsars.
+    """
     per = jax.vmap(logL_pulsar_profile, in_axes=(None, 0, 0, 0))(
         h0, b_stack, M_stack, A_stack
     )

@@ -19,8 +19,12 @@ from jaxpint.utils import (
     sherman_morrison_dot,
     woodbury_dot,
     woodbury_dot_qr,
+    pulsar_unit_vector,
+    compute_pulsar_direction,
+    compute_pulsar_direction_ecl,
 )
 from jaxpint.constants import SECS_PER_DAY
+from tests.helpers import make_params, make_toa_data
 
 
 # ===========================================================================
@@ -705,3 +709,35 @@ class TestTaylorHornerPhase:
             coeffs,
         )
         assert jnp.isfinite(out.total).all()
+
+
+# ===========================================================================
+# Pulsar sky unit vector (static catalog direction)
+# ===========================================================================
+
+class TestPulsarUnitVector:
+    def test_equatorial_matches_direction(self):
+        ra, dec = 1.3, -0.4
+        pv = make_params(("RAJ", "DECJ"), (ra, dec))
+        v = pulsar_unit_vector(pv)
+        assert jnp.allclose(v, jnp.array(
+            [jnp.cos(ra) * jnp.cos(dec), jnp.sin(ra) * jnp.cos(dec), jnp.sin(dec)]))
+        assert jnp.isclose(jnp.linalg.norm(v), 1.0)
+        # equals the per-TOA library direction (no proper motion) -> the static vector
+        ref = compute_pulsar_direction(
+            make_toa_data(n_toas=3), pv, "RAJ", "DECJ", None, None, None)[0]
+        assert jnp.allclose(v, ref)
+
+    def test_ecliptic_matches_direction(self):
+        lon, lat = 2.0, 0.3
+        pv = make_params(("ELONG", "ELAT"), (lon, lat))
+        v = pulsar_unit_vector(pv)
+        assert jnp.isclose(jnp.linalg.norm(v), 1.0)
+        # equals the library's ecliptic->ICRS direction at the same obliquity
+        ref = compute_pulsar_direction_ecl(
+            make_toa_data(n_toas=3), pv, "ELONG", "ELAT", None, None, None, 84381.406)[0]
+        assert jnp.allclose(v, ref)
+
+    def test_missing_sky_coords_raises(self):
+        with pytest.raises(KeyError):
+            pulsar_unit_vector(make_params(("F0",), (200.0,)))
