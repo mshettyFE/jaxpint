@@ -4,10 +4,12 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 from jaxpint.pta.signals.cw import cw_delay_from_array, _KPC_TO_M, _C
 from jaxpint.pta.incoherent_ul import (
-    bM2_coeffs, extract_pulsar_bM, flat_phase_grid, distance_phase_grid,
+    bM2_coeffs, extract_pulsar_bM, extract_pulsar_blocks, condition_on_statics,
+    flat_phase_grid, distance_phase_grid,
     logL_pulsar_marg, total_logL_marg, total_logL_profile, h0_95_grid, mixed_phase_A,
 )
 from tests.helpers import make_toa_data, make_simple_pulsar
@@ -237,3 +239,88 @@ def test_total_logL_marg_matches_bruteforce_likelihood():
     logL = np.asarray(jax.vmap(lambda s: g(skel, external_delay=h0 * s))(sigs)) - g0
     marg_naive = float(np.log(np.mean(np.exp(logL - logL.max()))) + logL.max())
     assert np.isclose(marg, marg_naive, atol=1e-5)
+
+
+# ------------------------------------------- multi-source conditioned scan (Tier-2)
+def _cw(ct, gp):  # face-on, unit h0
+    return jnp.array([1.0, ct, gp, LOG10_FGW, 1.0, 0.0, 0.0])
+
+
+@pytest.fixture(scope="module")
+def two_source_blocks():
+    """Per-pulsar 4x4 (b, G) for two CW sources on one synthetic pulsar."""
+    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
+
+    td, tm, nm, pp = make_simple_pulsar(200, f0=100.0, f1=-1e-14)
+    over = {n for n in pp.free_names() if n in ("F0", "F1")}
+    g, _, skel = marginalize_single_pulsar(
+        over=over, priors={n: ImproperPrior() for n in over},
+        toa_data=td, timing_model=tm, noise_model=nm, fiducial_params=pp,
+        allow_nonlinear=True, validate_linearity=False)
+    pos = jnp.array([0.2, 0.5, -0.84]); pos = pos / jnp.linalg.norm(pos)
+
+    def tmpl(ct, gp):
+        e = cw_delay_from_array(td, pos, 1.0, _cw(ct, gp), linear_amplitude=True,
+                                earth_term_only=True)
+        ps = cw_delay_from_array(td, pos, 1.0, _cw(ct, gp), linear_amplitude=True,
+                                 pulsar_term_only=True, pulsar_term_phase=float(np.pi / 2))
+        return e, ps
+
+    e0, ps0 = tmpl(0.3, 2.0)    # source 0 (scanned)
+    e1, ps1 = tmpl(-0.4, 4.5)   # source 1 (static)
+    b, G = extract_pulsar_blocks(g, skel, jnp.stack([e0, ps0, e1, ps1]))
+    return dict(g=g, skel=skel, e0=e0, ps0=ps0, e1=e1, ps1=ps1, b=b, G=G)
+
+
+def test_extract_pulsar_blocks_recovers_known_quadratic():
+    # analytic oracle: a g exactly quadratic in its external_delay, with known
+    # linear vector q and noise matrix N, gives logL(A) = g(.., A @ basis) with
+    # b = basis @ q and G = basis @ N @ basis^T -- recovered to machine precision.
+    n_toas, m = 6, 4
+    k1, k2, k3 = jax.random.split(jax.random.key(2), 3)
+    q = jax.random.normal(k1, (n_toas,))
+    R = jax.random.normal(k2, (n_toas, n_toas))
+    N = R @ R.T + n_toas * jnp.eye(n_toas)  # symmetric positive-definite
+    basis = jax.random.normal(k3, (m, n_toas))
+
+    def quadratic_g(reduced_params, external_delay):
+        d = external_delay
+        return q @ d - 0.5 * d @ N @ d
+
+    b, G = extract_pulsar_blocks(quadratic_g, None, basis)
+    assert jnp.allclose(b, basis @ q)
+    assert jnp.allclose(G, basis @ N @ basis.T)
+
+
+def test_self_blocks_match_independent_single_source(two_source_blocks):
+    # each source's diagonal block must equal its standalone (b, M); the
+    # off-diagonal cross-block is the genuinely-new inter-source coupling.
+    d = two_source_blocks
+    b, G = d["b"], d["G"]
+    b0, M0 = extract_pulsar_bM(d["g"], d["skel"], d["e0"], d["ps0"])
+    b1, M1 = extract_pulsar_bM(d["g"], d["skel"], d["e1"], d["ps1"])
+    assert jnp.allclose(b[0:2], b0) and jnp.allclose(G[0:2, 0:2], M0)
+    assert jnp.allclose(b[2:4], b1) and jnp.allclose(G[2:4, 2:4], M1)
+    assert not jnp.allclose(G[0:2, 2:4], 0.0)  # sources couple through the noise metric
+
+
+def test_conditioning_identity_holds(two_source_blocks):
+    # logL_full(a0, a1_fixed) == logL_cond(a0) + const for all a0 (the O(1)-in-S core)
+    d = two_source_blocks
+    b, G = d["b"], d["G"]
+    a1 = jnp.array([0.7e-13, -1.1e-13])
+    b_eff, G_scan = condition_on_statics(b, G, a1, n_scan=2)
+    const = a1 @ b[2:4] - 0.5 * a1 @ G[2:4, 2:4] @ a1
+
+    def full(a0):
+        a = jnp.concatenate([a0, a1])
+        return a @ b - 0.5 * a @ G @ a
+
+    def cond(a0):
+        return a0 @ b_eff - 0.5 * a0 @ G_scan @ a0
+
+    a0_grid = jax.random.normal(jax.random.key(1), (30, 2)) * 1e-13
+    lhs = jax.vmap(cond)(a0_grid)
+    rhs = jax.vmap(lambda a0: full(a0) - const)(a0_grid)
+    rel = jnp.max(jnp.abs(lhs - rhs)) / jnp.mean(jnp.abs(rhs))
+    assert rel < 1e-9

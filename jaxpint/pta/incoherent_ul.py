@@ -27,6 +27,13 @@ case for ~10% parallaxes, since Δ_p ~ 1e4-1e6 rad), while a distance-derived gr
 ``Δ_p(L_i)`` for ``L_i`` uniform in ``[1/PX − kσ_L, 1/PX + kσ_L]`` keeps the
 parallax information when the prior is sub-cycle.
 
+Beyond the single-source upper limit, this module also holds the shared per-pulsar
+CW-block machinery used by **localization**: :func:`extract_pulsar_bM` generalizes to
+:func:`extract_pulsar_blocks` (the ``2S``-amplitude Gram for ``S`` sources), and
+:func:`condition_on_statics` bakes ``S-1`` static sources into an effective matched
+filter so one source can be scanned in O(1)-in-S -- the conditioned scan, which
+reuses the same ``(b, M)`` reductions below.
+
 """
 
 from __future__ import annotations
@@ -77,6 +84,97 @@ def extract_pulsar_bM(
         return g(reduced_params, external_delay=Ae * e + As * ps)
 
     return bM2_coeffs(logL2)
+
+
+# ------------------------------------------------- multi-source conditioned scan
+# For S coherent sources the per-pulsar logL is quadratic in all sources'
+# amplitudes, logL_i(a) = a·b_i − ½ aᵀ G_i a with a = [a^0, …, a^{S-1}].  To scan
+# one source with the others baked, complete the square in its block:
+#     logL_i(a^0) = a^0·b_eff_i − ½ (a^0)ᵀ G_i^{00} a^0 + const_i
+#     b_eff_i = b_i^0 − G_i^{0,static} a_static          # data minus statics
+# The per-grid-point scan then touches only G_i^{00} and the precomputed b_eff_i
+# (S enters only the once-per-pixel b_eff), and reuses the reductions below by
+# feeding (b_eff, G^{00}) as (b, M).  const_i is independent of the scanned source's
+# sky, so it shifts the map by a constant and is dropped.
+def extract_pulsar_blocks(
+    g: Callable,
+    reduced_params,
+    basis: Float[Array, "m n_toas"],
+) -> tuple[Float[Array, " m"], Float[Array, "m m"]]:
+    """Per-pulsar matched filter ``b`` and Gram ``G`` for ``m`` CW basis waveforms.
+
+    The multi-source generalization of :func:`extract_pulsar_bM` (its ``m = 2``
+    case): inject ``A @ basis`` as the external delay so ``g`` is exactly quadratic
+    in the ``m`` amplitudes, and read off ``logL(A) = c + b·A - 1/2 Aᵀ G A``.
+
+    Parameters
+    ----------
+    g : callable
+        Single-pulsar timing-marginalized log-likelihood,
+        ``g(reduced_params, external_delay=...)`` (from
+        :func:`jaxpint.bayes.marginalize_single_pulsar`).
+    reduced_params
+        The reduced-parameter skeleton ``g`` expects.
+    basis : (m, n_toas) array
+        The ``m`` unit-amplitude CW templates.  For ``S`` sources this is the
+        stacked ``[e_0, ps_0, e_1, ps_1, ...]`` (Earth term + pulsar quadrature per
+        source), so ``m = 2S``; the scanned source's two templates come first.
+
+    Returns
+    -------
+    b : (m,) array
+        Matched filter ``(d | basis_k)``.
+    G : (m, m) array
+        Noise-weighted, timing-marginalized Gram of the basis waveforms.
+    """
+
+    def logL(A: Float[Array, " m"]) -> Float[Array, ""]:
+        return g(reduced_params, external_delay=A @ basis)
+
+    return quadratic_form_coeffs(logL, basis.shape[0])
+
+
+def condition_on_statics(
+    b: Float[Array, " m"],
+    G: Float[Array, "m m"],
+    a_static: Float[Array, " m_static"],
+    n_scan: int = 2,
+) -> tuple[Float[Array, " n_scan"], Float[Array, "n_scan n_scan"]]:
+    """Bake the static sources into the scanned source's matched filter.
+
+    Completes the square in the first ``n_scan`` amplitudes (the scanned source),
+    holding the remaining ``m - n_scan`` amplitudes fixed at ``a_static``::
+
+        b_eff  = b[:n_scan] - G[:n_scan, n_scan:] @ a_static
+        G_scan = G[:n_scan, :n_scan]
+
+    Feed ``(b_eff, G_scan)`` as ``(b, M)`` to the reductions below
+    (:func:`total_logL_marg` etc.) to scan the source over its distance grid.  The
+    static self-energy ``const`` is dropped: it is independent of the scanned
+    source's sky and only shifts the map by a constant.
+
+    Parameters
+    ----------
+    b : (m,) array
+    G : (m, m) array
+        Full multi-source matched filter / Gram (from :func:`extract_pulsar_blocks`),
+        with the scanned source occupying the first ``n_scan`` entries.
+    a_static : (m - n_scan,) array
+        Fixed coefficients of the baked (static) sources, stacked in the same order
+        as their blocks in ``b``/``G``.
+    n_scan : int
+        Number of amplitudes belonging to the scanned source (2 for a single CW).
+
+    Returns
+    -------
+    b_eff : (n_scan,) array
+        Static-corrected matched filter for the scanned source.
+    G_scan : (n_scan, n_scan) array
+        The scanned source's self-block Gram.
+    """
+    b_eff = b[:n_scan] - G[:n_scan, n_scan:] @ a_static
+    G_scan = G[:n_scan, :n_scan]
+    return b_eff, G_scan
 
 
 def flat_phase_grid(n_phase: int = 256) -> Float[Array, " n_phase"]:
