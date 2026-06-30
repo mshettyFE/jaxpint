@@ -1,13 +1,14 @@
 """Tests for the incoherent (distance-marginalized) CW upper-limit machinery."""
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
 from jaxpint.pta.signals.cw import cw_delay_from_array, _KPC_TO_M, _C
 from jaxpint.pta.incoherent_ul import (
     bM2_coeffs, extract_pulsar_bM, flat_phase_grid, distance_phase_grid,
-    logL_pulsar_marg, h0_95_grid, mixed_phase_A,
+    logL_pulsar_marg, total_logL_marg, total_logL_profile, h0_95_grid, mixed_phase_A,
 )
 from tests.helpers import make_toa_data, make_simple_pulsar
 
@@ -178,3 +179,61 @@ def test_extract_pulsar_bM_self_consistent():
         A = jnp.array([Ae, As])
         quad = float(A @ b - 0.5 * A @ M @ A)
         assert abs(direct - quad) <= 1e-6 * (abs(quad) + 1.0)
+
+
+# ------------------------------------------------------- profile (max) reduction twin
+def test_total_logL_profile_reduction():
+    """Profile = Σ_a max_Δ logL: equals an explicit per-pulsar max, exceeds the
+    marginal, and collapses to the marginal for a singleton (one-phase) grid."""
+    h0 = 1.0
+    b = jnp.array([[0.6, -0.4], [0.5, 0.2]])
+    M = jnp.stack([jnp.array([[1.8, 0.3], [0.3, 1.2]]), jnp.eye(2)])
+    A = jnp.broadcast_to(_A_of_phase(flat_phase_grid(48)), (2, 48, 2))
+    prof = float(total_logL_profile(h0, b, M, A))
+    # explicit per-pulsar max of the quadratic-form grid (independent of the impl)
+    Anp = np.asarray(A); ref = 0.0
+    for i in range(2):
+        bA = Anp[i] @ np.asarray(b[i])
+        AMA = np.einsum("ni,ij,nj->n", Anp[i], np.asarray(M[i]), Anp[i])
+        ref += np.max(h0 * bA - 0.5 * h0**2 * AMA)
+    assert np.isclose(prof, ref)
+    assert prof >= float(total_logL_marg(h0, b, M, A))          # profile >= marginal
+    A1 = jnp.broadcast_to(jnp.array([1.0, 0.0]), (2, 1, 2))     # singleton -> equal
+    assert np.isclose(float(total_logL_profile(h0, b, M, A1)),
+                      float(total_logL_marg(h0, b, M, A1)))
+
+
+def test_total_logL_marg_matches_bruteforce_likelihood():
+    """End-to-end ground truth: total_logL_marg (via extract_pulsar_bM + the A(Δ)
+    form) equals a NAIVE phase marginalization that evaluates the actual
+    timing-marginalized GLS likelihood g at each phase -- no (b, M) shortcut."""
+    from jaxpint.bayes import ImproperPrior, marginalize_single_pulsar
+
+    td, tm, nm, pp = make_simple_pulsar(200, f0=100.0, f1=-1e-14)
+    over = {n for n in pp.free_names() if n in ("F0", "F1")}
+    g, _, skel = marginalize_single_pulsar(
+        over=over, priors={n: ImproperPrior() for n in over},
+        toa_data=td, timing_model=tm, noise_model=nm, fiducial_params=pp,
+        allow_nonlinear=True, validate_linearity=False,
+    )
+    pos = jnp.array([0.2, 0.5, -0.84]); pos = pos / jnp.linalg.norm(pos)
+    cw = jnp.array([1.0, 0.3, 1.2, LOG10_FGW, 1.0, 0.0, 0.0])   # cw[0] = h0 = 1 (linear)
+    e = cw_delay_from_array(td, pos, 1.0, cw, linear_amplitude=True, earth_term_only=True)
+    ps = cw_delay_from_array(td, pos, 1.0, cw, linear_amplitude=True,
+                             pulsar_term_only=True, pulsar_term_phase=float(np.pi / 2))
+    b, M = extract_pulsar_bM(g, skel, e, ps)
+
+    h0 = float(1.0 / jnp.sqrt(jnp.max(jnp.abs(M))))            # ~strain scale -> O(1) logL
+    phases = flat_phase_grid(32)
+    marg = float(total_logL_marg(jnp.asarray(h0), b[None], M[None], _A_of_phase(phases)[None]))
+
+    # naive: full Earth+pulsar signal at each phase via cw_delay (NOT e/ps or b/M),
+    # eval the real g, then average by hand (numpy log-mean-exp).
+    g0 = float(g(skel, external_delay=0.0 * e))
+    sigs = jnp.stack([
+        cw_delay_from_array(td, pos, 1.0, cw, linear_amplitude=True, pulsar_term_phase=float(ph))
+        for ph in np.asarray(phases)
+    ])
+    logL = np.asarray(jax.vmap(lambda s: g(skel, external_delay=h0 * s))(sigs)) - g0
+    marg_naive = float(np.log(np.mean(np.exp(logL - logL.max()))) + logL.max())
+    assert np.isclose(marg, marg_naive, atol=1e-5)
