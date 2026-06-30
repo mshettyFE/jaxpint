@@ -20,6 +20,8 @@ __all__ = [
     "mixture_truncated_gaussian_upper_limit",
     "grid_credible_upper_limit",
     "gaussian_credible_area",
+    "credible_level_map",
+    "credible_region_area",
 ]
 
 
@@ -134,3 +136,78 @@ def gaussian_credible_area(
     """
     dchi2 = -2.0 * jnp.log(1.0 - level)
     return jnp.pi * dchi2 * jnp.sqrt(det_cov)
+
+
+def credible_level_map(
+    log_post: Float[Array, " n_pix"],
+) -> Float[Array, " n_pix"]:
+    r"""Highest-posterior-density (HPD) credible level of each pixel.
+
+    Greedy HPD construction (Singer & Price 2016 [cm_sp16]_): rank pixels by
+    posterior density and assign each the cumulative posterior mass of all
+    *strictly more probable* pixels (exclusive convention -- the densest pixel gets
+    ``0``).  The smallest ``level``-credible region is then ``{level_map < level}``.
+
+    Assumes equal-area pixels and an improper-uniform prior, so a pixel's posterior
+    mass is ``\propto exp(log_post)``.  The 2-D / map analog of the CDF used by
+    :func:`grid_credible_upper_limit`.
+
+    Parameters
+    ----------
+    log_post : (n_pix,) array
+        Unnormalized log-posterior over a pixelized parameter space (e.g. a
+        HEALPix sky map).
+
+    Returns
+    -------
+    (n_pix,) array
+        Per-pixel exclusive HPD level in ``[0, 1)``.
+
+    References
+    ----------
+    .. [cm_sp16] Singer & Price (2016), PRD 93, 024013.
+    """
+    p = jnp.exp(log_post - jnp.max(log_post))
+    p = p / jnp.sum(p)
+    order = jnp.argsort(-p)  # descending density
+    excl = jnp.cumsum(p[order]) - p[order]  # mass strictly above each pixel
+    return jnp.zeros_like(excl).at[order].set(excl)
+
+
+def credible_region_area(
+    log_post: Float[Array, " n_pix"],
+    pixel_area: Float[Array, ""],
+    level: float = 0.9,
+) -> Float[Array, ""]:
+    r"""Area of the smallest ``level``-credible region of a pixelized posterior.
+
+    Counts the pixels in the HPD region ``{credible_level_map < level}`` and
+    multiplies by ``pixel_area`` (constant -- equal-area pixels, e.g.
+    ``healpy.nside2pixarea(nside)``).  Returns an area in the units of
+    ``pixel_area`` (steradians if ``pixel_area`` is).  The map analog of
+    :func:`grid_credible_upper_limit`; for a Gaussian posterior it converges to
+    :func:`gaussian_credible_area` as the pixel scale shrinks.
+
+    Parameters
+    ----------
+    log_post : (n_pix,) array
+        Unnormalized log-posterior over equal-area pixels.
+    pixel_area : scalar
+        Area of one pixel.
+    level : float
+        Credible level (default 0.9).
+
+    Notes
+    -----
+    Equal-area pixels only.  This generalizes to a **mixed-resolution** map (e.g.
+    adaptively-refined HEALPix leaves of differing ``nside``) without an API break:
+    pass a per-leaf ``area`` array, separate *density* from *mass* in
+    :func:`credible_level_map` -- rank by ``exp(log_post)`` (density) but accumulate
+    ``exp(log_post)·area`` (mass) -- and return ``Σ area`` over the included leaves
+    here.  The constant-area case is exactly that with ``area`` constant (density
+    ∝ mass; ``Σ area = n_in · pixel_area``).  Deferred until the adaptive map tier
+    provides real mixed-resolution leaves to test against.
+    """
+    levels = credible_level_map(log_post)
+    n_in = jnp.sum(levels < level)
+    return n_in * pixel_area

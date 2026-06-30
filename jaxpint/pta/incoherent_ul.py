@@ -139,25 +139,49 @@ def mixed_phase_A(
     )  # (n_psr, n_phase, 2)
 
 
-# ------------------------------------------------------------------- marginal logL
+# ---------------------------------------------- per-pulsar logL grid + its reductions
+def _pulsar_logL_grid(
+    h0: Float[Array, ""],
+    b: Float[Array, " 2"],
+    M: Float[Array, "2 2"],
+    A: Float[Array, "n 2"],
+) -> Float[Array, " n"]:
+    """Per-pulsar log-likelihood over the coefficient grid ``A`` (relative to the
+    no-signal baseline): ``logL(Δ) = h0 (b·A(Δ)) − ½ h0² A(Δ)ᵀ M A(Δ)``.
+
+    ``A`` is the set of coefficient 2-vectors ``(1 − cosΔ, sinΔ)`` -- a phase grid
+    (e.g. :func:`mixed_phase_A`) for the distance-resolved case, or the singleton
+    ``(1, 0)`` for the Earth-term-only baseline.  The marginal/profile reductions
+    below consume this one scan.
+    """
+    bA = A @ b  # (n,)
+    AMA = jnp.einsum("ni,ij,nj->n", A, M, A)  # (n,)
+    return h0 * bA - 0.5 * h0**2 * AMA  # (n,)
+
+
 def logL_pulsar_marg(
     h0: Float[Array, ""],
     b: Float[Array, " 2"],
     M: Float[Array, "2 2"],
     A: Float[Array, "n 2"],
 ) -> Float[Array, ""]:
-    """Per-pulsar log-likelihood marginalized over the supplied signal-coefficient
-    vectors ``A`` (``log mean_i exp(logL_a(A_i))``).
+    """Per-pulsar log-likelihood **marginalized** over the grid ``A``
+    (``log mean_Δ exp logL``) -- the Bayesian reduction (integrate the
+    distance/phase nuisance)."""
+    return logsumexp(_pulsar_logL_grid(h0, b, M, A)) - jnp.log(A.shape[0])
 
-    ``A`` is the set of coefficient 2-vectors ``(1 − cosΔ, sinΔ)`` to average
-    over: from a phase grid (e.g. :func:`mixed_phase_A`) for the
-    distance-marginalized case, or the singleton ``(1, 0)`` for the
-    Earth-term-only baseline.
-    """
-    bA = A @ b  # (n,)
-    AMA = jnp.einsum("ni,ij,nj->n", A, M, A)  # (n,)
-    logL = h0 * bA - 0.5 * h0**2 * AMA
-    return logsumexp(logL) - jnp.log(A.shape[0])
+
+def logL_pulsar_profile(
+    h0: Float[Array, ""],
+    b: Float[Array, " 2"],
+    M: Float[Array, "2 2"],
+    A: Float[Array, "n 2"],
+) -> Float[Array, ""]:
+    """Per-pulsar **profile** log-likelihood (``max_Δ logL``) -- the frequentist
+    reduction (maximize the nuisance).  The sharper but alias-prone twin of
+    :func:`logL_pulsar_marg`; for localization it is a diagnostic, not the
+    credible-region map."""
+    return jnp.max(_pulsar_logL_grid(h0, b, M, A))
 
 
 def total_logL_marg(
@@ -168,6 +192,20 @@ def total_logL_marg(
 ) -> Float[Array, ""]:
     """Σ over pulsars of the per-pulsar marginalized logL (factorizes)."""
     per = jax.vmap(logL_pulsar_marg, in_axes=(None, 0, 0, 0))(
+        h0, b_stack, M_stack, A_stack
+    )
+    return jnp.sum(per)
+
+
+def total_logL_profile(
+    h0: Float[Array, ""],
+    b_stack: Float[Array, "n_psr 2"],
+    M_stack: Float[Array, "n_psr 2 2"],
+    A_stack: Float[Array, "n_psr n 2"],
+) -> Float[Array, ""]:
+    """Σ over pulsars of the per-pulsar profile logL -- the max-over-grid twin of
+    :func:`total_logL_marg` (frequentist, alias-prone; a localization diagnostic)."""
+    per = jax.vmap(logL_pulsar_profile, in_axes=(None, 0, 0, 0))(
         h0, b_stack, M_stack, A_stack
     )
     return jnp.sum(per)
