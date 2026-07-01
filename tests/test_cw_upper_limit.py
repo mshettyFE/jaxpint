@@ -17,7 +17,9 @@ from jaxpint.pta.cw_upper_limit import (
     fstat,
 )
 from jaxpint.types import GlobalParams
-from jaxpint.pta.signals.cw import CWInjector, log10_strain_from_binary
+from jaxpint.pta.signals.cw import (
+    CWInjector, log10_strain_from_binary, fdot, evolution_ok,
+)
 from tests.helpers import make_toa_data
 
 
@@ -228,3 +230,20 @@ class TestBasisReductionConsistency:
         eigs = jnp.linalg.eigvalsh(M)
         assert jnp.all(eigs > 1e-8 * eigs[-1])
         assert jnp.linalg.matrix_rank(M) == M.shape[0]
+
+
+# ----------------------------------------------- source frequency evolution
+def test_fdot_scalings():
+    f0 = fdot(1e9, 27e-9)
+    assert np.isclose(fdot(2e9, 27e-9), f0 * 2 ** (5 / 3))    # ∝ Mc^(5/3)
+    assert np.isclose(fdot(1e9, 54e-9), f0 * 2 ** (11 / 3))   # ∝ f^(11/3)
+
+
+def test_evolution_ok_flags_and_keys():
+    # low mass / low freq stays monochromatic; high mass / high freq drifts out
+    t_span = 15 * 365.25 * 86400.0  # 15 yr
+    lo = evolution_ok(1e8, 27e-9, t_span)
+    hi = evolution_ok(1e11, 1e-7, t_span)
+    assert lo["earth_ok"] and not hi["earth_ok"]
+    assert lo["drift_cycles"] < hi["drift_cycles"]
+    assert set(lo) == {"earth_ok", "coherent_ok", "drift_cycles", "psr_dff"}
