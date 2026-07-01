@@ -244,6 +244,89 @@ def log10_strain_from_binary(
     return jnp.log10(h0)
 
 
+def fdot(mc_msun: ArrayLike, f_hz: ArrayLike) -> Array:
+    """GW frequency derivative ``df/dt`` (Hz/s) of a circular inspiral.
+
+    Leading quadrupole ``(96/5) pi^{8/3} (G Mc/c^3)^{5/3} f^{11/3}`` (``_TSUN`` is
+    ``G M_sun / c^3`` in seconds) -- the frequency-evolution sibling of
+    :func:`log10_strain_from_binary`.  This is the chirp rate ``dw/dt`` **evaluated
+    at the (observed) frequency** -- the slope that appears, linearized about the
+    Earth-term frequency ``w0``, in the pulsar-term frequency of Ellis, Siemens &
+    Creighton (2012), ApJ 756, 175, Eq. 48 (arXiv:1204.4218); time enters only via
+    the interval that slope multiplies (the observing span or the pulsar lag).
+
+    Parameters
+    ----------
+    mc_msun : array-like
+        (Redshifted) chirp mass in solar masses.
+    f_hz : array-like
+        GW frequency in Hz.
+
+    Returns
+    -------
+    Array
+        Frequency derivative ``df/dt`` in Hz/s.
+    """
+    gm = jnp.asarray(mc_msun) * _TSUN  # chirp mass in seconds
+    return (
+        (96.0 / 5.0)
+        * jnp.pi ** (8.0 / 3.0)
+        * gm ** (5.0 / 3.0)
+        * jnp.asarray(f_hz) ** (11.0 / 3.0)
+    )
+
+
+def evolution_ok(
+    mc_msun: float,
+    f_hz: float,
+    t_span_s: float,
+    *,
+    lag_s: float = _KPC_TO_M / _C,
+    drift_max: float = 1.0,
+    psr_dff_max: float = 0.1,
+) -> dict[str, bool | float]:
+    """Whether a monochromatic (fixed-frequency) CW model is valid for ``(Mc, f)``.
+
+    Two checks: the Earth-term frequency drift over the observing span against the
+    Rayleigh resolution ``1/T`` (``drift = fdot * T^2`` cycles), and the pulsar-term
+    fractional frequency offset over the geometric light-travel lag (default 1 kpc).
+    The latter, ``psr_dff = fdot * lag / f``, is exactly the linearized fractional
+    offset ``(96/5) M^{5/3} w0^{8/3} * lag`` of Ellis, Siemens & Creighton (2012),
+    ApJ 756, 175, Eq. 48 (arXiv:1204.4218); ``coherent_ok`` is their condition for
+    treating the Earth and pulsar frequencies as the *same* (the coherent
+    pulsar-term statistic assumes it).
+
+    Parameters
+    ----------
+    mc_msun : float
+        (Redshifted) chirp mass in solar masses.
+    f_hz : float
+        GW frequency in Hz.
+    t_span_s : float
+        Observing span in seconds.
+    lag_s : float
+        Pulsar-term geometric light-travel lag in seconds (default: 1 kpc).
+    drift_max : float
+        Max allowed Earth-term drift (cycles) for ``earth_ok``.
+    psr_dff_max : float
+        Max allowed pulsar-term fractional frequency offset for ``coherent_ok``.
+
+    Returns
+    -------
+    dict
+        ``earth_ok`` / ``coherent_ok`` (bool) and the raw ``drift_cycles`` / ``psr_dff``.
+    """
+    fd = fdot(mc_msun, f_hz)
+    drift = fd * t_span_s**2
+    psr_dff = fd * lag_s / f_hz
+    return {
+        "earth_ok": bool(drift < drift_max),
+        "coherent_ok": bool(psr_dff < psr_dff_max),
+        "drift_cycles": float(drift),
+        "psr_dff": float(psr_dff),
+    }
+
+
 class CWInjector(SignalInjector):
     """Injects a single continuous gravitational wave source.
 
