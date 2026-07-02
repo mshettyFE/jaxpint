@@ -34,48 +34,22 @@ from pathlib import Path
 
 import numpy as np
 
-# ---- self-contained example config (no cross-example imports) --------------
+from jaxpint.notebook_utils import (
+    SMOKE_SUBSET,
+    healpix_grid,
+    import_healpy,
+    load_filtered_pta,
+    load_npz_results,
+    log_flush as _log,
+    marginalize_each_pulsar,
+    overlay_pulsars,
+    save_npz_results,
+)
+
+# ---- script-specific config -------------------------------------------------
 F_GW = 27e-9  # 27 nHz
 LOG10_FGW = float(np.log10(F_GW))
 PI2 = float(np.pi / 2.0)
-MARG_PARAMS = {
-    "F0",
-    "F1",
-    "RAJ",
-    "DECJ",
-    "ELONG",
-    "ELAT",
-    "PMRA",
-    "PMDEC",
-    "PMELONG",
-    "PMELAT",
-}
-SMOKE_SUBSET = ["J1909-3744", "J1713+0747", "J0613-0200", "J1744-1134"]
-DROP_PULSARS = {
-    "B1937+21ao",
-    "B1937+21gbt",
-    "J1600-3053gbt",
-    "J1643-1224gbt",
-    "J1713+0747ao",
-    "J1713+0747gbt",
-    "J1903+0327ao",
-    "J1909-3744gbt",
-}
-
-
-def _log(msg):
-    print(msg, flush=True)
-
-
-def _import_healpy():
-    try:
-        import healpy as hp
-    except ImportError as e:  # pragma: no cover
-        raise ImportError(
-            "This example needs healpy (HEALPix grid + Mollweide plots). Install "
-            "the optional extra:  uv pip install 'jaxpint[skymap]'."
-        ) from e
-    return hp
 
 
 def compute_conditioned_localization(
@@ -121,8 +95,6 @@ def compute_conditioned_localization(
     import jax.numpy as jnp
     from loguru import logger
 
-    from jaxpint import load_nanograv_pta
-    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
     from jaxpint.bayes.credible import credible_level_map, credible_region_area
     from jaxpint.pta.signals.cw import cw_delay_from_array, CWInjector, _KPC_TO_M, _C
     from jaxpint.pta.incoherent_ul import (
@@ -134,31 +106,25 @@ def compute_conditioned_localization(
     )
     from jaxpint.pta.cw_localization import h0_for_snr
     from jaxpint.types import GlobalParams
-    from jaxpint.utils import pulsar_unit_vector
 
-    hp = _import_healpy()
+    hp = import_healpy()
     logger.disable("pint")
 
     def cw_params(ct, gp):  # face-on, unit h0
         return jnp.array([1.0, ct, gp, LOG10_FGW, 1.0, 0.0, 0.0])
 
     # ---- load + sky grid + sources ---------------------------------------
-    psrs = load_nanograv_pta(data_dir, pulsar_names=pulsar_subset)
-    keep = [i for i, n in enumerate(psrs.pulsar_names) if n not in DROP_PULSARS]
-    names = [psrs.pulsar_names[i] for i in keep]
-    td_list = [psrs.toa_data_list[i] for i in keep]
-    tm_list = [psrs.timing_models[i] for i in keep]
-    nm_list = [psrs.noise_models[i] for i in keep]
-    pp_list = [psrs.pulsar_params_list[i] for i in keep]
-    positions = np.stack([np.asarray(pulsar_unit_vector(pp)) for pp in pp_list])
+    pta = load_filtered_pta(data_dir, pulsar_names=pulsar_subset)
+    names = list(pta.names)
+    td_list = list(pta.toa_data_list)
+    pp_list = list(pta.pulsar_params_list)
+    positions = pta.positions
     px = np.array([float(pp.param_value("PX")) for pp in pp_list])
     pos_j = jnp.asarray(positions)
     npsr = len(names)
 
-    npix = hp.nside2npix(nside)
-    theta, phi = hp.pix2ang(nside, np.arange(npix))
-    cos_gwtheta = jnp.asarray(np.cos(theta))
-    gwphi = jnp.asarray(phi)
+    grid = healpix_grid(nside)
+    npix, theta, phi = grid.npix, grid.theta, grid.phi
     if source_pix is None:
         source_pix = [npix // 3, 2 * npix // 3]
     if source_snr is None:
@@ -183,21 +149,7 @@ def compute_conditioned_localization(
     _log(f"Loaded {npsr} pulsars; {S} sources at pix {source_pix}.")
 
     # ---- per-pulsar likelihoods + per-source SNR calibration -------------
-    gs = []
-    for td, tm, nm, pp in zip(td_list, tm_list, nm_list, pp_list):
-        over = {n for n in pp.free_names() if n in MARG_PARAMS}
-        gs.append(
-            marginalize_single_pulsar(
-                over=over,
-                priors={n: ImproperPrior() for n in over},
-                toa_data=td,
-                timing_model=tm,
-                noise_model=nm,
-                fiducial_params=pp,
-                allow_nonlinear=True,
-                validate_linearity=False,
-            )
-        )
+    gs = marginalize_each_pulsar(pta)
 
     def templates(td, pos, ct, gp):
         cw = cw_params(ct, gp)
@@ -269,11 +221,7 @@ def compute_conditioned_localization(
     # ---- per scanned source: extract, condition, reduce both maps --------
     is_tight = jnp.zeros(npsr, bool)
     L0 = jnp.asarray(1.0 / np.maximum(px, 1e-3))
-    sin_th = np.sin(theta)
-    omhat = np.stack(
-        [-sin_th * np.cos(phi), -sin_th * np.sin(phi), -np.cos(theta)], axis=1
-    )
-    cos_mu_all = jnp.asarray(omhat @ positions.T)
+    cos_mu_all = jnp.asarray(grid.omhat @ positions.T)
 
     def reduce_map(b_all, G_all, h0_eval):
         b_pix = jnp.transpose(jnp.asarray(b_all), (1, 0, 2))
@@ -330,7 +278,7 @@ def compute_conditioned_localization(
 
             out = jax.lax.map(
                 lambda row: blocks_at(row[0], row[1]),
-                jnp.stack([cos_gwtheta, gwphi], axis=1),
+                grid.sky,
                 batch_size=pixel_chunk,
             )
             b_unc[a], G_arr[a], b_con[a] = (
@@ -383,12 +331,6 @@ def compute_conditioned_localization(
     }
 
 
-def save_results(path, results):
-    """Write a :func:`compute_conditioned_localization` results dict to ``.npz``."""
-    np.savez_compressed(path, **results)
-    _log(f"Saved -> {path}")
-
-
 def plot_results(path, outdir=".", which="conditioned"):
     """Grid of per-source HPD credible-level maps (one panel per source).
 
@@ -403,14 +345,14 @@ def plot_results(path, outdir=".", which="conditioned"):
     import jax.numpy as jnp
     from jaxpint.bayes.credible import credible_level_map
 
-    hp = _import_healpy()
-    d = np.load(path, allow_pickle=False)
+    hp = import_healpy()
+    d = load_npz_results(path)
     nside = int(d["nside"])
     maps = np.asarray(d[f"marginal_{which}"])
     source_pix = np.asarray(d["source_pix"])
     S = len(source_pix)
     ang = [hp.pix2ang(nside, int(p)) for p in source_pix]
-    pt, pp = hp.vec2ang(np.asarray(d["pulsar_pos"]))
+    pulsar_pos = np.asarray(d["pulsar_pos"])
 
     ncols = min(S, 3)
     nrows = int(np.ceil(S / ncols))
@@ -434,7 +376,11 @@ def plot_results(path, outdir=".", which="conditioned"):
             hp.projscatter(
                 ang[s][0], ang[s][1], marker=mk[0], s=mk[1], color=mk[2], edgecolors="k"
             )
-        hp.projscatter(pt, pp, marker="o", s=16, color="white", edgecolors="k")
+        overlay_pulsars(
+            pulsar_pos,
+            anchor_mask=np.zeros(len(pulsar_pos), dtype=bool),
+            dot_kwargs={"s": 16},
+        )
         hp.graticule()
     out = Path(outdir) / f"cgw_conditioned_localization_{which}.png"
     plt.savefig(out, dpi=130, bbox_inches="tight")
@@ -500,7 +446,7 @@ def main():
             n_phase=args.n_phase,
             pixel_chunk=args.pixel_chunk,
         )
-        save_results(args.output, res)
+        save_npz_results(args.output, res)
     else:
         plot_results(args.input, outdir=args.outdir, which=args.which)
 

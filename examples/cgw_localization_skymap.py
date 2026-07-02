@@ -45,16 +45,24 @@ from pathlib import Path
 
 import numpy as np
 
-# Reuse loader / drop list / marginalization parameter set / pulsar-vector helper
-# from the distance-skymap example — same PTA setup either way.
-from examples.cgw_distance_skymap import (
-    DATA_DIR,
-    DROP_PULSARS,
+# Dataset location shared with the distance-skymap example — same PTA either way.
+from examples.cgw_distance_skymap import DATA_DIR
+
+# Shared example scaffolding (loader, marginalization, HEALPix grid, npz I/O).
+# DROP_PULSARS / MARG_PARAMS are re-exported for compatibility (the loader and
+# marginalizer default to them internally).
+from jaxpint.notebook_utils import (
+    DROP_PULSARS,  # noqa: F401  (re-export)
+    MARG_PARAMS,  # noqa: F401  (re-export)
     SMOKE_SUBSET,
-    MARG_PARAMS,
-    pulsar_unit_vector_icrs,
-    _import_healpy,
-    _log,
+    healpix_grid,
+    import_healpy as _import_healpy,
+    load_filtered_pta,
+    load_npz_results,
+    log_flush as _log,
+    marginalize_pta_timing,
+    overlay_pulsars,
+    save_npz_results,
 )
 
 
@@ -136,6 +144,7 @@ def compute_localization_skymap(
     orientation=FIXED_ORIENTATION,
     pixel_chunk: int = 32,
     validate_linearity: bool = False,
+    data_dir=None,
 ):
     """Compute the per-pixel 90% credible localization area in deg^2.
 
@@ -158,6 +167,8 @@ def compute_localization_skymap(
         pattern as ``cgw_distance_skymap.compute_skymap``).
     validate_linearity
         Forwarded to ``marginalize_pta``.
+    data_dir
+        Dataset directory override; ``None`` falls back to :data:`DATA_DIR`.
 
     Returns
     -------
@@ -193,13 +204,11 @@ def compute_localization_skymap(
     import jax.numpy as jnp
     from loguru import logger
 
-    hp = _import_healpy()
+    _import_healpy()  # fail early if the optional skymap extra is missing
     logger.disable("pint")
 
-    from jaxpint import load_nanograv_pta
     from jaxpint.pta.likelihood import PTAConfig
     from jaxpint.types import GlobalParams
-    from jaxpint.bayes import ImproperPrior, marginalize_pta
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import quadratic_coeffs
     from jaxpint.pta.cw_localization import (
@@ -210,15 +219,13 @@ def compute_localization_skymap(
     )
 
     # ---- 1. Load + filter --------------------------------------------------
-    if not DATA_DIR.is_dir():
-        raise FileNotFoundError(f"DATA_DIR {DATA_DIR} not found.")
-    psrs = load_nanograv_pta(DATA_DIR, pulsar_names=pulsar_subset)
-    keep = [i for i, n in enumerate(psrs.pulsar_names) if n not in DROP_PULSARS]
-    names = [psrs.pulsar_names[i] for i in keep]
-    toa_list = tuple(psrs.toa_data_list[i] for i in keep)
-    pp_list = tuple(psrs.pulsar_params_list[i] for i in keep)
-    tm_list = tuple(psrs.timing_models[i] for i in keep)
-    nm_list = tuple(psrs.noise_models[i] for i in keep)
+    pta = load_filtered_pta(
+        DATA_DIR if data_dir is None else data_dir, pulsar_names=pulsar_subset
+    )
+    names = list(pta.names)
+    toa_list = pta.toa_data_list
+    tm_list = pta.timing_models
+    nm_list = pta.noise_models
     n_toa_total = int(sum(int(td.n_toas) for td in toa_list))
     _log(f"Loaded {len(names)} pulsars, {n_toa_total} TOAs total.")
 
@@ -237,7 +244,7 @@ def compute_localization_skymap(
         f"{sorted(anchor_set) if anchor_set else '(none — all Earth-term-only)'}"
     )
 
-    positions = jnp.asarray(np.stack([pulsar_unit_vector_icrs(pp) for pp in pp_list]))
+    positions = jnp.asarray(pta.positions)
 
     # ---- 3. Two injectors + config + global params ------------------------
     # Template: model template the inference would fit. Variable (h_t, sky_t).
@@ -270,23 +277,9 @@ def compute_localization_skymap(
     )
 
     # ---- 4. Timing-model marginalization (improper priors) -----------------
-    over, priors = set(), {}
-    for pn, pp in zip(names, pp_list):
-        for nm in pp.free_names():
-            if nm in MARG_PARAMS:
-                fqn = f"{pn}_{nm}"
-                over.add(fqn)
-                priors[fqn] = ImproperPrior()
-    _log(f"Marginalizing {len(over)} timing params across {len(names)} pulsars...")
-    g, _, reduced_pp = marginalize_pta(
-        over=over,
-        priors=priors,
-        config=config,
-        pulsar_names=tuple(names),
-        fiducial_pulsar_params=pp_list,
-        fiducial_global_params=gp,
-        validate_linearity=validate_linearity,
-        allow_nonlinear=True,
+    _log(f"Marginalizing timing params across {len(names)} pulsars...")
+    g, _, reduced_pp = marginalize_pta_timing(
+        pta, config, gp, validate_linearity=validate_linearity
     )
 
     # ---- 5. logL closure: full (h_t, h_d, sky_t, sky_d) variation ----------
@@ -303,11 +296,8 @@ def compute_localization_skymap(
     logL_full = make_logL_2sky(g, gp_fixed, reduced_pp, "cwt", "cwd")
 
     # ---- 6. Pixel loop: Y → h0(SNR=target) → -Hessian → area --------------
-    npix = hp.nside2npix(nside)
-    theta, phi = hp.pix2ang(nside, np.arange(npix))
-    sky = jnp.stack(
-        [jnp.cos(jnp.asarray(theta)), jnp.asarray(phi)], axis=1
-    )  # (npix, 2)
+    grid = healpix_grid(nside)
+    npix, sky = grid.npix, grid.sky  # sky: (npix, 2) of (cos_gwtheta, gwphi)
 
     def area_for_pixel(sky_row):
         # Y(pixel) for SNR calibration: with h_d=0 (and h_t free), only the
@@ -376,15 +366,13 @@ def compute_localization_skymap(
     }
 
 
+# Thin aliases over the shared .npz helpers (kept for sibling-script imports).
 def save_results(path: Path, results: dict) -> None:
-    path = Path(path)
-    np.savez_compressed(path, **results)
-    print(f"Saved {path} ({path.stat().st_size / 1e3:.1f} kB).")
+    save_npz_results(Path(path), results)
 
 
 def load_results(path: Path) -> dict:
-    data = np.load(path, allow_pickle=False)
-    return {k: (v.item() if v.ndim == 0 else v) for k, v in data.items()}
+    return load_npz_results(path)
 
 
 def plot_results(
@@ -425,33 +413,20 @@ def plot_results(
     if "pulsar_pos" in results:
         pos = np.atleast_2d(np.asarray(results["pulsar_pos"]))
         mask = np.atleast_1d(np.asarray(results["pulsar_term_mask"]))
-        theta = np.arccos(np.clip(pos[:, 2], -1.0, 1.0))
-        phi = np.arctan2(pos[:, 1], pos[:, 0])
         # Anchors: bright red stars; non-anchors: dimmer grey circles.
-        if np.any(mask):
-            hp.projscatter(
-                theta[mask],
-                phi[mask],
-                marker="*",
-                s=180,
-                color="red",
-                edgecolors="black",
-                linewidths=0.5,
-                zorder=5,
-                label="anchor",
-            )
-        if np.any(~mask):
-            hp.projscatter(
-                theta[~mask],
-                phi[~mask],
-                marker="o",
+        overlay_pulsars(
+            pos,
+            mask,
+            star_kwargs=dict(s=180, label="anchor"),
+            dot_kwargs=dict(
                 s=40,
                 color="0.5",
                 edgecolors="black",
                 linewidths=0.4,
                 zorder=4,
                 label="non-anchor",
-            )
+            ),
+        )
     plt.savefig(output, dpi=130, bbox_inches="tight")
     print(f"Wrote {output}")
     plt.close()
@@ -465,6 +440,7 @@ def run_sweep(
     configs: tuple[tuple[str, tuple[str, ...]], ...] | None = None,
     snr_target: float = SNR_TARGET_DEFAULT,
     pixel_chunk: int = 32,
+    data_dir=None,
 ) -> None:
     """Wen et al. 2026 Table 1 analog: per-config 90% / 50% credible areas.
 
@@ -496,6 +472,7 @@ def run_sweep(
             nside=nside,
             snr_target=snr_target,
             pixel_chunk=pixel_chunk,
+            data_dir=data_dir,
         )
         save_results(out_path, results)
         # Per-config Mollviews at both levels.
@@ -619,6 +596,12 @@ def main() -> None:
         "of the 4-pulsar SMOKE_SUBSET.",
     )
     sp.add_argument("--validate-linearity", action="store_true")
+    sp.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="Dataset directory override (default: module DATA_DIR).",
+    )
 
     sp = sub.add_parser("plot")
     sp.add_argument("--input", type=Path, default=DEFAULT_OUTPUT)
@@ -635,6 +618,12 @@ def main() -> None:
     sp.add_argument("--nside", type=int, default=4)
     sp.add_argument("--pixel-chunk", type=int, default=32)
     sp.add_argument("--snr", type=float, default=SNR_TARGET_DEFAULT)
+    sp.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="Dataset directory override (default: module DATA_DIR).",
+    )
 
     args = p.parse_args()
     if args.mode == "plot":
@@ -648,6 +637,7 @@ def main() -> None:
             nside=args.nside,
             snr_target=args.snr,
             pixel_chunk=args.pixel_chunk,
+            data_dir=getattr(args, "data_dir", None),
         )
         return
 
@@ -660,6 +650,7 @@ def main() -> None:
         snr_target=args.snr,
         pixel_chunk=args.pixel_chunk,
         validate_linearity=args.validate_linearity,
+        data_dir=getattr(args, "data_dir", None),
     )
     save_results(args.output, results)
 

@@ -34,20 +34,16 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import healpy as hp
+
+from jaxpint.notebook_utils import import_healpy, load_npz_results, overlay_pulsars
+
+# Guarded healpy import (clear install hint if the optional extra is missing).
+hp = import_healpy()
 
 
 def _finite_pos(m):
     """Finite, strictly-positive entries of a HEALPix map (for stats/bins)."""
     return m[np.isfinite(m) & (m > 0)]
-
-
-def _pulsar_lonlat(npz):
-    """(lon_deg, lat_deg) of each pulsar from the saved ICRS unit vectors."""
-    pos = np.asarray(npz["pulsar_pos"])
-    theta = np.arccos(np.clip(pos[:, 2], -1.0, 1.0))
-    phi = np.arctan2(pos[:, 1], pos[:, 0])
-    return np.degrees(phi), 90.0 - np.degrees(theta)
 
 
 def _anchor_mask(npz, n_psr):
@@ -86,8 +82,8 @@ def main():
     )
     args = ap.parse_args()
 
-    bs = np.load(args.earth, allow_pickle=False)
-    pt = np.load(args.pulsar, allow_pickle=False)
+    bs = load_npz_results(args.earth)
+    pt = load_npz_results(args.pulsar)
 
     d_e = np.asarray(bs["dist_ll_mpc"])
     d_p = np.asarray(pt["dist_ll_mpc"])
@@ -95,8 +91,8 @@ def main():
     if int(pt["nside"]) != nside:
         raise ValueError(f"nside mismatch: earth={nside}, pulsar={int(pt['nside'])}")
 
-    psr_lon, psr_lat = _pulsar_lonlat(pt)
-    n_psr = len(psr_lon)
+    psr_pos = np.asarray(pt["pulsar_pos"])  # (n_psr, 3) ICRS unit vectors
+    n_psr = len(psr_pos)
     is_anchor = _anchor_mask(pt, n_psr)
     n_anchors = int(pt["n_anchors"]) if "n_anchors" in pt else int(is_anchor.sum())
 
@@ -115,28 +111,12 @@ def main():
 
     def _overlay_pulsars(anchor_color="red", other_color="white"):
         """Anchors as stars, non-anchors as dots, on the current mollview."""
-        if is_anchor.any():
-            hp.projscatter(
-                psr_lon[is_anchor],
-                psr_lat[is_anchor],
-                lonlat=True,
-                s=45,
-                c=anchor_color,
-                edgecolor="black",
-                linewidths=0.5,
-                marker="*",
-            )
-        if (~is_anchor).any():
-            hp.projscatter(
-                psr_lon[~is_anchor],
-                psr_lat[~is_anchor],
-                lonlat=True,
-                s=18,
-                c=other_color,
-                edgecolor="black",
-                linewidths=0.5,
-                marker="o",
-            )
+        overlay_pulsars(
+            psr_pos,
+            is_anchor,
+            star_kwargs=dict(s=45, color=anchor_color),
+            dot_kwargs=dict(s=18, color=other_color, linewidths=0.5),
+        )
 
     # ---- 1. Side-by-side log10(D_L) -------------------------------------------
     fig = plt.figure(figsize=(14, 6))

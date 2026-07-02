@@ -23,7 +23,9 @@ dependencies = [
     "loguru>=0.7",
     # CA bundle for the clock-snapshot HTTPS fetch (jaxpint/clock/fetch.py);
     # guarantees a working cert store (notably on macOS framework Python).
-    "certifi>=2023.7.22"
+    "certifi>=2023.7.22",
+    # Required by ipykernel 7.x for kernel metrics; not pulled in transitively.
+    "prometheus-client>=0.25.0",
 ]
 
 [project.optional-dependencies]
@@ -59,6 +61,7 @@ dev = [
     "hypothesis>=6.0",
     "ipykernel>=7.2.0",
     "ipympl>=0.10.0",
+    "jupyterlab>=4.6.1",
     "nbconvert>=7.0",
     "git-filter-repo>=2.47.0",
     "sphinx-autobuild>=2024.10.3",

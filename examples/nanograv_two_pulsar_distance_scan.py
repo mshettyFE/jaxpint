@@ -75,44 +75,7 @@ HALF_WINDOW_KPC = 1e-3
 N_GRID = 400  # 400 x 400 = 160k logL evals
 
 DEFAULT_DATA_PATH = Path("nanograv_two_pulsar_distance_scan.npz")
-
-# IAU 2006 obliquity of the ecliptic at J2000.0
-OBLIQUITY_RAD = np.deg2rad(84381.406 / 3600.0)
-COS_EPS = np.cos(OBLIQUITY_RAD)
-SIN_EPS = np.sin(OBLIQUITY_RAD)
-
-
-def pulsar_unit_vector_icrs(pp):
-    """ICRS Cartesian unit vector from either RAJ/DECJ or ELONG/ELAT.
-
-    NANOGrav par files use either equatorial (RAJ/DECJ) or ecliptic
-    (ELONG/ELAT) coordinates depending on which gives a better-conditioned
-    timing fit. CWInjector wants ICRS unit vectors, so we rotate the
-    ecliptic ones by the J2000 obliquity (PINT's ELONG/ELAT convention).
-    """
-    if "RAJ" in pp.names and "DECJ" in pp.names:
-        ra = float(pp.param_value("RAJ"))
-        dec = float(pp.param_value("DECJ"))
-        return np.array(
-            [
-                np.cos(dec) * np.cos(ra),
-                np.cos(dec) * np.sin(ra),
-                np.sin(dec),
-            ]
-        )
-    if "ELONG" in pp.names and "ELAT" in pp.names:
-        elong = float(pp.param_value("ELONG"))
-        elat = float(pp.param_value("ELAT"))
-        # Ecliptic Cartesian, then rotate +eps about x to reach ICRS.
-        x = np.cos(elat) * np.cos(elong)
-        y_ec = np.cos(elat) * np.sin(elong)
-        z_ec = np.sin(elat)
-        return np.array(
-            [x, COS_EPS * y_ec - SIN_EPS * z_ec, SIN_EPS * y_ec + COS_EPS * z_ec]
-        )
-    raise KeyError(
-        f"Pulsar params lack both (RAJ, DECJ) and (ELONG, ELAT); names={pp.names}"
-    )
+DEFAULT_PLOT_PATH = Path("nanograv_two_pulsar_distance_scan.png")
 
 
 class _TeeStream:
@@ -245,7 +208,9 @@ def _print_phase_summary(records: list) -> None:
     )
 
 
-def compute_logL_2d(debug: bool = False, profile: bool = False) -> dict:
+def compute_logL_2d(
+    debug: bool = False, profile: bool = False, data_dir: Path | None = None
+) -> dict:
     """Run the full GPU pipeline and return everything the plot step needs.
 
     `debug=True` raises the moment a non-finite value is produced
@@ -279,6 +244,7 @@ def compute_logL_2d(debug: bool = False, profile: bool = False) -> dict:
     from jaxpint.pta import PerPulsarScanAxis, scan_logL
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.notebook_utils import inject_and_build_config
+    from jaxpint.utils import pulsar_unit_vector
 
     gpu_device = jax.devices("gpu")[0]
     jax.config.update("jax_default_device", gpu_device)
@@ -287,9 +253,10 @@ def compute_logL_2d(debug: bool = False, profile: bool = False) -> dict:
     phase = _phase_cm(profile_records, gpu_device, profile)
 
     # ---- 1. Load the NANOGrav PTA -----------------------------------------
-    if not DATA_DIR.is_dir():
+    data_dir = Path(data_dir) if data_dir is not None else DATA_DIR
+    if not data_dir.is_dir():
         raise FileNotFoundError(
-            f"DATA_DIR = {DATA_DIR} does not exist. "
+            f"DATA_DIR = {data_dir} does not exist. "
             "Download https://zenodo.org/records/8423265/files/"
             "NANOGrav15yr_PulsarTiming_v2.0.0.tar.gz, extract, and point DATA_DIR "
             "at the extracted narrowband/ directory."
@@ -307,9 +274,9 @@ def compute_logL_2d(debug: bool = False, profile: bool = False) -> dict:
     PULSAR_SUBSET = None
 
     with phase("load_pta"):
-        psrs = load_nanograv_pta(DATA_DIR, pulsar_names=PULSAR_SUBSET)
+        psrs = load_nanograv_pta(data_dir, pulsar_names=PULSAR_SUBSET)
 
-    print(f"Loaded {len(psrs.pulsar_names)} pulsars from {DATA_DIR}.")
+    print(f"Loaded {len(psrs.pulsar_names)} pulsars from {data_dir}.")
     for name, td in zip(psrs.pulsar_names[:5], psrs.toa_data_list[:5]):
         print(f"  {name:>14s}: {int(td.mjd_int.shape[0]):>5d} TOAs")
     print(f"  ... ({len(psrs.pulsar_names) - 5} more)")
@@ -324,8 +291,9 @@ def compute_logL_2d(debug: bool = False, profile: bool = False) -> dict:
 
     # ---- 3. Inject one CW source and build the `PTAConfig` ----------------
     with phase("build_config"):
+        # ICRS unit vectors from RAJ/DECJ or ELONG/ELAT (IAU 2006 obliquity).
         positions_np = np.stack(
-            [pulsar_unit_vector_icrs(pp) for pp in psrs.pulsar_params_list]
+            [np.asarray(pulsar_unit_vector(pp)) for pp in psrs.pulsar_params_list]
         )
         positions = jnp.asarray(positions_np)
 
@@ -442,7 +410,10 @@ def load_results(path: Path) -> dict:
     return out
 
 
-def plot_results(results: dict) -> None:
+def plot_results(
+    results: dict, output: Path = DEFAULT_PLOT_PATH, show: bool = False
+) -> None:
+    """Draw the 2D contour + 1D slices; save PNGs (and optionally plt.show())."""
     # Lazy import: keeps `plot` mode off the JAX/CUDA init path until
     # `jaxpint.notebook_utils` is actually needed.
     from jaxpint.notebook_utils import plot_2d_delta_logL
@@ -480,6 +451,9 @@ def plot_results(results: dict) -> None:
     fig.colorbar(mesh, ax=ax, label=r"$\Delta$ log-likelihood")
     ax.legend(loc="upper right")
     fig.tight_layout()
+    output = Path(output)
+    fig.savefig(output, dpi=130, bbox_inches="tight")
+    print(f"Wrote {output}")
 
     # ---- 7. 1D projections at the other pulsar's true distance ------------
     idx_b_true = int(np.argmin(np.abs(np.asarray(px_b_mas_grid) - true_px_b)))
@@ -511,21 +485,30 @@ def plot_results(results: dict) -> None:
     ax1.legend()
 
     fig.tight_layout()
-    plt.show()
+    slices_output = output.with_name(output.stem + "_slices" + output.suffix)
+    fig.savefig(slices_output, dpi=130, bbox_inches="tight")
+    print(f"Wrote {slices_output}")
+    if show:
+        plt.show()
 
 
 def cmd_generate(args: argparse.Namespace) -> None:
-    save_results(args.path, compute_logL_2d(debug=args.debug, profile=args.profile))
+    save_results(
+        args.path,
+        compute_logL_2d(debug=args.debug, profile=args.profile, data_dir=args.data_dir),
+    )
 
 
 def cmd_plot(args: argparse.Namespace) -> None:
-    plot_results(load_results(args.path))
+    plot_results(load_results(args.path), output=args.plot_output, show=args.show)
 
 
 def cmd_both(args: argparse.Namespace) -> None:
-    results = compute_logL_2d(debug=args.debug, profile=args.profile)
+    results = compute_logL_2d(
+        debug=args.debug, profile=args.profile, data_dir=args.data_dir
+    )
     save_results(args.path, results)
-    plot_results(results)
+    plot_results(results, output=args.plot_output, show=args.show)
 
 
 def main() -> None:
@@ -551,6 +534,9 @@ def main() -> None:
         debug=False,
         profile=False,
         log=None,
+        data_dir=None,
+        plot_output=DEFAULT_PLOT_PATH,
+        show=False,
     )
     subparsers = parser.add_subparsers(dest="mode")
 
@@ -570,11 +556,19 @@ def main() -> None:
         "does NOT survive SIGKILL — for that, pipe to `tee` at the shell."
     )
 
+    data_dir_help = (
+        "NANOGrav narrowband dataset directory. Default: $JAXPINT_DATA_DIR "
+        "or the module DATA_DIR fallback."
+    )
+    plot_output_help = "Output PNG for the 2D contour (a *_slices.png sibling holds the 1D projections)."
+    show_help = "Additionally open interactive matplotlib windows (plt.show())."
+
     p_gen = subparsers.add_parser(
         "generate",
         help="Run the GPU scan and save the result to disk; no plotting.",
     )
     p_gen.add_argument("--output", dest="path", type=Path, default=DEFAULT_DATA_PATH)
+    p_gen.add_argument("--data-dir", type=Path, default=None, help=data_dir_help)
     p_gen.add_argument("--debug", action="store_true", help=debug_help)
     p_gen.add_argument("--profile", action="store_true", help=profile_help)
     p_gen.add_argument("--log", type=Path, default=None, help=log_help)
@@ -585,6 +579,14 @@ def main() -> None:
         help="Load a saved scan and plot it; no JAX/GPU required.",
     )
     p_plot.add_argument("--input", dest="path", type=Path, default=DEFAULT_DATA_PATH)
+    p_plot.add_argument(
+        "--output",
+        dest="plot_output",
+        type=Path,
+        default=DEFAULT_PLOT_PATH,
+        help=plot_output_help,
+    )
+    p_plot.add_argument("--show", action="store_true", help=show_help)
     p_plot.set_defaults(func=cmd_plot)
 
     p_both = subparsers.add_parser(
@@ -592,6 +594,15 @@ def main() -> None:
         help="Run the scan, save the result, and plot in one process.",
     )
     p_both.add_argument("--data", dest="path", type=Path, default=DEFAULT_DATA_PATH)
+    p_both.add_argument("--data-dir", type=Path, default=None, help=data_dir_help)
+    p_both.add_argument(
+        "--output",
+        dest="plot_output",
+        type=Path,
+        default=DEFAULT_PLOT_PATH,
+        help=plot_output_help,
+    )
+    p_both.add_argument("--show", action="store_true", help=show_help)
     p_both.add_argument("--debug", action="store_true", help=debug_help)
     p_both.add_argument("--profile", action="store_true", help=profile_help)
     p_both.add_argument("--log", type=Path, default=None, help=log_help)

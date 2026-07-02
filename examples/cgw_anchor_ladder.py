@@ -32,48 +32,22 @@ from pathlib import Path
 
 import numpy as np
 
-# ---- self-contained example config (no cross-example imports) --------------
+from jaxpint.notebook_utils import (
+    SMOKE_SUBSET,
+    healpix_grid,
+    import_healpy,
+    load_filtered_pta,
+    load_npz_results,
+    log_flush as _log,
+    marginalize_each_pulsar,
+    overlay_pulsars,
+    save_npz_results,
+)
+
+# ---- script-specific config -------------------------------------------------
 F_GW = 27e-9  # 27 nHz
 LOG10_FGW = float(np.log10(F_GW))
 PI2 = float(np.pi / 2.0)
-MARG_PARAMS = {
-    "F0",
-    "F1",
-    "RAJ",
-    "DECJ",
-    "ELONG",
-    "ELAT",
-    "PMRA",
-    "PMDEC",
-    "PMELONG",
-    "PMELAT",
-}
-SMOKE_SUBSET = ["J1909-3744", "J1713+0747", "J0613-0200", "J1744-1134"]
-DROP_PULSARS = {
-    "B1937+21ao",
-    "B1937+21gbt",
-    "J1600-3053gbt",
-    "J1643-1224gbt",
-    "J1713+0747ao",
-    "J1713+0747gbt",
-    "J1903+0327ao",
-    "J1909-3744gbt",
-}
-
-
-def _log(msg):
-    print(msg, flush=True)
-
-
-def _import_healpy():
-    try:
-        import healpy as hp
-    except ImportError as e:  # pragma: no cover
-        raise ImportError(
-            "This example needs healpy (HEALPix grid + Mollweide plots). Install "
-            "the optional extra:  uv pip install 'jaxpint[skymap]'."
-        ) from e
-    return hp
 
 
 def compute_anchor_ladder(
@@ -122,8 +96,6 @@ def compute_anchor_ladder(
     import jax.numpy as jnp
     from loguru import logger
 
-    from jaxpint import load_nanograv_pta
-    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
     from jaxpint.bayes.credible import credible_level_map, credible_region_area
     from jaxpint.pta.signals.cw import cw_delay_from_array, CWInjector, _KPC_TO_M, _C
     from jaxpint.pta.incoherent_ul import (
@@ -133,9 +105,8 @@ def compute_anchor_ladder(
     )
     from jaxpint.pta.cw_localization import h0_for_snr
     from jaxpint.types import GlobalParams
-    from jaxpint.utils import pulsar_unit_vector
 
-    hp = _import_healpy()
+    hp = import_healpy()
     logger.disable("pint")
     sigma_L_kpc = sigma_L_pc * 1e-3
 
@@ -143,22 +114,17 @@ def compute_anchor_ladder(
         return jnp.array([1.0, ct, gp, LOG10_FGW, 1.0, 0.0, 0.0])
 
     # ---- load + sky grid + truth -----------------------------------------
-    psrs = load_nanograv_pta(data_dir, pulsar_names=pulsar_subset)
-    keep = [i for i, n in enumerate(psrs.pulsar_names) if n not in DROP_PULSARS]
-    names = [psrs.pulsar_names[i] for i in keep]
-    td_list = [psrs.toa_data_list[i] for i in keep]
-    tm_list = [psrs.timing_models[i] for i in keep]
-    nm_list = [psrs.noise_models[i] for i in keep]
-    pp_list = [psrs.pulsar_params_list[i] for i in keep]
-    positions = np.stack([np.asarray(pulsar_unit_vector(pp)) for pp in pp_list])
+    pta = load_filtered_pta(data_dir, pulsar_names=pulsar_subset)
+    names = list(pta.names)
+    td_list = list(pta.toa_data_list)
+    pp_list = list(pta.pulsar_params_list)
+    positions = pta.positions
     px = np.array([float(pp.param_value("PX")) for pp in pp_list])
     pos_j = jnp.asarray(positions)
     npsr = len(names)
 
-    npix = hp.nside2npix(nside)
-    theta, phi = hp.pix2ang(nside, np.arange(npix))
-    cos_gwtheta = jnp.asarray(np.cos(theta))
-    gwphi = jnp.asarray(phi)
+    grid = healpix_grid(nside)
+    npix, theta, phi = grid.npix, grid.theta, grid.phi
     if truth_pix is None:
         truth_pix = 2 * npix // 3
     ct_t, gp_t = float(np.cos(theta[truth_pix])), float(phi[truth_pix])
@@ -172,21 +138,7 @@ def compute_anchor_ladder(
     _log(f"Loaded {npsr} pulsars; truth pix {truth_pix}; sigma_L={sigma_L_pc} pc.")
 
     # ---- per-pulsar likelihoods + SNR calibration + injection ------------
-    gs = []
-    for td, tm, nm, pp in zip(td_list, tm_list, nm_list, pp_list):
-        over = {n for n in pp.free_names() if n in MARG_PARAMS}
-        gs.append(
-            marginalize_single_pulsar(
-                over=over,
-                priors={n: ImproperPrior() for n in over},
-                toa_data=td,
-                timing_model=tm,
-                noise_model=nm,
-                fiducial_params=pp,
-                allow_nonlinear=True,
-                validate_linearity=False,
-            )
-        )
+    gs = marginalize_each_pulsar(pta)
 
     def templates(td, pos, ct, gp):
         cw = cw_params(ct, gp)
@@ -248,7 +200,7 @@ def compute_anchor_ladder(
 
         out = jax.lax.map(
             lambda row: bM_at(row[0], row[1]),
-            jnp.stack([cos_gwtheta, gwphi], axis=1),
+            grid.sky,
             batch_size=pixel_chunk,
         )
         b_all[a] = np.asarray(out[0])
@@ -257,11 +209,7 @@ def compute_anchor_ladder(
 
     # ---- reduction sweep over n_anchors ----------------------------------
     L0 = jnp.asarray(L_t)
-    sin_th = np.sin(theta)
-    omhat = np.stack(
-        [-sin_th * np.cos(phi), -sin_th * np.sin(phi), -np.cos(theta)], axis=1
-    )
-    cos_mu_all = jnp.asarray(omhat @ positions.T)
+    cos_mu_all = jnp.asarray(grid.omhat @ positions.T)
     b_pix = jnp.transpose(jnp.asarray(b_all), (1, 0, 2))
     M_pix = jnp.transpose(jnp.asarray(M_all), (1, 0, 2, 3))
     pa_deg2 = hp.nside2pixarea(nside, degrees=True)
@@ -320,12 +268,6 @@ def compute_anchor_ladder(
     }
 
 
-def save_results(path, results):
-    """Write a :func:`compute_anchor_ladder` results dict to ``.npz``."""
-    np.savez_compressed(path, **results)
-    _log(f"Saved -> {path}")
-
-
 def plot_results(path, outdir="."):
     """Plot the anchor ladder: A68 & offset vs n_anchors, plus a Mollweide row."""
     import matplotlib
@@ -335,8 +277,8 @@ def plot_results(path, outdir="."):
     import jax.numpy as jnp
     from jaxpint.bayes.credible import credible_level_map
 
-    hp = _import_healpy()
-    d = np.load(path, allow_pickle=False)
+    hp = import_healpy()
+    d = load_npz_results(path)
     na = np.asarray(d["n_anchors"])
     nside = int(d["nside"])
     truth_pix = int(d["truth_pix"])
@@ -363,7 +305,7 @@ def plot_results(path, outdir="."):
 
     # --- Mollweide row for a few representative n_anchors ---
     tt, tp = hp.pix2ang(nside, truth_pix)
-    pt, pp = hp.vec2ang(np.asarray(d["pulsar_pos"]))
+    pulsar_pos = np.asarray(d["pulsar_pos"])
     sel = sorted(set([int(na[0]), int(na[len(na) // 2]), int(na[-1])]))
     figm = plt.figure(figsize=(6.2 * len(sel), 4.2))
     for i, nv in enumerate(sel):
@@ -379,7 +321,11 @@ def plot_results(path, outdir="."):
             title=f"n_anchors={nv}\noffset={float(d['offset_deg'][nv]):.1f} deg",
         )
         hp.projscatter(tt, tp, marker="*", s=200, color="red")
-        hp.projscatter(pt, pp, marker="o", s=16, color="white", edgecolors="k")
+        overlay_pulsars(
+            pulsar_pos,
+            anchor_mask=np.zeros(len(pulsar_pos), dtype=bool),
+            dot_kwargs={"s": 16},
+        )
         hp.graticule()
     out_maps = Path(outdir) / "cgw_anchor_ladder_maps.png"
     figm.savefig(out_maps, dpi=130, bbox_inches="tight")
@@ -426,7 +372,7 @@ def main():
             n_phase=args.n_phase,
             pixel_chunk=args.pixel_chunk,
         )
-        save_results(args.output, res)
+        save_npz_results(args.output, res)
     else:
         plot_results(args.input, outdir=args.outdir)
 

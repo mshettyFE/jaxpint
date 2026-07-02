@@ -10,6 +10,13 @@ Injection is baked into each pulsar's likelihood by a baseline
 is calibrated to a target network matched-filter SNR.  Run on any NANOGrav-style
 dataset via ``--data-dir`` (e.g. the synthetic ``ocarina_2`` set).
 
+Usage::
+
+    python examples/cgw_localization_marginal.py generate --data-dir DIR [--nside N] \\
+        [--truth-pix P] [--snr S] [--n-phase N] [--k X] [--pixel-chunk N] \\
+        [--full] [--output PATH]
+    python examples/cgw_localization_marginal.py plot [--input PATH] \\
+        [--which marginal|profile] [--outdir DIR]
 """
 
 from __future__ import annotations
@@ -19,50 +26,22 @@ from pathlib import Path
 
 import numpy as np
 
-# ---- self-contained example config (no cross-example imports) --------------
+from jaxpint.notebook_utils import (
+    SMOKE_SUBSET,
+    healpix_grid,
+    import_healpy,
+    load_filtered_pta,
+    load_npz_results,
+    log_flush as _log,
+    marginalize_each_pulsar,
+    overlay_pulsars,
+    save_npz_results,
+)
+
+# ---- script-specific config -------------------------------------------------
 F_GW = 27e-9  # 27 nHz
 LOG10_FGW = float(np.log10(F_GW))
 FIXED_ORIENTATION = (1.0, 0.0, 0.0)  # cos_inc, psi, phase0 (face-on)
-# Timing params to analytically marginalize (ImproperPrior) per pulsar.
-MARG_PARAMS = {
-    "F0",
-    "F1",
-    "RAJ",
-    "DECJ",
-    "ELONG",
-    "ELAT",
-    "PMRA",
-    "PMDEC",
-    "PMELONG",
-    "PMELAT",
-}
-# Well-timed default subset for the smoke run (all have measured PX).
-SMOKE_SUBSET = ["J1909-3744", "J1713+0747", "J0613-0200", "J1744-1134"]
-DROP_PULSARS = {
-    "B1937+21ao",
-    "B1937+21gbt",
-    "J1600-3053gbt",
-    "J1643-1224gbt",
-    "J1713+0747ao",
-    "J1713+0747gbt",
-    "J1903+0327ao",
-    "J1909-3744gbt",
-}
-
-
-def _log(msg):
-    print(msg, flush=True)
-
-
-def _import_healpy():
-    try:
-        import healpy as hp
-    except ImportError as e:  # pragma: no cover
-        raise ImportError(
-            "This example needs healpy (HEALPix grid + Mollweide plots). Install "
-            "the optional extra:  uv pip install 'jaxpint[skymap]'."
-        ) from e
-    return hp
 
 
 def compute_localization(
@@ -139,8 +118,6 @@ def compute_localization(
     import jax.numpy as jnp
     from loguru import logger
 
-    from jaxpint import load_nanograv_pta
-    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
     from jaxpint.bayes.credible import credible_level_map, credible_region_area
     from jaxpint.pta.signals.cw import cw_delay_from_array, CWInjector
     from jaxpint.pta.incoherent_ul import (
@@ -151,10 +128,9 @@ def compute_localization(
     )
     from jaxpint.pta.cw_localization import h0_for_snr
     from jaxpint.types import GlobalParams
-    from jaxpint.utils import pulsar_unit_vector
     from jaxpint.pta.signals.cw import _KPC_TO_M, _C
 
-    hp = _import_healpy()
+    hp = import_healpy()
     logger.disable("pint")
     cos_inc, psi, phase0 = (float(x) for x in FIXED_ORIENTATION)
 
@@ -162,20 +138,15 @@ def compute_localization(
         return jnp.array([1.0, ct, gp, LOG10_FGW, cos_inc, psi, phase0])
 
     # ---- load + sky grid + truth -----------------------------------------
-    psrs = load_nanograv_pta(data_dir, pulsar_names=pulsar_subset)
-    keep = [i for i, n in enumerate(psrs.pulsar_names) if n not in DROP_PULSARS]
-    names = [psrs.pulsar_names[i] for i in keep]
-    td_list = [psrs.toa_data_list[i] for i in keep]
-    tm_list = [psrs.timing_models[i] for i in keep]
-    nm_list = [psrs.noise_models[i] for i in keep]
-    pp_list = [psrs.pulsar_params_list[i] for i in keep]
-    positions = np.stack([np.asarray(pulsar_unit_vector(pp)) for pp in pp_list])
+    pta = load_filtered_pta(data_dir, pulsar_names=pulsar_subset)
+    names = list(pta.names)
+    td_list = list(pta.toa_data_list)
+    pp_list = list(pta.pulsar_params_list)
+    positions = pta.positions
     px = np.array([float(pp.param_value("PX")) for pp in pp_list])  # parallax (mas)
 
-    npix = hp.nside2npix(nside)
-    theta, phi = hp.pix2ang(nside, np.arange(npix))
-    cos_gwtheta = jnp.asarray(np.cos(theta))
-    gwphi = jnp.asarray(phi)
+    grid = healpix_grid(nside)
+    npix, theta, phi = grid.npix, grid.theta, grid.phi
     if truth_pix is None:
         truth_pix = npix // 3
     ct_t, gp_t = float(np.cos(theta[truth_pix])), float(phi[truth_pix])
@@ -194,21 +165,7 @@ def compute_localization(
     )
 
     # ---- per-pulsar marginalized likelihoods (once) ----------------------
-    gs = []
-    for td, tm, nm, pp in zip(td_list, tm_list, nm_list, pp_list):
-        over = {n for n in pp.free_names() if n in MARG_PARAMS}
-        gs.append(
-            marginalize_single_pulsar(
-                over=over,
-                priors={n: ImproperPrior() for n in over},
-                toa_data=td,
-                timing_model=tm,
-                noise_model=nm,
-                fiducial_params=pp,
-                allow_nonlinear=True,
-                validate_linearity=False,
-            )
-        )
+    gs = marginalize_each_pulsar(pta)
 
     def templates(td, pos, ct, gp):
         cw = cw_params(ct, gp)
@@ -268,7 +225,7 @@ def compute_localization(
 
         bM = jax.lax.map(
             lambda row: bM_at(row[0], row[1]),
-            jnp.stack([cos_gwtheta, gwphi], axis=1),
+            grid.sky,
             batch_size=pixel_chunk,
         )
         b_all[a] = np.asarray(bM[0])
@@ -278,11 +235,7 @@ def compute_localization(
     # ---- per-pixel marginal/profile maps ---------------------------------
     is_tight = jnp.zeros(len(names), bool)
     L0 = jnp.asarray(L_t)
-    sin_th = np.sin(theta)
-    omhat = np.stack(
-        [-sin_th * np.cos(phi), -sin_th * np.sin(phi), -np.cos(theta)], axis=1
-    )
-    cos_mu_all = jnp.asarray(omhat @ positions.T)  # (npix, n_psr)
+    cos_mu_all = jnp.asarray(grid.omhat @ positions.T)  # (npix, n_psr)
     b_pix = jnp.transpose(jnp.asarray(b_all), (1, 0, 2))
     M_pix = jnp.transpose(jnp.asarray(M_all), (1, 0, 2, 3))
 
@@ -335,28 +288,13 @@ def compute_localization(
     }
 
 
-def save_results(path, results):
-    """Write a :func:`compute_localization` results dict to a compressed ``.npz``.
-
-    Parameters
-    ----------
-    path : path-like
-        Output ``.npz`` file.
-    results : dict
-        The dict returned by :func:`compute_localization` (every key becomes an
-        array in the archive).
-    """
-    np.savez_compressed(path, **results)
-    _log(f"Saved -> {path}")
-
-
 def plot_results(path, which="marginal", outdir="."):
     """Render a Mollweide of the HPD credible-level map from a saved ``.npz``.
 
     Parameters
     ----------
     path : path-like
-        ``.npz`` written by :func:`save_results`.
+        ``.npz`` written by :func:`jaxpint.notebook_utils.save_npz_results`.
     which : {"marginal", "profile"}
         Which map to plot (``marginal`` is the credible-region deliverable;
         ``profile`` the diagnostic).
@@ -374,11 +312,11 @@ def plot_results(path, which="marginal", outdir="."):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    hp = _import_healpy()
+    hp = import_healpy()
     from jaxpint.bayes.credible import credible_level_map
     import jax.numpy as jnp
 
-    d = np.load(path, allow_pickle=False)
+    d = load_npz_results(path)
     nside = int(d["nside"])
     m = np.asarray(d[which])
     lvl = np.asarray(credible_level_map(jnp.asarray(m)))  # 0 = most probable
@@ -394,8 +332,7 @@ def plot_results(path, which="marginal", outdir="."):
     )
     hp.projscatter(tt, tp, marker="*", s=200, color="red", label="truth")
     pos = np.asarray(d["pulsar_pos"])
-    pt, pp = hp.vec2ang(pos)
-    hp.projscatter(pt, pp, marker="o", s=20, color="white", edgecolors="k")
+    overlay_pulsars(pos, anchor_mask=np.zeros(len(pos), dtype=bool))
     hp.graticule()
     out = Path(outdir) / f"cgw_localization_{which}.png"
     plt.savefig(out, dpi=130, bbox_inches="tight")
@@ -441,7 +378,7 @@ def main():
             n_phase=args.n_phase,
             pixel_chunk=args.pixel_chunk,
         )
-        save_results(args.output, res)
+        save_npz_results(args.output, res)
     else:
         plot_results(args.input, which=args.which, outdir=args.outdir)
 
