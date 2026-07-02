@@ -13,7 +13,7 @@ parallax (Δ_p ~ 1e4-1e6 rad), this collapses to the exact flat-phase limit -- s
 Fixed orientation (face-on), ``data_mode='real'``.  Usage::
 
     python examples/cgw_incoherent_distance_skymap.py generate [--output PATH] [--nside N] \\
-        [--full] [--pixel-chunk N] [--k 5] [--n-phase 256]
+        [--data-dir DIR] [--full] [--pixel-chunk N] [--k 5] [--n-phase 256]
     python examples/cgw_incoherent_distance_skymap.py plot [--input PATH]    # reuses the earth-vs-pulsar plotter
 """
 
@@ -24,19 +24,23 @@ from pathlib import Path
 
 import numpy as np
 
-# Reuse the dataset/loader/constants/helpers from the sibling driver.
+from jaxpint.notebook_utils import (
+    SMOKE_SUBSET,
+    healpix_grid,
+    import_healpy,
+    load_filtered_pta,
+    log_flush as _log,
+    marginalize_each_pulsar,
+    save_npz_results,
+)
+
+# Reuse the dataset/science constants from the sibling driver.
 from examples.cgw_distance_skymap import (
     DATA_DIR,
-    DROP_PULSARS,
-    SMOKE_SUBSET,
-    MARG_PARAMS,
     FIXED_ORIENTATION,
     LOG10_MC,
     LOG10_FGW,
     F_GW,
-    pulsar_unit_vector_icrs,
-    _log,
-    _import_healpy,
 )
 
 
@@ -50,9 +54,13 @@ def compute_skymap(
     earth_term_only=False,
     coherent_fraction=0.0,
     coherent_sigma_pc=0.1,
+    data_dir=None,
 ):
     """Compute the distance-reach map. Returns a results dict (see save keys).
 
+    data_dir : path-like or None
+        Dataset directory; ``None`` uses the ``DATA_DIR`` imported from
+        ``cgw_distance_skymap``.
     earth_term_only : bool
         Drop the pulsar term and route the pure Earth-term signal through the same
         numerical UL -- a *method-matched* baseline for the earth-vs-incoherent
@@ -70,8 +78,6 @@ def compute_skymap(
     import jax.numpy as jnp
     from loguru import logger
 
-    from jaxpint import load_nanograv_pta
-    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
     from jaxpint.pta.signals.cw import cw_delay_from_array
     from jaxpint.pta.cw_upper_limit import h0_to_distance
     from jaxpint.pta.incoherent_ul import (
@@ -80,18 +86,17 @@ def compute_skymap(
         mixed_phase_A,
     )
 
-    hp = _import_healpy()
+    import_healpy()  # fail fast if the optional skymap extra is missing
     logger.disable("pint")
 
     # ---- 1. Load + filter -------------------------------------------------
-    psrs = load_nanograv_pta(DATA_DIR, pulsar_names=pulsar_subset)
-    keep = [i for i, n in enumerate(psrs.pulsar_names) if n not in DROP_PULSARS]
-    names = [psrs.pulsar_names[i] for i in keep]
-    td_list = [psrs.toa_data_list[i] for i in keep]
-    tm_list = [psrs.timing_models[i] for i in keep]
-    nm_list = [psrs.noise_models[i] for i in keep]
-    pp_list = [psrs.pulsar_params_list[i] for i in keep]
-    positions = np.stack([np.asarray(pulsar_unit_vector_icrs(pp)) for pp in pp_list])
+    pta = load_filtered_pta(
+        DATA_DIR if data_dir is None else data_dir, pulsar_names=pulsar_subset
+    )
+    names = list(pta.names)
+    td_list = list(pta.toa_data_list)
+    pp_list = list(pta.pulsar_params_list)
+    positions = pta.positions
     n_toa = int(sum(int(td.n_toas) for td in td_list))
     _log(f"Loaded {len(names)} pulsars, {n_toa} TOAs total.")
 
@@ -129,10 +134,8 @@ def compute_skymap(
         )
 
     # ---- 2. HEALPix sky grid ---------------------------------------------
-    npix = hp.nside2npix(nside)
-    theta, phi = hp.pix2ang(nside, np.arange(npix))
-    cos_gwtheta = jnp.asarray(np.cos(theta))
-    gwphi = jnp.asarray(phi)
+    grid = healpix_grid(nside)
+    npix = grid.npix
 
     def cw_params(ct, gp):
         return jnp.array([1.0, ct, gp, LOG10_FGW, cos_inc, psi, phase0])
@@ -146,20 +149,10 @@ def compute_skymap(
     )
     b_all = np.empty((len(names), npix, 2))
     M_all = np.empty((len(names), npix, 2, 2))
-    for a, (td, tm, nm, pp, pos) in enumerate(
-        zip(td_list, tm_list, nm_list, pp_list, jnp.asarray(positions))
+    gs = marginalize_each_pulsar(pta)
+    for a, ((g, _, skel), td, pos) in enumerate(
+        zip(gs, td_list, jnp.asarray(positions))
     ):
-        over = {n for n in pp.free_names() if n in MARG_PARAMS}
-        g, _, skel = marginalize_single_pulsar(
-            over=over,
-            priors={n: ImproperPrior() for n in over},
-            toa_data=td,
-            timing_model=tm,
-            noise_model=nm,
-            fiducial_params=pp,
-            allow_nonlinear=True,
-            validate_linearity=False,
-        )
 
         def bM_at(ct, gp, pos=pos, td=td, g=g, skel=skel):
             cw = cw_params(ct, gp)
@@ -179,7 +172,7 @@ def compute_skymap(
 
         bM = jax.lax.map(
             lambda row: bM_at(row[0], row[1]),
-            jnp.stack([cos_gwtheta, gwphi], axis=1),
+            grid.sky,
             batch_size=pixel_chunk,
         )
         b_all[a] = np.asarray(bM[0])
@@ -195,11 +188,7 @@ def compute_skymap(
     is_tight_j = jnp.asarray(is_tight)
     L0_j = jnp.asarray(L0_kpc)
     # GW propagation direction per pixel; cos_mu = omhat . pulsar (matches cw.py).
-    sin_th = np.sin(theta)
-    omhat = np.stack(
-        [-sin_th * np.cos(phi), -sin_th * np.sin(phi), -np.cos(theta)], axis=1
-    )
-    cos_mu_all = jnp.asarray(omhat @ positions.T)  # (npix, n_psr)
+    cos_mu_all = jnp.asarray(grid.omhat @ positions.T)  # (npix, n_psr)
     # Earth-term-only baseline: the fixed coefficient vector A = (1, 0).
     earth_A = jnp.broadcast_to(jnp.array([[1.0, 0.0]]), (len(names), 1, 2))
 
@@ -290,6 +279,13 @@ def main():
         default=Path("cgw_incoherent_distance_skymap.npz"),
     )
     gp.add_argument("--nside", type=int, default=8)
+    gp.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="NANOGrav-style dataset directory; overrides the DATA_DIR "
+        "imported from cgw_distance_skymap.",
+    )
     gp.add_argument("--pixel-chunk", type=int, default=8)
     gp.add_argument("--k", type=float, default=5.0)
     gp.add_argument("--n-phase", type=int, default=256)
@@ -338,9 +334,9 @@ def main():
             earth_term_only=args.earth_term_only,
             coherent_fraction=args.coherent_fraction,
             coherent_sigma_pc=args.coherent_sigma_pc,
+            data_dir=args.data_dir,
         )
-        np.savez_compressed(args.path, **res)
-        print(f"Saved {args.path}")
+        save_npz_results(args.path, res)
     else:
         print(
             "Plot the .npz with examples/cgw_earth_vs_pulsar_distance.py "

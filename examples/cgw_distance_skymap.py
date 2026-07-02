@@ -55,23 +55,20 @@ from pathlib import Path
 
 import numpy as np
 
-
-def _log(msg: str) -> None:
-    """Flushed progress line (keeps the SLURM .out live under block buffering)."""
-    print(msg, flush=True)
-
-
-def _import_healpy():
-    """Import healpy with a clear hint if the optional extra isn't installed."""
-    try:
-        import healpy as hp
-    except ImportError as e:  # pragma: no cover - import-time guard
-        raise ImportError(
-            "This example needs healpy (HEALPix sky grid + Mollweide plots). "
-            "Install the optional extra:  uv pip install 'jaxpint[skymap]'  "
-            "(or: pip install healpy matplotlib)."
-        ) from e
-    return hp
+# Shared example scaffolding. The aliases keep this module's public surface
+# stable — sibling scripts import DROP_PULSARS/_log/_import_healpy/... from here.
+from jaxpint.notebook_utils import (
+    SMOKE_SUBSET,
+    healpix_grid,
+    import_healpy as _import_healpy,
+    load_filtered_pta,
+    load_npz_results,
+    log_flush as _log,
+    marginalize_pta_timing,
+    overlay_pulsars,
+    save_npz_results,
+)
+from jaxpint.utils import pulsar_unit_vector
 
 
 # ---- Configuration ---------------------------------------------------------
@@ -86,69 +83,16 @@ LOG10_MC = 9.0  # chirp mass 1e9 Msun
 F_GW = 27e-9  # 27 nHz
 LOG10_FGW = float(np.log10(F_GW))
 
-# Six pulsars appear as a combined file plus per-telescope (ao/gbt) splits; the
-# combined .par/.tim already holds every telescope's TOAs (and VLA-only TOAs that
-# are in no split), so keep only the combined one and drop the splits to avoid
-# double-counting (worst for J1713/J1909, the most sensitive pulsars).
-DROP_PULSARS = {
-    "B1937+21ao",
-    "B1937+21gbt",
-    "J1600-3053gbt",
-    "J1643-1224gbt",
-    "J1713+0747ao",
-    "J1713+0747gbt",
-    "J1903+0327ao",
-    "J1909-3744gbt",
-}
-
-# Small, well-timed default subset for the smoke test. All four pulsars have
-# measured PX in the ocarina par files, so the subset works in both Earth-term
-# and ``--include-pulsar-term`` modes.
-SMOKE_SUBSET = ["J1909-3744", "J1713+0747", "J0613-0200", "J1744-1134"]
-
-# Linear timing-model params to marginalize analytically (improper priors).
-# The dominant low-frequency degeneracies; all linear in the residuals.
-# Pulsar distance (parallax PX) is deliberately EXCLUDED — held fixed at the
-# par-file value. This is a *design invariant* required by --include-pulsar-term:
-# pegging PX is what gives the pulsar-term sinusoid a coherent matched-filter
-# contribution. Marginalizing PX would re-scramble the pulsar-term phase
-# (Delta_p ~ 10^4 rad at 27 nHz; fractional PX errors of ~1e-5 wrap a full cycle)
-# and collapse the result back to the Earth-term limit.
-MARG_PARAMS = {
-    "F0",
-    "F1",
-    "RAJ",
-    "DECJ",
-    "ELONG",
-    "ELAT",
-    "PMRA",
-    "PMDEC",
-    "PMELONG",
-    "PMELAT",
-}
-
 DEFAULT_DATA_PATH = Path("cgw_distance_skymap.npz")
-
-# IAU 2006 obliquity at J2000.0 (for ELONG/ELAT -> ICRS).
-_OBLIQ = np.deg2rad(84381.406 / 3600.0)
-_COS_EPS, _SIN_EPS = np.cos(_OBLIQ), np.sin(_OBLIQ)
 
 
 def pulsar_unit_vector_icrs(pp):
-    """ICRS Cartesian unit vector from RAJ/DECJ or ELONG/ELAT (PINT convention)."""
-    if "RAJ" in pp.names and "DECJ" in pp.names:
-        ra, dec = float(pp.param_value("RAJ")), float(pp.param_value("DECJ"))
-        return np.array(
-            [np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)]
-        )
-    if "ELONG" in pp.names and "ELAT" in pp.names:
-        elong, elat = float(pp.param_value("ELONG")), float(pp.param_value("ELAT"))
-        x = np.cos(elat) * np.cos(elong)
-        y_ec, z_ec = np.cos(elat) * np.sin(elong), np.sin(elat)
-        return np.array(
-            [x, _COS_EPS * y_ec - _SIN_EPS * z_ec, _SIN_EPS * y_ec + _COS_EPS * z_ec]
-        )
-    raise KeyError(f"Pulsar lacks (RAJ,DECJ) and (ELONG,ELAT): {pp.names}")
+    """ICRS Cartesian unit vector from RAJ/DECJ or ELONG/ELAT (PINT convention).
+
+    Thin numpy wrapper around :func:`jaxpint.utils.pulsar_unit_vector` (same
+    IAU 2006 obliquity math), kept for the sibling scripts that import it.
+    """
+    return np.asarray(pulsar_unit_vector(pp))
 
 
 # CGW orientation (cos_inc, psi, phase0) held fixed for this first-pass map,
@@ -172,6 +116,7 @@ def compute_skymap(
     data_mode="expected",
     pixel_chunk=64,
     include_pulsar_term=False,
+    data_dir=None,
 ):
     """Compute the 95% distance lower-limit sky map. Returns a results dict.
 
@@ -224,21 +169,11 @@ def compute_skymap(
     pixel_chunk: number of sky pixels vmapped together per chunk (the rest are
     scanned). Trades memory for speed — raise it to go faster if memory allows,
     lower it if the per-chunk grad tape OOMs on the full PTA.
+
+    data_dir: dataset directory override; ``None`` falls back to the module
+    default :data:`DATA_DIR`.
     """
-    # Marginalized orientation + pulsar term is VALID with well-measured pulsar
-    # distances. With known Delta_p, each pulsar's earth+pulsar signal is a fixed
-    # per-pulsar linear rotation R_a of the same 4 orientation amplitudes, so the
-    # signal power Y(omega) = c.M.c stays an exact 4-D quadratic form
-    # (M = sum_a R_a^T G_a R_a) that basis_quadratics recovers. Verified: on
-    # clean (PX>0) anchors the marginalized pulsar/earth ratio matches the
-    # fixed-orientation one (~1.1x).
-    #
-    # The historical "100x" blow-up came NOT from this combination per se but
-    # from pulsars with non-positive / near-zero PX, whose garbage Delta_p (from
-    # dist = 1/PX) corrupt the summed M. The PX>0 anchor mask above removes the
-    # worst of those. The marginalized path is more sensitive to distance quality
-    # than the fixed one, though, so for production maps prefer a PX-significance
-    # cut over bare PX>0. Hence: warn, don't forbid.
+
     if marginalize_orientation and include_pulsar_term:
         _log(
             "WARNING: marginalize_orientation + include_pulsar_term relies on "
@@ -252,13 +187,11 @@ def compute_skymap(
     import equinox as eqx
     from loguru import logger
 
-    hp = _import_healpy()
+    _import_healpy()  # fail early if the optional skymap extra is missing
     logger.disable("pint")
 
-    from jaxpint import load_nanograv_pta
     from jaxpint.pta.likelihood import PTAConfig
     from jaxpint.types import GlobalParams
-    from jaxpint.bayes import ImproperPrior, marginalize_pta
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import (
         quadratic_coeffs,
@@ -271,24 +204,24 @@ def compute_skymap(
     )
 
     # ---- 1. Load + filter --------------------------------------------------
-    if not DATA_DIR.is_dir():
-        raise FileNotFoundError(f"DATA_DIR {DATA_DIR} not found.")
-    psrs = load_nanograv_pta(DATA_DIR, pulsar_names=pulsar_subset)
-    keep = [i for i, n in enumerate(psrs.pulsar_names) if n not in DROP_PULSARS]
-    names = [psrs.pulsar_names[i] for i in keep]
-    toa_list = tuple(psrs.toa_data_list[i] for i in keep)
-    pp_list = tuple(psrs.pulsar_params_list[i] for i in keep)
-    tm_list = tuple(psrs.timing_models[i] for i in keep)
-    # Full per-pulsar noise as built from the par: white (EFAC/EQUAD) + red
-    # (PLRedNoise). The analysis covariance must match the injected noise
-    # (build_ocarina) — a white-only covariance reads the data's red noise as a
-    # spurious CW signal and breaks real mode, and leaves the expected-mode
-    # sensitivity Y white-only (red-dominated pulsars stay over-weighted).
-    nm_list = tuple(psrs.noise_models[i] for i in keep)
+    # Note on the noise models: full per-pulsar noise as built from the par —
+    # white (EFAC/EQUAD) + red (PLRedNoise). The analysis covariance must match
+    # the injected noise (build_ocarina) — a white-only covariance reads the
+    # data's red noise as a spurious CW signal and breaks real mode, and leaves
+    # the expected-mode sensitivity Y white-only (red-dominated pulsars stay
+    # over-weighted).
+    pta = load_filtered_pta(
+        DATA_DIR if data_dir is None else data_dir, pulsar_names=pulsar_subset
+    )
+    names = list(pta.names)
+    toa_list = pta.toa_data_list
+    pp_list = pta.pulsar_params_list
+    tm_list = pta.timing_models
+    nm_list = pta.noise_models
     n_toa_total = int(sum(int(td.n_toas) for td in toa_list))
     _log(f"Loaded {len(names)} pulsars, {n_toa_total} TOAs total.")
 
-    positions = jnp.asarray(np.stack([pulsar_unit_vector_icrs(pp) for pp in pp_list]))
+    positions = jnp.asarray(pta.positions)
 
     # Pulsar-term anchor mask: a pulsar may carry the pulsar term only if its
     # pegged distance is physical, i.e. it has a measured PX > 0. The pulsar-term
@@ -335,23 +268,9 @@ def compute_skymap(
     )
 
     # ---- 3. Timing-model marginalization (improper priors) -----------------
-    over, priors = set(), {}
-    for pn, pp in zip(names, pp_list):
-        for nm in pp.free_names():
-            if nm in MARG_PARAMS:
-                fqn = f"{pn}_{nm}"
-                over.add(fqn)
-                priors[fqn] = ImproperPrior()
-    _log(f"Marginalizing {len(over)} timing params across {len(names)} pulsars...")
-    g, _, reduced_pp = marginalize_pta(
-        over=over,
-        priors=priors,
-        config=config,
-        pulsar_names=tuple(names),
-        fiducial_pulsar_params=pp_list,
-        fiducial_global_params=gp,
-        validate_linearity=validate_linearity,
-        allow_nonlinear=True,
+    _log(f"Marginalizing timing params across {len(names)} pulsars...")
+    g, _, reduced_pp = marginalize_pta_timing(
+        pta, config, gp, validate_linearity=validate_linearity
     )
 
     # ---- 4. logL(amp) closure with sky/orientation as globals --------------
@@ -380,11 +299,8 @@ def compute_skymap(
         return g(gp_new, reduced_pp)
 
     # ---- 5. HEALPix sky grid (RING ordering, exactly equal-area) -----------
-    npix = hp.nside2npix(nside)
-    theta, phi = hp.pix2ang(nside, np.arange(npix))  # colatitude, longitude
-    sky = jnp.stack(
-        [jnp.cos(jnp.asarray(theta)), jnp.asarray(phi)], axis=1
-    )  # (npix, 2)
+    grid = healpix_grid(nside)
+    npix, sky = grid.npix, grid.sky  # sky: (npix, 2) of (cos_gwtheta, gwphi)
 
     # Chunked vmap over pixels: lax.map(batch_size=...) vectorizes `pixel_chunk`
     # pixels at a time and scans over the chunks, so the grad-of-likelihood tape
@@ -534,17 +450,16 @@ def compute_skymap(
     return results
 
 
+# Thin aliases over the shared .npz helpers — sibling scripts import these names.
 def save_results(path: Path, results: dict) -> None:
-    np.savez_compressed(path, **results)
-    print(f"Saved {path} ({path.stat().st_size / 1e3:.1f} kB).")
+    save_npz_results(path, results)
 
 
 def load_results(path: Path) -> dict:
-    data = np.load(path, allow_pickle=False)
-    return {k: (v.item() if v.ndim == 0 else v) for k, v in data.items()}
+    return load_npz_results(path)
 
 
-def plot_results(results: dict) -> None:
+def plot_results(results: dict, output: str = "cgw_distance_skymap.png") -> None:
     hp = _import_healpy()
     import matplotlib.pyplot as plt
 
@@ -569,8 +484,8 @@ def plot_results(results: dict) -> None:
         rot=[180, 0],
     )
     hp.graticule()
-    plt.savefig("cgw_distance_skymap.png", dpi=130, bbox_inches="tight")
-    print("Wrote cgw_distance_skymap.png")
+    plt.savefig(output, dpi=130, bbox_inches="tight")
+    print(f"Wrote {output}")
 
 
 def _positions_from_par(names, data_dir=DATA_DIR):
@@ -620,10 +535,6 @@ def plot_results_with_pulsars(
         names = [str(n) for n in np.atleast_1d(results["pulsar_names"])]
         pos = _positions_from_par(names, data_dir or DATA_DIR)
 
-    # ICRS unit vector (x, y, z) -> healpy (theta=colatitude, phi=longitude).
-    theta = np.arccos(np.clip(pos[:, 2], -1.0, 1.0))
-    phi = np.arctan2(pos[:, 1], pos[:, 0])
-
     # Older .npz files predate include_pulsar_term — default to no tag.
     mode_tag = (
         " (Earth + pulsar term)"
@@ -644,17 +555,8 @@ def plot_results_with_pulsars(
         rot=[180, 0],
     )
     hp.graticule()
-    # projscatter draws onto the current mollview projection (theta/phi in rad).
-    hp.projscatter(
-        theta,
-        phi,
-        marker="*",
-        s=120,
-        color="red",
-        edgecolors="black",
-        linewidths=0.5,
-        zorder=5,
-    )
+    # Draw every pulsar as a red star onto the current mollview projection.
+    overlay_pulsars(pos)
     plt.savefig(output, dpi=130, bbox_inches="tight")
     print(f"Wrote {output}")
 
@@ -725,19 +627,40 @@ def main() -> None:
             "(default: Earth-term only). Pulsar distances are NOT "
             "marginalized — this is the idealized distance reach.",
         )
+        sp.add_argument(
+            "--data-dir",
+            type=Path,
+            default=None,
+            help="Dataset directory override (default: module DATA_DIR / "
+            "$JAXPINT_OCARINA_DIR).",
+        )
     sp = sub.add_parser("plot")
     sp.add_argument("--input", dest="path", type=Path, default=DEFAULT_DATA_PATH)
     sp.add_argument(
         "--pulsars", action="store_true", help="Overlay pulsar locations as red stars."
     )
+    sp.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Output PNG path (default: cgw_distance_skymap[_pulsars].png).",
+    )
+    sp.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="Dataset directory for the par-file position fallback "
+        "(only used when the .npz predates the pulsar_pos field).",
+    )
 
     args = p.parse_args()
     if args.mode == "plot":
         results = load_results(args.path)
+        out_kw = {} if args.output is None else {"output": args.output}
         if getattr(args, "pulsars", False):
-            plot_results_with_pulsars(results)
+            plot_results_with_pulsars(results, data_dir=args.data_dir, **out_kw)
         else:
-            plot_results(results)
+            plot_results(results, **out_kw)
         return
 
     subset = None if getattr(args, "full", False) else SMOKE_SUBSET
@@ -752,6 +675,7 @@ def main() -> None:
         n_psi=args.n_psi,
         n_phase0=args.n_phase0,
         include_pulsar_term=args.include_pulsar_term,
+        data_dir=getattr(args, "data_dir", None),
     )
     save_results(args.path, results)
     if args.mode == "both":

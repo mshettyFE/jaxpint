@@ -1,11 +1,12 @@
-"""Shared helpers for the ``examples/`` notebooks.
+"""Shared helpers for the ``examples/`` notebooks and scripts.
 
 This module is **not** part of the core JaxPINT API — it exists solely to
 factor out scaffolding (random-pulsar generation, synthetic-TOA setup,
-CW injection, likelihood-grid sweeps, and delta-log-L plots) that would
-otherwise be copy-pasted across the example notebooks.  It is deliberately
-kept out of ``jaxpint.__init__`` so that the top-level namespace reflects
-the library, not the demos.
+CW injection, likelihood-grid sweeps, delta-log-L plots, and the
+NANOGrav-dataset load/marginalize/HEALPix boilerplate shared by the
+``examples/*.py`` sky-map scripts) that would otherwise be copy-pasted
+across the examples.  It is deliberately kept out of ``jaxpint.__init__``
+so that the top-level namespace reflects the library, not the demos.
 
 Typical usage in a notebook::
 
@@ -322,8 +323,8 @@ def setup_synthetic_pta(
 # ---------------------------------------------------------------------------
 
 
-def _pulsar_positions_from_models(pint_models: list) -> Float[Array, "n_psr 3"]:
-    """Compute ICRS unit vectors from each model's ``RAJ``/``DECJ``."""
+def pulsar_positions_from_models(pint_models: list) -> Float[Array, "n_psr 3"]:
+    """Compute ICRS unit vectors from each PINT model's ``RAJ``/``DECJ``."""
     positions = []
     for model in pint_models:
         ra_rad = model.RAJ.quantity.to(u.rad).value
@@ -338,6 +339,10 @@ def _pulsar_positions_from_models(pint_models: list) -> Float[Array, "n_psr 3"]:
             )
         )
     return jnp.array(np.array(positions))
+
+
+# Backward-compatible private alias (public since the examples need it directly).
+_pulsar_positions_from_models = pulsar_positions_from_models
 
 
 def build_cw_injectors(
@@ -371,7 +376,7 @@ def build_cw_injectors(
         Returned so callers can reuse the positions (e.g. to build another
         injector with a different prefix) without recomputing them.
     """
-    positions = _pulsar_positions_from_models(pint_models)
+    positions = pulsar_positions_from_models(pint_models)
 
     injectors = tuple(
         CWInjector(
@@ -647,13 +652,421 @@ def plot_2d_delta_logL(
     return mesh
 
 
+# ---------------------------------------------------------------------------
+# Irregular observing cadence
+# ---------------------------------------------------------------------------
+
+
+def random_obs_window(
+    rng: np.random.Generator,
+    *,
+    global_start_mjd: float,
+    global_end_mjd: float,
+    min_span_days: float,
+) -> tuple[float, float]:
+    """Draw a random per-pulsar (start, end) MJD window inside a global window.
+
+    The window is at least ``min_span_days`` long and never extends past
+    ``global_end_mjd``.
+    """
+    span = global_end_mjd - global_start_mjd
+    start = rng.uniform(global_start_mjd, global_end_mjd - min_span_days)
+    end = rng.uniform(start + min_span_days, min(start + span, global_end_mjd))
+    return start, end
+
+
+def generate_irregular_mjds(
+    rng: np.random.Generator,
+    *,
+    start_mjd: float,
+    end_mjd: float,
+    n_approx: int,
+) -> np.ndarray:
+    """Generate non-uniformly spaced TOA MJDs via a Poisson-like process.
+
+    Gaps are drawn from an exponential distribution whose mean gives roughly
+    ``n_approx`` TOAs over ``[start_mjd, end_mjd]``.  Feed the result to
+    :func:`setup_synthetic_pta` via ``mjds_per_pulsar``.
+    """
+    avg_gap = (end_mjd - start_mjd) / n_approx
+    mjds = [start_mjd]
+    while mjds[-1] < end_mjd:
+        mjds.append(mjds[-1] + rng.exponential(avg_gap))
+    out = np.array(mjds[:-1])
+    return out[out < end_mjd]
+
+
+# ---------------------------------------------------------------------------
+# Bundled real-data example pulsar (PINT's NGC6440E)
+# ---------------------------------------------------------------------------
+
+
+class ExamplePulsar(NamedTuple):
+    """Output of :func:`load_example_pulsar` — one real pulsar, bridged to JaxPINT."""
+
+    toa_data: TOAData
+    params: ParameterVector
+    timing_model: TimingModel
+    noise_model: NoiseModel
+    pint_model: object
+    pint_toas: object
+
+
+def load_example_pulsar(
+    name: str = "NGC6440E", *, ephem: str = "DE421"
+) -> ExamplePulsar:
+    """Load one of PINT's bundled example datasets and bridge it to JaxPINT.
+
+    Wraps the ``examplefile`` → ``get_model``/``get_TOAs`` →
+    ``pint_toas_to_jax``/``pint_model_to_params``/``build_timing_model``
+    preamble shared by the single-pulsar example notebooks.
+
+    Parameters
+    ----------
+    name : str
+        Basename of the bundled PINT example (``.par``/``.tim`` pair).
+    ephem : str
+        Solar-system ephemeris passed to ``pint.toa.get_TOAs``.
+    """
+    import pint.models as pm
+    import pint.toa as pt
+    from pint.config import examplefile
+
+    from jaxpint.bridge import (
+        build_timing_model,
+        pint_model_to_params,
+        pint_toas_to_jax,
+    )
+
+    pint_model = pm.get_model(examplefile(f"{name}.par"))
+    pint_toas = pt.get_TOAs(examplefile(f"{name}.tim"), ephem=ephem)
+
+    toa_data = pint_toas_to_jax(pint_toas, model=pint_model)
+    params = pint_model_to_params(pint_model).params
+    timing_model, noise_model = build_timing_model(pint_model, pint_toas)
+    return ExamplePulsar(
+        toa_data=toa_data,
+        params=params,
+        timing_model=timing_model,
+        noise_model=noise_model,
+        pint_model=pint_model,
+        pint_toas=pint_toas,
+    )
+
+
+# ---------------------------------------------------------------------------
+# NANOGrav-dataset helpers shared by the examples/*.py sky-map scripts
+# ---------------------------------------------------------------------------
+
+# Six pulsars appear as a combined file plus per-telescope (ao/gbt) splits; the
+# combined .par/.tim already holds every telescope's TOAs (and VLA-only TOAs
+# that are in no split), so keep only the combined one and drop the splits to
+# avoid double-counting (worst for J1713/J1909, the most sensitive pulsars).
+DROP_PULSARS = frozenset(
+    {
+        "B1937+21ao",
+        "B1937+21gbt",
+        "J1600-3053gbt",
+        "J1643-1224gbt",
+        "J1713+0747ao",
+        "J1713+0747gbt",
+        "J1903+0327ao",
+        "J1909-3744gbt",
+    }
+)
+
+# Small, well-timed default subset for smoke tests. All four pulsars have
+# measured PX in the ocarina par files, so the subset works in both Earth-term
+# and pulsar-term modes.
+SMOKE_SUBSET = ["J1909-3744", "J1713+0747", "J0613-0200", "J1744-1134"]
+
+# Linear timing-model params to marginalize analytically (improper priors).
+# The dominant low-frequency degeneracies; all linear in the residuals.
+# Pulsar distance (parallax PX) is deliberately EXCLUDED — held fixed at the
+# par-file value. This is a *design invariant* required by pulsar-term modes:
+# pegging PX is what gives the pulsar-term sinusoid a coherent matched-filter
+# contribution. Marginalizing PX would re-scramble the pulsar-term phase
+# (Delta_p ~ 10^4 rad at 27 nHz; fractional PX errors of ~1e-5 wrap a full
+# cycle) and collapse the result back to the Earth-term limit.
+MARG_PARAMS = {
+    "F0",
+    "F1",
+    "RAJ",
+    "DECJ",
+    "ELONG",
+    "ELAT",
+    "PMRA",
+    "PMDEC",
+    "PMELONG",
+    "PMELAT",
+}
+
+
+def log_flush(msg: str) -> None:
+    """Flushed progress line (keeps SLURM .out files live under block buffering)."""
+    print(msg, flush=True)
+
+
+def import_healpy():
+    """Import healpy with a clear hint if the optional extra isn't installed."""
+    try:
+        import healpy as hp
+    except ImportError as e:  # pragma: no cover - import-time guard
+        raise ImportError(
+            "This example needs healpy (HEALPix sky grid + Mollweide plots). "
+            "Install the optional extra:  uv pip install 'jaxpint[skymap]'  "
+            "(or: pip install healpy matplotlib)."
+        ) from e
+    return hp
+
+
+class LoadedPTA(NamedTuple):
+    """Output of :func:`load_filtered_pta`.
+
+    Field names/order match :class:`SyntheticPTA` (plus ``names``/``positions``)
+    so the result drops straight into :func:`inject_and_build_config` and
+    :class:`jaxpint.pta.likelihood.PTAConfig`.
+    """
+
+    toa_data_list: tuple[TOAData, ...]
+    pulsar_params_list: tuple[ParameterVector, ...]
+    timing_models: tuple[TimingModel, ...]
+    noise_models: tuple[NoiseModel, ...]
+    names: tuple[str, ...]
+    positions: np.ndarray  # (n_psr, 3) ICRS unit vectors
+
+
+def load_filtered_pta(
+    data_dir,
+    *,
+    pulsar_names: Optional[list[str]] = None,
+    drop: frozenset[str] = DROP_PULSARS,
+) -> LoadedPTA:
+    """Load a NANOGrav-style par/tim dataset, drop duplicates, compute positions.
+
+    Wraps the ``load_nanograv_pta`` → drop :data:`DROP_PULSARS` → build
+    names/TOA/params/model tuples → ICRS unit vectors pipeline shared by the
+    ``examples/*.py`` sky-map scripts.
+
+    Parameters
+    ----------
+    data_dir : path-like
+        Dataset directory understood by :func:`jaxpint.load_nanograv_pta`.
+    pulsar_names : list[str] or None
+        Subset to load (``None`` loads all pulsars in ``data_dir``).
+    drop : frozenset[str]
+        Pulsar names to discard after loading (default :data:`DROP_PULSARS`,
+        the per-telescope split duplicates).
+    """
+    from pathlib import Path
+
+    from jaxpint import load_nanograv_pta
+    from jaxpint.utils import pulsar_unit_vector
+
+    data_dir = Path(data_dir)
+    if not data_dir.is_dir():
+        raise FileNotFoundError(f"data_dir {data_dir} not found.")
+    psrs = load_nanograv_pta(data_dir, pulsar_names=pulsar_names)
+    keep = [i for i, n in enumerate(psrs.pulsar_names) if n not in drop]
+    pp_list = tuple(psrs.pulsar_params_list[i] for i in keep)
+    positions = np.stack([np.asarray(pulsar_unit_vector(pp)) for pp in pp_list])
+    return LoadedPTA(
+        toa_data_list=tuple(psrs.toa_data_list[i] for i in keep),
+        pulsar_params_list=pp_list,
+        timing_models=tuple(psrs.timing_models[i] for i in keep),
+        noise_models=tuple(psrs.noise_models[i] for i in keep),
+        names=tuple(psrs.pulsar_names[i] for i in keep),
+        positions=positions,
+    )
+
+
+def marginalize_each_pulsar(
+    pta: LoadedPTA,
+    *,
+    marg_params: set[str] = MARG_PARAMS,
+    allow_nonlinear: bool = True,
+    validate_linearity: bool = False,
+) -> list:
+    """Per-pulsar analytic timing-model marginalization (improper priors).
+
+    Runs :func:`jaxpint.bayes.marginalize_single_pulsar` for every pulsar in
+    ``pta``, marginalizing each pulsar's free parameters that appear in
+    ``marg_params``.  Returns the list of ``marginalize_single_pulsar`` results
+    (one ``(g, ..., skeleton)`` tuple per pulsar), in pulsar order.
+    """
+    from jaxpint.bayes import ImproperPrior, marginalize_single_pulsar
+
+    out = []
+    for td, tm, nm, pp in zip(
+        pta.toa_data_list, pta.timing_models, pta.noise_models, pta.pulsar_params_list
+    ):
+        over = {n for n in pp.free_names() if n in marg_params}
+        out.append(
+            marginalize_single_pulsar(
+                over=over,
+                priors={n: ImproperPrior() for n in over},
+                toa_data=td,
+                timing_model=tm,
+                noise_model=nm,
+                fiducial_params=pp,
+                allow_nonlinear=allow_nonlinear,
+                validate_linearity=validate_linearity,
+            )
+        )
+    return out
+
+
+def marginalize_pta_timing(
+    pta: LoadedPTA,
+    config: PTAConfig,
+    gp: GlobalParams,
+    *,
+    marg_params: set[str] = MARG_PARAMS,
+    allow_nonlinear: bool = True,
+    validate_linearity: bool = False,
+):
+    """PTA-level analytic timing-model marginalization (improper priors).
+
+    Builds the fully-qualified ``{pulsar}_{param}`` name set from each pulsar's
+    free parameters that appear in ``marg_params`` and calls
+    :func:`jaxpint.bayes.marginalize_pta`.  Returns whatever ``marginalize_pta``
+    returns (``(g, ..., reduced_pulsar_params)``).
+    """
+    from jaxpint.bayes import ImproperPrior, marginalize_pta
+
+    over, priors = set(), {}
+    for pn, pp in zip(pta.names, pta.pulsar_params_list):
+        for n in pp.free_names():
+            if n in marg_params:
+                fqn = f"{pn}_{n}"
+                over.add(fqn)
+                priors[fqn] = ImproperPrior()
+    return marginalize_pta(
+        over=over,
+        priors=priors,
+        config=config,
+        pulsar_names=pta.names,
+        fiducial_pulsar_params=pta.pulsar_params_list,
+        fiducial_global_params=gp,
+        validate_linearity=validate_linearity,
+        allow_nonlinear=allow_nonlinear,
+    )
+
+
+class HealpixGrid(NamedTuple):
+    """Output of :func:`healpix_grid` (RING ordering, exactly equal-area).
+
+    ``sky`` is the ``(npix, 2)`` array of ``(cos_gwtheta, gwphi)`` pairs the CW
+    likelihood closures take; ``omhat`` is the ``(npix, 3)`` GW propagation
+    direction (pointing from the source through the SSB).
+    """
+
+    nside: int
+    npix: int
+    theta: np.ndarray  # (npix,) colatitude
+    phi: np.ndarray  # (npix,) longitude
+    sky: Float[Array, "npix 2"]  # (cos_gwtheta, gwphi) per pixel
+    omhat: np.ndarray  # (npix, 3) propagation direction
+
+
+def healpix_grid(nside: int) -> HealpixGrid:
+    """Build the standard HEALPix sky grid used by the sky-map example scripts."""
+    hp = import_healpy()
+
+    npix = hp.nside2npix(nside)
+    theta, phi = hp.pix2ang(nside, np.arange(npix))
+    sky = jnp.stack([jnp.cos(jnp.asarray(theta)), jnp.asarray(phi)], axis=1)
+    sin_th = np.sin(theta)
+    omhat = np.stack(
+        [-sin_th * np.cos(phi), -sin_th * np.sin(phi), -np.cos(theta)], axis=1
+    )
+    return HealpixGrid(
+        nside=int(nside), npix=int(npix), theta=theta, phi=phi, sky=sky, omhat=omhat
+    )
+
+
+def save_npz_results(path, results: dict) -> None:
+    """Write a results dict to a compressed ``.npz`` (every key becomes an array)."""
+    np.savez_compressed(path, **results)
+    log_flush(f"Saved -> {path}")
+
+
+def load_npz_results(path) -> dict:
+    """Load an ``.npz`` written by :func:`save_npz_results`, unwrapping 0-d arrays."""
+    data = np.load(path, allow_pickle=False)
+    return {k: (v.item() if v.ndim == 0 else v) for k, v in data.items()}
+
+
+def overlay_pulsars(
+    positions: np.ndarray,
+    anchor_mask: Optional[np.ndarray] = None,
+    *,
+    star_kwargs: Optional[dict] = None,
+    dot_kwargs: Optional[dict] = None,
+) -> None:
+    """Overlay pulsars on the *current* healpy Mollweide projection.
+
+    Parameters
+    ----------
+    positions : (n_psr, 3) array
+        ICRS unit vectors (e.g. ``LoadedPTA.positions``).
+    anchor_mask : (n_psr,) bool array or None
+        Pulsars where the mask is True are drawn as stars, the rest as dots.
+        ``None`` draws every pulsar as a star.
+    star_kwargs, dot_kwargs : dict or None
+        Overrides merged into the default ``hp.projscatter`` styles
+        (red/black-edged stars; white/black-edged dots).
+    """
+    hp = import_healpy()
+
+    pos = np.atleast_2d(np.asarray(positions))
+    theta = np.arccos(np.clip(pos[:, 2], -1.0, 1.0))
+    phi = np.arctan2(pos[:, 1], pos[:, 0])
+    mask = (
+        np.ones(len(pos), dtype=bool)
+        if anchor_mask is None
+        else np.asarray(anchor_mask, dtype=bool)
+    )
+
+    star_style = dict(
+        marker="*", s=120, color="red", edgecolors="black", linewidths=0.5, zorder=5
+    )
+    star_style.update(star_kwargs or {})
+    dot_style = dict(marker="o", s=20, color="white", edgecolors="k", zorder=5)
+    dot_style.update(dot_kwargs or {})
+
+    if mask.any():
+        hp.projscatter(theta[mask], phi[mask], **star_style)
+    if (~mask).any():
+        hp.projscatter(theta[~mask], phi[~mask], **dot_style)
+
+
 __all__ = [
+    "DROP_PULSARS",
+    "ExamplePulsar",
+    "HealpixGrid",
+    "LoadedPTA",
+    "MARG_PARAMS",
+    "SMOKE_SUBSET",
     "SyntheticPTA",
     "build_cw_injectors",
+    "generate_irregular_mjds",
     "generate_random_par",
+    "healpix_grid",
+    "import_healpy",
     "inject_and_build_config",
+    "load_example_pulsar",
+    "load_filtered_pta",
+    "log_flush",
+    "marginalize_each_pulsar",
+    "marginalize_pta_timing",
+    "overlay_pulsars",
     "plot_1d_delta_logL",
     "plot_2d_delta_logL",
+    "pulsar_positions_from_models",
+    "random_obs_window",
+    "save_npz_results",
+    "load_npz_results",
     "setup_synthetic_pta",
     "sweep_1d_logL",
     "sweep_2d_logL",

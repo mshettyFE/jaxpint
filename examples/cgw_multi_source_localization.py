@@ -5,8 +5,7 @@ SMBHB sources.  Source 0 is scanned over a HEALPix grid; sources 1..K-1 are
 held at canonical galaxy-cluster sky positions.  Per pixel, per source, the
 output is the 90% and 50% credible localization area in deg^2.
 
-Math (see ``/home/hector/.claude/plans/phase2-multi-source-localization-math.md``):
-the joint Fisher is the ``2K x 2K`` matrix with structure
+Math: the joint Fisher is the ``2K x 2K`` matrix with structure
 
     F = [[h_a*h_b * Gram_ab]_{a,b=0}^{K-1}],
 
@@ -27,8 +26,6 @@ Usage
         [--K K] [--nside N] [--output PATH] [--anchor-pulsars NAME ...]
     python examples/cgw_multi_source_localization.py sweep \
         [--K K] [--out-dir DIR] [--nside N]
-    python examples/cgw_multi_source_localization.py plot \
-        [--input PATH] [--source IDX] [--level 90|50]
 """
 
 from __future__ import annotations
@@ -38,21 +35,27 @@ from pathlib import Path
 
 import numpy as np
 
-# Reuse loader / drop list / Wen subset + configs / fixed-source constants from Level 1.
+# Reuse the Wen subset + configs / fixed-source constants from Level 1.
 from examples.cgw_localization_skymap import (
     DATA_DIR,
-    DROP_PULSARS,
-    SMOKE_SUBSET,
     WEN_OCARINA_18,
     WEN_CONFIGS,
-    MARG_PARAMS,
     FIXED_ORIENTATION,
     LOG10_MC,
     LOG10_FGW,
     SNR_TARGET_DEFAULT,
-    pulsar_unit_vector_icrs,
-    _log,
-    _import_healpy,
+)
+
+# Shared example scaffolding (loader, marginalization, HEALPix grid, npz I/O).
+from jaxpint.notebook_utils import (
+    SMOKE_SUBSET,
+    healpix_grid,
+    import_healpy as _import_healpy,
+    load_filtered_pta,
+    load_npz_results,
+    log_flush as _log,
+    marginalize_pta_timing,
+    save_npz_results,
 )
 
 
@@ -87,6 +90,7 @@ def compute_multi_source_localization_skymap(
     orientation: tuple[float, float, float] = FIXED_ORIENTATION,
     pixel_chunk: int = 8,
     validate_linearity: bool = False,
+    data_dir=None,
 ):
     """Compute per-pixel per-source credible areas with K = 1 + len(fixed_source_skies).
 
@@ -106,13 +110,11 @@ def compute_multi_source_localization_skymap(
     import jax.numpy as jnp
     from loguru import logger
 
-    hp = _import_healpy()
+    _import_healpy()  # fail early if the optional skymap extra is missing
     logger.disable("pint")
 
-    from jaxpint import load_nanograv_pta
     from jaxpint.pta.likelihood import PTAConfig
     from jaxpint.types import GlobalParams
-    from jaxpint.bayes import ImproperPrior, marginalize_pta
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.pta.cw_upper_limit import quadratic_coeffs
     from jaxpint.pta.cw_localization import (
@@ -128,15 +130,13 @@ def compute_multi_source_localization_skymap(
         raise ValueError("K must be at least 1.")
 
     # ---- 1. Load + filter --------------------------------------------------
-    if not DATA_DIR.is_dir():
-        raise FileNotFoundError(f"DATA_DIR {DATA_DIR} not found.")
-    psrs = load_nanograv_pta(DATA_DIR, pulsar_names=pulsar_subset)
-    keep = [i for i, n in enumerate(psrs.pulsar_names) if n not in DROP_PULSARS]
-    names = [psrs.pulsar_names[i] for i in keep]
-    toa_list = tuple(psrs.toa_data_list[i] for i in keep)
-    pp_list = tuple(psrs.pulsar_params_list[i] for i in keep)
-    tm_list = tuple(psrs.timing_models[i] for i in keep)
-    nm_list = tuple(psrs.noise_models[i] for i in keep)
+    pta = load_filtered_pta(
+        DATA_DIR if data_dir is None else data_dir, pulsar_names=pulsar_subset
+    )
+    names = list(pta.names)
+    toa_list = pta.toa_data_list
+    tm_list = pta.timing_models
+    nm_list = pta.noise_models
     n_toa_total = int(sum(int(td.n_toas) for td in toa_list))
     _log(f"Loaded {len(names)} pulsars, {n_toa_total} TOAs total.")
 
@@ -155,7 +155,7 @@ def compute_multi_source_localization_skymap(
         f"{sorted(anchor_set) if anchor_set else '(none — all Earth-term-only)'}"
     )
 
-    positions = jnp.asarray(np.stack([pulsar_unit_vector_icrs(pp) for pp in pp_list]))
+    positions = jnp.asarray(pta.positions)
 
     # ---- 3. 2K CWInjectors --------------------------------------------------
     # Prefix scheme: cw{k}t_ and cw{k}d_ for the template and data injectors of source k.
@@ -184,23 +184,9 @@ def compute_multi_source_localization_skymap(
     )
 
     # ---- 4. Marginalize timing params --------------------------------------
-    over, priors = set(), {}
-    for pn, pp in zip(names, pp_list):
-        for nm in pp.free_names():
-            if nm in MARG_PARAMS:
-                fqn = f"{pn}_{nm}"
-                over.add(fqn)
-                priors[fqn] = ImproperPrior()
-    _log(f"Marginalizing {len(over)} timing params across {len(names)} pulsars...")
-    g, _, reduced_pp = marginalize_pta(
-        over=over,
-        priors=priors,
-        config=config,
-        pulsar_names=tuple(names),
-        fiducial_pulsar_params=pp_list,
-        fiducial_global_params=gp,
-        validate_linearity=validate_linearity,
-        allow_nonlinear=True,
+    _log(f"Marginalizing timing params across {len(names)} pulsars...")
+    g, _, reduced_pp = marginalize_pta_timing(
+        pta, config, gp, validate_linearity=validate_linearity
     )
 
     # ---- 5. Base global params: orientation + fixed-source skies pinned -----
@@ -293,9 +279,8 @@ def compute_multi_source_localization_skymap(
         return areas_90, areas_50
 
     # ---- 8. Sky grid + jitted scan ----------------------------------------
-    npix = hp.nside2npix(nside)
-    theta, phi = hp.pix2ang(nside, np.arange(npix))
-    sky = jnp.stack([jnp.cos(jnp.asarray(theta)), jnp.asarray(phi)], axis=1)
+    grid = healpix_grid(nside)
+    npix, sky = grid.npix, grid.sky  # sky: (npix, 2) of (cos_gwtheta, gwphi)
 
     @jax.jit
     def all_pixels(sky_arr):
@@ -350,15 +335,13 @@ def compute_multi_source_localization_skymap(
     }
 
 
+# Thin aliases over the shared .npz helpers.
 def save_results(path: Path, results: dict) -> None:
-    path = Path(path)
-    np.savez_compressed(path, **results)
-    print(f"Saved {path} ({path.stat().st_size / 1e3:.1f} kB).")
+    save_npz_results(Path(path), results)
 
 
 def load_results(path: Path) -> dict:
-    data = np.load(path, allow_pickle=False)
-    return {k: (v.item() if v.ndim == 0 else v) for k, v in data.items()}
+    return load_npz_results(path)
 
 
 def run_multi_source_sweep(
@@ -370,6 +353,7 @@ def run_multi_source_sweep(
     nside: int = 4,
     snr_target: float = SNR_TARGET_DEFAULT,
     pixel_chunk: int = 8,
+    data_dir=None,
 ) -> None:
     """Phase 2 Wen-Table-1-multi-source-analog sweep across the three Wen configs.
 
@@ -414,6 +398,7 @@ def run_multi_source_sweep(
             nside=nside,
             snr_target=snr_target,
             pixel_chunk=pixel_chunk,
+            data_dir=data_dir,
         )
         save_results(out_path, results)
 
@@ -508,6 +493,12 @@ def main() -> None:
         help="Use WEN_OCARINA_18 instead of SMOKE_SUBSET.",
     )
     sp.add_argument("--validate-linearity", action="store_true")
+    sp.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="Dataset directory override (default: module DATA_DIR).",
+    )
 
     # Sweep subparser (mirrors Level 1's run_sweep flow but for multi-source).
     sp = sub.add_parser("sweep")
@@ -517,6 +508,12 @@ def main() -> None:
     sp.add_argument("--nside", type=int, default=4)
     sp.add_argument("--pixel-chunk", type=int, default=8)
     sp.add_argument("--snr", type=float, default=SNR_TARGET_DEFAULT)
+    sp.add_argument(
+        "--data-dir",
+        type=Path,
+        default=None,
+        help="Dataset directory override (default: module DATA_DIR).",
+    )
 
     args = p.parse_args()
 
@@ -533,6 +530,7 @@ def main() -> None:
             nside=args.nside,
             snr_target=args.snr,
             pixel_chunk=args.pixel_chunk,
+            data_dir=getattr(args, "data_dir", None),
         )
         return
 
@@ -553,6 +551,7 @@ def main() -> None:
         snr_target=args.snr,
         pixel_chunk=args.pixel_chunk,
         validate_linearity=args.validate_linearity,
+        data_dir=getattr(args, "data_dir", None),
     )
     save_results(args.output, results)
 

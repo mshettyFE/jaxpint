@@ -22,7 +22,6 @@ basis is always correct, just not pre-stacked.
 
 from __future__ import annotations
 
-import functools
 
 import jax
 import jax.numpy as jnp
@@ -54,10 +53,22 @@ class _PowerLawFourierNoise(NoiseComponent):
         if not isinstance(self.fourier_basis, np.ndarray):
             object.__setattr__(self, "fourier_basis", np.asarray(self.fourier_basis))
 
-    @functools.cached_property
+    @property
     def _fourier_basis_jax(self) -> Float[Array, "n_toas n_basis"]:
-        """Lazy device-converted view of ``fourier_basis`` (cached per instance)."""
-        return jnp.asarray(self.fourier_basis)
+        """Lazy device-converted view of ``fourier_basis`` (cached per instance).
+
+        Cached manually instead of via ``functools.cached_property``: inside
+        a jit trace ``jnp.asarray`` returns a tracer, and caching a tracer on
+        the (persistent) host instance leaks it into later traces. Only
+        concrete arrays are cached; traced conversions are recomputed per
+        trace (where they become jaxpr constants anyway).
+        """
+        cached = self.__dict__.get("_fourier_basis_jax_cache")
+        if cached is None:
+            cached = jnp.asarray(self.fourier_basis)
+            if not isinstance(cached, jax.core.Tracer):
+                self.__dict__["_fourier_basis_jax_cache"] = cached
+        return cached
 
     # -- subclass hooks --------------------------------------------------
 

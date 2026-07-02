@@ -9,7 +9,6 @@ where *U* is a quantization matrix mapping TOAs to observing epochs.
 
 from __future__ import annotations
 
-import functools
 
 import equinox as eqx
 import jax
@@ -71,12 +70,23 @@ class EcorrNoise(NoiseComponent):
                 np.asarray(self.quantization_matrix),
             )
 
-    @functools.cached_property
+    @property
     def _quantization_matrix_jax(self) -> Float[Array, "n_toas n_epochs"]:
         """Lazy device-converted view of ``quantization_matrix``;
         see PLRedNoise.
+
+        Cached manually instead of via ``functools.cached_property``:
+        inside a jit trace ``jnp.asarray`` returns a tracer, and caching a
+        tracer on the (persistent) host instance leaks it into later traces.
+        Only concrete arrays are cached; traced conversions are recomputed
+        per trace (where they become jaxpr constants anyway).
         """
-        return jnp.asarray(self.quantization_matrix)
+        cached = self.__dict__.get("_quantization_matrix_jax_cache")
+        if cached is None:
+            cached = jnp.asarray(self.quantization_matrix)
+            if not isinstance(cached, jax.core.Tracer):
+                self.__dict__["_quantization_matrix_jax_cache"] = cached
+        return cached
 
     def ecorr_weights(
         self,
