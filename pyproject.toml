@@ -82,7 +82,6 @@ include = [
     "tests",
     "examples",
     "conftest.py",
-    "main.py",
     "slurm",
     "tools",
     "docs",
