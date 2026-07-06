@@ -213,11 +213,14 @@ def _check_linearity(
 
 def _trust_radius_for_prior(
     prior: Prior,
-    idx: int,
-    M_full: Float[Array, "n_toas n_params"],
+    col: int,
+    M_marg: Float[Array, "n_toas n_marg"],
     Ndiag: Float[Array, " n_toas"],
 ) -> float:
     """Pick the physical trust radius for a marg'd parameter.
+
+    ``col`` is the parameter's column in the marginalization design matrix
+    ``M_marg`` (positional, ``0..n_marg-1``), not its global parameter index.
 
     - Gaussian prior: prior σ (the radius the prior gives weight to).
     - ImproperPrior:  WLS posterior σ from the diagonal of (Mᵀ N⁻¹ M)⁻¹
@@ -232,7 +235,7 @@ def _trust_radius_for_prior(
             return float(prior.sigma)
     # ImproperPrior path: use the WLS posterior sigma for this column.
     Ninv = 1.0 / Ndiag
-    fisher_diag = float(jnp.sum(M_full[:, idx] ** 2 * Ninv))
+    fisher_diag = float(jnp.sum(M_marg[:, col] ** 2 * Ninv))
     if fisher_diag <= 0.0:
         return float("inf")  # degenerate — let the check fire loudly
     return float(1.0 / jnp.sqrt(fisher_diag))
@@ -298,23 +301,28 @@ def _marg_woodbury_block(
     fiducial: ParameterVector,
     indices: tuple[int, ...],
 ) -> tuple[
-    Optional[Float[Array, "n_toas n_params"]],
     Optional[Float[Array, "n_toas n_marg"]],
     Optional[Float[Array, " n_marg"]],
 ]:
     """Design matrix and the Φ=1e40 Woodbury block for one pulsar's marg targets.
 
-    Returns ``(J_full, M, Phi)`` where ``J_full = ∂r/∂y|_{fiducial}``,
-    ``M = -J_full[:, indices]`` and ``Phi`` is the improper-prior regularizer
-    (``1e40``).  Returns ``(None, None, None)`` when ``indices`` is empty
-    (nothing to marginalize for this pulsar).
+    Returns ``(M, Phi)`` where ``M = -∂r/∂y[:, indices]`` (the marginalized-target
+    columns of the design matrix, in ``indices`` order) and ``Phi`` is the
+    improper-prior regularizer (``1e40``).  Returns ``(None, None)`` when ``indices``
+    is empty (nothing to marginalize for this pulsar).
 
-    Forward-mode: the design matrix is tall (n_toas >> n_params), so jacfwd
-    costs O(n_toas * n_params); reverse mode vmaps n_toas backward passes ->
-    O(n_toas**2) and OOMs on high-cadence pulsars (e.g. 35k TOAs).
+    Column-only forward-mode: we push forward ONLY the ``indices`` one-hot tangents,
+    building just the ``n_marg`` columns we keep -- never the full
+    ``(n_toas, n_params)`` Jacobian.  On 15yr pulsars the parameter vector is dominated
+    by DMX bins (``n_params`` in the hundreds to >1000) while ``n_marg`` is a handful,
+    so a full ``jacfwd`` + slice would materialize ~``n_params`` columns of activations
+    only to discard all but ``n_marg`` -- the peak-memory blowup that OOMs high-cadence
+    pulsars.  This ``jvp`` over the marg one-hot basis is exact (identical to the sliced
+    full Jacobian) at ``n_marg / n_params`` the memory.  Reverse mode is worse still: it
+    vmaps ``n_toas`` backward passes -> O(n_toas**2), and OOMs even sooner.
     """
     if len(indices) == 0:
-        return None, None, None
+        return None, None
 
     from jaxpint.fitters._base import compute_time_residuals
 
@@ -322,29 +330,34 @@ def _marg_woodbury_block(
         params = fiducial.with_values(values)
         return compute_time_residuals(timing_model, toa_data, params)
 
-    J_full = jax.jacfwd(_resid_fn)(fiducial.values)
     idx_array = jnp.asarray(indices, dtype=jnp.int32)
-    M = -J_full[:, idx_array]
+    tangents = jax.nn.one_hot(
+        idx_array, fiducial.values.shape[0], dtype=fiducial.values.dtype
+    )  # (n_marg, n_params): one-hot rows for the marg targets
+    cols = jax.vmap(lambda t: jax.jvp(_resid_fn, (fiducial.values,), (t,))[1])(
+        tangents
+    )  # (n_marg, n_toas): row k = ∂r/∂y_{indices[k]}
+    M = -cols.T  # (n_toas, n_marg)
     Phi = jnp.full(len(indices), 1e40, dtype=jnp.float64)
-    return J_full, M, Phi
+    return M, Phi
 
 
 def _marg_trust_radii(
     priors: Mapping[str, Prior],
     fqns: Sequence[str],
-    indices: Sequence[int],
-    J_full: Float[Array, "n_toas n_params"],
+    M_marg: Float[Array, "n_toas n_marg"],
     Ndiag: Float[Array, " n_toas"],
 ) -> Float[Array, " n_marg"]:
     """Per-target prior trust radii for the linearity check.
 
     ``fqns`` are the prior-dict keys for the targets (bare names for a single
-    pulsar; ``"{prefix}_{bare}"`` for a PTA pulsar), aligned with ``indices``.
+    pulsar; ``"{prefix}_{bare}"`` for a PTA pulsar), aligned column-for-column
+    with the marginalization design matrix ``M_marg`` (target ``j`` ↔ column ``j``).
     """
     return jnp.asarray(
         [
-            _trust_radius_for_prior(priors[fqn], idx, J_full, Ndiag)
-            for fqn, idx in zip(fqns, indices)
+            _trust_radius_for_prior(priors[fqn], j, M_marg, Ndiag)
+            for j, fqn in enumerate(fqns)
         ]
     )
 
@@ -486,7 +499,7 @@ def marginalize_single_pulsar(
     # Empty marg set -> block is None; the wrapper passes None through
     # concat_woodbury_blocks so the user's external_cov flows through unchanged.
     over_indices = tuple(fiducial_params.param_index(n) for n in over_list)
-    J_full, M_marg, Phi_marg = _marg_woodbury_block(
+    M_marg, Phi_marg = _marg_woodbury_block(
         timing_model, toa_data, fiducial_params, over_indices
     )
     if M_marg is None:
@@ -496,9 +509,8 @@ def marginalize_single_pulsar(
         marg_cov_cached = (M_marg, Phi_marg)
 
     if validate_linearity and M_marg is not None:
-        assert J_full is not None  # a non-empty marg block implies J_full too
         Ndiag = noise_model.scaled_sigma(toa_data, fiducial_params) ** 2
-        trust_radii = _marg_trust_radii(priors, over_list, over_indices, J_full, Ndiag)
+        trust_radii = _marg_trust_radii(priors, over_list, M_marg, Ndiag)
         flagged = _check_linearity(
             timing_model,
             toa_data,
@@ -778,14 +790,13 @@ def marginalize_pta(
         fiducial_global_params,
     )
 
-    # Retain per-pulsar M_p and J_full_p for the linearity check below.
+    # Retain per-pulsar marg design matrix M_p for the linearity check below.
     cached_blocks: list[
         Optional[tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]]
     ] = []
     per_pulsar_M: list[Optional[Float[Array, "n_toas n_marg_p"]]] = []
-    per_pulsar_J_full: list[Optional[Float[Array, "n_toas n_params_p"]]] = []
     for p in range(n_psr):
-        J_full_p, M_p, Phi_p = _marg_woodbury_block(
+        M_p, Phi_p = _marg_woodbury_block(
             config.timing_models[p],
             config.toa_data_list[p],
             fiducial_pulsar_params[p],
@@ -797,7 +808,6 @@ def marginalize_pta(
             assert Phi_p is not None  # M and Phi are returned together
             cached_blocks.append((M_p, Phi_p))
         per_pulsar_M.append(M_p)
-        per_pulsar_J_full.append(J_full_p)
 
     if validate_linearity:
         flagged_all: list[tuple[str, float]] = []
@@ -806,17 +816,14 @@ def marginalize_pta(
             if not bare_names:
                 continue
             bare_indices = bare_indices_per_pulsar[p]
-            J_full_p = per_pulsar_J_full[p]
             M_p = per_pulsar_M[p]
-            assert J_full_p is not None and M_p is not None  # have marg targets
+            assert M_p is not None  # have marg targets
 
             toa_data_p = config.toa_data_list[p]
             fiducial_p = fiducial_pulsar_params[p]
             fqns = tuple(f"{pulsar_names[p]}_{bare}" for bare in bare_names)
             Ndiag_p = config.noise_models[p].scaled_sigma(toa_data_p, fiducial_p) ** 2
-            trust_radii_p = _marg_trust_radii(
-                priors, fqns, bare_indices, J_full_p, Ndiag_p
-            )
+            trust_radii_p = _marg_trust_radii(priors, fqns, M_p, Ndiag_p)
             flagged_p = _check_linearity(
                 config.timing_models[p],
                 toa_data_p,

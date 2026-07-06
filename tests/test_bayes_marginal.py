@@ -1,5 +1,5 @@
 """
-    Tests for jaxpint.bayes.marginal — analytic marginalization.
+Tests for jaxpint.bayes.marginal — analytic marginalization.
 """
 
 from __future__ import annotations
@@ -65,8 +65,13 @@ def synth_objects():
     np.random.seed(42)
     m_true = models.get_model(io.StringIO(_SYNTH_PAR))
     toas = make_fake_toas_uniform(
-        53000, 55000, 30, m_true,
-        error=10 * u.us, add_noise=True, freq=1400 * u.MHz,
+        53000,
+        55000,
+        30,
+        m_true,
+        error=10 * u.us,
+        add_noise=True,
+        freq=1400 * u.MHz,
     )
     toa_data = pint_toas_to_jax(toas, model=m_true)
     params = pint_model_to_params(m_true).params
@@ -101,8 +106,13 @@ def synth_objects_with_F2():
     np.random.seed(42)
     m_true = models.get_model(io.StringIO(_SYNTH_PAR_F2))
     toas = make_fake_toas_uniform(
-        53000, 55000, 30, m_true,
-        error=10 * u.us, add_noise=True, freq=1400 * u.MHz,
+        53000,
+        55000,
+        30,
+        m_true,
+        error=10 * u.us,
+        add_noise=True,
+        freq=1400 * u.MHz,
     )
     toa_data = pint_toas_to_jax(toas, model=m_true)
     params = pint_model_to_params(m_true).params
@@ -118,11 +128,11 @@ def synth_objects_with_F2():
 class TestMargSetFromPriors:
     def _mixed_priors(self):
         return {
-            "F0":   ImproperPrior(),
-            "F1":   ImproperPrior(),
-            "PX":   Gaussian(mu=1.0, sigma=0.2),
+            "F0": ImproperPrior(),
+            "F1": ImproperPrior(),
+            "PX": Gaussian(mu=1.0, sigma=0.2),
             "EFAC": Uniform(0.1, 10.0),
-            "DM":   ImproperPrior(),
+            "DM": ImproperPrior(),
         }
 
     def test_default_filters_to_improper(self):
@@ -175,7 +185,8 @@ class TestAnalyticCorrectness:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        likelihood_marg, _, skel = marginalize_single_pulsar(over={"F1"},
+        likelihood_marg, _, skel = marginalize_single_pulsar(
+            over={"F1"},
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -193,7 +204,7 @@ class TestAnalyticCorrectness:
         )(params.values)
         M_col = J_full[:, idx_F1]
         Ndiag = noise_model.scaled_sigma(toa_data, params) ** 2
-        fisher = float(jnp.sum(M_col ** 2 / Ndiag))
+        fisher = float(jnp.sum(M_col**2 / Ndiag))
         sigma_post = 1.0 / np.sqrt(fisher)
 
         # Trapezoidal-rule integration over ±K·σ around the WLS-ML estimate.
@@ -260,7 +271,8 @@ class TestAnalyticCorrectness:
         priors = {n: ImproperPrior() for n in params.free_names()}
         over = {"F1", "F2"}
 
-        likelihood_marg, _, skel = marginalize_single_pulsar(over=over,
+        likelihood_marg, _, skel = marginalize_single_pulsar(
+            over=over,
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -277,17 +289,19 @@ class TestAnalyticCorrectness:
                 jax_model, toa_data, eqx.tree_at(lambda p: p.values, params, v)
             )
         )(params.values)
-        M = J_full[:, jnp.array([idx_F1, idx_F2])]            # (n_toas, 2)
+        M = J_full[:, jnp.array([idx_F1, idx_F2])]  # (n_toas, 2)
         Ndiag = noise_model.scaled_sigma(toa_data, params) ** 2
         Ninv = 1.0 / Ndiag
-        Fisher = (M.T * Ninv) @ M                              # (2, 2)
+        Fisher = (M.T * Ninv) @ M  # (2, 2)
         r0 = compute_time_residuals(jax_model, toa_data, params)
-        grad = (M.T * Ninv) @ r0                               # (2,)
-        shift = jnp.linalg.solve(Fisher, grad)                 # WLS-ML offset
-        theta_fid = jnp.array([
-            float(params.param_value("F1")),
-            float(params.param_value("F2")),
-        ])
+        grad = (M.T * Ninv) @ r0  # (2,)
+        shift = jnp.linalg.solve(Fisher, grad)  # WLS-ML offset
+        theta_fid = jnp.array(
+            [
+                float(params.param_value("F1")),
+                float(params.param_value("F2")),
+            ]
+        )
         theta_max = theta_fid + shift
 
         # Per-axis marginal σ from the diagonal of Fisher⁻¹.
@@ -320,7 +334,7 @@ class TestAnalyticCorrectness:
             p = params.with_value("F1", F1).with_value("F2", F2)
             return single_pulsar_logL(toa_data, jax_model, noise_model, p)
 
-        logL_values = jax.vmap(logL_at)(F1_flat, F2_flat)      # (N²,)
+        logL_values = jax.vmap(logL_at)(F1_flat, F2_flat)  # (N²,)
 
         # --- 2D Riemann sum via log-sum-exp ---
         logL_max_val = jnp.max(logL_values)
@@ -352,7 +366,8 @@ class TestEmptyMargSet:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        likelihood_marg, sampled_priors, skel = marginalize_single_pulsar(over=set(),
+        likelihood_marg, sampled_priors, skel = marginalize_single_pulsar(
+            over=set(),
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -364,20 +379,22 @@ class TestEmptyMargSet:
         logL_orig = single_pulsar_logL(toa_data, jax_model, noise_model, params)
         npt.assert_allclose(float(logL_marg), float(logL_orig), rtol=1e-12)
 
-        assert sampled_priors == priors            # nothing removed
-        assert skel.marginalized_names() == ()     # nothing marked
+        assert sampled_priors == priors  # nothing removed
+        assert skel.marginalized_names() == ()  # nothing marked
 
 
 # ---------------------------------------------------------------------------
 #  reduced_skeleton structure
 # ---------------------------------------------------------------------------
 
+
 class TestReducedSkeleton:
     def test_mask_and_free_names(self, synth_objects):
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        likelihood_marg, sampled_priors, skel = marginalize_single_pulsar(over={"F0", "F1"},
+        likelihood_marg, sampled_priors, skel = marginalize_single_pulsar(
+            over={"F0", "F1"},
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -401,7 +418,8 @@ class TestReducedSkeleton:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        _, _, skel = marginalize_single_pulsar(over={"F0", "DM"},
+        _, _, skel = marginalize_single_pulsar(
+            over={"F0", "DM"},
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -424,7 +442,8 @@ class TestJITAndGrad:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        likelihood_marg, _, skel = marginalize_single_pulsar(over={"F0"},
+        likelihood_marg, _, skel = marginalize_single_pulsar(
+            over={"F0"},
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -440,7 +459,8 @@ class TestJITAndGrad:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
 
-        likelihood_marg, _, skel = marginalize_single_pulsar(over={"F0"},
+        likelihood_marg, _, skel = marginalize_single_pulsar(
+            over={"F0"},
             priors=priors,
             toa_data=toa_data,
             timing_model=jax_model,
@@ -470,7 +490,7 @@ class TestLinearityCheck:
         priors = {n: ImproperPrior() for n in params.free_names()}
 
         with warnings.catch_warnings():
-            warnings.simplefilter("error")    # any warning becomes a test failure
+            warnings.simplefilter("error")  # any warning becomes a test failure
             likelihood_marg, _, skel = marginalize_single_pulsar(
                 over=set(params.free_names()),
                 priors=priors,
@@ -498,21 +518,28 @@ class TestLinearityCheck:
         jax_model, noise_model, toa_data, params = synth_objects
         priors = {n: ImproperPrior() for n in params.free_names()}
         kwargs = dict(
-            over={"F0"}, priors=priors, toa_data=toa_data,
-            timing_model=jax_model, noise_model=noise_model,
+            over={"F0"},
+            priors=priors,
+            toa_data=toa_data,
+            timing_model=jax_model,
+            noise_model=noise_model,
             fiducial_params=params,
         )
 
-        with patch.object(marginal_mod, "_check_linearity",
-                          wraps=marginal_mod._check_linearity) as check:
+        with patch.object(
+            marginal_mod, "_check_linearity", wraps=marginal_mod._check_linearity
+        ) as check:
             likelihood_check, _, skel_check = marginalize_single_pulsar(
-                **kwargs, validate_linearity=True)
+                **kwargs, validate_linearity=True
+            )
         check.assert_called_once()
 
-        with patch.object(marginal_mod, "_check_linearity",
-                          wraps=marginal_mod._check_linearity) as check:
+        with patch.object(
+            marginal_mod, "_check_linearity", wraps=marginal_mod._check_linearity
+        ) as check:
             likelihood_skip, _, skel_skip = marginalize_single_pulsar(
-                **kwargs, validate_linearity=False)
+                **kwargs, validate_linearity=False
+            )
         check.assert_not_called()
 
         npt.assert_allclose(
@@ -520,6 +547,84 @@ class TestLinearityCheck:
             float(likelihood_skip(skel_skip)),
             rtol=1e-12,
         )
+
+
+class TestDesignMatrixMethod:
+    """Guards for how the marginalization design matrix is built.
+
+    ``M = -∂r/∂y[:, marg]`` can be formed either as the full forward Jacobian then
+    sliced (``jacfwd``), or column-only as a ``jvp`` over just the marginalized-target
+    one-hot tangents -- the latter never materializes the discarded columns, so it is
+    far cheaper on high-cadence pulsars whose parameter vector is dominated by DMX bins
+    (hundreds of params, a handful marginalized). These tests pin that the two builds
+    are interchangeable: identical M, identical marginalized logL, identical linearity
+    decision. Both marginalize the NON-CONTIGUOUS subset ``{F0, DM}`` at global param
+    indices ``(2, 5)`` (keeping F1 reduced) so a global->positional column remapping bug
+    -- in the design matrix or the trust-radii linearity check -- is caught.
+    """
+
+    def test_col_jvp_equals_full_jacobian(self, synth_objects):
+        # Machine-independent: the marg-column-only jvp build == the full-Jacobian
+        # slice, for a non-contiguous marg subset. No golden constants.
+        jax_model, _, toa_data, params = synth_objects
+        idx = jnp.asarray([params.param_index(n) for n in ("DM", "F0")])
+
+        def resid(v):
+            return compute_time_residuals(jax_model, toa_data, params.with_values(v))
+
+        M_full = -jax.jacfwd(resid)(params.values)[:, idx]
+        tangents = jax.nn.one_hot(
+            idx, params.values.shape[0], dtype=params.values.dtype
+        )
+        M_cols = -jax.vmap(lambda t: jax.jvp(resid, (params.values,), (t,))[1])(
+            tangents
+        ).T
+        npt.assert_allclose(
+            np.asarray(M_cols), np.asarray(M_full), rtol=1e-12, atol=0.0
+        )
+
+    def test_marg_logL_regression(self, synth_objects):
+        # REGRESSION: pin the marginalized logL + linearity decision so the design-matrix
+        # build method can be swapped without behavior change. validate_linearity=True
+        # routes through the trust radii (warnings-as-errors: a spurious nonlinearity flag
+        # fails here). Goldens from the full-jacfwd implementation (2026-07-03).
+        jax_model, noise_model, toa_data, params = synth_objects
+        over = {"F0", "DM"}
+        # At least one marg target sits at a global param index >= n_marg (here F0=2,
+        # DM=6 with n_marg=2), so the design-matrix columns and the trust-radii check
+        # must map global index -> positional column; a bug there reads the wrong / an
+        # out-of-range column of the narrow M.
+        assert max(params.param_index(n) for n in over) >= len(over)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            g, _, skel = marginalize_single_pulsar(
+                over=over,
+                priors={n: ImproperPrior() for n in over},
+                toa_data=toa_data,
+                timing_model=jax_model,
+                noise_model=noise_model,
+                fiducial_params=params,
+                allow_nonlinear=False,
+                validate_linearity=True,
+            )
+        assert skel.free_names() == ("F1",)
+
+        n = int(toa_data.tdb_seconds.shape[0])
+        probes = jax.random.normal(jax.random.PRNGKey(0), (3, n)) * 1e-6
+        skel_f1 = skel.with_values(skel.values.at[params.param_index("F1")].add(1e-20))
+        vals = (
+            [float(g(skel))]
+            + [float(g(skel, external_delay=d)) for d in probes]
+            + [float(g(skel_f1))]
+        )
+        golden = [
+            218.76800384964884,
+            218.05316049036963,
+            218.5561334201963,
+            219.05721063363552,
+            218.76456881174522,
+        ]
+        npt.assert_allclose(vals, golden, rtol=1e-8)
 
 
 class TestSinglePulsarValidation:
@@ -592,7 +697,11 @@ def _build_pta_setup(
 
 
 def _per_pulsar_marg_logL(
-    toa_data, timing_model, noise_model, params, bare_names,
+    toa_data,
+    timing_model,
+    noise_model,
+    params,
+    bare_names,
 ):
     """Run single-pulsar marg over ``bare_names`` and evaluate at fiducial.
 
@@ -603,7 +712,8 @@ def _per_pulsar_marg_logL(
     marg log-likelihoods.
     """
     priors = {n: ImproperPrior() for n in bare_names}
-    g, _, skel = marginalize_single_pulsar(over=set(bare_names),
+    g, _, skel = marginalize_single_pulsar(
+        over=set(bare_names),
         priors=priors,
         toa_data=toa_data,
         timing_model=timing_model,
@@ -615,7 +725,10 @@ def _per_pulsar_marg_logL(
 
 
 def _dense_marg_pta_logL(
-    toa_data_list, timing_models, noise_models, pulsar_params,
+    toa_data_list,
+    timing_models,
+    noise_models,
+    pulsar_params,
     bare_names_per_pulsar,
     correlated_injectors=(),
     global_params=None,
@@ -651,9 +764,7 @@ def _dense_marg_pta_logL(
     residuals = []
     C_p_list = []
     for p in range(n_psr):
-        r = compute_time_residuals(
-            timing_models[p], toa_data_list[p], pulsar_params[p]
-        )
+        r = compute_time_residuals(timing_models[p], toa_data_list[p], pulsar_params[p])
         residuals.append(r)
         Ndiag, U_noise, Phi_noise = noise_models[p].covariance(
             toa_data_list[p], pulsar_params[p]
@@ -671,7 +782,8 @@ def _dense_marg_pta_logL(
     for a in range(n_psr):
         na = n_toas_list[a]
         N_full = N_full.at[
-            offset_a:offset_a + na, offset_a:offset_a + na,
+            offset_a : offset_a + na,
+            offset_a : offset_a + na,
         ].add(C_p_list[a])
         if correlated_injectors:
             offset_b = 0
@@ -685,7 +797,8 @@ def _dense_marg_pta_logL(
                     F_b = cinj.get_fourier_basis(toa_data_list[b])
                     blk = blk + Gamma[a, b] * F_a @ jnp.diag(S) @ F_b.T
                 N_full = N_full.at[
-                    offset_a:offset_a + na, offset_b:offset_b + nb,
+                    offset_a : offset_a + na,
+                    offset_b : offset_b + nb,
                 ].add(blk)
                 offset_b += nb
         offset_a += na
@@ -699,9 +812,13 @@ def _dense_marg_pta_logL(
         if not bare_names:
             M_blocks.append(jnp.zeros((n_toas_list[p], 0)))
             continue
-        def _resid_fn(values, _tm=timing_models[p], _td=toa_data_list[p], _fp=pulsar_params[p]):
+
+        def _resid_fn(
+            values, _tm=timing_models[p], _td=toa_data_list[p], _fp=pulsar_params[p]
+        ):
             params = eqx.tree_at(lambda pv: pv.values, _fp, values)
             return compute_time_residuals(_tm, _td, params)
+
         J_full = jax.jacobian(_resid_fn)(pulsar_params[p].values)
         indices = jnp.asarray(
             [pulsar_params[p].param_index(b) for b in bare_names],
@@ -713,14 +830,14 @@ def _dense_marg_pta_logL(
 
     # ---- Apply marg-Woodbury identity densely ----
     L = jnp.linalg.cholesky(N_full)
-    alpha = jax.scipy.linalg.cho_solve((L, True), r_global)   # N_full^{-1} r
+    alpha = jax.scipy.linalg.cho_solve((L, True), r_global)  # N_full^{-1} r
     rNir = jnp.dot(r_global, alpha)
 
     if k == 0:
         rCr_marg = rNir
         logdet_marg_extra = 0.0
     else:
-        beta = jax.scipy.linalg.cho_solve((L, True), M_global)   # N_full^{-1} M
+        beta = jax.scipy.linalg.cho_solve((L, True), M_global)  # N_full^{-1} M
         MTNiM = M_global.T @ beta
         MTNir = M_global.T @ alpha
         # Sigma = (1/σ²) I_k + Mᵀ N_full^{-1} M  — well-conditioned for finite σ²
@@ -748,8 +865,12 @@ class TestPTAMarg:
     def test_pta_marg_matches_per_pulsar_sum(self):
         """Uncorrelated PTA: marg via pta_logL == sum of single-pulsar marg."""
         (
-            pulsar_names, toa_data_list, timing_models, noise_models,
-            pulsar_params, _,
+            pulsar_names,
+            toa_data_list,
+            timing_models,
+            noise_models,
+            pulsar_params,
+            _,
         ) = _build_pta_setup(n_pulsars=3)
 
         config = PTAConfig(
@@ -760,12 +881,11 @@ class TestPTAMarg:
         )
         global_params = GlobalParams.empty()
 
-        over = {f"{pn}_F0" for pn in pulsar_names} | {
-            f"{pn}_F1" for pn in pulsar_names
-        }
+        over = {f"{pn}_F0" for pn in pulsar_names} | {f"{pn}_F1" for pn in pulsar_names}
         priors = {n: ImproperPrior() for n in over}
 
-        g, sampled, reduced_skeletons = marginalize_pta(over=over,
+        g, sampled, reduced_skeletons = marginalize_pta(
+            over=over,
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
@@ -778,8 +898,11 @@ class TestPTAMarg:
 
         logL_sum_per_pulsar = sum(
             _per_pulsar_marg_logL(
-                toa_data_list[p], timing_models[p], noise_models[p],
-                pulsar_params[p], ("F0", "F1"),
+                toa_data_list[p],
+                timing_models[p],
+                noise_models[p],
+                pulsar_params[p],
+                ("F0", "F1"),
             )
             for p in range(len(pulsar_names))
         )
@@ -790,8 +913,12 @@ class TestPTAMarg:
     def test_pta_marg_with_hd_correlated(self):
         """Marg + HD GWB: matches dense brute-force reference."""
         (
-            pulsar_names, toa_data_list, timing_models, noise_models,
-            pulsar_params, positions,
+            pulsar_names,
+            toa_data_list,
+            timing_models,
+            noise_models,
+            pulsar_params,
+            positions,
         ) = _build_pta_setup(n_pulsars=3)
 
         T_span = 365.25 * 86400.0
@@ -812,12 +939,11 @@ class TestPTAMarg:
             correlated_injectors=(gwb,),
         )
 
-        over = {f"{pn}_F0" for pn in pulsar_names} | {
-            f"{pn}_F1" for pn in pulsar_names
-        }
+        over = {f"{pn}_F0" for pn in pulsar_names} | {f"{pn}_F1" for pn in pulsar_names}
         priors = {n: ImproperPrior() for n in over}
 
-        g, _, reduced_skeletons = marginalize_pta(over=over,
+        g, _, reduced_skeletons = marginalize_pta(
+            over=over,
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
@@ -830,7 +956,10 @@ class TestPTAMarg:
 
         bare_per_p = [["F0", "F1"]] * len(pulsar_names)
         logL_dense = _dense_marg_pta_logL(
-            toa_data_list, timing_models, noise_models, pulsar_params,
+            toa_data_list,
+            timing_models,
+            noise_models,
+            pulsar_params,
             bare_per_p,
             correlated_injectors=(gwb,),
             global_params=global_params,
@@ -841,8 +970,12 @@ class TestPTAMarg:
     def test_pta_marg_empty_over(self):
         """Empty `over`: wrapper returns plain pta_logL value at fiducial."""
         (
-            pulsar_names, toa_data_list, timing_models, noise_models,
-            pulsar_params, _,
+            pulsar_names,
+            toa_data_list,
+            timing_models,
+            noise_models,
+            pulsar_params,
+            _,
         ) = _build_pta_setup(n_pulsars=2)
 
         config = PTAConfig(
@@ -853,7 +986,8 @@ class TestPTAMarg:
         )
         global_params = GlobalParams.empty()
 
-        g, sampled, reduced_skeletons = marginalize_pta(over=set(),
+        g, sampled, reduced_skeletons = marginalize_pta(
+            over=set(),
             priors={},
             config=config,
             pulsar_names=pulsar_names,
@@ -873,8 +1007,12 @@ class TestPTAMarg:
 
     def test_global_param_in_over_raises_not_implemented(self):
         (
-            pulsar_names, toa_data_list, timing_models, noise_models,
-            pulsar_params, positions,
+            pulsar_names,
+            toa_data_list,
+            timing_models,
+            noise_models,
+            pulsar_params,
+            positions,
         ) = _build_pta_setup(n_pulsars=2)
 
         gwb = HDCorrelatedGWBInjector(
@@ -897,7 +1035,8 @@ class TestPTAMarg:
         priors = {"gwb_log10_A": ImproperPrior()}
 
         with pytest.raises(NotImplementedError, match="global-parameter"):
-            marginalize_pta(over={"gwb_log10_A"},
+            marginalize_pta(
+                over={"gwb_log10_A"},
                 priors=priors,
                 config=config,
                 pulsar_names=pulsar_names,
@@ -908,8 +1047,12 @@ class TestPTAMarg:
 
     def test_unknown_name_in_over_raises_value_error(self):
         (
-            pulsar_names, toa_data_list, timing_models, noise_models,
-            pulsar_params, _,
+            pulsar_names,
+            toa_data_list,
+            timing_models,
+            noise_models,
+            pulsar_params,
+            _,
         ) = _build_pta_setup(n_pulsars=2)
 
         config = PTAConfig(
@@ -923,7 +1066,8 @@ class TestPTAMarg:
         priors = {"nonsense_param": ImproperPrior()}
 
         with pytest.raises(ValueError, match="matches no pulsar"):
-            marginalize_pta(over={"nonsense_param"},
+            marginalize_pta(
+                over={"nonsense_param"},
                 priors=priors,
                 config=config,
                 pulsar_names=pulsar_names,
@@ -936,8 +1080,12 @@ class TestPTAMarg:
         """A pulsar name that is a prefix of another resolves unambiguously."""
         pulsar_names = ("J1234", "J1234_extra")
         (
-            _, toa_data_list, timing_models, noise_models,
-            pulsar_params, _,
+            _,
+            toa_data_list,
+            timing_models,
+            noise_models,
+            pulsar_params,
+            _,
         ) = _build_pta_setup(n_pulsars=2, pulsar_names=pulsar_names)
 
         config = PTAConfig(
@@ -952,7 +1100,8 @@ class TestPTAMarg:
         # starts with "J1234_" too, but the bare name "extra_F0" is NOT in
         # pulsar 0's params; so the resolver must pick pulsar 1.
         priors = {"J1234_extra_F0": ImproperPrior()}
-        g, _, reduced_skeletons = marginalize_pta(over={"J1234_extra_F0"},
+        g, _, reduced_skeletons = marginalize_pta(
+            over={"J1234_extra_F0"},
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
@@ -965,8 +1114,12 @@ class TestPTAMarg:
 
     def test_pta_marg_skeleton_structure(self):
         (
-            pulsar_names, toa_data_list, timing_models, noise_models,
-            pulsar_params, _,
+            pulsar_names,
+            toa_data_list,
+            timing_models,
+            noise_models,
+            pulsar_params,
+            _,
         ) = _build_pta_setup(n_pulsars=3)
 
         config = PTAConfig(
@@ -981,7 +1134,8 @@ class TestPTAMarg:
         over = {f"{pn}_F0" for pn in pulsar_names} | {f"{pulsar_names[1]}_F1"}
         priors = {n: ImproperPrior() for n in over}
 
-        _, sampled, reduced_skeletons = marginalize_pta(over=over,
+        _, sampled, reduced_skeletons = marginalize_pta(
+            over=over,
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
@@ -1004,8 +1158,12 @@ class TestPTAMarg:
     def test_pta_marg_jit_and_grad(self):
         """The wrapper is JIT-able and grad-able through global params."""
         (
-            pulsar_names, toa_data_list, timing_models, noise_models,
-            pulsar_params, positions,
+            pulsar_names,
+            toa_data_list,
+            timing_models,
+            noise_models,
+            pulsar_params,
+            positions,
         ) = _build_pta_setup(n_pulsars=3)
 
         gwb = HDCorrelatedGWBInjector(
@@ -1028,7 +1186,8 @@ class TestPTAMarg:
         over = {f"{pn}_F0" for pn in pulsar_names}
         priors = {n: ImproperPrior() for n in over}
 
-        g, _, reduced_skeletons = marginalize_pta(over=over,
+        g, _, reduced_skeletons = marginalize_pta(
+            over=over,
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
@@ -1053,8 +1212,12 @@ class TestPTAMarg:
         log-likelihood is finite.
         """
         (
-            pulsar_names, toa_data_list, timing_models, noise_models,
-            pulsar_params, _,
+            pulsar_names,
+            toa_data_list,
+            timing_models,
+            noise_models,
+            pulsar_params,
+            _,
         ) = _build_pta_setup(n_pulsars=2)
 
         config = PTAConfig(
@@ -1068,7 +1231,8 @@ class TestPTAMarg:
         over = {f"{pn}_F0" for pn in pulsar_names}
         priors = {n: ImproperPrior() for n in over}
 
-        g, sampled, reduced_skeletons = marginalize_pta(over=over,
+        g, sampled, reduced_skeletons = marginalize_pta(
+            over=over,
             priors=priors,
             config=config,
             pulsar_names=pulsar_names,
