@@ -31,7 +31,7 @@ References
 
 from __future__ import annotations
 
-from typing import Optional, cast
+from typing import NamedTuple, Optional, cast
 
 import jax
 import jax.numpy as jnp
@@ -752,3 +752,122 @@ def pta_logL(
         - 0.5 * n_toas_total * jnp.log(2.0 * jnp.pi)
     )
     return total_logL
+
+
+# ---------------------------------------------------------------------------
+# Optimal-statistic block producer
+# ---------------------------------------------------------------------------
+
+
+class GWBlocks(NamedTuple):
+    """Per-pulsar GW-basis projections plus shared spectrum/ORF.
+
+    The canonical block producer the optimal statistic
+    (:mod:`jaxpint.frequentist.optimal`) and the correlated :func:`pta_logL`
+    inner tier share.  For pulsar ``p`` with per-pulsar noise covariance
+    ``C_p`` (white + red + ecorr + timing, **excluding** the correlated GWB)
+    and the GWB Fourier basis ``F_p``, these are the same objects
+    :func:`_per_pulsar_intermediates` returns, stacked across pulsars.
+
+    Attributes
+    ----------
+    basis_proj_residual : (n_psr, n_basis) array
+        ``F_pᵀ C_p⁻¹ r_p`` per pulsar (discovery's ``kv``).
+    basis_overlap : (n_psr, n_basis, n_basis) array
+        ``F_pᵀ C_p⁻¹ F_p`` per pulsar (discovery's ``km``), returned exactly
+        symmetric (``0.5 (km + kmᵀ)``): the block is a Gram matrix whose only
+        asymmetry is float noise from the ``F.T @ (C⁻¹F)`` product, and the
+        Cholesky/eigh consumers downstream (e.g. the GX2 null) require symmetry.
+    psd : (n_basis,) array
+        Shared GWB PSD diagonal ``Φ`` (``UᵀU = Φ``) at ``global_params``.
+    orf_matrix : (n_psr, n_psr) array
+        Overlap-reduction (e.g. Hellings-Downs) matrix ``Γ``.
+    """
+
+    basis_proj_residual: Float[Array, "n_psr n_basis"]
+    basis_overlap: Float[Array, "n_psr n_basis n_basis"]
+    psd: Float[Array, " n_basis"]
+    orf_matrix: Float[Array, "n_psr n_psr"]
+
+
+def per_pulsar_gw_blocks(
+    global_params: GlobalParams,
+    pulsar_params: tuple[ParameterVector, ...],
+    config: PTAConfig,
+) -> GWBlocks:
+    """Per-pulsar GW-basis blocks ``(kv, km)`` plus shared ``Φ``, ``Γ``.
+
+    Reuses the inner-tier machinery of the correlated :func:`pta_logL`
+    (:func:`_per_pulsar_intermediates`) so the blocks match those the
+    correlated likelihood consumes (``km`` is additionally symmetrized; see
+    :class:`GWBlocks`).  For each pulsar it forms
+    ``kv_p = F_pᵀ C_p⁻¹ r_p`` and ``km_p = F_pᵀ C_p⁻¹ F_p``, where ``C_p`` is
+    the per-pulsar noise covariance **excluding** the correlated GWB (the GWB
+    enters only as the basis ``F_p`` and, downstream, the shared PSD ``Φ``) —
+    exactly discovery's "kernel excluding the GW GP".  Any per-pulsar
+    :class:`SignalInjector` contributions in ``config`` (deterministic delays,
+    e.g. CW; stochastic covariances, e.g. CURN) are folded into the residual /
+    ``C_p`` exactly as in :func:`pta_logL`.
+
+    Pure function of the blocks and traceable, so the noise-marginalized
+    optimal statistic is a plain ``jax.vmap`` of the downstream combiner over
+    posterior draws.
+
+    Parameters
+    ----------
+    global_params, pulsar_params, config
+        As for :func:`pta_logL`.  ``config.correlated_injectors`` must contain
+        exactly one injector (the single-component optimal statistic); ``Φ`` and
+        ``Γ`` are read from it.
+
+    Returns
+    -------
+    GWBlocks
+        Stacked per-pulsar ``(kv, km)`` plus the shared ``Φ`` and ``Γ``.
+
+    Raises
+    ------
+    ValueError
+        If ``config.correlated_injectors`` does not contain exactly one injector.
+    """
+    cinjs = config.correlated_injectors
+    if len(cinjs) != 1:
+        raise ValueError(
+            "per_pulsar_gw_blocks requires exactly one correlated injector "
+            f"(the single-component optimal statistic); got {len(cinjs)}. "
+            "Multi-correlation OS is not supported."
+        )
+    (cinj,) = cinjs
+
+    kv_list = []
+    km_list = []
+    for p in range(config.n_pulsars):
+        ext_delay, ext_cov = _collect_per_pulsar_external_inputs(
+            p,
+            config.toa_data_list[p],
+            pulsar_params[p],
+            global_params,
+            config.signal_injectors,
+        )
+        F_p = cinj.get_fourier_basis(config.toa_data_list[p])
+        _, _, basis_proj_residual_p, basis_overlap_p = _per_pulsar_intermediates(
+            config.toa_data_list[p],
+            config.timing_models[p],
+            config.noise_models[p],
+            pulsar_params[p],
+            F_p,
+            external_delay=ext_delay,
+            external_cov=ext_cov,
+        )
+        kv_list.append(basis_proj_residual_p)
+        # km = FᵀC⁻¹F is a Gram matrix (symmetric in exact arithmetic); the
+        # F.T @ (C⁻¹F) product is symmetric only to float precision. Return the
+        # exactly-symmetric form so downstream Cholesky/eigh paths are stable.
+        km_list.append(0.5 * (basis_overlap_p + basis_overlap_p.T))
+
+    return GWBlocks(
+        basis_proj_residual=jnp.stack(kv_list),
+        basis_overlap=jnp.stack(km_list),
+        psd=cinj.get_psd(global_params),
+        orf_matrix=cinj.get_orf_matrix(),
+    )
