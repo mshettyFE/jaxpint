@@ -195,12 +195,14 @@ def compute_skymap(
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.frequentist.detection import fstat
     from jaxpint.pta.cw_upper_limit import (
-        quadratic_coeffs,
         h0_95_closed_form,
         h0_to_distance,
-        orientation_coeffs,
-        basis_quadratics,
         h0_95_marginalized,
+    )
+    from jaxpint.pta.extraction import (
+        basis_quadratics,
+        orientation_coeffs,
+        quadratic_coeffs,
     )
 
     # ---- 1. Load + filter --------------------------------------------------

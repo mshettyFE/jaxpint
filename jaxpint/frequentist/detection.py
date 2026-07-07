@@ -48,7 +48,7 @@ from jaxtyping import Array, Float
 from scipy.stats import chi2
 
 from jaxpint.frequentist.nulls import isotropic_positions, rotate_quadratures
-from jaxpint.pta.incoherent_ul import extract_pulsar_blocks
+from jaxpint.pta.extraction import extract_pulsar_blocks
 from jaxpint.pta.signals.cw import _TREF, _fplus_fcross_costheta
 
 __all__ = [

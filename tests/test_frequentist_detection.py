@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from scipy.stats import chi2
 
-from jaxpint.pta.cw_upper_limit import basis_quadratics
+from jaxpint.pta.extraction import basis_quadratics
 from jaxpint.pta.signals.cw import cw_delay_from_array
 from jaxpint.frequentist.detection import (
     fstat,

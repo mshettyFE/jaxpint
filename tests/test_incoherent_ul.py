@@ -7,11 +7,8 @@ import numpy as np
 import pytest
 
 from jaxpint.pta.signals.cw import cw_delay_from_array, _KPC_TO_M, _C
-from jaxpint.pta.incoherent_ul import (
-    bM2_coeffs, extract_pulsar_bM, extract_pulsar_blocks, condition_on_statics,
-    flat_phase_grid, distance_phase_grid,
-    logL_pulsar_marg, total_logL_marg, total_logL_profile, h0_95_grid, mixed_phase_A,
-)
+from jaxpint.pta.incoherent_ul import condition_on_statics, flat_phase_grid, distance_phase_grid, logL_pulsar_marg, total_logL_marg, total_logL_profile, h0_95_grid, mixed_phase_A
+from jaxpint.pta.extraction import bM2_coeffs, extract_pulsar_bM, extract_pulsar_blocks
 from tests.helpers import make_toa_data, make_simple_pulsar
 
 LOG10_FGW = float(np.log10(27e-9))

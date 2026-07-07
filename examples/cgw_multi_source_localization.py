@@ -116,7 +116,7 @@ def compute_multi_source_localization_skymap(
     from jaxpint.pta.likelihood import PTAConfig
     from jaxpint.types import GlobalParams
     from jaxpint.pta.signals.cw import CWInjector
-    from jaxpint.pta.cw_upper_limit import quadratic_coeffs
+    from jaxpint.pta.extraction import quadratic_coeffs
     from jaxpint.pta.cw_localization import (
         h0_for_snr,
         make_logL_2sky,

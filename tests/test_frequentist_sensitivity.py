@@ -5,11 +5,7 @@ import jax.numpy as jnp
 import pytest
 
 from jaxpint.pta.signals.cw import cw_delay_from_array
-from jaxpint.pta.cw_upper_limit import (
-    quadratic_coeffs,
-    orientation_coeffs,
-    _default_extraction_orientations,
-)
+from jaxpint.pta.extraction import default_extraction_orientations, orientation_coeffs, quadratic_coeffs
 from jaxpint.frequentist.sensitivity import earth_term_gram, unit_noncentrality
 from jaxpint.frequentist.stats import chi2_threshold, h0_min_from_lambda
 from tests.helpers import make_simple_pulsar
@@ -83,7 +79,7 @@ def test_h0_min_matches_injection_recovery_fraction(network):
     # b = h0*M c(theta) + noise, noise ~ N(0, M)  =>  2F ~ ncx2_4(h0^2 c^T M c);
     # the fraction with 2F > threshold must equal beta.
     M = network["M"]
-    orientations = _default_extraction_orientations(64, seed=1)
+    orientations = default_extraction_orientations(64, seed=1)
     thr, beta = chi2_threshold(1e-3, 4), 0.9
     h0 = float(
         h0_min_from_lambda(thr, unit_noncentrality(M, orientations), dof=4, beta=beta)
