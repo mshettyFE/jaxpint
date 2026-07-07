@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import NamedTuple, Sequence
+from typing import Iterator, NamedTuple, Sequence
 
 from jaxpint.loaders.native import native_toas_to_jax
 from jaxpint.model import TimingModel
@@ -59,6 +59,16 @@ class NanogravPTA(NamedTuple):
     pulsar_params_list: tuple[ParameterVector, ...]
     timing_models: tuple[TimingModel, ...]
     noise_models: tuple[NoiseModel, ...]
+
+
+class PulsarRecord(NamedTuple):
+    """One pulsar's fully-built inputs, as yielded by :func:`iter_nanograv_pta`."""
+
+    name: str
+    toa_data: TOAData
+    params: ParameterVector
+    timing_model: TimingModel
+    noise_model: NoiseModel
 
 
 def _find_matching_tim(par_path: Path, psr_name: str) -> Path | None:
@@ -121,6 +131,70 @@ def _pair_par_tim(data_dir: Path) -> dict[str, tuple[Path, Path]]:
     return pairs
 
 
+def _resolve_pairs(
+    data_dir: str | Path,
+    pulsar_names: Sequence[str] | None,
+    exclude: Sequence[str],
+) -> list[tuple[str, Path, Path]]:
+    """Discover + select + order the ``(name, par, tim)`` work list.
+
+    Shared front half of :func:`load_nanograv_pta` and
+    :func:`iter_nanograv_pta`, so both resolve identically.
+    """
+    root = Path(data_dir)
+    if not root.is_dir():
+        raise FileNotFoundError(f"{root} is not a directory")
+
+    pairs = _pair_par_tim(root)
+    if not pairs:
+        raise FileNotFoundError(f"No par/tim pairs found under {root}")
+
+    if pulsar_names is None:
+        names = list(pairs.keys())
+    else:
+        missing = [n for n in pulsar_names if n not in pairs]
+        if missing:
+            raise KeyError(f"Pulsars not found in {root}: {missing}")
+        names = list(pulsar_names)
+
+    excl = set(exclude)
+    names = [n for n in names if n not in excl]
+    if not names:
+        raise ValueError(f"No pulsars left after applying exclude={list(exclude)!r}")
+
+    return [(n, *pairs[n]) for n in names]
+
+
+def _load_one(
+    name: str,
+    par_path: Path,
+    tim_path: Path,
+    *,
+    ephem: str,
+    bipm_version: str,
+    planets: bool,
+) -> PulsarRecord:
+    """Parse + build one pulsar (the shared back half of both loaders)."""
+    log.info("Loading %s from %s", name, par_path)
+    par_result = parse_par(str(par_path))
+    toa_data = native_toas_to_jax(
+        str(tim_path),
+        par_result,
+        ephem=ephem,
+        include_bipm=True,
+        bipm_version=bipm_version,
+        planets=planets,
+    )
+    tm, nm = build_model(par_result, toa_data)
+    return PulsarRecord(
+        name=name,
+        toa_data=toa_data,
+        params=par_result.params,
+        timing_model=tm,
+        noise_model=nm,
+    )
+
+
 def load_nanograv_pta(
     data_dir: str | Path,
     *,
@@ -162,59 +236,69 @@ def load_nanograv_pta(
     NanogravPTA
         Per-pulsar tuples ready to feed into
         :class:`jaxpint.pta.likelihood.PTAConfig`.
+
+    Notes
+    -----
+    This materializes (and retains references to) **every** pulsar at once. For
+    one-pulsar-at-a-time workflows on memory-constrained machines, prefer
+    :func:`iter_nanograv_pta`
     """
-    root = Path(data_dir)
-    if not root.is_dir():
-        raise FileNotFoundError(f"{root} is not a directory")
+    records = [
+        _load_one(
+            name, parp, timp, ephem=ephem, bipm_version=bipm_version, planets=planets
+        )
+        for name, parp, timp in _resolve_pairs(data_dir, pulsar_names, exclude)
+    ]
+    return NanogravPTA(
+        pulsar_names=tuple(r.name for r in records),
+        toa_data_list=tuple(r.toa_data for r in records),
+        pulsar_params_list=tuple(r.params for r in records),
+        timing_models=tuple(r.timing_model for r in records),
+        noise_models=tuple(r.noise_model for r in records),
+    )
 
-    pairs = _pair_par_tim(root)
-    if not pairs:
-        raise FileNotFoundError(f"No par/tim pairs found under {root}")
 
-    if pulsar_names is None:
-        names = list(pairs.keys())
-    else:
-        missing = [n for n in pulsar_names if n not in pairs]
-        if missing:
-            raise KeyError(f"Pulsars not found in {root}: {missing}")
-        names = list(pulsar_names)
+def iter_nanograv_pta(
+    data_dir: str | Path,
+    *,
+    pulsar_names: Sequence[str] | None = None,
+    exclude: Sequence[str] = (),
+    ephem: str = "DE440",
+    bipm_version: str = "BIPM2019",
+    planets: bool = True,
+) -> Iterator[PulsarRecord]:
+    """Stream a NANOGrav PTA dataset one pulsar at a time, loading lazily.
 
-    excl = set(exclude)
-    names = [n for n in names if n not in excl]
-    if not names:
-        raise ValueError(f"No pulsars left after applying exclude={list(exclude)!r}")
+    The iterable-style counterpart of :func:`load_nanograv_pta`.
+    Each pulsar is loaded on demand, and the generator
+    **retains no reference to yielded records**, so a consumer that drops each
+    record after use keeps peak memory at ~one pulsar regardless of array
+    size. This is the intended idiom for full-array sweeps on
+    memory-constrained machines::
 
-    out_names: list[str] = []
-    toa_data_list: list[TOAData] = []
-    params_list: list[ParameterVector] = []
-    timing_models: list[TimingModel] = []
-    noise_models: list[NoiseModel] = []
+        for rec in iter_nanograv_pta(data_dir):
+            slab = extract_something(rec)   # heavy, per-pulsar
+            slabs.append(slab)              # tiny
+            del rec                         # last reference -> buffers freed
+            jax.clear_caches()              # per-shape kernels never reused
 
-    for name in names:
-        par_path, tim_path = pairs[name]
-        log.info("Loading %s from %s", name, par_path)
+    Parameters
+    ----------
+    data_dir, pulsar_names, exclude, ephem, bipm_version, planets
+        As in :func:`load_nanograv_pta`.
 
-        par_result = parse_par(str(par_path))
-        toa_data = native_toas_to_jax(
-            str(tim_path),
-            par_result,
+    Yields
+    ------
+    PulsarRecord
+        ``(name, toa_data, params, timing_model, noise_model)`` per pulsar,
+        in selection order.
+    """
+    for name, parp, timp in _resolve_pairs(data_dir, pulsar_names, exclude):
+        yield _load_one(
+            name,
+            parp,
+            timp,
             ephem=ephem,
-            include_bipm=True,
             bipm_version=bipm_version,
             planets=planets,
         )
-        tm, nm = build_model(par_result, toa_data)
-
-        out_names.append(name)
-        toa_data_list.append(toa_data)
-        params_list.append(par_result.params)
-        timing_models.append(tm)
-        noise_models.append(nm)
-
-    return NanogravPTA(
-        pulsar_names=tuple(out_names),
-        toa_data_list=tuple(toa_data_list),
-        pulsar_params_list=tuple(params_list),
-        timing_models=tuple(timing_models),
-        noise_models=tuple(noise_models),
-    )

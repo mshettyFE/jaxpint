@@ -62,7 +62,13 @@ from .fitters import (
 from .model_builder import build_model
 from .likelihood import single_pulsar_logL
 from . import native
-from .loaders import NanogravPTA, load_nanograv_pta, native_toas_to_jax
+from .loaders import (
+    NanogravPTA,
+    PulsarRecord,
+    iter_nanograv_pta,
+    load_nanograv_pta,
+    native_toas_to_jax,
+)
 from .simulation import (
     apply_delay_to_toas,
     make_fake_toas,
@@ -143,6 +149,8 @@ __all__ = [
     "compute_wideband_residuals",
     "fourier_sum",
     "load_nanograv_pta",
+    "iter_nanograv_pta",
+    "PulsarRecord",
     "make_fake_toas",
     "native",
     "normalize_designmatrix",
