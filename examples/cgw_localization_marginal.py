@@ -190,7 +190,7 @@ def compute_localization(
         e, ps = templates(td, pos, ct_t, gp_t)
         _, M = extract_pulsar_bM(g, skel, e, ps)
         snr2_unit += float(ai @ M @ ai)  # a^T M a at h0 = 1
-    h0 = float(h0_for_snr(snr, snr2_unit))  # snr / sqrt(signal power)
+    h0 = float(h0_for_snr(snr, jnp.asarray(snr2_unit)))  # snr / sqrt(signal power)
     _log(f"SNR^2 at h0=1 is {snr2_unit:.3e} -> injecting h0 = {h0:.3e}.")
 
     # ---- full-sky (b, M) with the coherent injection baked into g ---------

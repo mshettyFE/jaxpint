@@ -67,7 +67,7 @@ class _PowerLawFourierNoise(NoiseComponent):
         if cached is None:
             cached = jnp.asarray(self.fourier_basis)
             if not isinstance(cached, jax.core.Tracer):
-                self.__dict__["_fourier_basis_jax_cache"] = cached
+                self.__dict__["_fourier_basis_jax_cache"] = cached  # pyright: ignore[reportIndexIssue]
         return cached
 
     # -- subclass hooks --------------------------------------------------

@@ -160,7 +160,7 @@ def compute_anchor_ladder(
         e, ps = templates(td, pos, ct_t, gp_t)
         _, M = extract_pulsar_bM(g, skel, e, ps)
         snr2_i[a] = float(ai @ M @ ai)
-    h0 = float(h0_for_snr(snr, float(snr2_i.sum())))
+    h0 = float(h0_for_snr(snr, jnp.asarray(snr2_i.sum())))
     # anchor loudest-first: the pulsars whose pulsar term carries the most coherent
     # signal power (SkyScan run_anchor_localization's ranking).
     order = np.argsort(-snr2_i)

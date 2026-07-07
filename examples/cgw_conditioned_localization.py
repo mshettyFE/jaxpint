@@ -174,7 +174,7 @@ def compute_conditioned_localization(
             e, ps = templates(td, pos, ct, gp)
             _, M = extract_pulsar_bM(g, skel, e, ps)
             snr2 += float(ai @ M @ ai)
-        return float(h0_for_snr(snr, snr2))
+        return float(h0_for_snr(snr, jnp.asarray(snr2)))
 
     h0 = [calibrate(*skies[s], a_truth[s], source_snr[s]) for s in range(S)]
     a_coeff = [
