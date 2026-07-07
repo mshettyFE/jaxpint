@@ -98,7 +98,11 @@ def fourier_basis(
     Returns
     -------
     F : (n_toas, 2 * n_components) array
-        Design matrix with alternating sin/cos columns.
+        Design matrix with interleaved sin/cos columns
+        ``[sin(2πf₁t), cos(2πf₁t), sin(2πf₂t), cos(2πf₂t), ...]`` — the same
+        ordering as :func:`jaxpint.utils.build_fourier_basis`, so that
+        ``jnp.repeat(psd, 2)`` correctly assigns each frequency's PSD to its
+        (sin, cos) pair.
     freqs : (n_components,) array
         Frequencies in Hz.
 
@@ -109,7 +113,12 @@ def fourier_basis(
     """
     freqs = jnp.arange(1, n_components + 1) / T_span
     phase = 2.0 * jnp.pi * toas_seconds[:, None] * freqs[None, :]
-    F = jnp.column_stack([jnp.sin(phase), jnp.cos(phase)])
+    # Interleave sin/cos per frequency: [sin f1, cos f1, sin f2, cos f2, ...].
+    # This matches build_fourier_basis and the repeat(psd, 2) PSD ordering; a
+    # blocked [sin... | cos...] layout would misalign each column's PSD.
+    F = jnp.stack([jnp.sin(phase), jnp.cos(phase)], axis=-1).reshape(
+        phase.shape[0], 2 * n_components
+    )
     return F, freqs
 
 
