@@ -106,7 +106,7 @@ def compute_distance_sensitivity(
     Parameters
     ----------
     data_dir : path-like
-        NANOGrav-style dataset directory (par/tim), loaded by ``load_nanograv_pta``.
+        NANOGrav-style dataset directory (par/tim), streamed by ``iter_nanograv_pta``.
     pulsar_subset : list[str] or None
         Pulsar names to load; ``None`` loads all in ``data_dir``.
     nside : int
@@ -148,7 +148,7 @@ def compute_distance_sensitivity(
     import jax.numpy as jnp
     from loguru import logger
 
-    from jaxpint import load_nanograv_pta
+    from jaxpint import map_pulsars
     from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
     from jaxpint.pta.cw_upper_limit import (
         _default_extraction_orientations,
@@ -170,35 +170,73 @@ def compute_distance_sensitivity(
     threshold = chi2_threshold(fap, DOF)
     orientations = _default_extraction_orientations(n_theta, seed=1)
 
-    # ---- load pulsars + sky grid -----------------------------------------
-    psrs = load_nanograv_pta(data_dir, pulsar_names=pulsar_subset)
-    keep = [i for i, n in enumerate(psrs.pulsar_names) if n not in DROP_PULSARS]
-    names = [psrs.pulsar_names[i] for i in keep]
-    td_list = [psrs.toa_data_list[i] for i in keep]
-    tm_list = [psrs.timing_models[i] for i in keep]
-    nm_list = [psrs.noise_models[i] for i in keep]
-    pp_list = [psrs.pulsar_params_list[i] for i in keep]
-    positions = np.stack([np.asarray(pulsar_unit_vector(pp)) for pp in pp_list])
-    pos_j = jnp.asarray(positions)
-    npsr = len(names)
-
     npix = hp.nside2npix(nside)
     theta, phi = hp.pix2ang(nside, np.arange(npix))
     grid = jnp.asarray(
         np.stack([np.cos(theta), phi], axis=1)
     )  # (npix, 2): (cos_gwtheta, gwphi)
 
-    # PTA-wide observing span (seconds) for the CURN Fourier basis.
-    tdb = [np.asarray(td.tdb_seconds) for td in td_list]
-    T_span = float(max(t.max() for t in tdb) - min(t.min() for t in tdb))
+    # ---- resolve the pulsar set + PTA-wide span (cheap raw-MJD pre-scan) ---
+    # The CURN Fourier basis needs the PTA-wide observing span BEFORE any pulsar
+    # is processed, but streaming (below) sees one pulsar at a time.  Pre-scan
+    # the raw .tim MJDs with the native reader instead: no clock chain, no
+    # barycentering, ~ms per file.  Raw site MJDs differ from the TDB span by
+    # well under a second out of ~16 yr (relative ~1e-9) -- irrelevant for a
+    # 1/T basis.  _resolve_pairs is the same discovery/selection the iterator
+    # uses, so the pre-scan covers exactly the pulsars we stream.
+    from jaxpint.loaders.nanograv import _resolve_pairs
+    from jaxpint.tim import read_tim
+
+    work = _resolve_pairs(data_dir, pulsar_subset, DROP_PULSARS)
+    lo, hi = np.inf, -np.inf
+    for _name, _parp, timp in work:
+        mjds = [t.mjd_int + t.mjd_frac for t in read_tim(str(timp)).toas]
+        lo, hi = min(lo, float(min(mjds))), max(hi, float(max(mjds)))
+    T_span = (hi - lo) * 86400.0
+    npsr = len(work)
     _log(
-        f"Loaded {npsr} pulsars; nside={nside} (npix={npix}); {n_freq} frequencies; "
+        f"Resolved {npsr} pulsars; nside={nside} (npix={npix}); {n_freq} frequencies; "
         f"T_span={T_span / 3.15576e7:.1f} yr."
     )
 
-    # ---- per-pulsar timing-marginalized likelihoods ----------------------
-    pulsars = []  # (g, skel, td, pos)
-    for td, tm, nm, pp, pos in zip(td_list, tm_list, nm_list, pp_list, pos_j):
+    def gwb_wrap(g, td):  # inject a CURN covariance into the per-pulsar likelihood
+        U, Phi = gwb_covariance(td, gwb_ncomp, T_span, gwb_log10_A, gwb_gamma)
+
+        def g_gwb(rp, external_delay=0.0):
+            return g(rp, external_delay=external_delay, external_cov=(U, Phi))
+
+        return g_gwb
+
+    def pulsar_gram(gg, skel, td, pos):
+        """One (wrapped) pulsar likelihood's Earth-term Gram, (n_freq, npix, 4, 4).
+
+        Built directly (stacked per frequency) rather than folded into a zeros
+        base: an ``.at[].add`` onto a closed-over constant invites XLA to
+        constant-fold through the whole update chain at compile time, which
+        blew the compile-memory peak on the largest pulsar.
+        """
+        per_freq = []
+        for lf in log10_fgw_grid:
+            lf = float(lf)
+            per_freq.append(
+                jax.lax.map(
+                    lambda row, gg=gg, td=td, pos=pos, lf=lf: earth_term_gram(
+                        gg, skel, td, pos, 1.0, row[0], row[1], lf
+                    ),
+                    grid,
+                    batch_size=pixel_chunk,
+                )
+            )
+        return jnp.stack(per_freq)
+
+    # ---- stream pulsars: build each block once, fold into M_off & M_on, drop --
+    # map_pulsars handles the build -> use -> purge hygiene; folding the GWB-off
+    # and GWB-on Grams in the same held-g call avoids retracing earth_term_gram
+    # for a second pass.
+    def fold_grams(rec):
+        """Per-pulsar reduction -> (name, pos, dM_off, dM_on) contributions."""
+        td, tm, nm, pp = rec.toa_data, rec.timing_model, rec.noise_model, rec.params
+        pos = jnp.asarray(pulsar_unit_vector(pp))
         over = {n for n in pp.free_names() if n in MARG_PARAMS}
         g, _, skel = marginalize_single_pulsar(
             over=over,
@@ -215,33 +253,27 @@ def compute_distance_sensitivity(
         # basis_quadratics's inner lax.map) it caches a *tracer* and leaks. cf.
         # examples/cgw_localization_skymap.py:332.
         _ = g(skel)
-        pulsars.append((g, skel, td, pos))
+        dM_off = pulsar_gram(g, skel, td, pos)
+        dM_on = pulsar_gram(gwb_wrap(g, td), skel, td, pos) if gwb else None
+        _log(f"  {rec.name}: Grams folded ({td.n_toas} TOAs)")
+        return rec.name, np.asarray(pos), dM_off, dM_on
 
-    def gwb_wrap(g, td):  # inject a CURN covariance into the per-pulsar likelihood
-        U, Phi = gwb_covariance(td, gwb_ncomp, T_span, gwb_log10_A, gwb_gamma)
+    M_off = jnp.zeros((n_freq, npix, 4, 4))
+    M_on = jnp.zeros((n_freq, npix, 4, 4))
+    names, pos_l = [], []
+    for name, pos, dM_off, dM_on in map_pulsars(
+        fold_grams, data_dir, pulsar_names=pulsar_subset, exclude=DROP_PULSARS
+    ):
+        names.append(name)
+        pos_l.append(pos)
+        M_off = M_off + dM_off
+        if gwb:
+            M_on = M_on + dM_on
 
-        def g_gwb(rp, external_delay=0.0):
-            return g(rp, external_delay=external_delay, external_cov=(U, Phi))
+    positions = np.stack(pos_l)
 
-        return g_gwb
-
-    # ---- heavy step: network Gram M(freq, pixel), then h0_min + horizon ----
-    def h0_min_maps(wrap):
-        """(n_freq, npix) h0_min + horizon + per-freq worst eigenvalue ratio."""
-        M_all = jnp.zeros((n_freq, npix, 4, 4))
-        for g, skel, td, pos in pulsars:
-            gg = wrap(g, td) if wrap else g
-            for fi, lf in enumerate(log10_fgw_grid):
-                lf = float(lf)
-                M_a = jax.lax.map(
-                    lambda row, gg=gg, td=td, pos=pos, lf=lf: earth_term_gram(
-                        gg, skel, td, pos, 1.0, row[0], row[1], lf
-                    ),
-                    grid,
-                    batch_size=pixel_chunk,
-                )
-                M_all = M_all.at[fi].add(M_a)
-
+    def reduce_maps(M_all):
+        """(n_freq, npix, 4, 4) network Gram -> h0_min, horizon, worst eig ratio."""
         h0 = np.empty((n_freq, npix))
         horizon = np.empty((n_freq, npix))
         rank_health = 1.0
@@ -257,16 +289,16 @@ def compute_distance_sensitivity(
             rank_health = min(rank_health, float(np.min(eig[:, 0] / eig[:, -1])))
         return h0, horizon, rank_health
 
-    _log("Computing GWB-off sensitivity ...")
-    h0_off, hor_off, rank_off = h0_min_maps(None)
+    _log("Reducing GWB-off sensitivity ...")
+    h0_off, hor_off, rank_off = reduce_maps(M_off)
     if rank_off < 1e-6:
         _log(
             f"  WARNING: Earth-term Gram is near-degenerate (min eig ratio {rank_off:.1e}); "
             "dof=4 may be invalid -- is the CW resolved over the span?"
         )
     if gwb:
-        _log("Computing GWB-on (CURN) sensitivity ...")
-        h0_on, hor_on, rank_on = h0_min_maps(gwb_wrap)
+        _log("Reducing GWB-on (CURN) sensitivity ...")
+        h0_on, hor_on, rank_on = reduce_maps(M_on)
     else:
         h0_on, hor_on, rank_on = h0_off, hor_off, rank_off
 
@@ -425,7 +457,7 @@ def main():
         type=Path,
         required=True,
         help="NANOGrav-style dataset directory (par/ + tim/), e.g. the synthetic "
-        "'ocarina_2' set; loaded by load_nanograv_pta.",
+        "'ocarina_2' set; streamed by iter_nanograv_pta.",
     )
     g.add_argument("--nside", type=int, default=8)
     g.add_argument("--n-freq", type=int, default=N_FREQ)

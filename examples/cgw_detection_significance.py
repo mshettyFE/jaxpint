@@ -24,6 +24,14 @@ Usage::
         [--nside N] [--log10-fgw L] [--snr S] [--source-pix P] \\
         [--n-phase K] [--n-sky K] [--full] [--output PATH]
     python examples/cgw_detection_significance.py plot [--input PATH]
+
+* CPU: ``JAX_PLATFORMS=cpu``, needs ~13 GB host RAM (was ~20% faster end-to-end).
+* 8 GB GPU: ``XLA_PYTHON_CLIENT_MEM_FRACTION=0.8`` (preallocated pool -- without it
+  fragmentation OOMs) and ``XLA_FLAGS=--xla_gpu_autotune_level=0`` (consumer-GPU
+  f64 autotuning benchmarks ~700 MB candidates and dies); peaks at ~4.9 GB VRAM.
+
+Wrap runs in a memory-capped scope (e.g. ``systemd-run --user --scope -p
+MemoryMax=13G``) so an OOM kills the job, not the shell.
 """
 
 from __future__ import annotations
@@ -98,7 +106,7 @@ def compute_detection_significance(
     Parameters
     ----------
     data_dir : path-like
-        NANOGrav-style dataset directory (par/tim), loaded by ``load_nanograv_pta``.
+        NANOGrav-style dataset directory (par/tim), streamed by ``iter_nanograv_pta``.
     pulsar_subset : list[str] or None
         Pulsar names to load; ``None`` loads all in ``data_dir``.
     nside : int
@@ -131,7 +139,7 @@ def compute_detection_significance(
     import jax.numpy as jnp
     from loguru import logger
 
-    from jaxpint import load_nanograv_pta
+    from jaxpint import map_pulsars
     from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
     from jaxpint.pta.signals.cw import cw_delay_from_array
     from jaxpint.pta.sensitivity import earth_term_gram, unit_noncentrality
@@ -151,18 +159,7 @@ def compute_detection_significance(
     hp = _import_healpy()
     logger.disable("pint")
 
-    # ---- load pulsars + sky grid -----------------------------------------
-    psrs = load_nanograv_pta(data_dir, pulsar_names=pulsar_subset)
-    keep = [i for i, n in enumerate(psrs.pulsar_names) if n not in DROP_PULSARS]
-    names = [psrs.pulsar_names[i] for i in keep]
-    td_list = [psrs.toa_data_list[i] for i in keep]
-    tm_list = [psrs.timing_models[i] for i in keep]
-    nm_list = [psrs.noise_models[i] for i in keep]
-    pp_list = [psrs.pulsar_params_list[i] for i in keep]
-    positions = np.stack([np.asarray(pulsar_unit_vector(pp)) for pp in pp_list])
-    pos_j = jnp.asarray(positions)
-    npsr = len(names)
-
+    # ---- sky grid (pulsar-independent, so set up before streaming) --------
     npix = hp.nside2npix(nside)
     theta, phi = hp.pix2ang(nside, np.arange(npix))
     cos_gwtheta = jnp.asarray(np.cos(theta))
@@ -171,13 +168,17 @@ def compute_detection_significance(
         source_pix = npix // 2
     source_pix = int(source_pix)
     ct_truth, gp_truth = float(np.cos(theta[source_pix])), float(phi[source_pix])
-    _log(
-        f"Loaded {npsr} pulsars; nside={nside} (npix={npix}); source pix {source_pix}."
-    )
+    _log(f"nside={nside} (npix={npix}); source pix {source_pix}.")
 
-    # ---- per-pulsar likelihoods (+ warmup) -------------------------------
-    pulsars = []  # (g, skel, td, pos)
-    for td, tm, nm, pp, pos in zip(td_list, tm_list, nm_list, pp_list, pos_j):
+    # ---- stream pulsars: build each block, extract, drop -------------------
+    cw_unit = jnp.array([1.0, ct_truth, gp_truth, log10_fgw, cos_inc, psi, phase0])
+    M_net = jnp.zeros((4, 4))
+    names, pos_l, sc_data_l, sc_sig_l, gram_l = [], [], [], [], []
+
+    def extract_blocks(rec):
+        """Per-pulsar reduction: everything downstream needs only these smalls."""
+        td, tm, nm, pp = rec.toa_data, rec.timing_model, rec.noise_model, rec.params
+        pos = jnp.asarray(pulsar_unit_vector(pp))
         over = {n for n in pp.free_names() if n in MARG_PARAMS}
         g, _, skel = marginalize_single_pulsar(
             over=over,
@@ -190,32 +191,46 @@ def compute_detection_significance(
             validate_linearity=False,
         )
         _ = g(skel)  # warm up the noise model's cached device basis
-        pulsars.append((g, skel, td, pos))
-
-    # ---- calibrate the strain to the target SNR (Earth-term network Gram) --
-    M_net = jnp.zeros((4, 4))
-    for g, skel, td, pos in pulsars:
-        M_net = M_net + earth_term_gram(
-            g, skel, td, pos, 1.0, ct_truth, gp_truth, log10_fgw
+        M_p = earth_term_gram(g, skel, td, pos, 1.0, ct_truth, gp_truth, log10_fgw)
+        sc_data, gram = quadrature_blocks(g, skel, td, log10_fgw)  # real-data filter
+        s_unit = cw_delay_from_array(
+            td, pos, 1.0, cw_unit, earth_term_only=True, linear_amplitude=True
         )
+        g_inj = lambda rp, external_delay=0.0, g=g, s=s_unit: g(
+            rp, external_delay=external_delay - s
+        )
+        sc_unit, _ = quadrature_blocks(g_inj, skel, td, log10_fgw)  # h0=1 injection
+        _log(f"  {rec.name}: blocks extracted ({td.n_toas} TOAs)")
+        return rec.name, np.asarray(pos), M_p, sc_data, sc_unit - sc_data, gram
+
+    for name, pos, M_p, sc_data, sc_sig, gram in map_pulsars(
+        extract_blocks, data_dir, pulsar_names=pulsar_subset, exclude=DROP_PULSARS
+    ):
+        names.append(name)
+        pos_l.append(pos)
+        M_net = M_net + M_p
+        sc_data_l.append(sc_data)
+        sc_sig_l.append(sc_sig)  # unit-strain signal projection
+        gram_l.append(gram)
+
+    npsr = len(names)
+    positions = np.stack(pos_l)
+    pos_j = jnp.asarray(positions)
+    _log(f"Streamed {npsr} pulsars.")
+    if npsr < 3:
+        _log(
+            f"  WARNING: only {npsr} pulsars -- the coherent F_e network Gram is "
+            "rank-deficient (full rank 4 needs >= 3 well-separated pulsars), so its "
+            "sky-max and empirical nulls are degenerate (F_e collapses toward F_p). "
+            "The incoherent F_p is still valid."
+        )
+
+    # ---- calibrate the strain to the target SNR, then form injected filters --
     snr2_unit = unit_noncentrality(M_net, jnp.array([[cos_inc, psi, phase0]]))[0]
     h0 = float(h0_for_snr(snr, snr2_unit))
     _log(f"Injecting SNR={snr:.1f} -> h0={h0:.3e}.")
-
-    # ---- inject Earth-term signal; extract per-pulsar (S,C)/G -------------
-    sc_l, gram_l = [], []
-    cw = jnp.array([h0, ct_truth, gp_truth, log10_fgw, cos_inc, psi, phase0])
-    for g, skel, td, pos in pulsars:
-        s = cw_delay_from_array(
-            td, pos, 1.0, cw, earth_term_only=True, linear_amplitude=True
-        )
-        g_inj = lambda rp, external_delay=0.0, g=g, s=s: g(
-            rp, external_delay=external_delay - s
-        )
-        sc, gram = quadrature_blocks(g_inj, skel, td, log10_fgw)
-        sc_l.append(sc)
-        gram_l.append(gram)
-    sc_all, gram_all = jnp.stack(sc_l), jnp.stack(gram_l)
+    sc_all = jnp.stack(sc_data_l) + h0 * jnp.stack(sc_sig_l)
+    gram_all = jnp.stack(gram_l)
 
     # ---- F_e: coherent sky-max, empirical (scramble) nulls ---------------
     fstat_map = np.asarray(fstat_skymap(sc_all, gram_all, pos_j, cos_gwtheta, gwphi))
@@ -394,7 +409,7 @@ def main():
         type=Path,
         required=True,
         help="NANOGrav-style dataset directory (par/ + tim/), e.g. the synthetic "
-        "'ocarina_2' set; loaded by load_nanograv_pta.",
+        "'ocarina_2' set; streamed by iter_nanograv_pta.",
     )
     g.add_argument("--nside", type=int, default=8)
     g.add_argument("--log10-fgw", type=float, default=LOG10_FGW)

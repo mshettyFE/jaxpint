@@ -24,9 +24,10 @@ fitting plumbing and will land separately.
 
 from __future__ import annotations
 
+import gc
 import logging
 from pathlib import Path
-from typing import Iterator, NamedTuple, Sequence
+from typing import Callable, Iterator, NamedTuple, Sequence, TypeVar
 
 from jaxpint.loaders.native import native_toas_to_jax
 from jaxpint.model import TimingModel
@@ -36,6 +37,8 @@ from jaxpint.par import get_model as parse_par
 from jaxpint.types import ParameterVector, TOAData
 
 log = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class NanogravPTA(NamedTuple):
@@ -302,3 +305,69 @@ def iter_nanograv_pta(
             bipm_version=bipm_version,
             planets=planets,
         )
+
+
+def map_pulsars(
+    fn: Callable[[PulsarRecord], T],
+    data_dir: str | Path,
+    *,
+    clear_caches: bool = True,
+    pulsar_names: Sequence[str] | None = None,
+    exclude: Sequence[str] = (),
+    ephem: str = "DE440",
+    bipm_version: str = "BIPM2019",
+    planets: bool = True,
+) -> Iterator[T]:
+    """Apply ``fn`` to each pulsar with build → use → purge memory hygiene.
+
+    The streaming combinator over :func:`iter_nanograv_pta`: loads one pulsar,
+    calls ``fn`` on it, then releases the pulsar's data (and, by default, the
+    XLA compilation cache — each pulsar's kernels are uniquely shaped and never
+    reused, so that cache otherwise only grows) before loading the next.  Peak
+    memory is one pulsar's build plus whatever ``fn`` returns, however many
+    pulsars the dataset holds.  This packages the per-pulsar purge idiom the
+    example drivers use, so consumers reduce to::
+
+        slabs = list(map_pulsars(extract_blocks, data_dir, exclude=DROP))
+
+    ``fn`` must return a *reduced* result (scalars, small arrays, tuples
+    thereof): a result that references the record's own arrays (or the record
+    itself) keeps that pulsar's buffers alive and defeats the purge.  Results
+    are blocked on (``jax.block_until_ready``) before the purge, so async
+    dispatches reading the record's buffers finish first and the memory
+    profile stays deterministic.
+
+    Parameters
+    ----------
+    fn
+        ``PulsarRecord -> result``.  The heavy per-pulsar work goes here.
+    data_dir, pulsar_names, exclude, ephem, bipm_version, planets
+        As in :func:`load_nanograv_pta`.
+    clear_caches
+        Clear the JAX compilation cache after each pulsar (default).  The
+        trade-off: unbounded cache growth across differently-shaped pulsars is
+        eliminated, at the cost of recompiling any *shared*-shape helper
+        kernels each iteration.  Set ``False`` when iterating few pulsars or
+        same-shaped (padded/synthetic) data.
+
+    Yields
+    ------
+    The return value of ``fn`` for each pulsar, in selection order.
+    """
+    import jax
+
+    for record in iter_nanograv_pta(
+        data_dir,
+        pulsar_names=pulsar_names,
+        exclude=exclude,
+        ephem=ephem,
+        bipm_version=bipm_version,
+        planets=planets,
+    ):
+        result = fn(record)
+        jax.block_until_ready(result)
+        del record
+        if clear_caches:
+            jax.clear_caches()
+        gc.collect()
+        yield result
