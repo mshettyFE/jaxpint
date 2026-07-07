@@ -198,7 +198,9 @@ def compute_distance_sensitivity(
     )
 
     def gwb_wrap(g, td):  # inject a CURN covariance into the per-pulsar likelihood
-        U, Phi = gwb_covariance(td, gwb_ncomp, T_span, gwb_log10_A, gwb_gamma)
+        U, Phi = gwb_covariance(
+            td, gwb_ncomp, T_span, jnp.asarray(gwb_log10_A), jnp.asarray(gwb_gamma)
+        )
 
         def g_gwb(rp, external_delay=0.0):
             return g(rp, external_delay=external_delay, external_cov=(U, Phi))
@@ -265,7 +267,7 @@ def compute_distance_sensitivity(
         names.append(name)
         pos_l.append(pos)
         M_off = M_off + dM_off
-        if gwb:
+        if dM_on is not None:
             M_on = M_on + dM_on
 
     positions = np.stack(pos_l)

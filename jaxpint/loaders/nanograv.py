@@ -27,7 +27,7 @@ from __future__ import annotations
 import gc
 import logging
 from pathlib import Path
-from typing import Callable, Iterator, NamedTuple, Sequence, TypeVar
+from typing import Callable, Collection, Iterator, NamedTuple, Sequence, TypeVar
 
 from jaxpint.loaders.native import native_toas_to_jax
 from jaxpint.model import TimingModel
@@ -137,7 +137,7 @@ def _pair_par_tim(data_dir: Path) -> dict[str, tuple[Path, Path]]:
 def _resolve_pairs(
     data_dir: str | Path,
     pulsar_names: Sequence[str] | None,
-    exclude: Sequence[str],
+    exclude: Collection[str],
 ) -> list[tuple[str, Path, Path]]:
     """Discover + select + order the ``(name, par, tim)`` work list.
 
@@ -202,7 +202,7 @@ def load_nanograv_pta(
     data_dir: str | Path,
     *,
     pulsar_names: Sequence[str] | None = None,
-    exclude: Sequence[str] = (),
+    exclude: Collection[str] = (),
     ephem: str = "DE440",
     bipm_version: str = "BIPM2019",
     planets: bool = True,
@@ -265,7 +265,7 @@ def iter_nanograv_pta(
     data_dir: str | Path,
     *,
     pulsar_names: Sequence[str] | None = None,
-    exclude: Sequence[str] = (),
+    exclude: Collection[str] = (),
     ephem: str = "DE440",
     bipm_version: str = "BIPM2019",
     planets: bool = True,
@@ -313,7 +313,7 @@ def map_pulsars(
     *,
     clear_caches: bool = True,
     pulsar_names: Sequence[str] | None = None,
-    exclude: Sequence[str] = (),
+    exclude: Collection[str] = (),
     ephem: str = "DE440",
     bipm_version: str = "BIPM2019",
     planets: bool = True,

@@ -85,7 +85,7 @@ class EcorrNoise(NoiseComponent):
         if cached is None:
             cached = jnp.asarray(self.quantization_matrix)
             if not isinstance(cached, jax.core.Tracer):
-                self.__dict__["_quantization_matrix_jax_cache"] = cached
+                self.__dict__["_quantization_matrix_jax_cache"] = cached  # pyright: ignore[reportIndexIssue]
         return cached
 
     def ecorr_weights(
