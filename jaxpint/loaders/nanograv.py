@@ -352,7 +352,8 @@ def map_pulsars(
 
     Yields
     ------
-    The return value of ``fn`` for each pulsar, in selection order.
+    T
+        The return value of ``fn`` for each pulsar, in selection order.
     """
     import jax
 

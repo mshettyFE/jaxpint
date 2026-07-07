@@ -1,4 +1,4 @@
-"""Tests for jaxpint.bayes.grid_marginal (numerical grid marginalization).
+"""Tests for jaxpint.stats.grids (numerical grid marginalization).
 
 The correctness tests use an *independent* oracle -- a naive linear-space sum
 (numpy), or the analytic Gaussian-integral closed form -- rather than recomputing
@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax.scipy.special import ndtr
 
-from jaxpint.bayes.grid_marginal import grid_log_marginal, grid_log_profile
+from jaxpint.stats.grids import grid_log_marginal, grid_log_profile
 
 
 def test_uniform_marginal_equals_naive_linear_space_mean():
@@ -35,8 +35,10 @@ def test_marginal_converges_to_analytic_gaussian_integral():
     mu, sigma, a, b, n = 0.4, 0.7, -2.0, 3.0, 4000
     grid = jnp.linspace(a, b, n)
     logL = -0.5 * ((grid - mu) / sigma) ** 2  # unnormalized Gaussian log-likelihood
-    integral = sigma * np.sqrt(2 * np.pi) * float(
-        ndtr((b - mu) / sigma) - ndtr((a - mu) / sigma)
+    integral = (
+        sigma
+        * np.sqrt(2 * np.pi)
+        * float(ndtr((b - mu) / sigma) - ndtr((a - mu) / sigma))
     )
     expected = float(np.log(integral / (b - a)))
     assert jnp.isclose(grid_log_marginal(logL), expected, atol=1e-3)
@@ -74,8 +76,12 @@ def test_reduces_over_last_axis_with_a_batch():
     m, p = grid_log_marginal(ll), grid_log_profile(ll)
     assert m.shape == (2,) and p.shape == (2,)
     # batched result agrees with calling each row separately
-    assert jnp.allclose(m, jnp.array([grid_log_marginal(ll[0]), grid_log_marginal(ll[1])]))
-    assert jnp.allclose(p, jnp.array([grid_log_profile(ll[0]), grid_log_profile(ll[1])]))
+    assert jnp.allclose(
+        m, jnp.array([grid_log_marginal(ll[0]), grid_log_marginal(ll[1])])
+    )
+    assert jnp.allclose(
+        p, jnp.array([grid_log_profile(ll[0]), grid_log_profile(ll[1])])
+    )
 
 
 def test_jit_compatible():

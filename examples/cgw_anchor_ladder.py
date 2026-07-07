@@ -96,7 +96,7 @@ def compute_anchor_ladder(
     import jax.numpy as jnp
     from loguru import logger
 
-    from jaxpint.bayes.credible import credible_level_map, credible_region_area
+    from jaxpint.stats.regions import credible_level_map, credible_region_area
     from jaxpint.pta.signals.cw import cw_delay_from_array, CWInjector, _KPC_TO_M, _C
     from jaxpint.pta.incoherent_ul import (
         extract_pulsar_bM,
@@ -275,7 +275,7 @@ def plot_results(path, outdir="."):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import jax.numpy as jnp
-    from jaxpint.bayes.credible import credible_level_map
+    from jaxpint.stats.regions import credible_level_map
 
     hp = import_healpy()
     d = load_npz_results(path)

@@ -40,7 +40,13 @@ autosummary_generate = True
 
 # -- Cross-reference strictness -----------------------------------------------
 nitpicky = True
-nitpick_ignore: list[tuple[str, str]] = []
+nitpick_ignore: list[tuple[str, str]] = [
+    # TypeVar in map_pulsars' generic signature (Callable[[PulsarRecord], T]
+    # -> Iterator[T]); autodoc emits it as an unresolvable class reference,
+    # both qualified and bare.
+    ("py:class", "jaxpint.loaders.nanograv.T"),
+    ("py:class", "T"),
+]
 # jaxtyping annotations (e.g. ``Float[Array, "n_toas"]``) tokenize into several
 # pieces that autodoc emits as separate ``py:class`` refs — none of which
 # resolve. The patterns below silence that noise so real broken refs in
@@ -52,6 +58,7 @@ nitpick_ignore_regex: list[tuple[str, str]] = [
     ("py:class", r"Array\s*"),
     ("py:class", r"Float Array\s*"),
     ("py:class", r"'.*"),  # opens of quoted shape strings
+    ("py:class", r".*'\s*"),  # closes of quoted shape strings (`` n'`` etc.)
     ("py:class", r".*\]\s*"),  # trailing ``]`` from bracketed shapes
     ("py:class", r"\(.*"),  # ``(n_toas`` etc.
     ("py:class", r".*\)\s*"),  # ``..)`` etc.

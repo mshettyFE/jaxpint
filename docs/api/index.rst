@@ -106,6 +106,19 @@ Bayesian Inference
 
    jaxpint.bayes
 
+Statistical Primitives
+----------------------
+
+Arm-neutral numerics (grid reductions, upper limits, credible/confidence
+regions) shared by the Bayesian machinery, the frequentist detection
+statistics, and the PTA CW products.
+
+.. autosummary::
+   :toctree: generated
+   :recursive:
+
+   jaxpint.stats
+
 Data Loaders
 ------------
 

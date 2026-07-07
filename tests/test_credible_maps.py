@@ -1,10 +1,11 @@
-"""Tests for the 2-D HPD credible-region map primitives (jaxpint.bayes.credible)."""
+"""Tests for the 2-D HPD credible-region map primitives (jaxpint.stats.regions)."""
+
 from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
 
-from jaxpint.bayes.credible import (
+from jaxpint.stats.regions import (
     credible_level_map,
     credible_region_area,
     gaussian_credible_area,
