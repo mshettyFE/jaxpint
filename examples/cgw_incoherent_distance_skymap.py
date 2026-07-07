@@ -80,11 +80,8 @@ def compute_skymap(
 
     from jaxpint.pta.signals.cw import cw_delay_from_array
     from jaxpint.pta.cw_upper_limit import h0_to_distance
-    from jaxpint.pta.incoherent_ul import (
-        extract_pulsar_bM,
-        h0_95_grid,
-        mixed_phase_A,
-    )
+    from jaxpint.pta.incoherent_ul import h0_95_grid, mixed_phase_A
+    from jaxpint.pta.extraction import extract_pulsar_bM
 
     import_healpy()  # fail fast if the optional skymap extra is missing
     logger.disable("pint")

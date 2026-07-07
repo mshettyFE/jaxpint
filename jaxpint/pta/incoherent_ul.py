@@ -27,18 +27,19 @@ case for ~10% parallaxes, since Δ_p ~ 1e4-1e6 rad), while a distance-derived gr
 ``Δ_p(L_i)`` for ``L_i`` uniform in ``[1/PX − kσ_L, 1/PX + kσ_L]`` keeps the
 parallax information when the prior is sub-cycle.
 
-Beyond the single-source upper limit, this module also holds the shared per-pulsar
-CW-block machinery used by **localization**: :func:`extract_pulsar_bM` generalizes to
-:func:`extract_pulsar_blocks` (the ``2S``-amplitude Gram for ``S`` sources), and
-:func:`condition_on_statics` bakes ``S-1`` static sources into an effective matched
-filter so one source can be scanned in O(1)-in-S -- the conditioned scan, which
-reuses the same ``(b, M)`` reductions below.
+The per-pulsar ``(b, M)`` extraction itself lives in
+:mod:`jaxpint.pta.extraction` (:func:`~jaxpint.pta.extraction.extract_pulsar_bM`
+and its ``2S``-amplitude generalization
+:func:`~jaxpint.pta.extraction.extract_pulsar_blocks`); this module consumes the
+extracted blocks.  For **localization**, :func:`condition_on_statics` bakes
+``S-1`` static sources into an effective matched filter so one source can be
+scanned in O(1)-in-S -- the conditioned scan, which reuses the same ``(b, M)``
+reductions.
 
 """
 
 from __future__ import annotations
 
-from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -47,43 +48,6 @@ from jaxtyping import Array, Float
 from jaxpint.stats.regions import grid_credible_upper_limit
 from jaxpint.stats.grids import grid_log_marginal, grid_log_profile
 from jaxpint.pta.signals.cw import _C, _KPC_TO_M
-from jaxpint.utils import quadratic_form_coeffs
-
-
-def bM2_coeffs(
-    logL2: Callable[[Float[Array, ""], Float[Array, ""]], Float[Array, ""]],
-) -> tuple[Float[Array, " 2"], Float[Array, "2 2"]]:
-    """Extract ``b`` (2-vector) and ``M`` (2x2 Gram) from a 2-amplitude logL.
-
-    ``logL2(Ae, As)`` must be exactly quadratic in the two linear amplitudes
-    (it is: each template enters the residual linearly).  The ``n=2`` case of
-    :func:`jaxpint.utils.quadratic_form_coeffs`: ``b`` is the matched filter
-    ``((d|e), (d|ps))`` and ``M`` the 2x2 noise-weighted Gram of the two
-    templates.
-    """
-    return quadratic_form_coeffs(lambda A: logL2(A[0], A[1]), 2)
-
-
-def extract_pulsar_bM(
-    g: Callable,
-    reduced_params,
-    e: Float[Array, " n_toas"],
-    ps: Float[Array, " n_toas"],
-) -> tuple[Float[Array, " 2"], Float[Array, "2 2"]]:
-    """``(b, M)`` for one pulsar given its marginalized likelihood ``g`` and the
-    two unit-strain templates ``e`` (Earth term) and ``ps`` (pulsar quadrature).
-
-    ``g(reduced_params, external_delay=...)`` is the single-pulsar
-    timing-marginalized log-likelihood (from
-    :func:`jaxpint.bayes.marginalize_single_pulsar`).  Injecting ``Ae·e + As·ps`` as the
-    external delay makes ``g`` exactly quadratic in ``(Ae, As)``; differentiating
-    the *actual* ``g`` inherits the correct real-mode matched-filter sign.
-    """
-
-    def logL2(Ae, As):
-        return g(reduced_params, external_delay=Ae * e + As * ps)
-
-    return bM2_coeffs(logL2)
 
 
 # ------------------------------------------------- multi-source conditioned scan
@@ -96,44 +60,6 @@ def extract_pulsar_bM(
 # (S enters only the once-per-pixel b_eff), and reuses the reductions below by
 # feeding (b_eff, G^{00}) as (b, M).  const_i is independent of the scanned source's
 # sky, so it shifts the map by a constant and is dropped.
-def extract_pulsar_blocks(
-    g: Callable,
-    reduced_params,
-    basis: Float[Array, "m n_toas"],
-) -> tuple[Float[Array, " m"], Float[Array, "m m"]]:
-    """Per-pulsar matched filter ``b`` and Gram ``G`` for ``m`` CW basis waveforms.
-
-    The multi-source generalization of :func:`extract_pulsar_bM` (its ``m = 2``
-    case): inject ``A @ basis`` as the external delay so ``g`` is exactly quadratic
-    in the ``m`` amplitudes, and read off ``logL(A) = c + b·A - 1/2 Aᵀ G A``.
-
-    Parameters
-    ----------
-    g : callable
-        Single-pulsar timing-marginalized log-likelihood,
-        ``g(reduced_params, external_delay=...)`` (from
-        :func:`jaxpint.bayes.marginalize_single_pulsar`).
-    reduced_params
-        The reduced-parameter skeleton ``g`` expects.
-    basis : (m, n_toas) array
-        The ``m`` unit-amplitude CW templates.  For ``S`` sources this is the
-        stacked ``[e_0, ps_0, e_1, ps_1, ...]`` (Earth term + pulsar quadrature per
-        source), so ``m = 2S``; the scanned source's two templates come first.
-
-    Returns
-    -------
-    b : (m,) array
-        Matched filter ``(d | basis_k)``.
-    G : (m, m) array
-        Noise-weighted, timing-marginalized Gram of the basis waveforms.
-    """
-
-    def logL(A: Float[Array, " m"]) -> Float[Array, ""]:
-        return g(reduced_params, external_delay=A @ basis)
-
-    return quadratic_form_coeffs(logL, basis.shape[0])
-
-
 def condition_on_statics(
     b: Float[Array, " m"],
     G: Float[Array, "m m"],
@@ -157,7 +83,7 @@ def condition_on_statics(
     ----------
     b : (m,) array
     G : (m, m) array
-        Full multi-source matched filter / Gram (from :func:`extract_pulsar_blocks`),
+        Full multi-source matched filter / Gram (from :func:`jaxpint.pta.extraction.extract_pulsar_blocks`),
         with the scanned source occupying the first ``n_scan`` entries.
     a_static : (m - n_scan,) array
         Fixed coefficients of the baked (static) sources, stacked in the same order
@@ -282,7 +208,7 @@ def _pulsar_logL_grid(
     h0 : scalar
         Linear strain amplitude.
     b : (2,) array
-        Per-pulsar matched filter ``((d|e), (d|ps))`` (from :func:`extract_pulsar_bM`).
+        Per-pulsar matched filter ``((d|e), (d|ps))`` (from :func:`jaxpint.pta.extraction.extract_pulsar_bM`).
     M : (2, 2) array
         Per-pulsar noise-weighted Gram of the two templates.
     A : (n, 2) array

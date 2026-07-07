@@ -9,14 +9,8 @@ import pytest
 from jax.scipy.special import ndtr
 
 from jaxpint.frequentist.detection import fstat
-from jaxpint.pta.cw_upper_limit import (
-    quadratic_coeffs,
-    h0_95_closed_form,
-    h0_95_marginalized,
-    h0_to_distance,
-    orientation_coeffs,
-    basis_quadratics,
-)
+from jaxpint.pta.cw_upper_limit import h0_95_closed_form, h0_95_marginalized, h0_to_distance
+from jaxpint.pta.extraction import basis_quadratics, orientation_coeffs, quadratic_coeffs
 from jaxpint.types import GlobalParams
 from jaxpint.pta.signals.cw import (
     CWInjector,

@@ -98,11 +98,8 @@ def compute_anchor_ladder(
 
     from jaxpint.stats.regions import credible_level_map, credible_region_area
     from jaxpint.pta.signals.cw import cw_delay_from_array, CWInjector, _KPC_TO_M, _C
-    from jaxpint.pta.incoherent_ul import (
-        extract_pulsar_bM,
-        mixed_phase_A,
-        total_logL_marg,
-    )
+    from jaxpint.pta.incoherent_ul import mixed_phase_A, total_logL_marg
+    from jaxpint.pta.extraction import extract_pulsar_bM
     from jaxpint.pta.cw_localization import h0_for_snr
     from jaxpint.types import GlobalParams
 

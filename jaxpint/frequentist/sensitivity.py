@@ -13,8 +13,8 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.pta.cw_upper_limit import (
-    _EXTRACTION_ORIENTATIONS,
+from jaxpint.pta.extraction import (
+    EXTRACTION_ORIENTATIONS,
     basis_quadratics,
     orientation_coeffs,
 )
@@ -76,7 +76,7 @@ def earth_term_gram(
 
 def unit_noncentrality(
     M: Float[Array, "4 4"],
-    orientations: Float[Array, "n_theta 3"] = _EXTRACTION_ORIENTATIONS,
+    orientations: Float[Array, "n_theta 3"] = EXTRACTION_ORIENTATIONS,
 ) -> Float[Array, " n_theta"]:
     """Per-orientation noncentrality ``lambda_1(theta) = c(theta)^T M c(theta)``.
 

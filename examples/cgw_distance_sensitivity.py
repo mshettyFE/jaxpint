@@ -150,10 +150,8 @@ def compute_distance_sensitivity(
 
     from jaxpint import map_pulsars
     from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
-    from jaxpint.pta.cw_upper_limit import (
-        _default_extraction_orientations,
-        h0_to_distance,
-    )
+    from jaxpint.pta.cw_upper_limit import h0_to_distance
+    from jaxpint.pta.extraction import default_extraction_orientations
     from jaxpint.frequentist.sensitivity import earth_term_gram, unit_noncentrality
     from jaxpint.pta.signals.cw import evolution_ok
     from jaxpint.pta.signals.gwb import gwb_covariance
@@ -168,7 +166,7 @@ def compute_distance_sensitivity(
     log10_fgw_grid = np.asarray(log10_fgw_grid, dtype=np.float64)
     n_freq = len(log10_fgw_grid)
     threshold = chi2_threshold(fap, DOF)
-    orientations = _default_extraction_orientations(n_theta, seed=1)
+    orientations = default_extraction_orientations(n_theta, seed=1)
 
     npix = hp.nside2npix(nside)
     theta, phi = hp.pix2ang(nside, np.arange(npix))
