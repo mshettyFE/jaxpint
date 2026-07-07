@@ -154,10 +154,10 @@ def compute_distance_sensitivity(
         _default_extraction_orientations,
         h0_to_distance,
     )
-    from jaxpint.pta.sensitivity import earth_term_gram, unit_noncentrality
+    from jaxpint.frequentist.sensitivity import earth_term_gram, unit_noncentrality
     from jaxpint.pta.signals.cw import evolution_ok
     from jaxpint.pta.signals.gwb import gwb_covariance
-    from jaxpint.sensitivity import chi2_threshold, h0_min_from_lambda
+    from jaxpint.frequentist.stats import chi2_threshold, h0_min_from_lambda
     from jaxpint.utils import pulsar_unit_vector
 
     hp = _import_healpy()

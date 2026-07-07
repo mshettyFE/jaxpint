@@ -1,10 +1,12 @@
-"""Tests for jaxpint.sensitivity (frequentist F-stat detection stats)."""
+"""Tests for jaxpint.frequentist.stats (frequentist F-stat detection stats)."""
 
 import numpy as np
 from scipy.stats import chi2, ncx2
 
-from jaxpint.sensitivity import (
-    chi2_threshold, detection_probability, h0_min_from_lambda,
+from jaxpint.frequentist.stats import (
+    chi2_threshold,
+    detection_probability,
+    h0_min_from_lambda,
 )
 
 
@@ -26,7 +28,9 @@ def test_detection_probability_matches_monte_carlo():
     # independent oracle: the fraction of ncx2 draws above the threshold
     dof, lam, thr = 4, 20.0, 15.0
     draws = ncx2.rvs(dof, lam, size=400_000, random_state=np.random.default_rng(0))
-    assert np.isclose(detection_probability(thr, lam, dof), (draws > thr).mean(), atol=3e-3)
+    assert np.isclose(
+        detection_probability(thr, lam, dof), (draws > thr).mean(), atol=3e-3
+    )
 
 
 def test_detection_probability_monotone_in_lambda():

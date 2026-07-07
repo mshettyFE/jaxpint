@@ -1,4 +1,4 @@
-"""Tests for jaxpint.pta.sensitivity (the F-stat noncentrality producer)."""
+"""Tests for jaxpint.frequentist.sensitivity (the F-stat noncentrality producer)."""
 
 import jax
 import jax.numpy as jnp
@@ -6,10 +6,12 @@ import pytest
 
 from jaxpint.pta.signals.cw import cw_delay_from_array
 from jaxpint.pta.cw_upper_limit import (
-    quadratic_coeffs, orientation_coeffs, _default_extraction_orientations,
+    quadratic_coeffs,
+    orientation_coeffs,
+    _default_extraction_orientations,
 )
-from jaxpint.pta.sensitivity import earth_term_gram, unit_noncentrality
-from jaxpint.sensitivity import chi2_threshold, h0_min_from_lambda
+from jaxpint.frequentist.sensitivity import earth_term_gram, unit_noncentrality
+from jaxpint.frequentist.stats import chi2_threshold, h0_min_from_lambda
 from tests.helpers import make_simple_pulsar
 
 # A GW frequency resolved over the synthetic pulsars' ~1-day span: an unresolved
@@ -38,9 +40,15 @@ def network():
         td, tm, nm, pp = make_simple_pulsar(200, f0=100.0, f1=-1e-14, seed=i)
         over = {n for n in pp.free_names() if n in ("F0", "F1")}
         g, _, skel = marginalize_single_pulsar(
-            over=over, priors={n: ImproperPrior() for n in over},
-            toa_data=td, timing_model=tm, noise_model=nm, fiducial_params=pp,
-            allow_nonlinear=True, validate_linearity=False)
+            over=over,
+            priors={n: ImproperPrior() for n in over},
+            toa_data=td,
+            timing_model=tm,
+            noise_model=nm,
+            fiducial_params=pp,
+            allow_nonlinear=True,
+            validate_linearity=False,
+        )
         pos = p / jnp.linalg.norm(p)
         pulsars.append((g, skel, td, pos))
         M = M + earth_term_gram(g, skel, td, pos, 1.0, _CT_SKY, _GP_SKY, LOG10_FGW)
@@ -57,8 +65,13 @@ def test_unit_noncentrality_matches_direct_signal_power(network):
         direct = 0.0
         for g, skel, td, pos in pulsars:
             s = cw_delay_from_array(
-                td, pos, 1.0, jnp.array([1.0, _CT_SKY, _GP_SKY, LOG10_FGW, ci, psi, ph0]),
-                earth_term_only=True, linear_amplitude=True)
+                td,
+                pos,
+                1.0,
+                jnp.array([1.0, _CT_SKY, _GP_SKY, LOG10_FGW, ci, psi, ph0]),
+                earth_term_only=True,
+                linear_amplitude=True,
+            )
             _, Y = quadratic_coeffs(lambda a: g(skel, external_delay=a * s))
             direct += Y
         assert jnp.isclose(lam, direct, rtol=1e-6)
@@ -72,15 +85,22 @@ def test_h0_min_matches_injection_recovery_fraction(network):
     M = network["M"]
     orientations = _default_extraction_orientations(64, seed=1)
     thr, beta = chi2_threshold(1e-3, 4), 0.9
-    h0 = float(h0_min_from_lambda(
-        thr, unit_noncentrality(M, orientations), dof=4, beta=beta))
+    h0 = float(
+        h0_min_from_lambda(thr, unit_noncentrality(M, orientations), dof=4, beta=beta)
+    )
 
-    C = jax.vmap(lambda o: orientation_coeffs(o[0], o[1], o[2]))(orientations)  # (64, 4)
+    C = jax.vmap(lambda o: orientation_coeffs(o[0], o[1], o[2]))(
+        orientations
+    )  # (64, 4)
     Minv, L = jnp.linalg.inv(M), jnp.linalg.cholesky(M)  # L L^T = M
     n = 60_000
     k_idx, k_z = jax.random.split(jax.random.PRNGKey(0))
-    idx = jax.random.randint(k_idx, (n,), 0, len(C))  # sample the orientation ensemble h0_min averaged
-    b = h0 * (C[idx] @ M) + jax.random.normal(k_z, (n, 4)) @ L.T  # signal + N(0, M) noise
+    idx = jax.random.randint(
+        k_idx, (n,), 0, len(C)
+    )  # sample the orientation ensemble h0_min averaged
+    b = (
+        h0 * (C[idx] @ M) + jax.random.normal(k_z, (n, 4)) @ L.T
+    )  # signal + N(0, M) noise
     two_f = jnp.einsum("ta,ab,tb->t", b, Minv, b)  # 2F = b^T M^-1 b
     frac = (two_f > thr).mean()
     assert jnp.isclose(frac, beta, atol=1e-2)

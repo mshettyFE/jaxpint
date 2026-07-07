@@ -1,4 +1,4 @@
-"""Tests for jaxpint.pta.detection (F-stat detection + empirical backgrounds)."""
+"""Tests for jaxpint.frequentist.detection (F-stat detection + empirical backgrounds)."""
 
 import jax
 import jax.numpy as jnp
@@ -6,18 +6,19 @@ import numpy as np
 import pytest
 from scipy.stats import chi2
 
-from jaxpint.pta.cw_upper_limit import basis_quadratics, fstat
+from jaxpint.pta.cw_upper_limit import basis_quadratics
 from jaxpint.pta.signals.cw import cw_delay_from_array
-from jaxpint.pta.detection import (
+from jaxpint.frequentist.detection import (
+    fstat,
     quadrature_blocks,
     fstat_skymap,
     fstat_p,
     fstat_p_pvalue,
     phase_shift_background,
     sky_scramble_background,
-    pvalue,
     _antenna_grid,
 )
+from jaxpint.frequentist.nulls import pvalue
 from tests.helpers import make_simple_pulsar
 
 LOG10_FGW = -5.0  # resolved over the synthetic span -> full-rank network Gram

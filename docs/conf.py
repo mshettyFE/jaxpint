@@ -46,6 +46,10 @@ nitpick_ignore: list[tuple[str, str]] = [
     # both qualified and bare.
     ("py:class", "jaxpint.loaders.nanograv.T"),
     ("py:class", "T"),
+    # Docstring shorthand in the frequentist detection/stats modules (rendered
+    # for the first time via jaxpint.frequentist's curated re-exports).
+    ("py:class", "PRNGKey"),
+    ("py:class", "array-like"),
 ]
 # jaxtyping annotations (e.g. ``Float[Array, "n_toas"]``) tokenize into several
 # pieces that autodoc emits as separate ``py:class`` refs — none of which

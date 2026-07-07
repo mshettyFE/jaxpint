@@ -6,14 +6,14 @@ the *statistic* but the *significance* comes from a null distribution.  Two stat
 each paired with the null that actually calibrates it:
 
 * **F_e** (coherent, Earth-term, ``dof = 4``): the sky-maximized
-  :func:`~jaxpint.pta.detection.fstat_skymap`.  Its significance relies on inter-pulsar
+  :func:`~jaxpint.frequentist.detection.fstat_skymap`.  Its significance relies on inter-pulsar
   coherence + geometry, so the null is **empirical** -- *phase shifts* (destroy the
   coherence) and *sky scrambles* (destroy the geometry).  The p-value is the fraction
   of the background exceeding the observed value.
-* **F_p** (incoherent, :func:`~jaxpint.pta.detection.fstat_p`, ``dof = 2 n_psr``): the
+* **F_p** (incoherent, :func:`~jaxpint.frequentist.detection.fstat_p`, ``dof = 2 n_psr``): the
   per-pulsar power summed.  It is sky-independent and coherence-independent, so the
   scramble nulls are *degenerate* for it; its significance is the **analytic**
-  ``chi^2(2 n_psr)`` tail (:func:`~jaxpint.pta.detection.fstat_p_pvalue`).
+  ``chi^2(2 n_psr)`` tail (:func:`~jaxpint.frequentist.detection.fstat_p_pvalue`).
 
 The injection is Earth-term only (matching the F_e model); the source strain is
 calibrated to a target network matched-filter SNR via ``h0_for_snr``.
@@ -142,18 +142,18 @@ def compute_detection_significance(
     from jaxpint import map_pulsars
     from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
     from jaxpint.pta.signals.cw import cw_delay_from_array
-    from jaxpint.pta.sensitivity import earth_term_gram, unit_noncentrality
+    from jaxpint.frequentist.sensitivity import earth_term_gram, unit_noncentrality
     from jaxpint.pta.cw_localization import h0_for_snr
-    from jaxpint.pta.detection import (
+    from jaxpint.frequentist.detection import (
         quadrature_blocks,
         fstat_skymap,
         fstat_p,
         fstat_p_pvalue,
         phase_shift_background,
         sky_scramble_background,
-        pvalue,
     )
-    from jaxpint.sensitivity import chi2_threshold
+    from jaxpint.frequentist.nulls import pvalue
+    from jaxpint.frequentist.stats import chi2_threshold
     from jaxpint.utils import pulsar_unit_vector
 
     hp = _import_healpy()
