@@ -12,6 +12,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+
 pytest.importorskip("pint")  # optional dependency; skip module if absent
 from pint.config import examplefile
 
@@ -44,9 +45,7 @@ def _stage_per_pulsar_layout(root: Path) -> None:
     shutil.copy2(tim_src, psr_dir / tim_src.name)
 
 
-@pytest.mark.parametrize(
-    "stager", [_stage_par_tim_layout, _stage_per_pulsar_layout]
-)
+@pytest.mark.parametrize("stager", [_stage_par_tim_layout, _stage_per_pulsar_layout])
 def test_load_nanograv_pta_layouts(tmp_path, stager):
     stager(tmp_path)
 
@@ -78,9 +77,7 @@ def test_load_nanograv_pta_pulsar_names_and_exclude(tmp_path):
     _stage_per_pulsar_layout(tmp_path)
 
     # Explicit selection of a known pulsar works.
-    psrs = load_nanograv_pta(
-        tmp_path, pulsar_names=["B1855+09"], planets=False
-    )
+    psrs = load_nanograv_pta(tmp_path, pulsar_names=["B1855+09"], planets=False)
     assert psrs.pulsar_names == ("B1855+09",)
 
     # Unknown pulsar → KeyError.
@@ -108,10 +105,15 @@ def test_load_nanograv_pta_planet_shapiro(tmp_path):
     # rewrite that line, or append the directive if absent.
     par_text = par_src.read_text()
     if "PLANET_SHAPIRO" in par_text:
-        par_text = "\n".join(
-            "PLANET_SHAPIRO Y" if line.strip().startswith("PLANET_SHAPIRO") else line
-            for line in par_text.splitlines()
-        ) + "\n"
+        par_text = (
+            "\n".join(
+                "PLANET_SHAPIRO Y"
+                if line.strip().startswith("PLANET_SHAPIRO")
+                else line
+                for line in par_text.splitlines()
+            )
+            + "\n"
+        )
     else:
         par_text += "PLANET_SHAPIRO Y\n"
     par_dst.write_text(par_text)
@@ -145,10 +147,14 @@ def test_load_nanograv_pta_synthesizes_tnredamp_from_rnamp(tmp_path):
     shutil.copy2(tim_src, psr_dir / tim_src.name)
 
     par_text = par_src.read_text()
-    stripped = "\n".join(
-        line for line in par_text.splitlines()
-        if not line.strip().startswith(("TNRedAmp", "TNRedGam", "TNRedC"))
-    ) + "\n"
+    stripped = (
+        "\n".join(
+            line
+            for line in par_text.splitlines()
+            if not line.strip().startswith(("TNRedAmp", "TNRedGam", "TNRedC"))
+        )
+        + "\n"
+    )
     assert "RNAMP" in stripped and "RNIDX" in stripped
     assert "TNRedAmp" not in stripped
     (psr_dir / par_src.name).write_text(stripped)
@@ -282,11 +288,14 @@ def _ell1h_par_result(*, h3=False, h4=False, stigma=False, nharms=None):
     names = ["PB", "TASC", "A1", "EPS1", "EPS2"]
     values = [0.7, 58314.0, 3.7, 2.6e-6, 2.1e-6]
     if h3:
-        names.append("H3"); values.append(1.0e-7)
+        names.append("H3")
+        values.append(1.0e-7)
     if h4:
-        names.append("H4"); values.append(0.5e-7)
+        names.append("H4")
+        values.append(0.5e-7)
     if stigma:
-        names.append("STIGMA"); values.append(0.3)
+        names.append("STIGMA")
+        values.append(0.3)
     int_params = {"NHARMS": nharms} if nharms is not None else {}
     return ParResult(
         params=ParameterVector(
@@ -312,8 +321,11 @@ def _ell1h_ctx(**kwargs):
     return BuildContext(
         par=_ell1h_par_result(**kwargs),
         toa_data=None,
-        raj="RAJ", decj="DECJ",
-        pmra=None, pmdec=None, posepoch=None,
+        raj="RAJ",
+        decj="DECJ",
+        pmra=None,
+        pmdec=None,
+        posepoch=None,
         obliquity_arcsec=None,
     )
 
@@ -391,7 +403,9 @@ def test_ell1h_fourier_shapiro_matches_pint(stigma, nharms):
     pint_delay = -2.0 * h3 * pint_sum
 
     jax_delay = ell1h_fourier_shapiro(h3, stigma, jnp.asarray(phi), nharms)
-    np.testing.assert_allclose(np.asarray(jax_delay), pint_delay, atol=1e-20, rtol=1e-12)
+    np.testing.assert_allclose(
+        np.asarray(jax_delay), pint_delay, atol=1e-20, rtol=1e-12
+    )
 
 
 def test_ell1h_fourier_shapiro_h3_only_collapses_to_k3_term():
@@ -407,7 +421,9 @@ def test_ell1h_fourier_shapiro_h3_only_collapses_to_k3_term():
     expected = -(4.0 / 3.0) * h3 * jnp.sin(3.0 * phi)
     for nharms in (3, 5, 7, 12):
         got = ell1h_fourier_shapiro(h3, 0.0, phi, nharms)
-        np.testing.assert_allclose(np.asarray(got), np.asarray(expected), atol=1e-20, rtol=1e-12)
+        np.testing.assert_allclose(
+            np.asarray(got), np.asarray(expected), atol=1e-20, rtol=1e-12
+        )
 
 
 def test_load_nanograv_pta_missing_dir(tmp_path):
@@ -418,3 +434,105 @@ def test_load_nanograv_pta_missing_dir(tmp_path):
 def test_load_nanograv_pta_empty_dir(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_nanograv_pta(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# iter_nanograv_pta (streaming loader)
+# ---------------------------------------------------------------------------
+
+
+def _stage_two_pulsars(root: Path) -> None:
+    """par/+tim/ layout with a second pulsar (same data, different name)."""
+    _stage_par_tim_layout(root)
+    par_src, tim_src = _example_par_tim()
+    shutil.copy2(par_src, root / "par" / "B1899+09_copy.gls.par")
+    shutil.copy2(tim_src, root / "tim" / "B1899+09_copy.tim")
+
+
+def test_iter_matches_load(tmp_path):
+    """iter_nanograv_pta yields exactly what load_nanograv_pta materializes."""
+    import numpy as np
+
+    from jaxpint import iter_nanograv_pta
+    from jaxpint.fitters import compute_time_residuals
+
+    _stage_two_pulsars(tmp_path)
+    loaded = load_nanograv_pta(tmp_path, planets=False)
+    streamed = list(iter_nanograv_pta(tmp_path, planets=False))
+
+    assert tuple(r.name for r in streamed) == loaded.pulsar_names
+    for i, rec in enumerate(streamed):
+        assert rec.toa_data.n_toas == loaded.toa_data_list[i].n_toas
+        np.testing.assert_array_equal(
+            np.asarray(rec.params.values),
+            np.asarray(loaded.pulsar_params_list[i].values),
+        )
+        r_stream = compute_time_residuals(rec.timing_model, rec.toa_data, rec.params)
+        r_load = compute_time_residuals(
+            loaded.timing_models[i],
+            loaded.toa_data_list[i],
+            loaded.pulsar_params_list[i],
+        )
+        np.testing.assert_allclose(
+            np.asarray(r_stream), np.asarray(r_load), rtol=0, atol=0
+        )
+
+
+def test_iter_releases_references(tmp_path):
+    """Nothing in the load path retains a record once the consumer drops it.
+    """
+    import gc
+    import weakref
+
+    from jaxpint import iter_nanograv_pta
+
+    _stage_two_pulsars(tmp_path)
+    gen = iter_nanograv_pta(tmp_path, planets=False)
+    rec = next(gen)
+    refs = [weakref.ref(rec.toa_data), weakref.ref(rec.noise_model)]
+    del rec
+    _ = next(gen)  # advance: generator frame must not still hold record 1
+    gc.collect()
+    assert all(r() is None for r in refs), "dropped record still referenced"
+    gen.close()
+
+
+def test_iter_selection_order_and_exclude(tmp_path):
+    from jaxpint import iter_nanograv_pta
+
+    _stage_two_pulsars(tmp_path)
+    # Explicit ordering is honored (reversed vs discovery order).
+    names = [
+        r.name
+        for r in iter_nanograv_pta(
+            tmp_path, pulsar_names=["B1899+09", "B1855+09"], planets=False
+        )
+    ]
+    assert names == ["B1899+09", "B1855+09"]
+    # Exclude drops after discovery.
+    names = [
+        r.name
+        for r in iter_nanograv_pta(tmp_path, exclude=("B1899+09",), planets=False)
+    ]
+    assert names == ["B1855+09"]
+    # Unknown selection raises on first next() (generator semantics).
+    gen = iter_nanograv_pta(tmp_path, pulsar_names=["J0000+0000"], planets=False)
+    with pytest.raises(KeyError):
+        next(gen)
+
+
+def test_iter_early_break_loads_nothing_further(tmp_path):
+    """Lazy loading: breaking after the first record never builds the second."""
+    from unittest.mock import patch
+
+    import jaxpint.loaders.nanograv as nanograv_mod
+    from jaxpint import iter_nanograv_pta
+
+    _stage_two_pulsars(tmp_path)
+    with patch.object(
+        nanograv_mod, "_load_one", wraps=nanograv_mod._load_one
+    ) as load_one:
+        for rec in iter_nanograv_pta(tmp_path, planets=False):
+            assert rec.toa_data.n_toas > 100
+            break
+    assert load_one.call_count == 1  # second pulsar was never loaded
