@@ -16,6 +16,8 @@ Layout
   ``F_e``, incoherent ``F_p``) and their empirical backgrounds.
 - ``jaxpint.frequentist.nulls`` — statistic-agnostic null-calibration
   primitives (phase rotations, isotropic scrambles, empirical p-values).
+- ``jaxpint.frequentist.optimal`` — the optimal statistic, the GWB
+  cross-correlation amplitude estimator over pulsar pairs.
 
 Both inference arms sit *above* :mod:`jaxpint.pta` in the import graph and
 share the arm-neutral numerics in :mod:`jaxpint.stats`; nothing in
@@ -37,6 +39,10 @@ from jaxpint.frequentist.nulls import (
     isotropic_positions,
     pvalue,
     rotate_quadratures,
+)
+from jaxpint.frequentist.optimal import (
+    OptimalStatistic,
+    optimal_statistic,
 )
 from jaxpint.frequentist.sensitivity import (
     earth_term_gram,
@@ -68,4 +74,7 @@ __all__ = [
     "isotropic_positions",
     "rotate_quadratures",
     "pvalue",
+    # Optimal statistic (GWB cross-correlation detector)
+    "optimal_statistic",
+    "OptimalStatistic",
 ]
