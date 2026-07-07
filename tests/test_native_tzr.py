@@ -19,22 +19,33 @@ def _native_tzr(parp, timp, planets=False):
     import jaxpint.par as par
 
     pr = par.get_model(parp)
-    core = topocentric_core(timp, ephem=EPHEM, include_bipm=True,
-                            bipm_version=BIPM, planets=planets)
-    return _extract_tzr_fields(core, pr, ephem=EPHEM, include_bipm=True,
-                             bipm_version=BIPM, planets=planets), pr
+    core = topocentric_core(
+        timp, ephem=EPHEM, include_bipm=True, bipm_version=BIPM, planets=planets
+    )
+    return _extract_tzr_fields(
+        core, pr, ephem=EPHEM, include_bipm=True, bipm_version=BIPM, planets=planets
+    ), pr
 
 
 def _assert_tzr_parity(nat, ref):
-    dtdb = abs((nat["tzr_tdb_int"] + nat["tzr_tdb_frac"])
-               - (ref["tdb_int"] + ref["tdb_frac"])) * 86400.0
+    dtdb = (
+        abs(
+            (nat["tzr_tdb_int"] + nat["tzr_tdb_frac"])
+            - (ref["tdb_int"] + ref["tdb_frac"])
+        )
+        * 86400.0
+    )
     assert dtdb < 1e-6, f"tzr tdb diff {dtdb} s"
     if np.isinf(ref["freq"]):
         assert np.isinf(nat["tzr_freq"])
     else:
         assert np.isclose(nat["tzr_freq"], ref["freq"], rtol=1e-8)
-    assert np.max(np.abs(np.asarray(nat["tzr_ssb_obs_pos"]) - ref["ssb_obs_pos"])) < 1e-3
-    assert np.max(np.abs(np.asarray(nat["tzr_obs_sun_pos"]) - ref["obs_sun_pos"])) < 1e-3
+    assert (
+        np.max(np.abs(np.asarray(nat["tzr_ssb_obs_pos"]) - ref["ssb_obs_pos"])) < 1e-3
+    )
+    assert (
+        np.max(np.abs(np.asarray(nat["tzr_obs_sun_pos"]) - ref["obs_sun_pos"])) < 1e-3
+    )
 
 
 # --------------------------------------------------------------------------- A: parity
@@ -58,8 +69,14 @@ def test_tzr_parity_vs_pint(parname, timname, _pinned_clock):
         parp = examplefile(parname)
         timp = examplefile(timname)
         model = pm.get_model(parp)
-        toas = pt.get_TOAs(timp, model=model, ephem=EPHEM,
-                           include_bipm=True, bipm_version=BIPM, planets=False)
+        toas = pt.get_TOAs(
+            timp,
+            model=model,
+            ephem=EPHEM,
+            include_bipm=True,
+            bipm_version=BIPM,
+            planets=False,
+        )
     except Exception as exc:  # pragma: no cover
         pytest.skip(f"PINT could not load {parname}: {exc}")
 
@@ -83,13 +100,22 @@ def test_tzr_auto_pepoch_vs_pint(tmp_path, _pinned_clock):
     # Strip the TZR* lines so both sides fall back to the PEPOCH rule.
     stripped = tmp_path / "no_tzr.par"
     stripped.write_text(
-        "\n".join(line for line in open(parp)
-                  if not line.strip().startswith(("TZRMJD", "TZRSITE", "TZRFRQ")))
+        "\n".join(
+            line
+            for line in open(parp)
+            if not line.strip().startswith(("TZRMJD", "TZRSITE", "TZRFRQ"))
+        )
     )
     try:
         model = pm.get_model(str(stripped))
-        toas = pt.get_TOAs(timp, model=model, ephem=EPHEM,
-                           include_bipm=True, bipm_version=BIPM, planets=False)
+        toas = pt.get_TOAs(
+            timp,
+            model=model,
+            ephem=EPHEM,
+            include_bipm=True,
+            bipm_version=BIPM,
+            planets=False,
+        )
         ref = extract_tzr_toa(model, toas)  # triggers make_TZR_toa
     except Exception as exc:  # pragma: no cover
         pytest.skip(f"PINT could not load stripped par: {exc}")
@@ -120,8 +146,14 @@ def test_tzr_barycenter_site(tmp_path, _pinned_clock):
     bary.write_text("".join(lines))
     try:
         model = pm.get_model(str(bary))
-        toas = pt.get_TOAs(timp, model=model, ephem=EPHEM,
-                           include_bipm=True, bipm_version=BIPM, planets=False)
+        toas = pt.get_TOAs(
+            timp,
+            model=model,
+            ephem=EPHEM,
+            include_bipm=True,
+            bipm_version=BIPM,
+            planets=False,
+        )
         ref = extract_tzr_toa(model, toas)
     except Exception as exc:  # pragma: no cover
         pytest.skip(f"PINT could not load ssb par: {exc}")
@@ -131,6 +163,54 @@ def test_tzr_barycenter_site(tmp_path, _pinned_clock):
     assert np.allclose(np.asarray(nat["tzr_obs_sun_pos"]), 0.0)
     assert np.allclose(ref["obs_sun_pos"], 0.0)
     _assert_tzr_parity(nat, ref)
+
+
+@pytest.mark.slow
+def test_tzr_barycenter_planet_shapiro(tmp_path, _pinned_clock):
+    """TZRSITE=ssb + PLANET_SHAPIRO=Y (NG15's J0614-3329 combination).
+
+    The barycentric TZR must carry ZERO planet vectors -- the r = 0 "no delay"
+    convention that _ss_obj_shapiro_delay maps to exactly 0.0 (PINT's explicit
+    observatory == "barycenter" skip) -- not None, which means "planet data
+    missing" and makes the TZR-phase evaluation raise.
+    """
+    from pint.config import examplefile
+
+    import jaxpint.par as par
+    from jaxpint.constants import PLANET_MASSES
+    from jaxpint.delay.shapiro import SolarSystemShapiroDelay
+    from jaxpint.fitters import compute_time_residuals
+    from jaxpint.loaders.native import native_toas_to_jax
+    from jaxpint.model_builder import build_model
+
+    parp = examplefile("B1855+09_NANOGrav_dfg+12_TAI.par")
+    timp = examplefile("B1855+09_NANOGrav_dfg+12.tim")
+    bary = tmp_path / "ssb_planet_shapiro.par"
+    lines = ["PLANET_SHAPIRO  Y\n"]
+    for line in open(parp):
+        if line.strip().startswith("TZRSITE"):
+            lines.append("TZRSITE        ssb\n")
+        elif not line.strip().startswith("PLANET_SHAPIRO"):
+            lines.append(line)
+    bary.write_text("".join(lines))
+
+    pr = par.get_model(str(bary))
+    td = native_toas_to_jax(
+        timp, pr, ephem=EPHEM, include_bipm=True, bipm_version=BIPM, planets=True
+    )
+    # The barycentric TZR carries a zero vector for every Shapiro body.
+    assert td.tzr_planet_positions is not None
+    for pl in PLANET_MASSES:
+        v = np.asarray(td.tzr_planet_positions[f"obs_{pl}_pos"])
+        assert v.shape == (3,) and np.all(v == 0.0)
+
+    # End-to-end: the TZR phase evaluates (this used to raise
+    # "planet_shapiro=True but toa_data.planet_positions is None").
+    tm, _ = build_model(pr, td)
+    shapiro = [c for c in tm.delay_components if isinstance(c, SolarSystemShapiroDelay)]
+    assert shapiro and shapiro[0].planet_shapiro  # the guard is actually armed
+    r = np.asarray(compute_time_residuals(tm, td, pr.params))
+    assert np.all(np.isfinite(r))
 
 
 # --------------------------------------------------------------------------- B: abs phase
@@ -153,14 +233,21 @@ def test_abs_phase_residuals_vs_pint(_pinned_clock):
     timp = examplefile("B1855+09_NANOGrav_dfg+12.tim")
     try:
         model = pm.get_model(parp)
-        toas = pt.get_TOAs(timp, model=model, ephem=EPHEM,
-                           include_bipm=True, bipm_version=BIPM, planets=False)
+        toas = pt.get_TOAs(
+            timp,
+            model=model,
+            ephem=EPHEM,
+            include_bipm=True,
+            bipm_version=BIPM,
+            planets=False,
+        )
     except Exception as exc:  # pragma: no cover
         pytest.skip(f"PINT could not load: {exc}")
 
     pr = par.get_model(parp)
-    td = native_toas_to_jax(timp, pr, ephem=EPHEM, include_bipm=True,
-                            bipm_version=BIPM, planets=False)
+    td = native_toas_to_jax(
+        timp, pr, ephem=EPHEM, include_bipm=True, bipm_version=BIPM, planets=False
+    )
     assert td.tzr_tdb_int is not None  # TZR populated
     tm, _ = build_model(pr, td)
     r_nat = np.asarray(compute_time_residuals(tm, td, pr.params))
@@ -189,10 +276,17 @@ def test_no_tzrmjd_no_pepoch_returns_none():
     from jaxpint.types import ParameterVector
 
     pv = ParameterVector(
-        values=np.zeros(1), frozen_mask=(True,), names=("F0",),
-        units=("Hz",), epoch_int_values={},
+        values=np.zeros(1),
+        frozen_mask=(True,),
+        names=("F0",),
+        units=("Hz",),
+        epoch_int_values={},
     )
     pr = ParResult(params=pv)
     core = _t.SimpleNamespace(mjd_int=np.array([55000.0]), mjd_frac=np.array([0.0]))
-    assert _extract_tzr_fields(core, pr, ephem=EPHEM, include_bipm=True,
-                             bipm_version=BIPM, planets=False) is None
+    assert (
+        _extract_tzr_fields(
+            core, pr, ephem=EPHEM, include_bipm=True, bipm_version=BIPM, planets=False
+        )
+        is None
+    )

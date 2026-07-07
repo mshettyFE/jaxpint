@@ -362,7 +362,13 @@ def _extract_tzr_fields(
         ssb_obs_pos = np.zeros(3, dtype=np.float64)
         ssb_obs_vel = np.zeros(3, dtype=np.float64)
         obs_sun_pos = np.zeros(3, dtype=np.float64)
-        planet_positions = None
+        # Zero vectors, not None: an SSB-referenced TOA has no solar-system
+        # delays, and r = 0 is the established "no delay" convention
+        planet_positions = (
+            {f"obs_{p}_pos": np.zeros(3, dtype=np.float64) for p in PLANETS}
+            if planets
+            else None
+        )
     else:
         raw = RawTOA(
             mjd_int=tzr_int,
