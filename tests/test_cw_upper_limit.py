@@ -1,4 +1,5 @@
 """Tests for the analytic CW strain upper-limit helpers."""
+
 from __future__ import annotations
 
 import jax
@@ -7,6 +8,7 @@ import numpy as np
 import pytest
 from jax.scipy.special import ndtr
 
+from jaxpint.frequentist.detection import fstat
 from jaxpint.pta.cw_upper_limit import (
     quadratic_coeffs,
     h0_95_closed_form,
@@ -14,11 +16,13 @@ from jaxpint.pta.cw_upper_limit import (
     h0_to_distance,
     orientation_coeffs,
     basis_quadratics,
-    fstat,
 )
 from jaxpint.types import GlobalParams
 from jaxpint.pta.signals.cw import (
-    CWInjector, log10_strain_from_binary, fdot, evolution_ok,
+    CWInjector,
+    log10_strain_from_binary,
+    fdot,
+    evolution_ok,
 )
 from tests.helpers import make_toa_data
 
@@ -91,9 +95,17 @@ class TestCWInjectorLinearMode:
         positions = jnp.array([[0.3, -0.6, 0.74], [1.0, 0.0, 0.0]])
         positions = positions / jnp.linalg.norm(positions, axis=1, keepdims=True)
         inj = CWInjector(
-            positions, earth_term_only=True, linear_amplitude=True,
-            initial_values={"cos_gwtheta": 0.3, "gwphi": 1.7, "log10_fgw": -8.0,
-                            "cos_inc": 0.4, "psi": 0.6, "phase0": 0.9},
+            positions,
+            earth_term_only=True,
+            linear_amplitude=True,
+            initial_values={
+                "cos_gwtheta": 0.3,
+                "gwphi": 1.7,
+                "log10_fgw": -8.0,
+                "cos_inc": 0.4,
+                "psi": 0.6,
+                "phase0": 0.9,
+            },
         )
         gp = inj.register_params(GlobalParams.empty())
         t = np.array([59000.0, 59300.0, 59600.0, 59900.0, 60200.0])
@@ -103,7 +115,7 @@ class TestCWInjectorLinearMode:
     def test_registers_seven_params_with_linear_amp(self):
         inj, gp, _ = self._setup()
         assert gp.n_params == 7
-        assert "cw0_h0" in gp.names          # linear amplitude param
+        assert "cw0_h0" in gp.names  # linear amplitude param
         assert "cw0_log10_h" not in gp.names  # not the log param
 
     def test_delay_linear_in_amplitude(self):
@@ -163,7 +175,7 @@ class TestFstat:
         # 2F = b^T M^-1 b = 2 * max_A (A.b - 0.5 A.M.A).
         key = jax.random.PRNGKey(3)
         A = jax.random.normal(key, (4, 4))
-        M = A @ A.T + jnp.eye(4)            # SPD
+        M = A @ A.T + jnp.eye(4)  # SPD
         b = jax.random.normal(jax.random.PRNGKey(4), (4,))
         A_hat = jnp.linalg.solve(M, b)
         loglike_max = A_hat @ b - 0.5 * A_hat @ M @ A_hat
@@ -182,7 +194,9 @@ class TestBasisReductionConsistency:
         positions = jnp.array([[0.3, -0.6, 0.74], [-0.5, 0.2, 0.84]])
         positions = positions / jnp.linalg.norm(positions, axis=1, keepdims=True)
         inj = CWInjector(
-            positions, earth_term_only=True, linear_amplitude=True,
+            positions,
+            earth_term_only=True,
+            linear_amplitude=True,
             initial_values={"cos_gwtheta": 0.3, "gwphi": 1.7, "log10_fgw": -8.0},
         )
         gp = inj.register_params(GlobalParams.empty())
@@ -194,10 +208,12 @@ class TestBasisReductionConsistency:
         invvar = jnp.full((2 * t.size,), 1.0 / (1e-7) ** 2)
 
         def logL(amp, ci, psi, ph):
-            g = (gp.with_value("cw0_h0", amp)
-                   .with_value("cw0_cos_inc", ci)
-                   .with_value("cw0_psi", psi)
-                   .with_value("cw0_phase0", ph))
+            g = (
+                gp.with_value("cw0_h0", amp)
+                .with_value("cw0_cos_inc", ci)
+                .with_value("cw0_psi", psi)
+                .with_value("cw0_phase0", ph)
+            )
             s = jnp.concatenate([inj.delay(i, toas[i], None, g) for i in range(2)])
             return jnp.sum(data * s * invvar) - 0.5 * jnp.sum(s * s * invvar)
 
@@ -235,8 +251,8 @@ class TestBasisReductionConsistency:
 # ----------------------------------------------- source frequency evolution
 def test_fdot_scalings():
     f0 = fdot(1e9, 27e-9)
-    assert np.isclose(fdot(2e9, 27e-9), f0 * 2 ** (5 / 3))    # ∝ Mc^(5/3)
-    assert np.isclose(fdot(1e9, 54e-9), f0 * 2 ** (11 / 3))   # ∝ f^(11/3)
+    assert np.isclose(fdot(2e9, 27e-9), f0 * 2 ** (5 / 3))  # ∝ Mc^(5/3)
+    assert np.isclose(fdot(1e9, 54e-9), f0 * 2 ** (11 / 3))  # ∝ f^(11/3)
 
 
 def test_evolution_ok_flags_and_keys():

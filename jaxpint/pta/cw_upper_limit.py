@@ -337,12 +337,5 @@ def h0_95_marginalized(
     return mixture_truncated_gaussian_upper_limit(mu, sigma, log_weights, level, n_iter)
 
 
-def fstat(M: Float[Array, "4 4"], b: Float[Array, " 4"]) -> Float[Array, ""]:
-    """Coherent Earth-term detection statistic ``2F = b^T M^{-1} b``.
-
-    The likelihood maximized over the 4 basis amplitudes (``A_hat = M^{-1} b``).
-    Under the null ``2F ~ chi^2_4``; a signal adds the SNR^2 (noncentral). Only
-    meaningful in real mode (``b`` from actual residuals with a matching noise
-    model); in expected mode ``b = 0`` so ``2F = 0`` by construction.
-    """
-    return b @ jnp.linalg.solve(M, b)
+# fstat (the coherent 2F detection statistic) moved to
+# jaxpint.frequentist.detection -- it is a detection statistic, not an upper limit.

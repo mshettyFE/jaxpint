@@ -106,6 +106,19 @@ Bayesian Inference
 
    jaxpint.bayes
 
+Frequentist Inference
+---------------------
+
+Detection statistics, empirical null calibrations, and detection-sensitivity
+forecasts — the frequentist sibling of :mod:`jaxpint.bayes`, built on top of
+the PTA likelihood machinery.
+
+.. autosummary::
+   :toctree: generated
+   :recursive:
+
+   jaxpint.frequentist
+
 Statistical Primitives
 ----------------------
 

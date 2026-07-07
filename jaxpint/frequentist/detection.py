@@ -47,17 +47,18 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 from scipy.stats import chi2
 
+from jaxpint.frequentist.nulls import isotropic_positions, rotate_quadratures
 from jaxpint.pta.incoherent_ul import extract_pulsar_blocks
 from jaxpint.pta.signals.cw import _TREF, _fplus_fcross_costheta
 
 __all__ = [
     "quadrature_blocks",
+    "fstat",
     "fstat_skymap",
     "fstat_p",
     "fstat_p_pvalue",
     "phase_shift_background",
     "sky_scramble_background",
-    "pvalue",
 ]
 
 
@@ -72,7 +73,7 @@ def quadrature_blocks(
     ``S = (d | sin), C = (d | cos)`` (data projection) and ``G_ab = (q_a | q_b)`` for
     the two quadratures ``q = {sin, cos}(2 pi f (t - t_ref))``, in the pulsar's
     timing-marginalized GLS metric (via
-    :func:`~jaxpint.pta.incoherent_ul.extract_pulsar_blocks`).  Both are
+    ``jaxpint.pta.incoherent_ul.extract_pulsar_blocks``).  Both are
     **sky-independent** (Earth term), so extract once per pulsar per frequency and
     reuse for the whole sky map and every background realization.
 
@@ -173,7 +174,7 @@ def fstat_p(
     :func:`fstat_skymap`, it is (near-)invariant under the phase-shift / sky-scramble
     nulls and those backgrounds do not calibrate it.  Its significance comes from the
     analytic null instead: ``2F_p ~ chi^2(2 * n_psr)`` (see :func:`fstat_p_pvalue` and
-    :func:`jaxpint.sensitivity.chi2_threshold` with ``dof = 2 * n_psr``).
+    ``jaxpint.frequentist.stats.chi2_threshold`` with ``dof = 2 * n_psr``).
 
     Parameters
     ----------
@@ -195,7 +196,7 @@ def fstat_p_pvalue(stat: float, n_psr: int) -> float:
 
     The upper-tail (survival-function) probability that noise alone produces a value at
     least as large as ``stat``.  Threshold at a false-alarm probability via
-    :func:`jaxpint.sensitivity.chi2_threshold` with ``dof = 2 * n_psr``.
+    ``jaxpint.frequentist.stats.chi2_threshold`` with ``dof = 2 * n_psr``.
 
     Parameters
     ----------
@@ -243,13 +244,10 @@ def phase_shift_background(
         Sky-maximized ``2F`` for each phase-shifted null realization.
     """
     F_pix = _antenna_grid(positions, cos_gwtheta, gwphi)
-    S, C = sc_all[:, 0], sc_all[:, 1]
 
     def one(k):
         phi = jax.random.uniform(k, (sc_all.shape[0],), minval=0.0, maxval=2.0 * jnp.pi)
-        cphi, sphi = jnp.cos(phi), jnp.sin(phi)
-        sc_rot = jnp.stack([cphi * S - sphi * C, sphi * S + cphi * C], axis=1)
-        return jnp.max(_two_f_map(F_pix, sc_rot, gram_all))
+        return jnp.max(_two_f_map(F_pix, rotate_quadratures(sc_all, phi), gram_all))
 
     return jax.lax.map(one, jax.random.split(key, n_real))
 
@@ -286,14 +284,18 @@ def sky_scramble_background(
     npsr = sc_all.shape[0]
 
     def one(k):
-        v = jax.random.normal(k, (npsr, 3))
-        pos = v / jnp.linalg.norm(v, axis=1, keepdims=True)
-        F_pix = _antenna_grid(pos, cos_gwtheta, gwphi)
+        F_pix = _antenna_grid(isotropic_positions(k, npsr), cos_gwtheta, gwphi)
         return jnp.max(_two_f_map(F_pix, sc_all, gram_all))
 
     return jax.lax.map(one, jax.random.split(key, n_real))
 
 
-def pvalue(stat: float, background: Float[Array, " n_real"]) -> float:
-    """One-sided p-value: fraction of the ``background`` at least as large as ``stat``."""
-    return float((jnp.asarray(background) >= stat).mean())
+def fstat(M: Float[Array, "4 4"], b: Float[Array, " 4"]) -> Float[Array, ""]:
+    """Coherent Earth-term detection statistic ``2F = b^T M^{-1} b``.
+
+    The likelihood maximized over the 4 basis amplitudes (``A_hat = M^{-1} b``).
+    Under the null ``2F ~ chi^2_4``; a signal adds the SNR^2 (noncentral). Only
+    meaningful in real mode (``b`` from actual residuals with a matching noise
+    model); in expected mode ``b = 0`` so ``2F = 0`` by construction.
+    """
+    return b @ jnp.linalg.solve(M, b)
