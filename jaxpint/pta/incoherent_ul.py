@@ -44,8 +44,8 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.bayes.credible import grid_credible_upper_limit
-from jaxpint.bayes.grid_marginal import grid_log_marginal, grid_log_profile
+from jaxpint.stats.regions import grid_credible_upper_limit
+from jaxpint.stats.grids import grid_log_marginal, grid_log_profile
 from jaxpint.pta.signals.cw import _C, _KPC_TO_M
 from jaxpint.utils import quadratic_form_coeffs
 

@@ -1,4 +1,4 @@
-"""Tests for the generic credible-bound primitives (:mod:`jaxpint.bayes.credible`).
+"""Tests for the generic credible-bound primitives (:mod:`jaxpint.stats.regions`).
 
 These are signal-model-free Bayesian kernels (upper limits from truncated /
 mixture / grid posteriors, 2-D Gaussian credible areas); the CW routines in
@@ -13,7 +13,7 @@ import numpy as np
 import numpy.testing as npt
 from jax.scipy.special import ndtr
 
-from jaxpint.bayes import (
+from jaxpint.stats import (
     gaussian_credible_area,
     grid_credible_upper_limit,
     mixture_truncated_gaussian_upper_limit,
@@ -37,40 +37,58 @@ class TestTruncatedGaussianUpperLimit:
     def test_zero_mean_is_z_sigma(self):
         # mu = 0 → UL = sigma · Φ⁻¹((1+level)/2) = sigma · Φ⁻¹(0.975) at level 0.95.
         for sigma in (0.5, 2.0, 100.0):
-            ul = float(truncated_gaussian_upper_limit(jnp.asarray(0.0), jnp.asarray(sigma), 0.95))
+            ul = float(
+                truncated_gaussian_upper_limit(
+                    jnp.asarray(0.0), jnp.asarray(sigma), 0.95
+                )
+            )
             npt.assert_allclose(ul, _Z_975 * sigma, rtol=1e-9)
 
     def test_cdf_at_ul_equals_level(self):
         # Defining property: the truncated-normal CDF at the UL equals `level`.
         for mu, sigma, level in [(0.0, 1.0, 0.95), (3.0, 1.0, 0.9), (-2.0, 0.5, 0.68)]:
-            ul = truncated_gaussian_upper_limit(jnp.asarray(mu), jnp.asarray(sigma), level)
+            ul = truncated_gaussian_upper_limit(
+                jnp.asarray(mu), jnp.asarray(sigma), level
+            )
             npt.assert_allclose(
-                float(_trunc_normal_cdf(ul, mu, sigma)), level, rtol=1e-9,
+                float(_trunc_normal_cdf(ul, mu, sigma)),
+                level,
+                rtol=1e-9,
                 err_msg=f"mu={mu}, sigma={sigma}, level={level}",
             )
 
     def test_monotonic_in_level(self):
-        f = lambda lv: float(truncated_gaussian_upper_limit(jnp.asarray(1.0), jnp.asarray(0.7), lv))
+        f = lambda lv: float(
+            truncated_gaussian_upper_limit(jnp.asarray(1.0), jnp.asarray(0.7), lv)
+        )
         assert f(0.68) < f(0.9) < f(0.95) < f(0.99)
 
 
 class TestMixtureUpperLimit:
     def test_single_component_matches_truncated(self):
         mu, sigma, level = 2.0, 0.8, 0.95
-        mix = float(mixture_truncated_gaussian_upper_limit(
-            jnp.array([mu]), jnp.array([sigma]), jnp.array([0.0]), level
-        ))
-        single = float(truncated_gaussian_upper_limit(jnp.asarray(mu), jnp.asarray(sigma), level))
+        mix = float(
+            mixture_truncated_gaussian_upper_limit(
+                jnp.array([mu]), jnp.array([sigma]), jnp.array([0.0]), level
+            )
+        )
+        single = float(
+            truncated_gaussian_upper_limit(jnp.asarray(mu), jnp.asarray(sigma), level)
+        )
         npt.assert_allclose(mix, single, rtol=1e-9)
 
     def test_identical_components_match_single(self):
         # A mixture of identical components is that single component.
         mu, sigma, level = 1.5, 1.2, 0.9
         n = 5
-        mix = float(mixture_truncated_gaussian_upper_limit(
-            jnp.full(n, mu), jnp.full(n, sigma), jnp.zeros(n), level
-        ))
-        single = float(truncated_gaussian_upper_limit(jnp.asarray(mu), jnp.asarray(sigma), level))
+        mix = float(
+            mixture_truncated_gaussian_upper_limit(
+                jnp.full(n, mu), jnp.full(n, sigma), jnp.zeros(n), level
+            )
+        )
+        single = float(
+            truncated_gaussian_upper_limit(jnp.asarray(mu), jnp.asarray(sigma), level)
+        )
         npt.assert_allclose(mix, single, rtol=1e-9)
 
     def test_mixture_cdf_at_ul_equals_level(self):
@@ -102,7 +120,9 @@ class TestGridUpperLimit:
         grid = jnp.linspace(0.0, mu + 12.0 * sigma, 200001)
         log_post = -0.5 * ((grid - mu) / sigma) ** 2
         grid_ul = float(grid_credible_upper_limit(grid, log_post, level))
-        analytic = float(truncated_gaussian_upper_limit(jnp.asarray(mu), jnp.asarray(sigma), level))
+        analytic = float(
+            truncated_gaussian_upper_limit(jnp.asarray(mu), jnp.asarray(sigma), level)
+        )
         npt.assert_allclose(grid_ul, analytic, rtol=1e-3)
 
 

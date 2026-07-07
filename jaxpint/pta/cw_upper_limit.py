@@ -28,7 +28,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.bayes.credible import (
+from jaxpint.stats.regions import (
     mixture_truncated_gaussian_upper_limit,
     truncated_gaussian_upper_limit,
 )

@@ -118,7 +118,7 @@ def compute_localization(
     import jax.numpy as jnp
     from loguru import logger
 
-    from jaxpint.bayes.credible import credible_level_map, credible_region_area
+    from jaxpint.stats.regions import credible_level_map, credible_region_area
     from jaxpint.pta.signals.cw import cw_delay_from_array, CWInjector
     from jaxpint.pta.incoherent_ul import (
         extract_pulsar_bM,
@@ -313,7 +313,7 @@ def plot_results(path, which="marginal", outdir="."):
     import matplotlib.pyplot as plt
 
     hp = import_healpy()
-    from jaxpint.bayes.credible import credible_level_map
+    from jaxpint.stats.regions import credible_level_map
     import jax.numpy as jnp
 
     d = load_npz_results(path)

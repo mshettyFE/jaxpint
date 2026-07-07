@@ -25,7 +25,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.bayes.credible import gaussian_credible_area
+from jaxpint.stats.regions import gaussian_credible_area
 from jaxpint.types import GlobalParams
 
 

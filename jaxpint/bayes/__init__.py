@@ -23,20 +23,10 @@ from jaxpint.bayes.defaults import (
     noise_priors_simple,
     timing_priors,
 )
-from jaxpint.bayes.credible import (
-    gaussian_credible_area,
-    grid_credible_upper_limit,
-    mixture_truncated_gaussian_upper_limit,
-    truncated_gaussian_upper_limit,
-)
 from jaxpint.bayes.marginal import (
     marg_set_from_priors,
     marginalize_pta,
     marginalize_single_pulsar,
-)
-from jaxpint.bayes.grid_marginal import (
-    grid_log_marginal,
-    grid_log_profile,
 )
 from jaxpint.bayes.posterior import combine_log_prob, log_prior_sum
 from jaxpint.bayes.priors import (
@@ -76,12 +66,7 @@ __all__ = [
     "marginalize_single_pulsar",
     "marginalize_pta",
     "marg_set_from_priors",
-    # Marginalization (numerical / grid)
-    "grid_log_marginal",
-    "grid_log_profile",
-    # Credible intervals / upper limits / regions
-    "truncated_gaussian_upper_limit",
-    "mixture_truncated_gaussian_upper_limit",
-    "grid_credible_upper_limit",
-    "gaussian_credible_area",
 ]
+# Grid reductions and credible/confidence-region primitives moved to
+# jaxpint.stats (arm-neutral numerics consumed by pta/ and both inference
+# arms; keeping them here made bayes <-> pta a circular package dependency).
