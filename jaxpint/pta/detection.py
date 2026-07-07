@@ -24,6 +24,18 @@ background realization are then cheap analytic antenna-folding:
     2F(sky) = b^T M^+ b,   b = sum_a b_a,  M = sum_a M_a.
 
 A phase shift rotates ``(S_a, C_a)`` (M unchanged); a sky scramble redraws ``F+, Fx``.
+
+Scope: the extraction and both empirical nulls assume the noise metric is
+**block-diagonal across pulsars** (per-pulsar noise, or a CURN-style GWB injected
+via each pulsar's ``external_cov``).  Under a Hellings-Downs-**correlated** GWB the
+inner products acquire pulsar-pair cross terms: the per-pulsar ``(S, C)/G`` blocks
+are no longer self-contained (extraction would additionally need each pulsar's
+GWB-Fourier-projected data/template vectors, combined through a joint
+``npsr x ncomp`` outer-tier solve), and the cheap null recipes above (rotate
+``(S, C)``, redraw ``F+, Fx`` with all Grams fixed) no longer produce the correct
+statistic -- each realization would need its cross-pulsar correction re-evaluated.
+An HD-metric extension is possible via the same two-tier Woodbury used by
+:mod:`jaxpint.pta.likelihood` but is deliberately out of scope here.
 """
 
 from __future__ import annotations
