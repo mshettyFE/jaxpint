@@ -479,8 +479,7 @@ def test_iter_matches_load(tmp_path):
 
 
 def test_iter_releases_references(tmp_path):
-    """Nothing in the load path retains a record once the consumer drops it.
-    """
+    """Nothing in the load path retains a record once the consumer drops it."""
     import gc
     import weakref
 
@@ -536,3 +535,55 @@ def test_iter_early_break_loads_nothing_further(tmp_path):
             assert rec.toa_data.n_toas > 100
             break
     assert load_one.call_count == 1  # second pulsar was never loaded
+
+
+def test_map_pulsars_equivalence_and_hygiene(tmp_path):
+    """map_pulsars applies fn in selection order AND releases each record.
+
+    The hygiene half mirrors test_iter_releases_references: fn stashes
+    weakrefs to the record's internals; by the time the NEXT result arrives,
+    the previous record must be gone (fn's reduced return is all that
+    survives).
+    """
+    import gc
+    import weakref
+
+    from jaxpint import map_pulsars
+
+    _stage_two_pulsars(tmp_path)
+    refs = []
+
+    def summarize(rec):
+        refs.append((weakref.ref(rec.toa_data), weakref.ref(rec.noise_model)))
+        return rec.name, int(rec.toa_data.n_toas)
+
+    results = []
+    for out in map_pulsars(summarize, tmp_path, planets=False):
+        results.append(out)
+        if len(results) == 2:  # first record must be dead by the second result
+            gc.collect()
+            assert all(r() is None for r in refs[0]), (
+                "record 1 still referenced after its result was yielded"
+            )
+
+    assert [name for name, _ in results] == ["B1855+09", "B1899+09"]
+    assert all(n_toas > 100 for _, n_toas in results)
+
+
+def test_map_pulsars_clear_caches_flag(tmp_path):
+    """clear_caches=True clears the JAX cache per pulsar; False never does."""
+    from unittest.mock import patch
+
+    import jax
+
+    from jaxpint import map_pulsars
+
+    _stage_two_pulsars(tmp_path)
+    for flag, expected in ((True, 2), (False, 0)):
+        with patch.object(jax, "clear_caches", wraps=jax.clear_caches) as cc:
+            list(
+                map_pulsars(
+                    lambda r: r.name, tmp_path, planets=False, clear_caches=flag
+                )
+            )
+        assert cc.call_count == expected

@@ -67,6 +67,7 @@ from .loaders import (
     PulsarRecord,
     iter_nanograv_pta,
     load_nanograv_pta,
+    map_pulsars,
     native_toas_to_jax,
 )
 from .simulation import (
@@ -150,6 +151,7 @@ __all__ = [
     "fourier_sum",
     "load_nanograv_pta",
     "iter_nanograv_pta",
+    "map_pulsars",
     "PulsarRecord",
     "make_fake_toas",
     "native",
