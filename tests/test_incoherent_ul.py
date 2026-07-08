@@ -151,12 +151,11 @@ def test_narrow_prior_localizes_vs_flat():
 def test_extract_pulsar_bM_self_consistent():
     """The recovered (b, M) reproduce the actual marginalized g at arbitrary
     amplitudes (validates the real-mode timing-marginalized GLS extraction)."""
-    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
+    from jaxpint.bayes import marginalize_single_pulsar
 
     td, tm, nm, pp = make_simple_pulsar(200, f0=100.0, f1=-1e-14)
     over = {n for n in pp.free_names() if n in ("F0", "F1")}
     g, _, skel = marginalize_single_pulsar(over=over,
-        priors={n: ImproperPrior() for n in over},
         toa_data=td, timing_model=tm, noise_model=nm, fiducial_params=pp,
         allow_nonlinear=True, validate_linearity=False,
     )
@@ -206,12 +205,12 @@ def test_total_logL_marg_matches_bruteforce_likelihood():
     """End-to-end ground truth: total_logL_marg (via extract_pulsar_bM + the A(Δ)
     form) equals a NAIVE phase marginalization that evaluates the actual
     timing-marginalized GLS likelihood g at each phase -- no (b, M) shortcut."""
-    from jaxpint.bayes import ImproperPrior, marginalize_single_pulsar
+    from jaxpint.bayes import marginalize_single_pulsar
 
     td, tm, nm, pp = make_simple_pulsar(200, f0=100.0, f1=-1e-14)
     over = {n for n in pp.free_names() if n in ("F0", "F1")}
     g, _, skel = marginalize_single_pulsar(
-        over=over, priors={n: ImproperPrior() for n in over},
+        over=over,
         toa_data=td, timing_model=tm, noise_model=nm, fiducial_params=pp,
         allow_nonlinear=True, validate_linearity=False,
     )
@@ -246,12 +245,12 @@ def _cw(ct, gp):  # face-on, unit h0
 @pytest.fixture(scope="module")
 def two_source_blocks():
     """Per-pulsar 4x4 (b, G) for two CW sources on one synthetic pulsar."""
-    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
+    from jaxpint.bayes import marginalize_single_pulsar
 
     td, tm, nm, pp = make_simple_pulsar(200, f0=100.0, f1=-1e-14)
     over = {n for n in pp.free_names() if n in ("F0", "F1")}
     g, _, skel = marginalize_single_pulsar(
-        over=over, priors={n: ImproperPrior() for n in over},
+        over=over,
         toa_data=td, timing_model=tm, noise_model=nm, fiducial_params=pp,
         allow_nonlinear=True, validate_linearity=False)
     pos = jnp.array([0.2, 0.5, -0.84]); pos = pos / jnp.linalg.norm(pos)

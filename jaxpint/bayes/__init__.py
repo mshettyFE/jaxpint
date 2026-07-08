@@ -24,7 +24,6 @@ from jaxpint.bayes.defaults import (
     timing_priors,
 )
 from jaxpint.bayes.marginal import (
-    marg_set_from_priors,
     marginalize_pta,
     marginalize_single_pulsar,
 )
@@ -65,7 +64,6 @@ __all__ = [
     # Marginalization (analytic)
     "marginalize_single_pulsar",
     "marginalize_pta",
-    "marg_set_from_priors",
 ]
 # Grid reductions and credible/confidence-region primitives moved to
 # jaxpint.stats (arm-neutral numerics consumed by pta/ and both inference

@@ -894,7 +894,7 @@ def marginalize_each_pulsar(
     ``marg_params``.  Returns the list of ``marginalize_single_pulsar`` results
     (one ``(g, ..., skeleton)`` tuple per pulsar), in pulsar order.
     """
-    from jaxpint.bayes import ImproperPrior, marginalize_single_pulsar
+    from jaxpint.bayes import marginalize_single_pulsar
 
     out = []
     for td, tm, nm, pp in zip(
@@ -904,7 +904,6 @@ def marginalize_each_pulsar(
         out.append(
             marginalize_single_pulsar(
                 over=over,
-                priors={n: ImproperPrior() for n in over},
                 toa_data=td,
                 timing_model=tm,
                 noise_model=nm,
@@ -932,18 +931,15 @@ def marginalize_pta_timing(
     :func:`jaxpint.bayes.marginalize_pta`.  Returns whatever ``marginalize_pta``
     returns (``(g, ..., reduced_pulsar_params)``).
     """
-    from jaxpint.bayes import ImproperPrior, marginalize_pta
+    from jaxpint.bayes import marginalize_pta
 
-    over, priors = set(), {}
+    over = set()
     for pn, pp in zip(pta.names, pta.pulsar_params_list):
         for n in pp.free_names():
             if n in marg_params:
-                fqn = f"{pn}_{n}"
-                over.add(fqn)
-                priors[fqn] = ImproperPrior()
+                over.add(f"{pn}_{n}")
     return marginalize_pta(
         over=over,
-        priors=priors,
         config=config,
         pulsar_names=pta.names,
         fiducial_pulsar_params=pta.pulsar_params_list,

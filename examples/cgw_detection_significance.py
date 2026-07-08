@@ -140,7 +140,7 @@ def compute_detection_significance(
     from loguru import logger
 
     from jaxpint import map_pulsars
-    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
+    from jaxpint.bayes import marginalize_single_pulsar
     from jaxpint.pta.signals.cw import cw_delay_from_array
     from jaxpint.frequentist.sensitivity import earth_term_gram, unit_noncentrality
     from jaxpint.pta.cw_localization import h0_for_snr
@@ -182,7 +182,6 @@ def compute_detection_significance(
         over = {n for n in pp.free_names() if n in MARG_PARAMS}
         g, _, skel = marginalize_single_pulsar(
             over=over,
-            priors={n: ImproperPrior() for n in over},
             toa_data=td,
             timing_model=tm,
             noise_model=nm,

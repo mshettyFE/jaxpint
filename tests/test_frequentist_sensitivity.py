@@ -29,7 +29,7 @@ _POSITIONS = [
 @pytest.fixture(scope="module")
 def network():
     """A 3-pulsar network: per-pulsar likelihoods + the summed rank-4 Earth-term Gram M."""
-    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
+    from jaxpint.bayes import marginalize_single_pulsar
 
     pulsars, M = [], jnp.zeros((4, 4))
     for i, p in enumerate(_POSITIONS):
@@ -37,7 +37,6 @@ def network():
         over = {n for n in pp.free_names() if n in ("F0", "F1")}
         g, _, skel = marginalize_single_pulsar(
             over=over,
-            priors={n: ImproperPrior() for n in over},
             toa_data=td,
             timing_model=tm,
             noise_model=nm,

@@ -149,7 +149,7 @@ def compute_distance_sensitivity(
     from loguru import logger
 
     from jaxpint import map_pulsars
-    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
+    from jaxpint.bayes import marginalize_single_pulsar
     from jaxpint.pta.cw_upper_limit import h0_to_distance
     from jaxpint.pta.extraction import default_extraction_orientations
     from jaxpint.frequentist.sensitivity import earth_term_gram, unit_noncentrality
@@ -240,7 +240,6 @@ def compute_distance_sensitivity(
         over = {n for n in pp.free_names() if n in MARG_PARAMS}
         g, _, skel = marginalize_single_pulsar(
             over=over,
-            priors={n: ImproperPrior() for n in over},
             toa_data=td,
             timing_model=tm,
             noise_model=nm,
