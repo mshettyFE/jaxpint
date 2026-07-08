@@ -32,7 +32,7 @@ _POSITIONS = [
 @pytest.fixture(scope="module")
 def real_blocks():
     """3 pulsars through the real marginalized likelihood: per-pulsar (S,C)/G + geometry."""
-    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
+    from jaxpint.bayes import marginalize_single_pulsar
 
     pulsars, sc_l, gram_l = [], [], []
     for i, p in enumerate(_POSITIONS):
@@ -40,7 +40,6 @@ def real_blocks():
         over = {n for n in pp.free_names() if n in ("F0", "F1")}
         g, _, skel = marginalize_single_pulsar(
             over=over,
-            priors={n: ImproperPrior() for n in over},
             toa_data=td,
             timing_model=tm,
             noise_model=nm,
@@ -166,13 +165,12 @@ def test_quadrature_blocks_affine_in_injected_strain():
     # pulsar's likelihood and injecting at the final h0. That refactor is exact ONLY
     # if the matched filter is affine in the injected strain and the Gram is
     # injection-independent; verify both directly against the real likelihood.
-    from jaxpint.bayes import marginalize_single_pulsar, ImproperPrior
+    from jaxpint.bayes import marginalize_single_pulsar
 
     td, tm, nm, pp = make_simple_pulsar(200, f0=100.0, f1=-1e-14, seed=0)
     over = {n for n in pp.free_names() if n in ("F0", "F1")}
     g, _, skel = marginalize_single_pulsar(
         over=over,
-        priors={n: ImproperPrior() for n in over},
         toa_data=td,
         timing_model=tm,
         noise_model=nm,

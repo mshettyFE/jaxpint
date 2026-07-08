@@ -1,19 +1,21 @@
 """Analytic marginalization of timing-model parameters.
 
 The marginalization is performed analytically via the Woodbury identity.
-For a parameter ``y_i`` in ``over`` with an ``ImproperPrior`` (the only
-prior shape currently accepted), the integral is exact when residuals
-are linear in ``y_i`` and is augmented onto the
-existing noise covariance as a low-rank Woodbury update with
-``Φ = 1e40`` (discovery-equivalent).  The marginalized parameter
-disappears from the returned callable's signature.
+Each parameter ``y_i`` in ``over`` is integrated against an implicit flat
+(improper) prior: the integral is exact when residuals are linear in
+``y_i`` and is augmented onto the existing noise covariance as a low-rank
+Woodbury update with ``Φ = 1e40`` (discovery-equivalent).  The
+marginalized parameter disappears from the returned callable's signature.
+
+``over`` is a plain ``set[str]`` of parameter names — there is no prior
+object.  (Marginalization *is* the improper-flat treatment; a parameter
+you want to treat any other way should be sampled, not marginalized.)
 
 This module provides:
 
-- :func:`marg_set_from_priors` — derive an ``over`` set from a prior dict.
 - :func:`marginalize_single_pulsar` / :func:`marginalize_pta` — integrate out
   the given timing parameters from the single-pulsar / PTA likelihood; each
-  returns ``(callable, sampled_priors, reduced_skeleton(s))``.
+  returns ``(callable, marginalized_names, reduced_skeleton(s))``.
 
 """
 
@@ -24,7 +26,6 @@ import warnings
 from typing import (
     Callable,
     Iterable,
-    Mapping,
     Optional,
     Sequence,
 )
@@ -33,8 +34,6 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.bayes.priors import ImproperPrior, Prior
-from jaxpint.bayes.validate import PriorValidationError
 from jaxpint.likelihood import single_pulsar_logL
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
@@ -47,64 +46,7 @@ from jaxpint.utils import concat_woodbury_blocks
 __all__ = [
     "marginalize_single_pulsar",
     "marginalize_pta",
-    "marg_set_from_priors",
 ]
-
-
-# ---------------------------------------------------------------------------
-# Helper: derive a marginalization set from a prior dict
-# ---------------------------------------------------------------------------
-
-
-def marg_set_from_priors(
-    priors: Mapping[str, Prior],
-    *,
-    prior_class: type = ImproperPrior,
-    include: Iterable[str] = (),
-    exclude: Iterable[str] = (),
-) -> set[str]:
-    """Compute a marginalization set from the assigned prior shapes.
-
-    The prior dict already carries the information about how each parameter
-    should be treated (the convention: ``ImproperPrior`` → marginalize;
-    ``Gaussian`` → keep explicit;
-    ``Uniform`` → sample).  This helper exposes that convention as a
-    one-line filter.
-
-    Parameters
-    ----------
-    priors
-        Mapping of parameter name → :class:`Prior` instance.
-    prior_class
-        Only names whose assigned prior is an instance of this class enter
-        the default set.  Defaults to :class:`ImproperPrior`, matching the
-        NanoGrav convention "marg the timing params, sample the rest".
-    include
-        Names to add to the default set regardless of their prior shape.
-        Use this to force a parameter into ``over`` (e.g. a Gaussian-prior'd
-        PX in a phase that supports Gaussian marginalization).
-    exclude
-        Names to remove from the default set regardless of their prior
-        shape.  Use this to keep a specific parameter sampled.
-
-    Returns
-    -------
-    set of str
-        Names selected for analytic marginalization.
-
-    Examples
-    --------
-    >>> # NanoGrav default: marg every ImproperPrior'd param
-    >>> over = marg_set_from_priors(priors)
-
-    >>> # Same, but also include PX (even though it has a Gaussian prior)
-    >>> over = marg_set_from_priors(priors, include={"J1614-2230_PX"})
-
-    >>> # Default but keep one timing param sampled (e.g., nonlinear binary)
-    >>> over = marg_set_from_priors(priors, exclude={"J1614-2230_PB"})
-    """
-    base = {n for n, p in priors.items() if isinstance(p, prior_class)}
-    return (base | set(include)) - set(exclude)
 
 
 # ---------------------------------------------------------------------------
@@ -151,10 +93,10 @@ def _check_linearity(
         Names of those parameters, parallel to ``over_indices``; used only to
         label the flagged entries in the return value.
     trust_radii : array, shape (n_marg,)
-        Per-parameter trust radius ``sigma_i`` (prior σ for a Gaussian prior,
-        WLS posterior σ for an ``ImproperPrior``), parallel to ``over_indices``
+        Per-parameter trust radius ``sigma_i`` (the WLS posterior σ, since
+        marginalization uses a flat prior), parallel to ``over_indices``
         -- the scale over which the linearization must remain valid.  See
-        :func:`_trust_radius_for_prior`.
+        :func:`_trust_radius_wls`.
     M_full_cols : array, shape (n_toas, n_marg)
         Design-matrix (Jacobian) columns of the marginalized parameters at
         ``y_fid``, in ``over`` order: column ``k`` is ``d r / d y_k``.  Supplies
@@ -211,29 +153,20 @@ def _check_linearity(
     return flagged
 
 
-def _trust_radius_for_prior(
-    prior: Prior,
+def _trust_radius_wls(
     col: int,
     M_marg: Float[Array, "n_toas n_marg"],
     Ndiag: Float[Array, " n_toas"],
 ) -> float:
-    """Pick the physical trust radius for a marg'd parameter.
+    """WLS posterior σ for a marg'd parameter — its linearity-check trust radius.
 
     ``col`` is the parameter's column in the marginalization design matrix
     ``M_marg`` (positional, ``0..n_marg-1``), not its global parameter index.
 
-    - Gaussian prior: prior σ (the radius the prior gives weight to).
-    - ImproperPrior:  WLS posterior σ from the diagonal of (Mᵀ N⁻¹ M)⁻¹
-                      (the data-driven scale; the only physical scale
-                       available when no prior is assigned).
+    Marginalization integrates against a flat (improper) prior, so the only
+    physical scale is the data-driven WLS posterior σ from the diagonal of
+    ``(Mᵀ N⁻¹ M)⁻¹``.
     """
-    if not isinstance(prior, ImproperPrior):
-        from jaxpint.bayes.priors import Gaussian
-
-        # Defaulting to Gaussian for now. TODO
-        if isinstance(prior, Gaussian):
-            return float(prior.sigma)
-    # ImproperPrior path: use the WLS posterior sigma for this column.
     Ninv = 1.0 / Ndiag
     fisher_diag = float(jnp.sum(M_marg[:, col] ** 2 * Ninv))
     if fisher_diag <= 0.0:
@@ -248,44 +181,19 @@ def _trust_radius_for_prior(
 
 def _validate_marg_inputs(
     over_set: set[str],
-    priors: Mapping[str, Prior],
     *,
     valid_names: Optional[Iterable[str]] = None,
 ) -> None:
-    """Validate the priors (and, optionally, the names) for a marginalization set.
+    """Validate the parameter names in a marginalization set.
 
     Raises
     ------
-    PriorValidationError
-        If any name in ``over_set`` has no entry in ``priors``.
-    NotImplementedError
-        If any prior assigned to an ``over_set`` name is not an
-        :class:`ImproperPrior` (the only shape currently supported in ``over``).
     ValueError
         If ``valid_names`` is supplied and ``over_set`` contains a name not in
         it.  The single-pulsar backend passes ``fiducial_params.names``; the PTA
         backend leaves this ``None`` and validates names per pulsar via
         :func:`_resolve_pta_marg_targets` instead.
     """
-    missing = over_set - set(priors.keys())
-    if missing:
-        raise PriorValidationError(
-            f"marginalize: priors dict is missing entries for {sorted(missing)} "
-            f"(found in `over` but not in `priors`)."
-        )
-    bad = [
-        (n, type(priors[n]).__name__)
-        for n in sorted(over_set)
-        if not isinstance(priors[n], ImproperPrior)
-    ]
-    if bad:
-        raise NotImplementedError(
-            "marginalize() phase 1 supports only ImproperPrior in `over`. "
-            f"Got non-Improper priors for: {bad}. "
-            "Keep these parameters sampled (combine_log_prob will apply their "
-            "priors), or assign ImproperPrior() if you want analytic "
-            "marginalization with no prior information."
-        )
     if valid_names is not None:
         unknown = over_set - set(valid_names)
         if unknown:
@@ -343,23 +251,15 @@ def _marg_woodbury_block(
 
 
 def _marg_trust_radii(
-    priors: Mapping[str, Prior],
-    fqns: Sequence[str],
+    n_marg: int,
     M_marg: Float[Array, "n_toas n_marg"],
     Ndiag: Float[Array, " n_toas"],
 ) -> Float[Array, " n_marg"]:
-    """Per-target prior trust radii for the linearity check.
+    """Per-target WLS trust radii for the linearity check.
 
-    ``fqns`` are the prior-dict keys for the targets (bare names for a single
-    pulsar; ``"{prefix}_{bare}"`` for a PTA pulsar), aligned column-for-column
-    with the marginalization design matrix ``M_marg`` (target ``j`` ↔ column ``j``).
+    One entry per column of ``M_marg`` (target ``j`` ↔ column ``j``).
     """
-    return jnp.asarray(
-        [
-            _trust_radius_for_prior(priors[fqn], j, M_marg, Ndiag)
-            for j, fqn in enumerate(fqns)
-        ]
-    )
+    return jnp.asarray([_trust_radius_wls(j, M_marg, Ndiag) for j in range(n_marg)])
 
 
 def _raise_or_warn_nonlinear(
@@ -412,7 +312,6 @@ def _raise_or_warn_nonlinear(
 def marginalize_single_pulsar(
     *,
     over: Iterable[str],
-    priors: Mapping[str, Prior],
     toa_data: TOAData,
     timing_model: TimingModel,
     noise_model: NoiseModel,
@@ -420,41 +319,38 @@ def marginalize_single_pulsar(
     allow_nonlinear: bool = False,
     validate_linearity: bool = True,
     laplace_error_tol: float = 1e-6,
-) -> tuple[Callable, dict[str, Prior], ParameterVector]:
+) -> tuple[Callable, frozenset[str], ParameterVector]:
     """Analytically marginalize single-pulsar timing parameters out of the likelihood.
 
     Wraps :func:`~jaxpint.likelihood.single_pulsar_logL`, integrating out the
-    parameters in ``over`` against their priors via the Woodbury identity (see
-    the module docstring).  The integral is exact when the residuals are linear
+    parameters in ``over`` against an implicit flat prior via the Woodbury
+    identity (see the module docstring).  The integral is exact when residuals
+    are linear
     in each marginalized parameter; the linearity check
     (``validate_linearity=True``, the default) enforces this.  Global-parameter
     marginalization is intentionally not supported.
 
-    Returns ``(g, sampled_priors, reduced_skeleton)`` where:
+    Returns ``(g, marginalized_names, reduced_skeleton)`` where:
 
     - ``g(reduced_params, *, external_delay=None, external_cov=None)`` is the
       marginalized log-likelihood.  The names in ``over`` no longer appear in
       its parameter dict.  The ``external_delay`` / ``external_cov`` kwargs pass
       through to :func:`~jaxpint.likelihood.single_pulsar_logL` for composition
       with signal injectors.
-    - ``sampled_priors`` is ``priors`` with the marginalized entries removed —
-      pass this (not the full dict) to :func:`jaxpint.bayes.combine_log_prob`
-      to avoid double-counting.
+    - ``marginalized_names`` is ``frozenset(over)`` — the names that were
+      integrated out (and so no longer appear in ``g``'s parameter dict).
     - ``reduced_skeleton`` is ``fiducial_params.with_marginalized(over)``; use
       it in the sampling loop so ``.free_values()`` returns the kept-entry
       slice that ``g`` expects.
 
-    Currently only :class:`ImproperPrior` is accepted in ``over``; other prior
-    shapes raise ``NotImplementedError``.
+    Every parameter in ``over`` is integrated against an implicit flat
+    (improper) prior; there is no prior object.
 
     Parameters
     ----------
     over
         Fully-qualified names of parameters to marginalize out; a subset of
         ``fiducial_params.names``.
-    priors
-        Mapping from parameter name to :class:`Prior`.  Must contain an entry
-        for every name in ``over``; extras are propagated to ``sampled_priors``.
     toa_data, timing_model, noise_model
         Static likelihood arguments, captured into the returned closure.
     fiducial_params
@@ -476,24 +372,23 @@ def marginalize_single_pulsar(
     g : callable
         Marginalized log-likelihood, taking a :class:`ParameterVector` whose
         ``marginalized_mask`` matches ``reduced_skeleton``.
-    sampled_priors : dict[str, Prior]
-        ``priors`` with the marginalized entries removed.
+    marginalized_names : frozenset[str]
+        The names integrated out (``frozenset(over)``).
     reduced_skeleton : ParameterVector
         ``fiducial_params`` with ``marginalized_mask=True`` for every name in
         ``over``.
 
     Raises
     ------
-    PriorValidationError
-        If any name in ``over`` is missing from ``priors``.
+    ValueError
+        If any name in ``over`` is not present in ``fiducial_params.names``.
     NotImplementedError
-        If ``over`` contains a non-:class:`ImproperPrior` prior, or a parameter
-        that fails the linearity check when ``allow_nonlinear=False``.
+        If a parameter fails the linearity check when ``allow_nonlinear=False``.
     """
     over_set = set(over)
     over_list = sorted(over_set)  # deterministic ordering for caching
 
-    _validate_marg_inputs(over_set, priors, valid_names=fiducial_params.names)
+    _validate_marg_inputs(over_set, valid_names=fiducial_params.names)
 
     # --- Design matrix + cached Woodbury block at y_fid -------------------
     # Empty marg set -> block is None; the wrapper passes None through
@@ -510,7 +405,7 @@ def marginalize_single_pulsar(
 
     if validate_linearity and M_marg is not None:
         Ndiag = noise_model.scaled_sigma(toa_data, fiducial_params) ** 2
-        trust_radii = _marg_trust_radii(priors, over_list, M_marg, Ndiag)
+        trust_radii = _marg_trust_radii(len(over_list), M_marg, Ndiag)
         flagged = _check_linearity(
             timing_model,
             toa_data,
@@ -524,10 +419,6 @@ def marginalize_single_pulsar(
         _raise_or_warn_nonlinear(
             flagged, allow_nonlinear=allow_nonlinear, tol=laplace_error_tol
         )
-
-    sampled_priors: dict[str, Prior] = {
-        n: p for n, p in priors.items() if n not in over_set
-    }
 
     reduced_skeleton = fiducial_params.with_marginalized(over_set)
 
@@ -558,7 +449,7 @@ def marginalize_single_pulsar(
             use_qr=True,
         )
 
-    return likelihood_marg, sampled_priors, reduced_skeleton
+    return likelihood_marg, frozenset(over_set), reduced_skeleton
 
 
 # ---------------------------------------------------------------------------
@@ -680,7 +571,6 @@ def _resolve_pta_marg_targets(
 def marginalize_pta(
     *,
     over: Iterable[str],
-    priors: Mapping[str, Prior],
     config: PTAConfig,
     pulsar_names: tuple[str, ...],
     fiducial_pulsar_params: tuple[ParameterVector, ...],
@@ -688,40 +578,34 @@ def marginalize_pta(
     allow_nonlinear: bool = False,
     validate_linearity: bool = True,
     laplace_error_tol: float = 1e-6,
-) -> tuple[Callable, dict[str, Prior], tuple[ParameterVector, ...]]:
+) -> tuple[Callable, frozenset[str], tuple[ParameterVector, ...]]:
     """Analytically marginalize per-pulsar timing parameters across a PTA.
 
     Wraps :func:`~jaxpint.pta.pta_logL`, integrating out the parameters in
-    ``over`` against their priors via the Woodbury identity (see the module
-    docstring), per pulsar, across the entire PTA — including in the presence
-    of correlated injectors.  Builds per-pulsar Woodbury marginalization blocks,
-    wraps them in an internal marginalization injector, and returns a callable
-    that evaluates ``pta_logL`` against the marg-augmented config.  Each name in
-    ``over`` is matched to the unique pulsar whose parameter vector contains it;
-    global-parameter marginalization is intentionally not supported.
+    ``over`` against an implicit flat (improper) prior via the Woodbury identity
+    (see the module docstring), per pulsar, across the entire PTA — including in
+    the presence of correlated injectors.  Builds per-pulsar Woodbury
+    marginalization blocks, wraps them in an internal marginalization injector,
+    and returns a callable that evaluates ``pta_logL`` against the marg-augmented
+    config.  Each name in ``over`` is matched to the unique pulsar whose
+    parameter vector contains it; global-parameter marginalization is
+    intentionally not supported.
 
-    Returns ``(g, sampled_priors, reduced_skeletons)`` where:
+    Returns ``(g, marginalized_names, reduced_skeletons)`` where:
 
     - ``g(reduced_pulsar_params, global_params)`` is the marginalized PTA
       log-likelihood.  The names in ``over`` no longer appear in the per-pulsar
       parameter dicts.
-    - ``sampled_priors`` is ``priors`` with the marginalized entries removed —
-      pass this (not the full dict) to :func:`jaxpint.bayes.combine_log_prob`.
+    - ``marginalized_names`` is ``frozenset(over)`` — the FQNs integrated out.
     - ``reduced_skeletons`` is a tuple of per-pulsar
       ``fiducial_pulsar_params[p].with_marginalized(...)`` skeletons, one per
       pulsar, each marking only that pulsar's marginalized names.
-
-    Currently only :class:`ImproperPrior` is accepted in ``over``; other prior
-    shapes raise ``NotImplementedError``.
 
     Parameters
     ----------
     over
         Fully-qualified names of parameters to marginalize out.  Each must
         belong to exactly one pulsar's ``fiducial_pulsar_params[p].names``.
-    priors
-        Mapping from parameter name to :class:`Prior`.  Must contain an entry
-        for every name in ``over``; extras are propagated to ``sampled_priors``.
     config
         The PTA configuration; ``g`` evaluates ``pta_logL`` against a copy
         augmented with the marginalization injector.
@@ -750,23 +634,20 @@ def marginalize_pta(
         Marginalized PTA log-likelihood, taking the tuple of per-pulsar
         :class:`ParameterVector` (matching ``reduced_skeletons``) and the
         shared :class:`GlobalParams`.
-    sampled_priors : dict[str, Prior]
-        ``priors`` with the marginalized entries removed.
+    marginalized_names : frozenset[str]
+        The FQNs integrated out (``frozenset(over)``).
     reduced_skeletons : tuple of ParameterVector
         Per-pulsar skeletons with ``marginalized_mask=True`` for that pulsar's
         names in ``over``.
 
     Raises
     ------
-    PriorValidationError
-        If any name in ``over`` is missing from ``priors``.
     ValueError
         If ``pulsar_names`` / ``fiducial_pulsar_params`` / ``config`` disagree
         on pulsar count, or a name in ``over`` matches no or multiple pulsars.
     NotImplementedError
-        If ``over`` contains a non-:class:`ImproperPrior` prior, a global
-        parameter, or a parameter that fails the linearity check when
-        ``allow_nonlinear=False``.
+        If ``over`` contains a global parameter, or a parameter that fails the
+        linearity check when ``allow_nonlinear=False``.
     """
     over_set = set(over)
     n_psr = len(pulsar_names)
@@ -781,7 +662,7 @@ def marginalize_pta(
             f"marginalize: pulsar_names has length {n_psr} but "
             f"config has {config.n_pulsars} pulsars."
         )
-    _validate_marg_inputs(over_set, priors)
+    _validate_marg_inputs(over_set)
 
     bare_names_per_pulsar, bare_indices_per_pulsar = _resolve_pta_marg_targets(
         over_set,
@@ -823,7 +704,7 @@ def marginalize_pta(
             fiducial_p = fiducial_pulsar_params[p]
             fqns = tuple(f"{pulsar_names[p]}_{bare}" for bare in bare_names)
             Ndiag_p = config.noise_models[p].scaled_sigma(toa_data_p, fiducial_p) ** 2
-            trust_radii_p = _marg_trust_radii(priors, fqns, M_p, Ndiag_p)
+            trust_radii_p = _marg_trust_radii(len(bare_names), M_p, Ndiag_p)
             flagged_p = _check_linearity(
                 config.timing_models[p],
                 toa_data_p,
@@ -856,10 +737,6 @@ def marginalize_pta(
         for p in range(n_psr)
     )
 
-    sampled_priors: dict[str, Prior] = {
-        n: pri for n, pri in priors.items() if n not in over_set
-    }
-
     def likelihood_marg_pta(
         global_params: GlobalParams,
         reduced_pulsar_params: tuple[ParameterVector, ...],
@@ -873,4 +750,4 @@ def marginalize_pta(
         )
         return pta_logL(global_params, full_pulsar_params, modified_config)
 
-    return likelihood_marg_pta, sampled_priors, reduced_pulsar_skeletons
+    return likelihood_marg_pta, frozenset(over_set), reduced_pulsar_skeletons
