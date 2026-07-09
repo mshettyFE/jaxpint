@@ -34,6 +34,19 @@ def _fake_repo(ref):
         f"{base}/tempo/clock/time_gbt.dat": b"   MJD\n 50000 0.0 0.0 1\n",
     }
 
+@pytest.fixture(autouse=True)
+def _no_ambient_clock_pin(monkeypatch):
+    """Keep this module hermetic against an ambient ``JAXPINT_CLOCK_REF``.
+
+    CI pins the clock ref (for deterministic, API-free parity tests) by exporting
+    ``JAXPINT_CLOCK_REF``; a dev may do the same locally.  That would force the
+    frozen-pin code path and break the auto-update / TTL / offline tests here,
+    which all assume the unpinned machinery.  Clear it; the one test that
+    exercises pinning sets it back explicitly.
+    """
+    monkeypatch.delenv("JAXPINT_CLOCK_REF", raising=False)
+
+
 @pytest.fixture
 def fresh_state():
     """Reset the lazy-ensure guard before/after each test."""

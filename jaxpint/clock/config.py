@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, Callable, NamedTuple
+from jaxpint.clock.paths import clock_dir
 
 
 class _Opt(NamedTuple):
@@ -86,3 +87,24 @@ def describe() -> str:
         lines.append(f"  {name} (default {opt.default!r}){set_note}")
         lines.append(f"      {opt.help}")
     return "\n".join(lines)
+
+
+def set_pint_clock_override() -> os.PathLike:
+    """Point PINT's clock resolution at JaxPINT's pinned snapshot.
+
+    Exports ``$PINT_CLOCK_OVERRIDE`` = :func:`jaxpint.clock.clock_dir`, so PINT
+    reads each clock file from JaxPINT's snapshot -- the highest-priority entry
+    in PINT's resolution order -- and both consume identical bytes at one pinned
+    commit.  Sets the variable process-wide and returns the directory.
+
+    .. note::
+
+       This unifies the clock *values* PINT uses (the drift fix).  It does **not**
+       stop PINT from populating its own on-disk cache: ``find_clock_file``
+       eagerly builds the global clock file even when the override supersedes it.
+       To also avoid PINT's network fetches (e.g. under ``pytest -n auto``),
+       pre-warm PINT's cache separately (``pint.observatory.update_clock_files``).
+    """
+    dest = clock_dir()
+    os.environ["PINT_CLOCK_OVERRIDE"] = str(dest)
+    return dest

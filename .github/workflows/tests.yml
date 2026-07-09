@@ -84,6 +84,26 @@ jobs:
           uv run --extra cpu --extra dev
           python -c "import jaxpint.clock as clock; clock.ensure_fresh()"
 
+      # The bridge / PINT-parity tests build real PINT models + TOAs, which pull
+      # PINT's OWN clock corrections (a separate machinery from jaxpint's, into
+      # the Astropy cache). Two distinct problems, two fixes:
+      #   * Rate-limit (HTTP 429 / missing default TT(BIPM2023)) -- warmed HERE.
+      #     update_clock_files is PINT's supported pre-load hook (see its
+      #     docstring); one serial fetch into the shared $HOME Astropy cache means
+      #     the `-n auto` workers reuse it instead of storming the repo.
+      #   * DRIFT -- PINT tracks the clock repo's moving `main` HEAD while jaxpint
+      #     pins SEED_CLOCK_REF. That is handled in conftest.py, which points
+      #     $PINT_CLOCK_OVERRIDE at jaxpint's pinned snapshot (see
+      #     jaxpint.bridge.set_pint_clock_override) so PINT uses identical bytes.
+      #     The override does NOT stop PINT's download (find_clock_file builds the
+      #     global file eagerly), which is exactly why this pre-warm is still needed.
+      - name: Pre-warm PINT clock cache
+        env:
+          JAX_PLATFORMS: cpu
+        run: >-
+          uv run --extra cpu --extra dev
+          python -c "import pint.observatory as o; o.update_clock_files(bipm_versions=['BIPM2023', 'BIPM2019'])"
+
       # --runslow -> include the @slow PINT-validation / fitting / noise tests.
       # -n auto   -> parallelize across the runner's cores via pytest-xdist.
       # HYPOTHESIS_PROFILE=ci -> deterministic seeds + reproduction blobs on

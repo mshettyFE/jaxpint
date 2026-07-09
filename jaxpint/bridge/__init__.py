@@ -30,6 +30,7 @@ _LAZY = {
     "pint_model_to_params": ("jaxpint.bridge.model_conversion", "pint_model_to_params"),
     "params_to_pint_model": ("jaxpint.bridge.model_conversion", "params_to_pint_model"),
     "build_timing_model": ("jaxpint.bridge.component_builder", "build_timing_model"),
+    # PINT-free (only sets the env var PINT reads) -> safe to import without PINT.
 }
 
 
