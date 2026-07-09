@@ -58,6 +58,32 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra cpu --extra dev
 
+      # Pin the clock snapshot to the seed commit the suite is tested against
+      # (jaxpint.clock._pinned.SEED_CLOCK_REF -- the single source of truth,
+      # bumped via tools/bump_clock_pin.py). Exporting JAXPINT_CLOCK_REF makes
+      # the clock subsystem skip the GitHub *API* HEAD lookup entirely (that
+      # endpoint is the 60-req/hr bottleneck), so it only ever fetches raw files
+      # for a fixed ref -- deterministic and rate-limit-safe. Derived at runtime
+      # rather than hardcoded here so bumping the pin needs no workflow edit.
+      - name: Pin clock ref to the tested seed commit
+        run: |
+          REF=$(uv run --extra cpu --extra dev \
+            python -c "from jaxpint.clock._pinned import SEED_CLOCK_REF; print(SEED_CLOCK_REF)")
+          echo "JAXPINT_CLOCK_REF=$REF" >> "$GITHUB_ENV"
+          echo "Pinned JAXPINT_CLOCK_REF=$REF"
+
+      # Warm the pinned clock snapshot ONCE, serially, before the parallel run.
+      # Without this, every `-n auto` xdist worker cold-downloads the whole
+      # snapshot into the shared package dir at once and races on the download
+      # temp files. One serial pre-fetch leaves a warm SNAPSHOT.json at the
+      # pinned ref, so the workers make zero network calls.
+      - name: Pre-warm clock snapshot cache
+        env:
+          JAX_PLATFORMS: cpu
+        run: >-
+          uv run --extra cpu --extra dev
+          python -c "import jaxpint.clock as clock; clock.ensure_fresh()"
+
       # --runslow -> include the @slow PINT-validation / fitting / noise tests.
       # -n auto   -> parallelize across the runner's cores via pytest-xdist.
       # HYPOTHESIS_PROFILE=ci -> deterministic seeds + reproduction blobs on

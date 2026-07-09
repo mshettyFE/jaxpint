@@ -171,6 +171,7 @@ def run_nuts(
     dense_mass: bool = ...,
     chain_method: str = ...,
     progress_bar: bool = ...,
+    extra_fields: tuple[str, ...] = ...,
     return_arviz: Literal[True] = ...,
 ) -> tuple[Any, MCMC]: ...
 @overload
@@ -187,6 +188,7 @@ def run_nuts(
     dense_mass: bool = ...,
     chain_method: str = ...,
     progress_bar: bool = ...,
+    extra_fields: tuple[str, ...] = ...,
     return_arviz: Literal[False],
 ) -> MCMC: ...
 def run_nuts(
@@ -202,6 +204,7 @@ def run_nuts(
     dense_mass: bool = False,
     chain_method: str = "vectorized",
     progress_bar: bool = True,
+    extra_fields: tuple[str, ...] = (),
     return_arviz: bool = True,
 ) -> Union[tuple[Any, MCMC], MCMC]:
     """Run NUTS on a JaxPINT NumPyro ``model``, initialized at the fiducial.
@@ -209,6 +212,10 @@ def run_nuts(
     ``init`` (from the model builder) seeds every chain at the marginalization
     linearization point ``y_fid`` — critical for stiff PTA posteriors; without
     it NUTS starts from the prior and rarely mixes.
+
+    ``extra_fields`` is forwarded to ``MCMC.run`` -- pass e.g.
+    ``("accept_prob", "num_steps", "diverging")`` to recover per-sample NUTS
+    diagnostics afterwards via ``mcmc.get_extra_fields()``.
 
     Returns ``(idata, mcmc)`` when ``return_arviz`` (default), else the ``mcmc``
     object.  ``idata`` is an ArviZ ``InferenceData`` (r-hat / ESS / divergences
@@ -232,7 +239,7 @@ def run_nuts(
         chain_method=chain_method,
         progress_bar=progress_bar,
     )
-    mcmc.run(key)
+    mcmc.run(key, extra_fields=extra_fields)
 
     if not return_arviz:
         return mcmc
