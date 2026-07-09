@@ -66,6 +66,28 @@ def test_h0_95_grid_interior_and_sensitivity():
     assert ul_more < ul
 
 
+def test_h0_95_grid_prior_argument():
+    """Phase 4a: `prior=` on the incoherent grid UL — None unchanged; a broad
+    uniform reproduces it; a low-capped uniform truncates it."""
+    dist = pytest.importorskip("numpyro.distributions")
+    M = jnp.broadcast_to(jnp.eye(2), (2, 2, 2))
+    A = jnp.broadcast_to(_A_of_phase(flat_phase_grid(256)), (2, 256, 2))
+    b = jnp.broadcast_to(jnp.array([0.5, 0.2]), (2, 2))
+
+    none = float(h0_95_grid(b, M, A, jnp.float64(60.0), n_h0=6000))
+    # A very wide uniform box == the improper-flat default (same grid, flat weights).
+    broad = float(
+        h0_95_grid(b, M, A, jnp.float64(60.0), n_h0=6000, prior=dist.Uniform(0.0, 1e6))
+    )
+    np.testing.assert_allclose(broad, none, rtol=1e-6)
+    # A cap below the flat-prior UL truncates the posterior at the cap.
+    cap = 0.5 * none
+    capped = float(
+        h0_95_grid(b, M, A, jnp.float64(60.0), n_h0=6000, prior=dist.Uniform(0.0, cap))
+    )
+    assert capped <= cap + 1e-2 and capped < none
+
+
 def test_matched_filter_sign_single_phase():
     """At a fixed phase (degenerate grid) the UL is a standard truncated-Gaussian
     limit, so a larger positive matched filter pushes it UP -- validates the sign."""

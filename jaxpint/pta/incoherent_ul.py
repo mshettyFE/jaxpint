@@ -40,6 +40,7 @@ reductions.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
 
 import jax
 import jax.numpy as jnp
@@ -48,6 +49,12 @@ from jaxtyping import Array, Float
 from jaxpint.stats.regions import grid_credible_upper_limit
 from jaxpint.stats.grids import grid_log_marginal, grid_log_profile
 from jaxpint.pta.signals.cw import _C, _KPC_TO_M
+
+if TYPE_CHECKING:
+    # Type-only: this module stays numpyro-free at runtime and duck-types the
+    # prior (uses only ``.log_prob`` / ``.support``); numpyro is needed only
+    # when a caller actually passes a distribution.
+    from numpyro.distributions import Distribution
 
 
 # ------------------------------------------------- multi-source conditioned scan
@@ -338,13 +345,21 @@ def h0_95_grid(
     h0_max: Float[Array, ""],
     n_h0: int = 512,
     level: float = 0.95,
+    *,
+    prior: Optional["Distribution"] = None,
 ) -> Float[Array, ""]:
-    """95% quantile of the (improper-uniform-prior) ``h0`` posterior on ``h0 ≥ 0``.
+    """95% quantile of the ``h0`` posterior on ``h0 ≥ 0`` (grid-numerical).
 
     The phase-marginalized posterior is not a truncated Gaussian, so the quantile
     is computed numerically: evaluate ``logL^marg(h0)`` on ``[0, h0_max]``, form
     the normalized posterior weight, and interpolate the CDF.  ``h0_max`` must
     cover the 95% mass -- the driver sets it adaptively (see the module/driver).
+
+    ``prior=None`` (default) is the conventional **improper-uniform** prior on
+    ``h0 >= 0`` (equal weight per grid point).  Any distribution folds its
+    ``log_prob`` (masked to its support) into the grid weights -- e.g.
+    ``numpyro.distributions.LogUniform`` for the log-uniform amplitude
+    convention.
 
     The distance-marginalized posterior has a power-law tail ``~ h0^{-N}`` (``N`` =
     number of pulsars), because the ``Δ≈0`` phases -- where the Earth and pulsar
@@ -356,5 +371,8 @@ def h0_95_grid(
     logpost = jax.vmap(total_logL_marg, in_axes=(0, None, None, None))(
         h0, b_stack, M_stack, A_stack
     )
-    # Uniform prior on h0 >= 0 -> normalized-grid credible quantile.
+    if prior is not None:
+        # numpyro log_prob does not self-mask; restrict to the prior's support.
+        in_support = jnp.asarray(prior.support(h0), dtype=bool)
+        logpost = logpost + jnp.where(in_support, prior.log_prob(h0), -jnp.inf)
     return grid_credible_upper_limit(h0, logpost, level)
