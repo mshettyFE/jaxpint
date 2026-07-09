@@ -71,6 +71,23 @@ def _module_uses_pint(path: str) -> bool:
         return False
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _unify_pint_clock():
+    """Make PINT read clock files from JaxPINT's pinned snapshot, suite-wide.
+
+    JaxPINT pins the IPTA clock repo at ``SEED_CLOCK_REF``; PINT resolves the same
+    files from the repo's moving ``main`` HEAD.  The bridge / PINT-parity tests
+    compare the two implementations, so if their clock sources drift the parity
+    checks fail on genuine (but spurious) numerical differences.  Pointing PINT at
+    JaxPINT's snapshot via ``$PINT_CLOCK_OVERRIDE`` makes both consume identical
+    bytes at one commit.  See :func:`jaxpint.bridge.set_pint_clock_override`.
+    """
+    from jaxpint.clock.config import set_pint_clock_override
+
+    set_pint_clock_override()
+    yield
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--runslow", action="store_true", default=False, help="run slow tests"
