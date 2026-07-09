@@ -97,12 +97,24 @@ jobs:
       #     jaxpint.bridge.set_pint_clock_override) so PINT uses identical bytes.
       #     The override does NOT stop PINT's download (find_clock_file builds the
       #     global file eagerly), which is exactly why this pre-warm is still needed.
+      # NOTE: update_clock_files(bipm_versions=[...]) is broken in PINT >= 1.1.4
+      # (still on master as of 2026-07): it calls o._load_bipm_clock(v) on a
+      # TopoObs, but those loaders were refactored into module-level functions
+      # (pint/observatory/__init__.py), so passing bipm_versions raises
+      # AttributeError. Call the module-level loaders directly, then run
+      # update_clock_files() WITHOUT bipm_versions (that path is fine) for the
+      # per-observatory clock files.
       - name: Pre-warm PINT clock cache
         env:
           JAX_PLATFORMS: cpu
-        run: >-
-          uv run --extra cpu --extra dev
-          python -c "import pint.observatory as o; o.update_clock_files(bipm_versions=['BIPM2023', 'BIPM2019'])"
+        run: |
+          uv run --extra cpu --extra dev python - <<'EOF'
+          import pint.observatory as o
+          for v in ["BIPM2023", "BIPM2019"]:
+              o._load_bipm_clock(v)
+          o._load_gps_clock()
+          o.update_clock_files()
+          EOF
 
       # --runslow -> include the @slow PINT-validation / fitting / noise tests.
       # -n auto   -> parallelize across the runner's cores via pytest-xdist.
