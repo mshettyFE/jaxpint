@@ -40,6 +40,10 @@ cpu = ["jax[cpu]>=0.4.20"]
 # Mollweide plotting. healpy already pulls matplotlib, listed explicitly because
 # the example imports it directly.
 skymap = ["healpy>=1.16.0", "matplotlib>=3.7"]
+# NumPyro sampler integration (jaxpint.bayes.samplers.*): prior specification via
+# numpyro.distributions + NUTS, with arviz for posterior diagnostics. Opt-in —
+# the core likelihood / analytic-marginalization path does not need it.
+sampling = ["numpyro>=0.15", "arviz>=0.18"]
 docs = [
     "sphinx>=9.1.0",
     "sphinx-copybutton>=0.5.2",
@@ -49,6 +53,7 @@ dev = [
     "jaxpint[docs]",
     "jaxpint[skymap]",
     "jaxpint[pint]",
+    "jaxpint[sampling]",
     "pytest>=7.0",
     "pytest-xdist>=3.8.0",
     "pytest-cov>=5.0",
