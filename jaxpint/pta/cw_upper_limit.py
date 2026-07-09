@@ -10,26 +10,35 @@ quadratic* in ``h0``::
 with ``X = (d | s_hat)`` the matched filter against the unit-strain waveform and
 ``Y = (s_hat | s_hat)`` its noise-weighted power.
 
-With a uniform prior on ``h0 >= 0`` the marginal posterior is a Gaussian
-truncated at zero, so the 95% upper limit is closed form
+With the conventional improper-uniform prior on ``h0 >= 0`` the marginal
+posterior is a Gaussian truncated at zero, so the 95% upper limit is closed form
 (:func:`h0_95_closed_form`).  Marginalizing a grid of source orientations turns
 the posterior into a Gaussian mixture in ``h0``; :func:`h0_95_marginalized`
-takes its 95th percentile.  :func:`h0_to_distance` inverts the strain-distance
-relation to convert a strain UL into a luminosity-distance lower limit.
+takes its 95th percentile.
 
 Approximating the Bayesian limit of Fig. 8 in the NANOGrav 15-yr individual-SMBHB paper (arXiv:2306.16222).
 """
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import jax.numpy as jnp
+from jax.scipy.special import logsumexp
 from jaxtyping import Array, Float
 
 from jaxpint.stats.regions import (
+    grid_credible_upper_limit,
     mixture_truncated_gaussian_upper_limit,
     truncated_gaussian_upper_limit,
 )
 from jaxpint.pta.signals.cw import log10_strain_from_binary
+
+if TYPE_CHECKING:
+    # Type-only: the upper-limit code stays numpyro-free at runtime and
+    # duck-types the prior (uses only ``.log_prob`` / ``.support``), so numpyro
+    # is needed *only* when a caller actually passes a distribution.
+    from numpyro.distributions import Distribution
 
 # The Earth-term, linear-amplitude CW template used here is provided by
 # ``CWInjector(linear_amplitude=True, earth_term_only=True)`` in
@@ -130,17 +139,28 @@ def h0_95_marginalized(
     Ys: Float[Array, " n"],
     level: float = 0.95,
     n_iter: int = 60,
+    *,
+    prior: Optional["Distribution"] = None,
+    n_grid: int = 4096,
 ) -> Float[Array, ""]:
-    r"""95% UL on ``h0`` marginalized over an orientation grid (uniform prior).
+    r"""95% UL on ``h0`` marginalized over an orientation grid.
 
     Each orientation ``k`` contributes a truncated-Gaussian likelihood in ``h0``
-    with ``mu_k = X_k/Y_k``, ``sigma_k = 1/sqrt(Y_k)``. With a uniform prior over
-    the (equally weighted) orientation grid and on ``h0 >= 0``, the marginal
-    posterior is the mixture ``p(h0) ∝ sum_k exp(h0 X_k - 0.5 Y_k h0^2)``. Its
-    CDF is an analytic weighted sum of normal CDFs; this returns the ``level``
-    quantile by bisection.
+    with ``mu_k = X_k/Y_k``, ``sigma_k = 1/sqrt(Y_k)``. Marginalized over the
+    (equally weighted) orientation grid, the ``h0`` posterior is the mixture
+    ``p(h0) ∝ prior(h0) * sum_k exp(h0 X_k - 0.5 Y_k h0^2)`` on ``h0 >= 0``.
 
-    Reduces exactly to :func:`h0_95_closed_form` for a single orientation.
+    Two paths, selected by ``prior``:
+
+    - ``prior=None`` (default) — the conventional **improper-uniform** prior on
+      ``h0 >= 0``.  The mixture is a weighted sum of truncated Gaussians whose
+      CDF is analytic; the ``level`` quantile is found by bisection in
+      closed form (fast; the skymap default).  Reduces exactly to
+      :func:`h0_95_closed_form` for a single orientation.
+    - any distribution — its ``log_prob`` is folded into the quadrature weights
+      over a uniform ``h0`` grid (a **deterministic** grid quantile, never
+      sampling).  Use e.g. ``numpyro.distributions.LogUniform(lo, hi)`` for the
+      log-uniform amplitude convention, or a finite ``Uniform(0, hi)`` box.
 
     Parameters
     ----------
@@ -150,7 +170,12 @@ def h0_95_marginalized(
     level : float
         Credible level (default 0.95).
     n_iter : int
-        Bisection iterations (default 60 -> float64-tight).
+        Bisection iterations for the closed-form path (default 60).
+    prior : numpyro Distribution, optional
+        Prior on ``h0``.  ``None`` → improper-uniform closed form.  The upper
+        limit is never computed by sampling
+    n_grid : int
+        Number of ``h0`` grid points for the non-uniform-prior path.
     """
     #    The constant ``logL(0)`` cancels in the normalized CDF (never exponentiated).
     #    Component weights ``exp(0.5 X_k^2/Y_k)`` are stabilized by subtracting the
@@ -159,10 +184,36 @@ def h0_95_marginalized(
     Ys = jnp.maximum(Ys, jnp.finfo(jnp.float64).tiny)
     mu = Xs / Ys
     sigma = 1.0 / jnp.sqrt(Ys)
-    # Per-orientation mixture weight, up to a common additive constant.
-    log_weights = 0.5 * Xs * Xs / Ys + jnp.log(sigma)
-    return mixture_truncated_gaussian_upper_limit(mu, sigma, log_weights, level, n_iter)
+    if prior is None:
+        # Per-orientation mixture weight, up to a common additive constant.
+        log_weights = 0.5 * Xs * Xs / Ys + jnp.log(sigma)
+        return mixture_truncated_gaussian_upper_limit(
+            mu, sigma, log_weights, level, n_iter
+        )
+    return _marginalized_ul_grid(Xs, Ys, mu, sigma, prior, level, n_grid)
 
 
-# fstat (the coherent 2F detection statistic) moved to
-# jaxpint.frequentist.detection -- it is a detection statistic, not an upper limit.
+def _marginalized_ul_grid(
+    Xs: Float[Array, " n"],
+    Ys: Float[Array, " n"],
+    mu: Float[Array, " n"],
+    sigma: Float[Array, " n"],
+    prior: "Distribution",
+    level: float,
+    n_grid: int,
+) -> Float[Array, ""]:
+    """Grid upper limit for a non-uniform ``h0`` prior (deterministic).
+
+    Evaluates the orientation-marginalized log-likelihood
+    ``logL(h0) = logsumexp_k(h0 X_k - 0.5 Y_k h0^2)`` on a uniform grid over
+    ``[0, max_k mu_k + 12 max_k sigma_k]``, folds in ``prior.log_prob``, and
+    inverts the CDF via :func:`grid_credible_upper_limit`.  No sampling.
+    """
+    h0_hi = jnp.max(mu) + 12.0 * jnp.max(sigma)
+    h0 = jnp.linspace(0.0, h0_hi, n_grid)
+    logL = logsumexp(
+        h0[:, None] * Xs[None, :] - 0.5 * Ys[None, :] * h0[:, None] ** 2, axis=1
+    )
+    in_support = jnp.asarray(prior.support(h0), dtype=bool)
+    log_prior = jnp.where(in_support, prior.log_prob(h0), -jnp.inf)
+    return grid_credible_upper_limit(h0, logL + log_prior, level)
