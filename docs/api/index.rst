@@ -100,6 +100,10 @@ PTA
 Bayesian Inference
 ------------------
 
+Analytic marginalization of nuisance (timing-model) parameters. The opt-in
+NumPyro sampler layer (``jaxpint.bayes.samplers``: prior specification via
+NumPyro distributions + a NUTS runner) is documented in-source.
+
 .. autosummary::
    :toctree: generated
    :recursive:

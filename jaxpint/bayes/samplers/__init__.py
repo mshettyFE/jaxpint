@@ -7,12 +7,10 @@ it.
 
 Two layers:
 
-- **Prior assembly** (:mod:`~jaxpint.bayes.samplers.priors`) -- the
-  framework-agnostic composition helpers that build a :class:`PriorSpec` of
-  ``{fqn: numpyro Distribution}``.
-- **Model + runner** (:mod:`~jaxpint.bayes.samplers.numpyro`) --
-  the NumPyro model wrapping a (marginalized) JaxPINT likelihood via
-  ``numpyro.factor`` and the NUTS driver.
+- **Prior assembly** (``priors``) -- the framework-agnostic composition helpers
+  that build a ``PriorSpec`` of ``{fqn: numpyro Distribution}``.
+- **Model + runner** (``numpyro``) -- the NumPyro model wrapping a
+  (marginalized) JaxPINT likelihood via ``numpyro.factor`` and the NUTS driver.
 """
 
 from __future__ import annotations

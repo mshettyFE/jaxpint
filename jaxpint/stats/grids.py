@@ -11,7 +11,7 @@ frequentist profile, :func:`grid_log_profile`).
 
 These are deliberately prior-free: the marginalization measure is supplied as
 explicit log quadrature weights, not a prior distribution.  (Prior specification
-and sampling live in :mod:`jaxpint.bayes.samplers`; analytic marginalization
+and sampling live in ``jaxpint.bayes.samplers``; analytic marginalization
 targets are a plain ``set[str]`` passed to :func:`jaxpint.bayes.marginalize_pta`.)
 """
 

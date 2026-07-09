@@ -373,6 +373,12 @@ def h0_95_grid(
     )
     if prior is not None:
         # numpyro log_prob does not self-mask; restrict to the prior's support.
-        in_support = jnp.asarray(prior.support(h0), dtype=bool)
+        # A ``None`` support (unconstrained base) means every point is in support.
+        support = prior.support
+        in_support = (
+            jnp.ones(h0.shape, dtype=bool)
+            if support is None
+            else jnp.asarray(support(h0), dtype=bool)
+        )
         logpost = logpost + jnp.where(in_support, prior.log_prob(h0), -jnp.inf)
     return grid_credible_upper_limit(h0, logpost, level)

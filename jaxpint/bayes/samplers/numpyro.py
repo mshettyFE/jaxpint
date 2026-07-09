@@ -23,9 +23,10 @@ the same order, reconstruction is a stack + ``with_free_values``.
 
 from __future__ import annotations
 
-from typing import Callable, Mapping, Optional
+from typing import Any, Callable, Literal, Mapping, Optional, Union, overload
 
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS, init_to_value
@@ -46,7 +47,7 @@ __all__ = [
 
 
 def _pack_free(
-    skeleton: ParameterVector, sampled: Mapping[str, jnp.ndarray], prefix: str = ""
+    skeleton: ParameterVector, sampled: Mapping[str, ArrayLike], prefix: str = ""
 ) -> ParameterVector:
     """Reconstruct a ParameterVector from sampled free-parameter values.
 
@@ -63,7 +64,7 @@ def _pack_free(
 
 
 def _pack_global(
-    skeleton: GlobalParams, sampled: Mapping[str, jnp.ndarray]
+    skeleton: GlobalParams, sampled: Mapping[str, ArrayLike]
 ) -> GlobalParams:
     """Reconstruct GlobalParams from sampled values (all global names sampled)."""
     if not skeleton.names:
@@ -126,7 +127,7 @@ def build_pta_model(
     _check_priors(site_names, priors, label="PTA")
 
     def model():
-        sampled: dict[str, jnp.ndarray] = {}
+        sampled: dict[str, ArrayLike] = {}
         pulsar_params = []
         for prefix, skel in zip(pulsar_names, reduced_skeletons):
             for b in skel.free_names():
@@ -156,10 +157,42 @@ def _check_priors(site_names, priors: Mapping[str, dist.Distribution], *, label:
 # ---------------------------------------------------------------------------
 
 
+@overload
 def run_nuts(
     model: Callable[[], None],
     *,
-    init: Optional[Mapping[str, jnp.ndarray]] = None,
+    init: Optional[Mapping[str, ArrayLike]] = ...,
+    key,
+    num_warmup: int = ...,
+    num_samples: int = ...,
+    num_chains: int = ...,
+    max_tree_depth: int = ...,
+    target_accept_prob: float = ...,
+    dense_mass: bool = ...,
+    chain_method: str = ...,
+    progress_bar: bool = ...,
+    return_arviz: Literal[True] = ...,
+) -> tuple[Any, MCMC]: ...
+@overload
+def run_nuts(
+    model: Callable[[], None],
+    *,
+    init: Optional[Mapping[str, ArrayLike]] = ...,
+    key,
+    num_warmup: int = ...,
+    num_samples: int = ...,
+    num_chains: int = ...,
+    max_tree_depth: int = ...,
+    target_accept_prob: float = ...,
+    dense_mass: bool = ...,
+    chain_method: str = ...,
+    progress_bar: bool = ...,
+    return_arviz: Literal[False],
+) -> MCMC: ...
+def run_nuts(
+    model: Callable[[], None],
+    *,
+    init: Optional[Mapping[str, ArrayLike]] = None,
     key,
     num_warmup: int = 1000,
     num_samples: int = 1000,
@@ -170,7 +203,7 @@ def run_nuts(
     chain_method: str = "vectorized",
     progress_bar: bool = True,
     return_arviz: bool = True,
-):
+) -> Union[tuple[Any, MCMC], MCMC]:
     """Run NUTS on a JaxPINT NumPyro ``model``, initialized at the fiducial.
 
     ``init`` (from the model builder) seeds every chain at the marginalization

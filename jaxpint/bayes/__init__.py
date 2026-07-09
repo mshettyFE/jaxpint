@@ -9,9 +9,9 @@ to act as a visible flag that the script is making Bayesian assumptions
 (here: analytic marginalization over nuisance parameters).  Pure likelihood
 scans don't need this subpackage.
 
-Prior specification and sampling live under :mod:`jaxpint.bayes.samplers`
-(NumPyro); that is where prior-distribution objects and the composition
-helpers are exposed.
+Prior specification and sampling live under ``jaxpint.bayes.samplers``
+(NumPyro, opt-in); that is where prior-distribution objects and the
+composition helpers are exposed.
 
 """
 
