@@ -14,9 +14,12 @@ import datetime
 import json
 import os
 import ssl
+import tempfile
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path, PurePosixPath
-from typing import NamedTuple, Optional
+from typing import Callable, NamedTuple, Optional
 
 from ._pinned import IPTA_API_COMMIT as API_COMMIT
 from ._pinned import IPTA_RAW_BASE as RAW_BASE
@@ -31,20 +34,56 @@ class IndexEntry(NamedTuple):
     extra: str
 
 
+# Transient statuses worth retrying: GitHub's rate-limit (429) and the usual
+# gateway/server hiccups.  A cold cache under ``pytest -n auto`` has every xdist
+# worker cold-download the snapshot at once, which readily trips 429.
+_RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+
+
+def _retry_delay(exc: urllib.error.HTTPError, attempt: int) -> float:
+    """Seconds to wait before the next retry.
+
+    Honors a numeric ``Retry-After`` header when present; otherwise exponential
+    backoff (1, 2, 4, ... seconds).
+    """
+    header = exc.headers.get("Retry-After") if exc.headers else None
+    if header:
+        try:
+            return max(0.0, float(header))
+        except ValueError:
+            pass  # HTTP-date form -> fall back to backoff
+    return float(2**attempt)
+
+
 def _http_get(
-    url: str, *, accept: Optional[str] = None, timeout: float = 30.0
+    url: str,
+    *,
+    accept: Optional[str] = None,
+    timeout: float = 30.0,
+    max_attempts: int = 4,
+    _sleep: Callable[[float], None] = time.sleep,
 ) -> bytes:
     """The single network seam: GET ``url`` and return raw bytes.
 
     Every fetch in this package goes through here; tests monkeypatch it.
+    Transient rate-limit / server errors (HTTP 429, 500, 502, 503, 504) are
+    retried with backoff (honoring ``Retry-After``); any other error propagates
+    immediately, so a genuinely offline caller still fails fast.
     """
     headers = {"User-Agent": "jaxpint-clock"}
     if accept is not None:
         headers["Accept"] = accept
-    req = urllib.request.Request(url, headers=headers)
     context = ssl.create_default_context(cafile=certifi.where())
-    with urllib.request.urlopen(req, timeout=timeout, context=context) as resp:
-        return resp.read()
+    for attempt in range(max_attempts):
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout, context=context) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as exc:
+            if exc.code not in _RETRYABLE_STATUS or attempt == max_attempts - 1:
+                raise
+            _sleep(_retry_delay(exc, attempt))
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def resolve_latest_sha() -> tuple[str, str]:
@@ -75,11 +114,24 @@ def parse_index(text: str) -> list[IndexEntry]:
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
-    """Write ``data`` to ``path`` atomically and in binary (no CRLF mangling)."""
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "wb") as f:
-        f.write(data)
-    os.replace(tmp, path)
+    """Write ``data`` to ``path`` atomically and in binary (no CRLF mangling).
+
+    Uses a uniquely-named temp file in the same directory, so concurrent writers
+    (e.g. parallel ``pytest-xdist`` workers cold-downloading the same snapshot
+    into the shared package dir) never race on a shared ``.tmp`` name.  The final
+    ``os.replace`` is atomic and last-writer-wins on identical content.
+    """
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f"{path.name}.", suffix=".tmp"
+    )
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 # --- SNAPSHOT.json: this module owns its name, format, and read/write --------
