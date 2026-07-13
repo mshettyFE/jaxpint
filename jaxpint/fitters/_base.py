@@ -1,10 +1,20 @@
-"""Base classes and shared pure-JAX functions for all fitters."""
+"""Base classes and shared pure-JAX functions for all fitters.
+
+:meth:`BaseFitter.fit_params` wraps the Gauss-Newton iteration in a
+``jax.custom_vjp`` so that gradients of the *fitted* parameters with
+respect to frozen parameters or an ``external_delay`` never
+backpropagate through the iteration loop -- the backward pass is one
+linear solve (``_solve_gn_normal``) plus one VJP of the stationarity
+map (``_optimality``), via the implicit function theorem.  The full
+derivation, the code-to-math mapping, and the convergence caveat
+(:meth:`BaseFitter.fit_gap`) live in the
+:doc:`differentiable-fitting guide </guides/differentiable_fitting>`.
+"""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Optional
 
 import equinox as eqx
 import jax
@@ -28,14 +38,13 @@ from jaxpint.utils import normalize_designmatrix, woodbury_dot, woodbury_solve
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class BaseFitResult:
+class BaseFitResult(eqx.Module):
     """Common fields shared by all fit results."""
 
     params: ParameterVector
     covariance_matrix: Float[Array, "n_free n_free"]
-    chi2: float
-    dof: int
+    chi2: Float[Array, ""]
+    dof: int = eqx.field(static=True)
 
     @property
     def parameter_uncertainties(self) -> Float[Array, " n_free"]:
@@ -51,21 +60,9 @@ class BaseFitResult:
         return (self.covariance_matrix / errors_safe).T / errors_safe
 
     @property
-    def reduced_chi2(self) -> float:
-        """``chi2 / dof``, or NaN when ``dof <= 0``."""
-        return self.chi2 / self.dof if self.dof > 0 else float("nan")
-
-
-@dataclass
-class IterationState:
-    """One Gauss-Newton step's output, passed from ``_iteration`` to ``_build_result``.
-
-    ``noise_realizations`` is ``None`` for fitters that don't estimate them (WLS).
-    """
-
-    params: ParameterVector
-    covariance: Float[Array, "n_free n_free"]
-    noise_realizations: Optional[Float[Array, " n_epochs"]] = None
+    def reduced_chi2(self) -> Float[Array, ""]:
+        """``chi2 / dof`` (0-d array), or NaN when ``dof <= 0``."""
+        return self.chi2 / self.dof if self.dof > 0 else jnp.asarray(jnp.nan)
 
 
 # ---------------------------------------------------------------------------
@@ -74,12 +71,7 @@ class IterationState:
 
 
 class BaseFitter(ABC):
-    """Base for all JaxPINT fitters.
-
-    Subclasses implement ``_build_result`` (turns the final
-    ``IterationState`` into a fitter-specific result) and :meth:`fit_toas`,
-    whose body computes the SVD threshold, runs ``_gauss_newton`` with a
-    per-fitter step callable, and returns ``self._build_result(state)``.
+    """Base for all JaxPINT fitters — differentiable by default.
 
     Parameters
     ----------
@@ -91,6 +83,7 @@ class BaseFitter(ABC):
         Initial parameter values (free/frozen flags determine what is fit).
     noise_model : NoiseModel, optional
         Noise model.
+
     """
 
     def __init__(
@@ -118,12 +111,6 @@ class BaseFitter(ABC):
             Maximum number of Gauss-Newton iterations. Default is 1.
         **kwargs
             Subclass-specific options (e.g. ``threshold``, ``full_cov``).
-
-        Returns
-        -------
-        BaseFitResult
-            A dataclass containing updated parameters, covariance,
-            uncertainties, chi-squared, and degrees of freedom.
         """
         ...
 
@@ -138,29 +125,233 @@ class BaseFitter(ABC):
         n_offset = 0 if self.model.phoff_name is not None else 1
         return n_data - params.n_free - n_offset
 
-    def _gauss_newton(
-        self,
-        maxiter: int,
-        threshold: float,
-        iterate: Callable[[ParameterVector, float], IterationState],
-    ) -> IterationState:
-        """Run ``max(1, maxiter)`` Gauss-Newton steps and return the final state.
-
-        ``iterate(params, threshold) -> IterationState`` is the per-fitter step,
-        already bound to any fitter-specific options (e.g. ``full_cov``).
-        """
-        params = self.params
-        state: Optional[IterationState] = None
-        for _ in range(max(1, maxiter)):
-            state = iterate(params, threshold)
-            params = state.params
-        assert state is not None  # max(1, maxiter) >= 1, so the loop always runs
-        return state
+    # -- Per-fitter hooks for the differentiable solve ----------------------
 
     @abstractmethod
-    def _build_result(self, state: IterationState) -> BaseFitResult:
-        """Turn the final iteration state into a fitter-specific result."""
+    def _fit_cinv(
+        self, params: ParameterVector, x: Float[Array, " n"]
+    ) -> Float[Array, " n"]:
+        """Apply the noise-covariance solve ``C^{-1} x`` at *params*."""
         ...
+
+    @abstractmethod
+    def _core_step(
+        self,
+        params: ParameterVector,
+        external_delay: Optional[Float[Array, " n_toas"]],
+        threshold: float,
+        **opts,
+    ) -> tuple[
+        Float[Array, " n_params"],
+        Float[Array, "n_free n_free"],
+        Optional[Float[Array, " n_epochs"]],
+    ]:
+        """One Gauss-Newton step at *params*.
+
+        Returns ``(new_values, covariance, noise_realizations)``.  The
+        covariance is evaluated at *params* and has offset column stripped.
+        ``noise_realizations`` is
+        ``None`` for fitters that don't estimate them.
+        """
+        ...
+
+    @abstractmethod
+    def _default_threshold(self, **opts) -> float:
+        """Default SVD threshold, matching :meth:`fit_toas`'s convention."""
+        ...
+
+    def _fit_residuals(
+        self,
+        params: ParameterVector,
+        external_delay: Optional[Float[Array, " n_toas"]],
+    ) -> Float[Array, " n"]:
+        """Residual vector the fit minimizes (narrowband default).
+
+        Wideband overrides this with the stacked ``[time; dm]`` layout.
+        """
+        r = compute_time_residuals(self.model, self.toa_data, params)
+        return r if external_delay is None else r - external_delay
+
+    def _offset_vector(self) -> Optional[Float[Array, " n"]]:
+        """Synthetic-Offset column, or ``None`` with an explicit PhaseOffset."""
+        if self.model.phoff_name is not None:
+            return None
+        return jnp.ones(self.toa_data.n_toas)
+
+    # -- Shared differentiable machinery -------------------------------------
+
+    def _fit_design_free(self, params: ParameterVector) -> Float[Array, "n n_free"]:
+        """``M = -dr/dy`` restricted to the free columns."""
+
+        def resid_fn(values: Float[Array, " n_params"]):
+            return self._fit_residuals(params.with_values(values), None)
+
+        # jacfwd: n_params forward tangents (jacrev would materialize
+        # an n x n cotangent basis and OOM high-cadence pulsars).
+        J = jax.jacfwd(resid_fn)(params.values)
+        return -J[:, params.free_indices_array()]
+
+    def _optimality(
+        self,
+        M_star: Float[Array, "n n_free"],
+        params: ParameterVector,
+        external_delay: Optional[Float[Array, " n_toas"]],
+    ) -> Float[Array, " n_free"]:
+        """Stationarity residual ``G = M*^T C^{-1} (I - P) r``.
+
+        At convergence the free parameters satisfy the stationarity
+        condition
+
+        .. math::
+
+            G(y, \\theta) = M^T C^{-1} (I - P)\\, r(y, \\theta) = 0
+
+        where ``M = -dr/dy`` restricted to the free columns, ``C`` is the
+        fitter's noise covariance, ``theta`` collects the frozen
+        parameter values and any ``external_delay``, and ``r`` are the
+        full residuals.  ``P`` is the ``C``-weighted projector onto the
+        synthetic-Offset direction: subtracting the ``C``-weighted mean
+        reproduces the offset column of the forward solve.  ``M_star``
+        is held constant (Gauss-Newton freezing).
+        """
+        r = self._fit_residuals(params, external_delay)
+        z = self._fit_cinv(params, r)
+        o = self._offset_vector()
+        if o is not None:
+            zo = self._fit_cinv(params, o)
+            z = z - zo * ((o @ z) / (o @ zo))
+        return M_star.T @ z
+
+    def _solve_gn_normal(
+        self,
+        params: ParameterVector,
+        M_star: Float[Array, "n n_free"],
+        v_free: Float[Array, " n_free"],
+        threshold: float,
+    ) -> Float[Array, " n_free"]:
+        """Solve ``H u = v_free`` with ``H = M_ms^T C^{-1} M_ms``.
+
+        ``M_ms`` removes each column's ``C``-weighted mean, and the solve uses the
+        same column normalization and relative SVD threshold as the
+        forward step (:func:`_normalized_svd_solve`), so the backward pass
+        truncates the same degenerate directions.  Note: the covariance
+        returned by the *augmented* GLS solve is not accurate enough here
+        (its timing block carries the 1e-40 mixed-model ridge), which is
+        why the backward pass builds ``H`` directly instead of reusing the
+        core's covariance.
+        """
+        o = self._offset_vector()
+        if o is not None:
+            zo = self._fit_cinv(params, o)
+            col_wmean = (zo @ M_star) / (o @ zo)
+            M_ms = M_star - o[:, None] * col_wmean[None, :]
+        else:
+            M_ms = M_star
+        cinv_M = jax.vmap(
+            lambda col: self._fit_cinv(params, col), in_axes=1, out_axes=1
+        )(M_ms)
+        H = M_ms.T @ cinv_M
+        u, _cov, _norms = _normalized_svd_solve(H, v_free, threshold)
+        return u
+
+    def fit_params(
+        self,
+        params: Optional[ParameterVector] = None,
+        external_delay: Optional[Float[Array, " n_toas"]] = None,
+        *,
+        maxiter: int = 1,
+        threshold: Optional[float] = None,
+        **core_opts,
+    ) -> ParameterVector:
+        """Differentiable Gauss-Newton fit returning only the fitted parameters.
+
+        Equivalent to ``fit_toas(...).params`` but skips result
+        construction — the lean entry point for eager gradient/vmap loops.
+
+        The implicit gradients assume a *converged* fit — verify with
+        :meth:`fit_gap` when starting far from the solution or using a
+        small ``maxiter``.
+
+        Parameters
+        ----------
+        params
+            Starting parameters; defaults to ``self.params``.  Pass a
+            traced ``ParameterVector`` (via ``with_values``) to
+            differentiate with respect to frozen parameter values.
+        external_delay : array (n_toas,), optional
+            Deterministic delay (seconds) subtracted from the (time)
+            residuals before fitting, e.g. an injected CW signal.
+        maxiter, threshold
+            As for :meth:`fit_toas`.
+        **core_opts
+            Fitter-specific solve options (e.g. ``full_cov`` for GLS).
+        """
+        skeleton = self.params if params is None else params
+        if skeleton.n_free == 0:
+            raise ValueError("fit_params: params has no free parameters.")
+        thr = self._default_threshold(**core_opts) if threshold is None else threshold
+        free_idx = skeleton.free_indices_array()
+        n_iter = max(1, maxiter)
+
+        def _iterate(values, ext):
+            for _ in range(n_iter):
+                values, _cov, _nr = self._core_step(
+                    skeleton.with_values(values), ext, thr, **core_opts
+                )
+            return values
+
+        @jax.custom_vjp
+        def _fixed_point(values0, ext):
+            return _iterate(values0, ext)
+
+        def _fp_fwd(values0, ext):
+            y_star = _iterate(values0, ext)
+            return y_star, (y_star, ext)
+
+        def _fp_bwd(res, v):
+            y_star, ext = res
+            pv_star = skeleton.with_values(y_star)
+            M_star = self._fit_design_free(pv_star)
+            # IFT: dy*/dtheta = H^{-1} dG/dtheta.
+            u = self._solve_gn_normal(pv_star, M_star, v[free_idx], thr)
+            _G, vjp_fn = jax.vjp(
+                lambda vals, e: self._optimality(M_star, skeleton.with_values(vals), e),
+                y_star,
+                ext,
+            )
+            g_values, g_ext = vjp_fn(u)
+            # theta is the *frozen* entries only; the free entries of
+            # values0 are just the iteration seed and get zero gradient.
+            g_values = g_values.at[free_idx].set(0.0)
+            # Frozen entries of the output pass through from values0.
+            g_values = g_values + v.at[free_idx].set(0.0)
+            return g_values, g_ext
+
+        _fixed_point.defvjp(_fp_fwd, _fp_bwd)
+
+        return skeleton.with_values(_fixed_point(skeleton.values, external_delay))
+
+    def fit_gap(
+        self,
+        params: Optional[ParameterVector] = None,
+        external_delay: Optional[Float[Array, " n_toas"]] = None,
+        threshold: Optional[float] = None,
+        **core_opts,
+    ) -> Float[Array, " n_free"]:
+        """Free-parameter update of one further Gauss-Newton step.
+
+        Convergence diagnostic: ~0 (in parameter units) at a true fixed
+        point.  The implicit gradients of :meth:`fit_params` /
+        :meth:`fit_toas` are trustworthy when the gap is a small fraction
+        of each parameter's posterior sigma.
+        """
+        skeleton = self.params if params is None else params
+        thr = self._default_threshold(**core_opts) if threshold is None else threshold
+        new_values, _cov, _nr = self._core_step(
+            skeleton, external_delay, thr, **core_opts
+        )
+        idx = skeleton.free_indices_array()
+        return new_values[idx] - skeleton.values[idx]
 
 
 # ---------------------------------------------------------------------------
@@ -287,14 +478,21 @@ def _compute_jacobian_and_design(
     toa_data: TOAData,
     params: ParameterVector,
 ) -> tuple[Float[Array, "n_toas n_params"], Float[Array, "n_toas n_free"]]:
-    """JIT-compiled Jacobian and design matrix computation."""
+    """JIT-compiled Jacobian and design matrix computation.
+
+    jacfwd: n_params forward tangents. jacrev would materialize an
+    n_toas x n_toas cotangent basis and OOM high-cadence pulsars. Forward
+    mode differs from reverse only in physically-negligible near-cancelling
+    entries (|value| below the ~1e-8 absolute floor), which no consumer of
+    this design matrix observes.
+    """
     free_indices = params.free_indices_array()
 
     def time_resid_fn(all_values: Float[Array, " n_params"]):
         p = params.with_values(all_values)
         return compute_time_residuals(model, toa_data, p)
 
-    J = jax.jacobian(time_resid_fn)(params.values)
+    J = jax.jacfwd(time_resid_fn)(params.values)
     M = -J[:, free_indices]
     return J, M
 
@@ -528,7 +726,7 @@ def lstsq_step_augmented(
     yields the timing-parameter estimates and the random-effect predictions in
     one shot. It is algebraically equivalent to :func:`lstsq_step_fullcov`,
     which instead folds ``Phi`` into the noise covariance ``C = N + U Phi Uᵀ``
-    and does plain GLS ; the two give identical ``dpars``.
+    and does plain GLS; the two give identical ``dpars``.
 
     Parameters
     ----------

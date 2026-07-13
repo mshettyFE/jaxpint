@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
 
 import equinox as eqx
@@ -13,11 +12,11 @@ from jaxtyping import Array, Float
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
+from jaxpint.utils import woodbury_solve
 
 from ._base import (
     BaseFitter,
     BaseFitResult,
-    IterationState,
     compute_time_residuals,
     _subtract_weighted_mean,
     _subtract_cov_weighted_mean,
@@ -42,12 +41,17 @@ def _gls_iteration_core(
     noise_model: Optional[NoiseModel],
     threshold: float,
     full_cov: bool,
+    external_delay: Optional[Float[Array, " n_toas"]] = None,
 ) -> tuple[
     Float[Array, " n_params"],
     Float[Array, "n_free n_free"],
     Float[Array, " n_basis"],
 ]:
     """JIT-compiled core of one GLS Gauss-Newton iteration.
+
+    ``external_delay`` (seconds), when given, is subtracted from the
+    residuals before the solve — e.g. a deterministic signal (CW) whose
+    absorption by the timing fit should be modelled.
 
     Returns updated parameter values, covariance, and noise realizations.
 
@@ -66,12 +70,16 @@ def _gls_iteration_core(
     n_basis = U.shape[1]
 
     time_resid = compute_time_residuals(model, toa_data, params)
+    if external_delay is not None:
+        time_resid = time_resid - external_delay
 
     def time_resid_fn(all_values: Float[Array, " n_params"]):
         p = params.with_values(all_values)
         return compute_time_residuals(model, toa_data, p)
 
-    J = jax.jacobian(time_resid_fn)(params.values)
+    # jacfwd: n_params forward tangents. jacrev would materialize an
+    # n_toas x n_toas cotangent basis and OOM high-cadence pulsars.
+    J = jax.jacfwd(time_resid_fn)(params.values)
     M = -J[:, free_indices]
 
     # Force constant column if not included. Same as PINT
@@ -109,7 +117,6 @@ def _gls_iteration_core(
 # ---------------------------------------------------------------------------
 
 
-@dataclass
 class GLSFitResult(BaseFitResult):
     """Result of a GLS fit."""
 
@@ -155,13 +162,27 @@ class GLSFitter(BaseFitter):
 
         return sigma, Ndiag, U, Phidiag
 
-    def _iteration(
+    # -- Differentiable-solve hooks ------------------------------------------
+
+    def _fit_cinv(
+        self, params: ParameterVector, x: Float[Array, " n_toas"]
+    ) -> Float[Array, " n_toas"]:
+        _sigma, Ndiag, U, Phidiag = self._get_noise(params)
+        if U.shape[1] == 0:
+            return x / Ndiag
+        return woodbury_solve(Ndiag, U, Phidiag, x[:, None])[:, 0]
+
+    def _core_step(
         self,
         params: ParameterVector,
+        external_delay: Optional[Float[Array, " n_toas"]],
         threshold: float,
-        full_cov: bool,
-    ) -> IterationState:
-        """Run one Gauss-Newton iteration."""
+        full_cov: bool = False,
+    ) -> tuple[
+        Float[Array, " n_params"],
+        Float[Array, "n_free n_free"],
+        Optional[Float[Array, " n_basis"]],
+    ]:
         new_values, covariance, noise_real = _gls_iteration_core(
             self.model,
             self.toa_data,
@@ -169,51 +190,36 @@ class GLSFitter(BaseFitter):
             self.noise_model,
             threshold,
             full_cov,
+            external_delay,
         )
-        new_params = params.with_values(new_values)
         noise_realizations = noise_real if noise_real.size > 0 else None
-        return IterationState(new_params, covariance, noise_realizations)
+        return new_values, covariance, noise_realizations
 
-    def _build_result(self, state: IterationState) -> GLSFitResult:
-        """Compute final residuals/chi2 and return a result object.
-
-        Final residuals are still mean-subtracted (matches PINT's
-        ``Residuals(subtract_mean=True)`` default).  The dof count
-        subtracts one for the implicit Offset column when applicable.
-        """
-        params = state.params
-        sigma, Ndiag, U, Phidiag = self._get_noise(params)
-        n_basis = U.shape[1]
-
-        final_resid = compute_time_residuals(self.model, self.toa_data, params)
-        if n_basis > 0:
-            final_resid = _subtract_cov_weighted_mean(final_resid, Ndiag, U, Phidiag)
+    def _default_threshold(self, full_cov: bool = False) -> float:
+        if self.noise_model is not None and self.noise_model.has_correlated:
+            _, _, U_init, _ = self._get_noise(self.params)
+            n_basis = U_init.shape[1]
         else:
-            final_resid = _subtract_weighted_mean(final_resid, sigma)
+            n_basis = 0
+        dim = self.params.n_free if full_cov else self.params.n_free + n_basis
+        return 1e-14 * max(self.toa_data.n_toas, dim)
 
-        if n_basis > 0:
-            chi2_val = float(compute_chi2_cov(final_resid, Ndiag, U, Phidiag))
-        else:
-            chi2_val = float(compute_chi2(final_resid, sigma))
-
-        dof = self._dof(params, self.toa_data.n_toas)
-
-        return GLSFitResult(
-            params=params,
-            covariance_matrix=state.covariance,
-            chi2=chi2_val,
-            dof=dof,
-            residuals=final_resid,
-            noise_realizations=state.noise_realizations,
-        )
+    # -- Public API ------------------------------------------------------------
 
     def fit_toas(
         self,
         maxiter: int = 1,
         threshold: Optional[float] = None,
         full_cov: bool = False,
+        params: Optional[ParameterVector] = None,
+        external_delay: Optional[Float[Array, " n_toas"]] = None,
     ) -> GLSFitResult:
-        """Run the GLS fit.
+        """Run the GLS fit (differentiable end-to-end).
+
+        Final residuals are mean-subtracted (matches PINT's
+        ``Residuals(subtract_mean=True)`` default).  The covariance and
+        noise realizations are evaluated at the converged parameters
+        (making them, and the derived uncertainties, differentiable).
 
         Parameters
         ----------
@@ -224,6 +230,12 @@ class GLSFitter(BaseFitter):
         full_cov : bool
             If True, use Woodbury-based full covariance inversion.
             If False (default), use the augmented design-matrix approach.
+        params : ParameterVector, optional
+            Starting parameters (default ``self.params``); the traced
+            entry point for gradients w.r.t. frozen parameter values.
+        external_delay : array (n_toas,), optional
+            Deterministic delay (seconds) subtracted from the residuals
+            before fitting, e.g. an injected CW signal.  Differentiable.
 
         Returns
         -------
@@ -231,23 +243,36 @@ class GLSFitter(BaseFitter):
             Fit result containing updated parameters, covariance,
             uncertainties, chi-squared, residuals, and noise realizations.
         """
-        n_toas = self.toa_data.n_toas
-
-        # Determine basis dimension for threshold calculation
-        if self.noise_model is not None and self.noise_model.has_correlated:
-            _, _, U_init, _ = self._get_noise(self.params)
-            n_basis = U_init.shape[1]
-        else:
-            n_basis = 0
-
         if threshold is None:
-            if full_cov:
-                dim = self.params.n_free
-            else:
-                dim = self.params.n_free + n_basis
-            threshold = 1e-14 * max(n_toas, dim)
+            threshold = self._default_threshold(full_cov=full_cov)
 
-        state = self._gauss_newton(
-            maxiter, threshold, lambda p, t: self._iteration(p, t, full_cov)
+        fitted = self.fit_params(
+            params,
+            external_delay,
+            maxiter=maxiter,
+            threshold=threshold,
+            full_cov=full_cov,
         )
-        return self._build_result(state)
+        _vals, covariance, noise_realizations = self._core_step(
+            fitted, external_delay, threshold, full_cov=full_cov
+        )
+
+        sigma, Ndiag, U, Phidiag = self._get_noise(fitted)
+        n_basis = U.shape[1]
+
+        final_resid = self._fit_residuals(fitted, external_delay)
+        if n_basis > 0:
+            final_resid = _subtract_cov_weighted_mean(final_resid, Ndiag, U, Phidiag)
+            chi2_val = compute_chi2_cov(final_resid, Ndiag, U, Phidiag)
+        else:
+            final_resid = _subtract_weighted_mean(final_resid, sigma)
+            chi2_val = compute_chi2(final_resid, sigma)
+
+        return GLSFitResult(
+            params=fitted,
+            covariance_matrix=covariance,
+            chi2=chi2_val,
+            dof=self._dof(fitted, self.toa_data.n_toas),
+            residuals=final_resid,
+            noise_realizations=noise_realizations,
+        )

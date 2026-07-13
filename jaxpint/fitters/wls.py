@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
 
 import equinox as eqx
@@ -17,7 +16,6 @@ from jaxpint.types import TOAData, ParameterVector
 from ._base import (
     BaseFitter,
     BaseFitResult,
-    IterationState,
     compute_time_residuals,
     _subtract_weighted_mean,
     wls_step,
@@ -37,8 +35,13 @@ def _wls_iteration_core(
     params: ParameterVector,
     noise_model: Optional[NoiseModel],
     threshold: float,
+    external_delay: Optional[Float[Array, " n_toas"]] = None,
 ) -> tuple[Float[Array, " n_params"], Float[Array, "n_free n_free"]]:
     """JIT-compiled core of one WLS Gauss-Newton iteration.
+
+    ``external_delay`` (seconds), when given, is subtracted from the
+    residuals before the solve — e.g. a deterministic signal (CW) whose
+    absorption by the timing fit should be modelled.
 
     Returns updated parameter values and the covariance matrix for the
     timing parameters (offset row/column stripped).
@@ -51,12 +54,16 @@ def _wls_iteration_core(
         sigma = toa_data.error
 
     time_resid = compute_time_residuals(model, toa_data, params)
+    if external_delay is not None:
+        time_resid = time_resid - external_delay
 
     def time_resid_fn(all_values: Float[Array, " n_params"]):
         p = params.with_values(all_values)
         return compute_time_residuals(model, toa_data, p)
 
-    J = jax.jacobian(time_resid_fn)(params.values)
+    # jacfwd: n_params forward tangents. jacrev would materialize an
+    # n_toas x n_toas cotangent basis and OOM high-cadence pulsars.
+    J = jax.jacfwd(time_resid_fn)(params.values)
     M = -J[:, free_indices]
 
     include_offset = model.phoff_name is None
@@ -84,7 +91,6 @@ def _wls_iteration_core(
 # ---------------------------------------------------------------------------
 
 
-@dataclass
 class WLSFitResult(BaseFitResult):
     """Result of a WLS fit."""
 
@@ -111,54 +117,52 @@ class WLSFitter(BaseFitter):
             return self.noise_model.scaled_sigma(self.toa_data, params)
         return self.toa_data.error
 
-    def _iteration(
+    # -- Differentiable-solve hooks ------------------------------------------
+
+    def _fit_cinv(
+        self, params: ParameterVector, x: Float[Array, " n_toas"]
+    ) -> Float[Array, " n_toas"]:
+        return x / self._get_sigma(params) ** 2
+
+    def _core_step(
         self,
         params: ParameterVector,
+        external_delay: Optional[Float[Array, " n_toas"]],
         threshold: float,
-    ) -> IterationState:
-        """Run one Gauss-Newton iteration."""
+    ) -> tuple[
+        Float[Array, " n_params"],
+        Float[Array, "n_free n_free"],
+        None,
+    ]:
         new_values, covariance = _wls_iteration_core(
             self.model,
             self.toa_data,
             params,
             self.noise_model,
             threshold,
+            external_delay,
         )
-        new_params = params.with_values(new_values)
-        return IterationState(new_params, covariance)
+        return new_values, covariance, None
 
-    def _build_result(self, state: IterationState) -> WLSFitResult:
-        """Compute final residuals/chi2 and return a result object.
+    def _default_threshold(self) -> float:
+        return 1e-14 * max(self.toa_data.n_toas, self.params.n_free)
 
-        Final residuals are still mean-subtracted (matches PINT's
-        ``Residuals(subtract_mean=True)`` default) so that reported chi^2
-        is invariant to the implicit constant DOF.  The dof count subtracts
-        one for the Offset column when applicable (matches PINT).
-        """
-        params = state.params
-        covariance = state.covariance
-        sigma = self._get_sigma(params)
-
-        final_resid = compute_time_residuals(self.model, self.toa_data, params)
-        final_resid = _subtract_weighted_mean(final_resid, sigma)
-        chi2_val = float(compute_chi2(final_resid, sigma))
-
-        dof = self._dof(params, self.toa_data.n_toas)
-
-        return WLSFitResult(
-            params=params,
-            covariance_matrix=covariance,
-            chi2=chi2_val,
-            dof=dof,
-            residuals=final_resid,
-        )
+    # -- Public API ------------------------------------------------------------
 
     def fit_toas(
         self,
         maxiter: int = 1,
         threshold: Optional[float] = None,
+        params: Optional[ParameterVector] = None,
+        external_delay: Optional[Float[Array, " n_toas"]] = None,
     ) -> WLSFitResult:
-        """Run the WLS fit.
+        """Run the WLS fit (differentiable end-to-end).
+
+        Final residuals are mean-subtracted (matches PINT's
+        ``Residuals(subtract_mean=True)`` default) so that reported chi^2
+        is invariant to the implicit constant DOF.  The covariance is
+        evaluated at the converged parameters (making it and the derived
+        uncertainties differentiable).
 
         Parameters
         ----------
@@ -166,6 +170,12 @@ class WLSFitter(BaseFitter):
             Number of Gauss-Newton iterations.
         threshold : float, optional
             SVD threshold (default ``1e-14 * max(n_toas, n_free)``).
+        params : ParameterVector, optional
+            Starting parameters (default ``self.params``); the traced
+            entry point for gradients w.r.t. frozen parameter values.
+        external_delay : array (n_toas,), optional
+            Deterministic delay (seconds) subtracted from the residuals
+            before fitting, e.g. an injected CW signal.  Differentiable.
 
         Returns
         -------
@@ -174,8 +184,22 @@ class WLSFitter(BaseFitter):
             uncertainties, chi-squared, and residuals.
         """
         if threshold is None:
-            threshold = 1e-14 * max(self.toa_data.n_toas, self.params.n_free)
+            threshold = self._default_threshold()
 
-        return self._build_result(
-            self._gauss_newton(maxiter, threshold, self._iteration)
+        fitted = self.fit_params(
+            params, external_delay, maxiter=maxiter, threshold=threshold
+        )
+        _vals, covariance, _nr = self._core_step(fitted, external_delay, threshold)
+        sigma = self._get_sigma(fitted)
+
+        final_resid = self._fit_residuals(fitted, external_delay)
+        final_resid = _subtract_weighted_mean(final_resid, sigma)
+        chi2_val = compute_chi2(final_resid, sigma)
+
+        return WLSFitResult(
+            params=fitted,
+            covariance_matrix=covariance,
+            chi2=chi2_val,
+            dof=self._dof(fitted, self.toa_data.n_toas),
+            residuals=final_resid,
         )
