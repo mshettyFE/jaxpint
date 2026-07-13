@@ -10,7 +10,9 @@ same :func:`pta_logL` entry point via the
 from jaxpint.types import GlobalParams
 from jaxpint.pta.injectors import CorrelatedSignalInjector, SignalInjector
 from jaxpint.pta.likelihood import (
+    GWBlocks,
     PTAConfig,
+    per_pulsar_gw_blocks,
     precompute_single_pulsar_pta_factor,
     pta_logL,
     single_pulsar_pta_logL,
@@ -49,6 +51,8 @@ __all__ = [
     "single_pulsar_pta_logL",
     "single_pulsar_pta_logL_with_factor",
     "precompute_single_pulsar_pta_factor",
+    "per_pulsar_gw_blocks",
+    "GWBlocks",
     # Dependency-aware grid scans
     "scan_logL",
     "PerPulsarScanAxis",

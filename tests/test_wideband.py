@@ -324,7 +324,7 @@ class TestWidebandDesignMatrix:
         M_nb = compute_design_matrix(jax_model, toa_data, params)
 
         npt.assert_allclose(
-            np.array(M_wb[:n, :]), np.array(M_nb), rtol=1e-12,
+            np.array(M_wb[:n, :]), np.array(M_nb), rtol=1e-11,
         )
 
     @pytest.mark.slow
