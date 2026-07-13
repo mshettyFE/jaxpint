@@ -19,20 +19,24 @@ from jaxtyping import Array, Float
 from jaxpint.types import TOAData
 from jaxpint.types import GlobalParams
 from jaxpint.pta.injectors import CorrelatedSignalInjector
-from jaxpint.pta.signals.gwb import (
-    CURN_PARAM_DEFAULTS,
-    fourier_basis,
-    powerlaw_psd,
-)
+from jaxpint.pta.signals.gwb import fourier_basis
 from jaxpint.pta.signals.orf import hd_orf
+from jaxpint.pta.signals.spectrum import (
+    PowerLawSpectrum,
+    SpectralModel,
+    validate_spectrum_components,
+)
 
 
 class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
     """Correlated GWB injector with configurable overlap reduction function.
 
-    Registers two global parameters: ``{prefix}log10_A`` and
-    ``{prefix}gamma``.  The ORF matrix is precomputed at construction time
-    from the supplied pulsar positions and ORF function.
+    Registers the spectrum's global parameters (with *prefix*): for the
+    default power law, ``{prefix}log10_A`` and ``{prefix}gamma``; for a
+    :class:`~jaxpint.pta.signals.spectrum.FreeSpectrum`,
+    ``{prefix}log10_rho_0 … log10_rho_{n-1}``.  The ORF matrix is
+    precomputed at construction time from the supplied pulsar positions
+    and ORF function.
 
     Parameters
     ----------
@@ -48,7 +52,10 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
     prefix : str
         Naming prefix for parameters in :class:`GlobalParams`.
     initial_values : dict, optional
-        Override default initial values for ``log10_A`` and ``gamma``.
+        Override the spectrum's default initial values (keys must be
+        parameter suffixes of the spectrum).
+    spectrum : SpectralModel, optional
+        PSD model (default :class:`PowerLawSpectrum`).
     """
 
     def __init__(
@@ -59,18 +66,21 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
         orf_func: Callable = hd_orf,
         prefix: str = "gwb_",
         initial_values: Optional[dict[str, float]] = None,
+        spectrum: Optional[SpectralModel] = None,
     ):
         self.n_components = n_components
         self.T_span = T_span
         self.prefix = prefix
+        self.spectrum = PowerLawSpectrum() if spectrum is None else spectrum
+        validate_spectrum_components(self.spectrum, n_components)
 
-        self.param_spec: dict[str, float] = dict(CURN_PARAM_DEFAULTS)
+        self.param_spec: dict[str, float] = self.spectrum.param_defaults()
         if initial_values is not None:
-            unknown = set(initial_values) - set(CURN_PARAM_DEFAULTS)
+            unknown = set(initial_values) - set(self.param_spec)
             if unknown:
                 raise ValueError(
                     f"Unknown GWB parameters: {unknown}. "
-                    f"Valid: {list(CURN_PARAM_DEFAULTS.keys())}"
+                    f"Valid: {list(self.param_spec.keys())}"
                 )
             self.param_spec.update(initial_values)
 
@@ -103,14 +113,12 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
         self,
         global_params: GlobalParams,
     ) -> Float[Array, " n_basis"]:
-        log10_A = global_params.param_value(f"{self.prefix}log10_A")
-        gamma = global_params.param_value(f"{self.prefix}gamma")
-
         freqs = jnp.arange(1, self.n_components + 1) / self.T_span
-        df = 1.0 / self.T_span
-        psd = powerlaw_psd(freqs, log10_A, gamma) * df
-        # Each frequency has sin and cos basis functions with the same PSD
-        return jnp.repeat(psd, 2)
+        return self.spectrum.psd_weights(
+            freqs,
+            1.0 / self.T_span,
+            lambda s: global_params.param_value(f"{self.prefix}{s}"),
+        )
 
     def get_orf_matrix(self) -> Float[Array, "n_psr n_psr"]:
         return self._orf_matrix

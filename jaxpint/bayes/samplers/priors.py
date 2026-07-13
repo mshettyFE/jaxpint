@@ -42,6 +42,7 @@ import numpy as np
 import numpyro.distributions as dist
 
 if TYPE_CHECKING:
+    from jaxpint.pta.signals import FreeSpectrum
     from jaxpint.types import GlobalParams, ParameterVector
 
 
@@ -50,6 +51,7 @@ __all__ = [
     "PulsarBundle",
     "PRIOR_DEFAULTS",
     "noise_priors_simple",
+    "free_spectrum_priors",
     "distance_priors",
     "from_par_file",
     "cw_priors",
@@ -156,6 +158,8 @@ PRIOR_DEFAULTS: dict[str, _DistFactory] = {
     # Hellings-Downs gravitational-wave background.
     "gw_log10_A": lambda: dist.Uniform(-18.0, -11.0),
     "gw_gamma": lambda: dist.Uniform(0.0, 7.0),
+    # Free-spectrum per-bin RMS (seconds); range mirrors discovery
+    "log10_rho": lambda: dist.Uniform(-9.0, -4.0),
 }
 
 
@@ -188,6 +192,39 @@ def noise_priors_simple(
                 if key in defaults:
                     flat[f"{psr_name}_{key}"] = defaults[key]()
     return PriorSpec(flat)
+
+
+def free_spectrum_priors(
+    spectrum: Union[int, "FreeSpectrum"],
+    *,
+    prefix: str = "gwb_",
+    defaults: Mapping[str, _DistFactory] = PRIOR_DEFAULTS,
+) -> PriorSpec:
+    """Per-bin ``log10_rho`` priors for a free-spectrum common process.
+
+    Names match what :class:`~jaxpint.pta.signals.CURNInjector` /
+    :class:`~jaxpint.pta.signals.HDCorrelatedGWBInjector` register:
+    ``f"{prefix}log10_rho_{k}"``.  Pass the injector's
+    :class:`~jaxpint.pta.signals.FreeSpectrum` (names read from
+    ``param_names``, the source of truth) or a bare bin count.
+
+    Parameters
+    ----------
+    spectrum
+        The :class:`~jaxpint.pta.signals.FreeSpectrum` used by the
+        injector, or an ``int`` number of frequency bins.
+    prefix
+        The injector's ``GlobalParams`` prefix (default ``"gwb_"``).
+    defaults
+        Factory table; the ``"log10_rho"`` entry sets the per-bin prior
+        (default ``Uniform(-9, -4)``, discovery's range).
+    """
+    if isinstance(spectrum, int):
+        names: tuple[str, ...] = tuple(f"log10_rho_{k}" for k in range(spectrum))
+    else:
+        names = spectrum.param_names
+    factory = defaults["log10_rho"]
+    return PriorSpec({f"{prefix}{name}": factory() for name in names})
 
 
 # Polymorphic prior argument for distance_priors.
