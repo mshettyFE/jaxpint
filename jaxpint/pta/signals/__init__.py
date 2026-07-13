@@ -19,8 +19,18 @@ from jaxpint.pta.signals.gwb import (
 )
 from jaxpint.pta.signals.orf import dipole_orf, hd_orf, monopole_orf
 from jaxpint.pta.signals.correlated_gwb import HDCorrelatedGWBInjector
+from jaxpint.pta.signals.spectrum import (
+    BrokenPowerLawSpectrum,
+    FreeSpectrum,
+    PowerLawSpectrum,
+    SpectralModel,
+)
 
 __all__ = [
+    "SpectralModel",
+    "PowerLawSpectrum",
+    "BrokenPowerLawSpectrum",
+    "FreeSpectrum",
     "CW_PARAM_DEFAULTS",
     "CWInjector",
     "CWInjectorStack",

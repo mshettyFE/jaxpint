@@ -27,6 +27,11 @@ from jaxtyping import Array, Float
 
 from jaxpint.types import TOAData
 from jaxpint.pta.injectors import SignalInjector
+from jaxpint.pta.signals.spectrum import (
+    PowerLawSpectrum,
+    SpectralModel,
+    validate_spectrum_components,
+)
 
 # Year in seconds (NANOGrav convention)
 FYR: float = 1.0 / (365.25 * 86400.0)
@@ -173,8 +178,10 @@ class CURNInjector(SignalInjector):
     """Uncorrelated common red noise (CURN, Gamma = I) injector.
 
     Subclasses :class:`~jaxpint.pta.injectors.SignalInjector`.
-    Registers two global parameters (with *prefix*):
-    ``{prefix}log10_A`` and ``{prefix}gamma``.
+    Registers the spectrum's global parameters (with *prefix*): for the
+    default power law, ``{prefix}log10_A`` and ``{prefix}gamma``; for a
+    :class:`~jaxpint.pta.signals.spectrum.FreeSpectrum`,
+    ``{prefix}log10_rho_0 … log10_rho_{n-1}``.
 
     Parameters
     ----------
@@ -185,8 +192,11 @@ class CURNInjector(SignalInjector):
     prefix : str
         Naming prefix in :class:`GlobalParams`.
     initial_values : dict, optional
-        Override default initial values (keys must be in
-        ``CURN_PARAM_DEFAULTS``).
+        Override the spectrum's default initial values (keys must be
+        parameter suffixes of the spectrum).
+    spectrum : SpectralModel, optional
+        PSD model (default :class:`PowerLawSpectrum`).  Every spectrum
+        keeps ``Φ`` diagonal, so the Woodbury path is identical.
     """
 
     param_defaults = CURN_PARAM_DEFAULTS
@@ -197,18 +207,21 @@ class CURNInjector(SignalInjector):
         T_span: float,
         prefix: str = "gwb_",
         initial_values: Optional[dict[str, float]] = None,
+        spectrum: Optional[SpectralModel] = None,
     ):
         self.n_components = n_components
         self.T_span = T_span
         self.prefix = prefix
+        self.spectrum = PowerLawSpectrum() if spectrum is None else spectrum
+        validate_spectrum_components(self.spectrum, n_components)
 
-        self.param_spec: dict[str, float] = dict(CURN_PARAM_DEFAULTS)
+        self.param_spec: dict[str, float] = self.spectrum.param_defaults()
         if initial_values is not None:
-            unknown = set(initial_values) - set(CURN_PARAM_DEFAULTS)
+            unknown = set(initial_values) - set(self.param_spec)
             if unknown:
                 raise ValueError(
                     f"Unknown CURN parameters: {unknown}. "
-                    f"Valid parameters: {list(CURN_PARAM_DEFAULTS.keys())}"
+                    f"Valid parameters: {list(self.param_spec.keys())}"
                 )
             self.param_spec.update(initial_values)
 
@@ -255,6 +268,10 @@ class CURNInjector(SignalInjector):
         tuple of ((n_toas, 2*n_components) array, (2*n_components,) array)
             Fourier design matrix ``U`` and diagonal PSD vector ``Phi``.
         """
-        log10_A = global_params.param_value(f"{self.prefix}log10_A")
-        gamma = global_params.param_value(f"{self.prefix}gamma")
-        return gwb_covariance(toa_data, self.n_components, self.T_span, log10_A, gamma)
+        F, freqs = fourier_basis(toa_data.tdb_seconds, self.n_components, self.T_span)
+        Phi = self.spectrum.psd_weights(
+            freqs,
+            1.0 / self.T_span,
+            lambda s: global_params.param_value(f"{self.prefix}{s}"),
+        )
+        return F, Phi
