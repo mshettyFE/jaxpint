@@ -42,7 +42,14 @@ from jaxpint.frequentist.nulls import (
 )
 from jaxpint.frequentist.optimal import (
     OptimalStatistic,
+    gx2_cdf,
     optimal_statistic,
+    os_null_cdf,
+    os_quadratic_form,
+    phase_shift,
+    phase_shift_snrs,
+    sky_scramble,
+    sky_scramble_snrs,
 )
 from jaxpint.frequentist.sensitivity import (
     earth_term_gram,
@@ -77,4 +84,11 @@ __all__ = [
     # Optimal statistic (GWB cross-correlation detector)
     "optimal_statistic",
     "OptimalStatistic",
+    "sky_scramble",
+    "sky_scramble_snrs",
+    "phase_shift",
+    "phase_shift_snrs",
+    "os_quadratic_form",
+    "gx2_cdf",
+    "os_null_cdf",
 ]
