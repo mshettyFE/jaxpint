@@ -12,5 +12,6 @@ then dip into the API reference for specific components.
 
    loading_data
    pta_likelihood_flow
+   differentiable_fitting
    clock_data
    adding_a_component
