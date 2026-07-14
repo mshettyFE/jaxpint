@@ -189,11 +189,6 @@ def _load_one(
         planets=planets,
     )
     tm, nm = build_model(par_result, toa_data)
-    # Barycentered TOAs (enterprise's GP-basis time coordinate) need the delay
-    # chain, so they can only be attached after the model is built.  Evaluated
-    # at the par-file parameter values, matching enterprise's PintPulsar.
-    bary = tm.compute_barycentric_toas(toa_data, par_result.params)
-    toa_data = toa_data.with_bary_seconds(bary.int * 86400.0 + bary.frac * 86400.0)
     return PulsarRecord(
         name=name,
         toa_data=toa_data,

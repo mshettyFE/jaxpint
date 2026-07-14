@@ -176,7 +176,15 @@ def native_toas_to_jax(
     planets: Optional[bool] = None,
     limits: str = "warn",
 ) -> TOAData:
-    """Build a :class:`TOAData` natively from a ``.tim`` (+ optional ``.par``)."""
+    """Build a :class:`TOAData` natively from a ``.tim`` (+ optional ``.par``).
+
+    When *par_result* is supplied the returned TOAData is a *complete
+    producer* of the GP basis time coordinate, mirroring the bridge: it
+    carries barycentered TOAs in ``basis_seconds`` (``basis_coord =
+    "barycentric"``, the enterprise/discovery convention), evaluated at the
+    par-file parameter values.  Without a par there is no delay chain to
+    evaluate, so the field stays unset and any GP-component build raises.
+    """
     # Config: explicit args first, else from .par, else PINT-like defaults.
     md = par_result.metadata if par_result else {}
     bp = par_result.bool_params if par_result else {}
@@ -221,7 +229,7 @@ def native_toas_to_jax(
         )
     )
     tropo = None if par_result is None else _build_tropo_fields(core, par_result)
-    return _assemble(
+    toa_data = _assemble(
         core,
         freq,
         to_jnp,
@@ -230,6 +238,22 @@ def native_toas_to_jax(
         tzr=tzr,
         tropo=tropo,
     )
+
+    if par_result is not None:
+        # GP basis time coordinate: barycentered TOAs (see the docstring).
+        # Needs the delay chain, so build a TOA-independent timing model
+        # (TOA-dependent noise components are skipped) and evaluate the
+        # delays ahead of the binary component.  Stamped here — at
+        # production — so every downstream build_model precomputes its noise
+        # bases on the same coordinate the PTA injectors will use.
+        from jaxpint.model_builder import build_model
+
+        tm_only, _ = build_model(par_result, None)
+        bary = tm_only.compute_barycentric_toas(toa_data, par_result.params)
+        toa_data = toa_data.with_basis_seconds(
+            bary.int * 86400.0 + bary.frac * 86400.0, "barycentric"
+        )
+    return toa_data
 
 
 def _build_flag_masks(core, par_result: Optional[ParResult]) -> dict:

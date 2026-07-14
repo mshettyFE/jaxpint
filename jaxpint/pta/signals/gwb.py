@@ -139,7 +139,7 @@ def gwb_covariance(
     Parameters
     ----------
     toa_data : TOAData
-        Pulse time-of-arrival data (uses TDB times).
+        Pulse time-of-arrival data (basis built at ``basis_seconds``).
     n_components : int
         Number of Fourier frequency components.
     T_span : float
@@ -156,7 +156,7 @@ def gwb_covariance(
     Phi : (2 * n_components,) array
         PSD values for each basis function.
     """
-    toas_seconds = toa_data.tdb_seconds
+    toas_seconds = toa_data.require_basis_seconds()
     F, freqs = fourier_basis(toas_seconds, n_components, T_span)
     df = 1.0 / T_span
     psd = powerlaw_psd(freqs, log10_A, gamma) * df
@@ -268,7 +268,9 @@ class CURNInjector(SignalInjector):
         tuple of ((n_toas, 2*n_components) array, (2*n_components,) array)
             Fourier design matrix ``U`` and diagonal PSD vector ``Phi``.
         """
-        F, freqs = fourier_basis(toa_data.tdb_seconds, self.n_components, self.T_span)
+        F, freqs = fourier_basis(
+            toa_data.require_basis_seconds(), self.n_components, self.T_span
+        )
         Phi = self.spectrum.psd_weights(
             freqs,
             1.0 / self.T_span,
