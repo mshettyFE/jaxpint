@@ -44,22 +44,32 @@ References
 
 from __future__ import annotations
 
-from typing import Callable, NamedTuple
+from typing import Callable, NamedTuple, Optional
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import scipy.integrate
 from jax.typing import ArrayLike
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Int
 
 from jaxpint.frequentist.nulls import isotropic_positions
-from jaxpint.pta.likelihood import GWBlocks
+from jaxpint.pta.likelihood import GWBlocks, PTAConfig, per_pulsar_gw_blocks
 from jaxpint.pta.signals.orf import hd_orf
+from jaxpint.types import GlobalParams, ParameterVector
 
 __all__ = [
     "OptimalStatistic",
     "optimal_statistic",
+    # Per-pair correlations (HD-curve reconstruction)
+    "PairCorrelations",
+    "BinnedPairCorrelations",
+    "pair_correlations",
+    "combine_pair_correlations",
+    "pair_angles",
+    "bin_pair_correlations",
+    # Noise-marginalized OS (Vigeland et al. 2018)
+    "noise_marginalized_os",
     # Empirical null distributions
     "sky_scramble",
     "sky_scramble_snrs",
@@ -88,7 +98,62 @@ class OptimalStatistic(NamedTuple):
 
     a_squared: Float[Array, ""]
     a_squared_sigma: Float[Array, ""]
-    snr: Float[Array, ""]
+    snr: Float[Array, ""]  # NOTE: Should this be a derived, cached quantity instead?
+
+
+class PairCorrelations(NamedTuple):
+    """Per-pulsar-pair cross-correlation estimates behind the OS.
+
+    The pair-level view the scalar :class:`OptimalStatistic` collapses:
+    each unordered pair ``a < b`` contributes an estimate ``rho_ab`` of
+    the ORF-weighted correlated power ``Â² Γ_ab`` with uncertainty
+    ``sigma_ab``.  These are the ingredients of the Hellings-Downs
+    reconstruction plot (``rho`` vs. angular separation, cf.
+    :func:`pair_angles` / :func:`bin_pair_correlations`) and recombine
+    exactly into the OS via :func:`combine_pair_correlations`.
+
+    Attributes
+    ----------
+    pulsar_a, pulsar_b : (n_pairs,) int arrays
+        Pulsar indices of each unordered pair, ``pulsar_a < pulsar_b``,
+        in ``jnp.triu_indices`` order (the order every per-pair quantity
+        in this module uses).
+    rho : (n_pairs,) array
+        Pair cross-correlation estimate; ``E[rho_ab] = Â² Γ_ab``.
+    sigma : (n_pairs,) array
+        1σ uncertainty of ``rho_ab`` under the null.
+    orf : (n_pairs,) array
+        ORF weights ``Γ_ab`` used in the OS combination.
+    """
+
+    pulsar_a: Int[Array, " n_pairs"]
+    pulsar_b: Int[Array, " n_pairs"]
+    rho: Float[Array, " n_pairs"]
+    sigma: Float[Array, " n_pairs"]
+    orf: Float[Array, " n_pairs"]
+
+
+class BinnedPairCorrelations(NamedTuple):
+    """Inverse-variance-weighted pair correlations in angular-separation bins.
+
+    Empty bins carry ``rho = angle = nan``, ``sigma = inf``, ``n_pairs = 0``.
+
+    Attributes
+    ----------
+    angle : (n_bins,) array
+        Weighted mean angular separation of the pairs in each bin (radians).
+    rho : (n_bins,) array
+        Weighted mean ``rho_ab`` per bin (``E[rho] = Â² Γ(angle)``).
+    sigma : (n_bins,) array
+        1σ uncertainty of the bin mean, ``1/√(Σ 1/σ_ab²)``.
+    n_pairs : (n_bins,) int array
+        Number of pairs in each bin.
+    """
+
+    angle: Float[Array, " n_bins"]
+    rho: Float[Array, " n_bins"]
+    sigma: Float[Array, " n_bins"]
+    n_pairs: Int[Array, " n_bins"]
 
 
 # ---------------------------------------------------------------------------
@@ -150,15 +215,20 @@ def _orf_pairs_from_positions(
     return jax.vmap(lambda a, b: orf_func(positions[a], positions[b]))(ia, ib)
 
 
-def _combine(ts: Array, bs: Array, orf_pairs: Array, gwnorm: Array) -> OptimalStatistic:
-    """OS combination from per-pair ``ts``, ``bs``, ORF weights and ``gwnorm``."""
-    rho = gwnorm * ts / bs
-    sigma = gwnorm / jnp.sqrt(bs)
+def _combine_pairs(rho: Array, sigma: Array, orf_pairs: Array) -> OptimalStatistic:
+    """Weighted-least-squares OS combination from pair-level ``rho``/``sigma``."""
     inv_var = 1.0 / sigma**2
     denom = jnp.sum(orf_pairs**2 * inv_var)
     a_squared = jnp.sum(rho * orf_pairs * inv_var) / denom
     a_squared_sigma = 1.0 / jnp.sqrt(denom)
     return OptimalStatistic(a_squared, a_squared_sigma, a_squared / a_squared_sigma)
+
+
+def _combine(ts: Array, bs: Array, orf_pairs: Array, gwnorm: Array) -> OptimalStatistic:
+    """OS combination from per-pair ``ts``, ``bs``, ORF weights and ``gwnorm``."""
+    rho = gwnorm * ts / bs
+    sigma = gwnorm / jnp.sqrt(bs)
+    return _combine_pairs(rho, sigma, orf_pairs)
 
 
 def optimal_statistic(blocks: GWBlocks, log10_A: ArrayLike) -> OptimalStatistic:
@@ -183,6 +253,174 @@ def optimal_statistic(blocks: GWBlocks, log10_A: ArrayLike) -> OptimalStatistic:
     ts, bs, ia, ib = _real_pair_products(blocks)
     gwnorm = 10.0 ** (2.0 * jnp.asarray(log10_A))
     return _combine(ts, bs, blocks.orf_matrix[ia, ib], gwnorm)
+
+
+# ---------------------------------------------------------------------------
+# Per-pair correlations (HD-curve reconstruction)
+# ---------------------------------------------------------------------------
+
+
+def pair_correlations(blocks: GWBlocks, log10_A: ArrayLike) -> PairCorrelations:
+    """Per-pair cross-correlation estimates ``rho_ab ± sigma_ab``.
+
+    The pair-level view of :func:`optimal_statistic` — same inputs, same
+    internals, but without the final weighted-least-squares collapse.
+    ``combine_pair_correlations(pair_correlations(blocks, A))`` reproduces
+    ``optimal_statistic(blocks, A)`` exactly.
+
+    Pure and ``jit``/``vmap``-friendly; vmap over noise draws for the
+    pair-level noise-marginalized correlations.
+
+    Returns
+    -------
+    PairCorrelations
+        Pair indices, ``rho``, ``sigma`` and the ORF weights, in
+        ``jnp.triu_indices`` pair order.
+    """
+    ts, bs, ia, ib = _real_pair_products(blocks)
+    gwnorm = 10.0 ** (2.0 * jnp.asarray(log10_A))
+    rho = gwnorm * ts / bs
+    sigma = gwnorm / jnp.sqrt(bs)
+    return PairCorrelations(ia, ib, rho, sigma, blocks.orf_matrix[ia, ib])
+
+
+def combine_pair_correlations(pairs: PairCorrelations) -> OptimalStatistic:
+    """Collapse :class:`PairCorrelations` into the scalar OS.
+
+    The ORF-weighted least-squares fit ``rho_ab ≈ Â² Γ_ab`` with weights
+    ``1/σ_ab²`` — exactly the combination inside :func:`optimal_statistic`.
+    """
+    return _combine_pairs(pairs.rho, pairs.sigma, pairs.orf)
+
+
+def pair_angles(positions: Float[Array, "n_psr 3"]) -> Float[Array, " n_pairs"]:
+    """Angular separation ``ξ_ab`` (radians) per pulsar pair.
+
+    Pair order matches :class:`PairCorrelations` (``jnp.triu_indices``).
+    ``positions`` are unit vectors, e.g. the ones the ORF matrix was built
+    from.
+    """
+    ia, ib = _pair_indices(positions.shape[0])
+    cos_xi = jnp.sum(positions[ia] * positions[ib], axis=1)
+    return jnp.arccos(jnp.clip(cos_xi, -1.0, 1.0))
+
+
+def bin_pair_correlations(
+    angles: Float[Array, " n_pairs"],
+    pairs: PairCorrelations,
+    n_bins: int = 10,
+) -> BinnedPairCorrelations:
+    """Inverse-variance-weighted ``rho`` in equal-width angular bins.
+
+    The standard Hellings-Downs reconstruction binning: pairs are grouped
+    by separation into ``n_bins`` equal-width bins over ``[0, π]`` and
+    averaged with weights ``1/σ_ab²``, so each bin estimates
+    ``Â² Γ(ξ_bin)``.  Empty bins return ``nan`` (``inf`` sigma).
+
+    Parameters
+    ----------
+    angles : (n_pairs,) array
+        Pair separations in radians, in :class:`PairCorrelations` order
+        (from :func:`pair_angles`).
+    pairs : PairCorrelations
+        Per-pair estimates, e.g. from :func:`pair_correlations` (or a
+        draw-averaged version of them).
+    n_bins : int
+        Number of equal-width bins over ``[0, π]``.
+    """
+    edges = jnp.linspace(0.0, jnp.pi, n_bins + 1)
+    # searchsorted(right) - 1 maps ξ ∈ [edge_i, edge_{i+1}) to bin i; the
+    # clip keeps ξ = π (and any float spill) in the last bin.
+    idx = jnp.clip(jnp.searchsorted(edges, angles, side="right") - 1, 0, n_bins - 1)
+    w = 1.0 / pairs.sigma**2
+    w_sum = jax.ops.segment_sum(w, idx, num_segments=n_bins)
+    rho_bin = jax.ops.segment_sum(w * pairs.rho, idx, num_segments=n_bins) / w_sum
+    angle_bin = jax.ops.segment_sum(w * angles, idx, num_segments=n_bins) / w_sum
+    count = jax.ops.segment_sum(jnp.ones_like(idx), idx, num_segments=n_bins)
+    return BinnedPairCorrelations(angle_bin, rho_bin, 1.0 / jnp.sqrt(w_sum), count)
+
+
+# ---------------------------------------------------------------------------
+# Noise-marginalized OS (Vigeland et al. 2018)
+# ---------------------------------------------------------------------------
+
+
+def noise_marginalized_os(
+    global_draws: GlobalParams,
+    pulsar_draws: tuple[ParameterVector, ...],
+    config: PTAConfig,
+    *,
+    log10_A_name: Optional[str] = None,
+    batch_size: Optional[int] = None,
+) -> OptimalStatistic:
+    """Noise-marginalized OS: one OS evaluation per posterior noise draw.
+
+    The NMOS of [os_v18]_: instead of fixing the noise parameters at a
+    point estimate, evaluate the OS at each draw from a (Bayesian) noise
+    posterior and report the resulting ``Â²`` / SNR *distributions*.  Each
+    draw rebuilds the per-pulsar blocks (``kv``, ``km``, ``Φ``) at that
+    draw's parameters — the GWB amplitude of the draw sets both the PSD
+    weighting and the OS normalization ``gwnorm``.
+
+    Build the batched containers from chain arrays with ``with_values``::
+
+        gp_draws = global_params.with_values(gvals)        # (n_draws, n_global)
+        pp_draws = tuple(
+            pp.with_values(vals_p)                         # (n_draws, n_params_p)
+            for pp, vals_p in zip(pulsar_params, chain_values)
+        )
+        nmos = noise_marginalized_os(gp_draws, pp_draws, config)
+
+    Parameters
+    ----------
+    global_draws : GlobalParams
+        Global parameters with a leading draw axis on ``values``,
+        shape ``(n_draws, n_global)``.
+    pulsar_draws : tuple of ParameterVector
+        Per-pulsar parameters, each with ``values`` of shape
+        ``(n_draws, n_params_p)``.  Draw ``i`` across all pulsars and the
+        globals must come from the same posterior sample.
+    config : PTAConfig
+        As for :func:`jaxpint.pta.per_pulsar_gw_blocks` (exactly one
+        correlated injector).
+    log10_A_name : str, optional
+        Name of the GWB log-amplitude in ``global_draws``.  Defaults to
+        ``"{prefix}log10_A"`` of the correlated injector.
+    batch_size : int, optional
+        If given, evaluate draws in sequential chunks of this size
+        (``jax.lax.map``) instead of one fully-vectorized ``jax.vmap`` —
+        the memory/speed knob for large arrays × many draws.
+
+    Returns
+    -------
+    OptimalStatistic
+        With each field shaped ``(n_draws,)``.
+    """
+    cinjs = config.correlated_injectors
+    if len(cinjs) != 1:
+        raise ValueError(
+            "noise_marginalized_os requires exactly one correlated injector "
+            f"(the single-component optimal statistic); got {len(cinjs)}."
+        )
+    if log10_A_name is None:
+        prefix = getattr(cinjs[0], "prefix", None)
+        if prefix is None:
+            raise ValueError(
+                "correlated injector has no 'prefix' attribute; pass "
+                "log10_A_name explicitly."
+            )
+        log10_A_name = f"{prefix}log10_A"
+
+    def one(gp: GlobalParams, pps: tuple[ParameterVector, ...]) -> OptimalStatistic:
+        blocks = per_pulsar_gw_blocks(gp, pps, config)
+        return optimal_statistic(blocks, gp.param_value(log10_A_name))
+
+    pulsar_draws = tuple(pulsar_draws)
+    if batch_size is None:
+        return jax.vmap(one)(global_draws, pulsar_draws)
+    return jax.lax.map(
+        lambda args: one(*args), (global_draws, pulsar_draws), batch_size=batch_size
+    )
 
 
 def sky_scramble(
