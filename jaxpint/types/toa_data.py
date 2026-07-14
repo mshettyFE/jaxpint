@@ -28,9 +28,7 @@ class TOAData(eqx.Module):
         tdb_int, tdb_frac:      days (TDB timescale, same split)
         error:                  seconds
         freq:                   MHz (barycentric, Doppler-corrected)
-        basis_seconds:          seconds (GP basis time coordinate; which
-                                coordinate is declared by basis_coord —
-                                see the field docs)
+        basis_seconds:          seconds (GP basis times; see basis_coord)
         ssb_obs_pos:            km,   shape (n_toas, 3)
         ssb_obs_vel:            km/s, shape (n_toas, 3)
         obs_sun_pos:            km,   shape (n_toas, 3)

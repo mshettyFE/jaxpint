@@ -86,6 +86,12 @@ nitpick_ignore_regex: list[tuple[str, str]] = [
     ("py:class", r"Float\s*"),  # bare jaxtyping Float
     ("py:class", r"Float\[.*"),  # ``Float[Array, ...]`` tokenizes as ``Float[Array``
     ("py:class", r".* array\s*"),  # ``(n_toas, n_basis) array`` etc.
+    # Bare dimension names from single-dimension jaxtyping shapes on
+    # NamedTuple fields (e.g. ``Float[Array, " n_basis"]`` on GWBlocks.psd —
+    # unlike eqx.Module fields, NamedTuple attributes are autodoc'd with
+    # their annotations, and a lone dimension token has no punctuation for
+    # the patterns above to catch).
+    ("py:class", r"n_\w+\s*"),
     # Project-internal types referenced by bare name in docstrings
     ("py:class", r"ParameterVector\s*"),
     ("py:class", r"TOAData\s*"),
@@ -110,6 +116,13 @@ nitpick_ignore_regex: list[tuple[str, str]] = [
 napoleon_google_docstring = False
 napoleon_numpy_docstring = True
 napoleon_use_param = True
+# Render docstring ``Attributes`` sections as a variables field list (:ivar:)
+# instead of ``.. attribute::`` directives.  The directives declare indexable
+# objects, which collide with autodoc's own member documentation on NamedTuple
+# classes (GWBlocks, OptimalStatistic, ...) — every tuple field was documented
+# twice, producing "duplicate object description" warnings that fail the -W
+# docs gate.
+napoleon_use_ivar = True
 napoleon_use_rtype = True
 napoleon_preprocess_types = True
 napoleon_attr_annotations = True

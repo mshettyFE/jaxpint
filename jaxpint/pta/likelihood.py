@@ -784,11 +784,11 @@ class GWBlocks(NamedTuple):
     """Per-pulsar GW-basis projections plus shared spectrum/ORF.
 
     The canonical block producer the optimal statistic
-    (:mod:`jaxpint.frequentist.optimal`) and the correlated :func:`pta_logL`
+    (:mod:`jaxpint.frequentist`) and the correlated :func:`pta_logL`
     inner tier share.  For pulsar ``p`` with per-pulsar noise covariance
     ``C_p`` (white + red + ecorr + timing, **excluding** the correlated GWB)
     and the GWB Fourier basis ``F_p``, these are the same objects
-    :func:`_per_pulsar_intermediates` returns, stacked across pulsars.
+    ``_per_pulsar_intermediates`` returns, stacked across pulsars.
 
     Attributes
     ----------
@@ -819,7 +819,7 @@ def per_pulsar_gw_blocks(
     """Per-pulsar GW-basis blocks ``(kv, km)`` plus shared ``Φ``, ``Γ``.
 
     Reuses the inner-tier machinery of the correlated :func:`pta_logL`
-    (:func:`_per_pulsar_intermediates`) so the blocks match those the
+    (``_per_pulsar_intermediates``) so the blocks match those the
     correlated likelihood consumes (``km`` is additionally symmetrized; see
     :class:`GWBlocks`).  For each pulsar it forms
     ``kv_p = F_pᵀ C_p⁻¹ r_p`` and ``km_p = F_pᵀ C_p⁻¹ F_p``, where ``C_p`` is
