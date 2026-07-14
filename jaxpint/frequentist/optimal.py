@@ -234,11 +234,12 @@ def _combine(ts: Array, bs: Array, orf_pairs: Array, gwnorm: Array) -> OptimalSt
 def optimal_statistic(blocks: GWBlocks, log10_A: ArrayLike) -> OptimalStatistic:
     """Single-component optimal statistic from per-pulsar GW blocks.
 
-    A pure, ``jit``/``vmap``-friendly contraction of :class:`GWBlocks`;
+    A pure, ``jit``/``vmap``-friendly contraction of
+    :class:`~jaxpint.pta.GWBlocks`;
 
     Parameters
     ----------
-    blocks : GWBlocks
+    blocks : ~jaxpint.pta.GWBlocks
         Per-pulsar ``(kv, km)`` plus shared PSD and ORF from
         :func:`jaxpint.pta.per_pulsar_gw_blocks`.
     log10_A : scalar
@@ -380,7 +381,7 @@ def noise_marginalized_os(
         Per-pulsar parameters, each with ``values`` of shape
         ``(n_draws, n_params_p)``.  Draw ``i`` across all pulsars and the
         globals must come from the same posterior sample.
-    config : PTAConfig
+    config : ~jaxpint.pta.PTAConfig
         As for :func:`jaxpint.pta.per_pulsar_gw_blocks` (exactly one
         correlated injector).
     log10_A_name : str, optional
@@ -395,6 +396,13 @@ def noise_marginalized_os(
     -------
     OptimalStatistic
         With each field shaped ``(n_draws,)``.
+
+    References
+    ----------
+    .. [os_v18] Vigeland, Islo, Taylor & Ellis (2018), "Noise-marginalized
+       optimal statistic: A robust hybrid frequentist-Bayesian statistic for
+       the stochastic gravitational-wave background in pulsar timing arrays",
+       PRD 98, 044003.
     """
     cinjs = config.correlated_injectors
     if len(cinjs) != 1:

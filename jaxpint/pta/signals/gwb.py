@@ -180,7 +180,7 @@ class CURNInjector(SignalInjector):
     Subclasses :class:`~jaxpint.pta.injectors.SignalInjector`.
     Registers the spectrum's global parameters (with *prefix*): for the
     default power law, ``{prefix}log10_A`` and ``{prefix}gamma``; for a
-    :class:`~jaxpint.pta.signals.spectrum.FreeSpectrum`,
+    :class:`~jaxpint.pta.FreeSpectrum`,
     ``{prefix}log10_rho_0 … log10_rho_{n-1}``.
 
     Parameters
@@ -194,8 +194,8 @@ class CURNInjector(SignalInjector):
     initial_values : dict, optional
         Override the spectrum's default initial values (keys must be
         parameter suffixes of the spectrum).
-    spectrum : SpectralModel, optional
-        PSD model (default :class:`PowerLawSpectrum`).  Every spectrum
+    spectrum : ~jaxpint.pta.SpectralModel, optional
+        PSD model (default :class:`~jaxpint.pta.PowerLawSpectrum`).  Every spectrum
         keeps ``Φ`` diagonal, so the Woodbury path is identical.
     """
 
