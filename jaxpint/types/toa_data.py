@@ -22,6 +22,7 @@ class TOAData(eqx.Module):
         tdb_int, tdb_frac:      days (TDB timescale, same split)
         error:                  seconds
         freq:                   MHz (barycentric, Doppler-corrected)
+        bary_seconds:           seconds (barycentered TOAs, see field docs)
         ssb_obs_pos:            km,   shape (n_toas, 3)
         ssb_obs_vel:            km/s, shape (n_toas, 3)
         obs_sun_pos:            km,   shape (n_toas, 3)
@@ -95,6 +96,14 @@ class TOAData(eqx.Module):
         default=None
     )
 
+    # Barycentered TOAs in seconds: TDB minus every delay ahead of the binary
+    # component (solar-system Roemer/Shapiro, dispersion, ...), Used by enterprise;
+    #   bridge  -- PINT ``model.get_barycentric_toas(toas)``;
+    #   native  -- ``TimingModel.compute_barycentric_toas`` after model build
+    #              (see ``with_bary_seconds``).
+    # None when no model was available at conversion time.
+    bary_seconds: Optional[Float[Array, " n_toas"]] = eqx.field(default=None)
+
     # -- Derived timestamps --
 
     @property
@@ -116,6 +125,15 @@ class TOAData(eqx.Module):
         For us computations, this is fine.
         """
         return self.tdb_int * 86400.0 + self.tdb_frac * 86400.0
+
+    def with_bary_seconds(self, bary_seconds: Float[Array, " n_toas"]) -> "TOAData":
+        """Return a copy with ``bary_seconds`` set (see the field docs)."""
+        return eqx.tree_at(
+            lambda td: td.bary_seconds,
+            self,
+            jnp.asarray(bary_seconds, dtype=jnp.float64),
+            is_leaf=lambda x: x is None,
+        )
 
     # -- Flag masks --
 

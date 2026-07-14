@@ -333,6 +333,16 @@ def pint_toas_to_jax(
             obs_geodetic_lat = lat_arr
             obs_height_km = height_arr
 
+    # -- Barycentered TOAs ---------------------------------------------------
+    # Same computation (and float64 truncation point) as enterprise's
+    # PintPulsar: longdouble days from PINT, cast, then scaled to seconds.
+    # Model-dependent, so only available when a model was supplied.
+    bary_seconds = None
+    if model is not None:
+        bary_seconds = (
+            np.array(model.get_barycentric_toas(toas).value, dtype=np.float64) * 86400.0
+        )
+
     # -- TZR TOA for absolute phase -----------------------------------------
     tzr_tdb_int = None
     tzr_tdb_frac = None
@@ -394,4 +404,5 @@ def pint_toas_to_jax(
         tzr_planet_positions=tzr_planet_positions,
         n_toas=n_toas,
         obs_names=obs_names,
+        bary_seconds=to_jnp(bary_seconds) if bary_seconds is not None else None,
     )
