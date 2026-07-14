@@ -333,13 +333,12 @@ def pint_toas_to_jax(
             obs_geodetic_lat = lat_arr
             obs_height_km = height_arr
 
-    # -- Barycentered TOAs ---------------------------------------------------
-    # Same computation (and float64 truncation point) as enterprise's
-    # PintPulsar: longdouble days from PINT, cast, then scaled to seconds.
-    # Model-dependent, so only available when a model was supplied.
-    bary_seconds = None
+    # -- GP basis time coordinate: barycentered TOAs -------------------------
+    # Model-dependent, so left unset when no model was supplied — building GP
+    # noise components from such a TOAData raises rather than guessing.
+    basis_seconds = None
     if model is not None:
-        bary_seconds = (
+        basis_seconds = (
             np.array(model.get_barycentric_toas(toas).value, dtype=np.float64) * 86400.0
         )
 
@@ -404,5 +403,6 @@ def pint_toas_to_jax(
         tzr_planet_positions=tzr_planet_positions,
         n_toas=n_toas,
         obs_names=obs_names,
-        bary_seconds=to_jnp(bary_seconds) if bary_seconds is not None else None,
+        basis_seconds=to_jnp(basis_seconds) if basis_seconds is not None else None,
+        basis_coord="barycentric" if basis_seconds is not None else None,
     )

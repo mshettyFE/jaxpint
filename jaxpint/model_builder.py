@@ -84,20 +84,23 @@ def _resolve_astrometry(par: ParResult):
     return raj, decj, pmra, pmdec, posepoch, obliquity_arcsec
 
 
-def _tdb_seconds(toa_data) -> np.ndarray:
-    """Per-TOA TDB time in seconds (``(tdb_int + tdb_frac) * 86400``)."""
-    return (
-        np.asarray(toa_data.tdb_int) * 86400.0 + np.asarray(toa_data.tdb_frac) * 86400.0
-    )
+def _basis_seconds(toa_data) -> np.ndarray:
+    """Time coordinate for GP bases / ECORR quantization, as float64 numpy.
+
+    Raises when the producer of the TOAData never chose one — see
+    :attr:`jaxpint.types.TOAData.basis_seconds` for the conventions.
+    """
+    return np.asarray(toa_data.require_basis_seconds(), dtype=np.float64)
 
 
-def _span_seconds(par: ParResult, tdb_s, tspan_param: Optional[str] = None) -> float:
+def _span_seconds(par: ParResult, basis_s, tspan_param: Optional[str] = None) -> float:
     """Observation span in seconds.
 
-    The default is ``max - min`` of the TDB times; an explicit ``T...TSPAN``
-    parameter (in days), when present, overrides it (matches PINT).
+    The default is ``max - min`` of the supplied basis times; an explicit
+    ``T...TSPAN`` parameter (in days), when present, overrides it (matches
+    PINT / enterprise's per-pulsar-span default).
     """
-    T = float(np.max(tdb_s) - np.min(tdb_s))
+    T = float(np.max(basis_s) - np.min(basis_s))
     if tspan_param is not None and (tspan_param in par.params):
         tspan_days = _value(par, tspan_param)
         T = tspan_days * 86400.0
@@ -741,7 +744,7 @@ def _build_ecorr(ctx: BuildContext):
     toa_data = ctx.toa_data
     ecorr_names = tuple(sorted(n for n in par.params.names if n.startswith("ECORR")))
     if toa_data is not None and len(ecorr_names) > 0:
-        tdb_s = _tdb_seconds(toa_data)
+        basis_s = _basis_seconds(toa_data)
         # Missing mask -> all-False (this ECORR group selects no TOAs); the
         # build-time _validate_flag_masks check flags genuinely-absent masks.
         ecorr_masks = {
@@ -749,7 +752,7 @@ def _build_ecorr(ctx: BuildContext):
             for ename in ecorr_names
         }
 
-        U, eslices = _build_quantization_matrix(tdb_s, ecorr_masks)
+        U, eslices = _build_quantization_matrix(basis_s, ecorr_masks)
         ecorr_epoch_slices = tuple(eslices[n] for n in ecorr_names)
         return EcorrNoise(
             ecorr_names=ecorr_names,
@@ -769,11 +772,11 @@ def _build_pl_red_noise(ctx: BuildContext):
     toa_data = ctx.toa_data
     if toa_data is None:
         return None
-    tdb_s = _tdb_seconds(toa_data)
+    basis_s = _basis_seconds(toa_data)
     n_freqs = par.int_params.get("TNREDC", 30)
-    T = _span_seconds(par, tdb_s, "TNREDTSPAN")
+    T = _span_seconds(par, basis_s, "TNREDTSPAN")
 
-    F, freqs, freq_bin_widths = build_fourier_basis(tdb_s, n_freqs, T)
+    F, freqs, freq_bin_widths = build_fourier_basis(basis_s, n_freqs, T)
     return PLRedNoise(
         fourier_basis=jnp.asarray(F),
         freqs=jnp.asarray(freqs),
@@ -791,11 +794,11 @@ def _build_pl_dm_noise(ctx: BuildContext):
     toa_data = ctx.toa_data
     if toa_data is None:
         return None
-    tdb_s = _tdb_seconds(toa_data)
+    basis_s = _basis_seconds(toa_data)
     n_freqs = par.int_params.get("TNDMC", 30)
-    T = _span_seconds(par, tdb_s, "TNDMTSPAN")
+    T = _span_seconds(par, basis_s, "TNDMTSPAN")
 
-    F, freqs, freq_bin_widths = build_fourier_basis(tdb_s, n_freqs, T)
+    F, freqs, freq_bin_widths = build_fourier_basis(basis_s, n_freqs, T)
 
     bary_freqs_mhz = np.asarray(toa_data.freq)
     D = (1400.0 / bary_freqs_mhz) ** 2
@@ -818,11 +821,11 @@ def _build_pl_chrom_noise(ctx: BuildContext):
     toa_data = ctx.toa_data
     if toa_data is None:
         return None
-    tdb_s = _tdb_seconds(toa_data)
+    basis_s = _basis_seconds(toa_data)
     n_freqs = par.int_params.get("TNCHROMC", 30)
-    T = _span_seconds(par, tdb_s, "TNCHROMTSPAN")
+    T = _span_seconds(par, basis_s, "TNCHROMTSPAN")
 
-    F, freqs, freq_bin_widths = build_fourier_basis(tdb_s, n_freqs, T)
+    F, freqs, freq_bin_widths = build_fourier_basis(basis_s, n_freqs, T)
 
     return PLChromNoise(
         fourier_basis=jnp.asarray(F),
@@ -843,11 +846,11 @@ def _build_pl_sw_noise(ctx: BuildContext):
     toa_data = ctx.toa_data
     if toa_data is None:
         return None
-    tdb_s = _tdb_seconds(toa_data)
+    basis_s = _basis_seconds(toa_data)
     n_freqs = par.int_params.get("TNSWC", 100)
-    T = _span_seconds(par, tdb_s)
+    T = _span_seconds(par, basis_s)
 
-    F, freqs, freq_bin_widths = build_fourier_basis(tdb_s, n_freqs, T)
+    F, freqs, freq_bin_widths = build_fourier_basis(basis_s, n_freqs, T)
 
     swm = par.int_params.get("SWM", 0)
     swp_name = "SWP" if swm == 1 else None

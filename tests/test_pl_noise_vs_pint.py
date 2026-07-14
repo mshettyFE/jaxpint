@@ -4,6 +4,16 @@ Each test creates a PINT model with the relevant noise parameters,
 calls PINT's ``get_noise_basis()`` and ``get_noise_weights()`` methods,
 then converts via the bridge and checks that JaxPINT produces matching
 basis matrices and PSD weights.
+
+Time-coordinate note: on real data JaxPINT's GP bases follow the
+enterprise/discovery convention (barycentered TOAs in
+``TOAData.basis_seconds``) while PINT builds its noise bases at TDB — the two
+differ by the differential Roemer delay (~+-500 s over a year), far above
+these tests' tolerances.  The tests therefore build through
+:func:`_build_tdb_model`, which sets ``basis_seconds`` to TDB explicitly so
+the *pure math* is compared against PINT at PINT's own time coordinate.  The
+barycentric wiring itself is validated in tests/test_bary_toas.py and,
+against enterprise, in tests/enterprise_checks/ (TBD).
 """
 
 from __future__ import annotations
@@ -28,6 +38,21 @@ def _find_correlated(noise_model, cls):
     comp = next((c for c in noise_model.correlated if isinstance(c, cls)), None)
     assert comp is not None, f"{cls.__name__} not found in JaxPINT noise model"
     return comp
+
+
+def _build_tdb_model(pint_model, toas):
+    """``build_timing_model`` with ``basis_seconds`` explicitly set to TDB.
+
+    Overrides the bridge's barycentered default so the noise bases are
+    evaluated at the same times PINT uses (see the module docstring).
+    """
+    from jaxpint.bridge import pint_model_to_params, pint_toas_to_jax
+    from jaxpint.model_builder import build_model
+
+    par = pint_model_to_params(pint_model)
+    toa_data = pint_toas_to_jax(toas, model=pint_model)
+    toa_data = toa_data.with_basis_seconds(toa_data.tdb_seconds, "tdb")
+    return build_model(par, toa_data)
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +233,6 @@ class TestPLRedNoiseVsPINT:
         PINT uses long-double TOA times for the Fourier basis while
         JaxPINT uses float64, so we allow ~1e-5 relative tolerance.
         """
-        from jaxpint.bridge import build_timing_model
 
         pint_model, toas = plred_pint_model
 
@@ -219,7 +243,7 @@ class TestPLRedNoiseVsPINT:
         pint_basis = plred_comp.get_noise_basis(toas)
 
         # JaxPINT via bridge
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
         assert noise_model.has_correlated
 
         # Find PLRedNoise component
@@ -237,14 +261,14 @@ class TestPLRedNoiseVsPINT:
     @pytest.mark.slow
     def test_red_noise_weights_match_pint(self, plred_pint_model):
         """JaxPINT PSD weights match PINT's get_noise_weights()."""
-        from jaxpint.bridge import build_timing_model, pint_model_to_params
+        from jaxpint.bridge import pint_model_to_params
 
         pint_model, toas = plred_pint_model
 
         plred_comp = pint_model.components.get("PLRedNoise")
         pint_weights = plred_comp.get_noise_weights(toas)
 
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.red_noise import PLRedNoise
@@ -261,7 +285,7 @@ class TestPLRedNoiseVsPINT:
     @pytest.mark.slow
     def test_red_noise_covariance_matches_pint(self, plred_pint_model):
         """JaxPINT full covariance F @ diag(w) @ F.T matches PINT."""
-        from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params
+        from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params
 
         pint_model, toas = plred_pint_model
 
@@ -269,7 +293,7 @@ class TestPLRedNoiseVsPINT:
         pint_basis, pint_weights = plred_comp.pl_rn_basis_weight_pair(toas)
         pint_cov = pint_basis * pint_weights[None, :] @ pint_basis.T
 
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model).params
 
@@ -300,7 +324,6 @@ class TestPLDMNoiseVsPINT:
 
         Allows ~1e-5 rtol due to long-double vs float64 time precision.
         """
-        from jaxpint.bridge import build_timing_model
 
         pint_model, toas = pldm_pint_model
 
@@ -309,7 +332,7 @@ class TestPLDMNoiseVsPINT:
             pytest.skip("No PLDMNoise in test model")
         pint_basis = pldm_comp.get_noise_basis(toas)
 
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
 
         from jaxpint.noise.dm_noise import PLDMNoise
         pldm_jax = _find_correlated(noise_model, PLDMNoise)
@@ -325,14 +348,14 @@ class TestPLDMNoiseVsPINT:
     @pytest.mark.slow
     def test_dm_noise_weights_match_pint(self, pldm_pint_model):
         """JaxPINT PSD weights match PINT's get_noise_weights()."""
-        from jaxpint.bridge import build_timing_model, pint_model_to_params
+        from jaxpint.bridge import pint_model_to_params
 
         pint_model, toas = pldm_pint_model
 
         pldm_comp = pint_model.components.get("PLDMNoise")
         pint_weights = pldm_comp.get_noise_weights(toas)
 
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.dm_noise import PLDMNoise
@@ -349,14 +372,14 @@ class TestPLDMNoiseVsPINT:
     @pytest.mark.slow
     def test_dm_noise_covariance_matches_pint(self, pldm_pint_model):
         """Full DM noise covariance matches PINT's pl_dm_cov_matrix()."""
-        from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params
+        from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params
 
         pint_model, toas = pldm_pint_model
 
         pldm_comp = pint_model.components.get("PLDMNoise")
         pint_cov = pldm_comp.pl_dm_cov_matrix(toas)
 
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model).params
 
@@ -379,10 +402,9 @@ class TestPLDMNoiseVsPINT:
         (1400/820)^2 ≈ 2.91, so the ratio of basis column norms should
         reflect this DM frequency scaling.
         """
-        from jaxpint.bridge import build_timing_model
 
         pint_model, toas = pldm_pint_model
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
 
         from jaxpint.noise.dm_noise import PLDMNoise
         pldm_jax = _find_correlated(noise_model, PLDMNoise)
@@ -421,7 +443,7 @@ class TestPLChromNoiseVsPINT:
 
         Allows ~1e-5 rtol due to long-double vs float64 time precision.
         """
-        from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params
+        from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params
 
         pint_model, toas = plchrom_pint_model
 
@@ -430,7 +452,7 @@ class TestPLChromNoiseVsPINT:
             pytest.skip("No PLChromNoise in test model")
         pint_basis = plchrom_comp.get_noise_basis(toas)
 
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model).params
 
@@ -450,14 +472,14 @@ class TestPLChromNoiseVsPINT:
     @pytest.mark.slow
     def test_chrom_noise_weights_match_pint(self, plchrom_pint_model):
         """JaxPINT PSD weights match PINT's get_noise_weights()."""
-        from jaxpint.bridge import build_timing_model, pint_model_to_params
+        from jaxpint.bridge import pint_model_to_params
 
         pint_model, toas = plchrom_pint_model
 
         plchrom_comp = pint_model.components.get("PLChromNoise")
         pint_weights = plchrom_comp.get_noise_weights(toas)
 
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.chrom_noise import PLChromNoise
@@ -474,14 +496,14 @@ class TestPLChromNoiseVsPINT:
     @pytest.mark.slow
     def test_chrom_noise_covariance_matches_pint(self, plchrom_pint_model):
         """Full chromatic noise covariance matches PINT's pl_chrom_cov_matrix()."""
-        from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params
+        from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params
 
         pint_model, toas = plchrom_pint_model
 
         plchrom_comp = pint_model.components.get("PLChromNoise")
         pint_cov = plchrom_comp.pl_chrom_cov_matrix(toas)
 
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model).params
 
@@ -513,7 +535,7 @@ class TestPLSWNoiseVsPINT:
         Allows ~1e-5 rtol due to long-double vs float64 time precision
         in the Fourier basis, and minor geometry precision differences.
         """
-        from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params
+        from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params
 
         pint_model, toas = plsw_pint_model
 
@@ -522,7 +544,7 @@ class TestPLSWNoiseVsPINT:
             pytest.skip("No PLSWNoise in test model")
         pint_basis = plsw_comp.get_noise_basis(toas)
 
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model).params
 
@@ -542,14 +564,14 @@ class TestPLSWNoiseVsPINT:
     @pytest.mark.slow
     def test_sw_noise_weights_match_pint(self, plsw_pint_model):
         """JaxPINT PSD weights match PINT's get_noise_weights()."""
-        from jaxpint.bridge import build_timing_model, pint_model_to_params
+        from jaxpint.bridge import pint_model_to_params
 
         pint_model, toas = plsw_pint_model
 
         plsw_comp = pint_model.components.get("PLSWNoise")
         pint_weights = plsw_comp.get_noise_weights(toas)
 
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
         params = pint_model_to_params(pint_model).params
 
         from jaxpint.noise.sw_noise import PLSWNoise
@@ -566,14 +588,14 @@ class TestPLSWNoiseVsPINT:
     @pytest.mark.slow
     def test_sw_noise_covariance_matches_pint(self, plsw_pint_model):
         """Full SW noise covariance matches PINT's pl_sw_cov_matrix()."""
-        from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params
+        from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params
 
         pint_model, toas = plsw_pint_model
 
         plsw_comp = pint_model.components.get("PLSWNoise")
         pint_cov = plsw_comp.pl_sw_cov_matrix(toas)
 
-        _tm, noise_model = build_timing_model(pint_model, toas)
+        _tm, noise_model = _build_tdb_model(pint_model, toas)
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model).params
 

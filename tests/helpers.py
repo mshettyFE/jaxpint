@@ -232,6 +232,11 @@ def make_toa_data(
         tzr_freq=float(tzr_freq) if tzr_freq is not None else None,
         tzr_ssb_obs_pos=tzr_ssb_obs_pos,
         tzr_obs_sun_pos=tzr_obs_sun_pos,
+        # This synthetic data has zero solar-system geometry (ssb_obs_pos = 0), so
+        # the barycentric arrival times equal TDB exactly; TDB here IS the
+        # enterprise-convention choice, not an approximation to it.
+        basis_seconds=tdb_int_arr * 86400.0 + tdb_frac_arr * 86400.0,
+        basis_coord="tdb",
     )
 
 

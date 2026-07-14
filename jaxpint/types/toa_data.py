@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Optional
+import dataclasses
+from typing import Literal, Optional, get_args
 
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
 
 from jaxpint.types.dual_float import DualFloat
+
+# Time coordinates a TOAData's GP basis times may be expressed in.  The label
+# travels with ``basis_seconds`` (see ``TOAData.basis_coord``) so the choice
+# is inspectable data, not just producer-side documentation.
+BasisCoord = Literal["barycentric", "tdb"]
 
 
 class TOAData(eqx.Module):
@@ -22,7 +28,9 @@ class TOAData(eqx.Module):
         tdb_int, tdb_frac:      days (TDB timescale, same split)
         error:                  seconds
         freq:                   MHz (barycentric, Doppler-corrected)
-        bary_seconds:           seconds (barycentered TOAs, see field docs)
+        basis_seconds:          seconds (GP basis time coordinate; which
+                                coordinate is declared by basis_coord —
+                                see the field docs)
         ssb_obs_pos:            km,   shape (n_toas, 3)
         ssb_obs_vel:            km/s, shape (n_toas, 3)
         obs_sun_pos:            km,   shape (n_toas, 3)
@@ -96,13 +104,38 @@ class TOAData(eqx.Module):
         default=None
     )
 
-    # Barycentered TOAs in seconds: TDB minus every delay ahead of the binary
-    # component (solar-system Roemer/Shapiro, dispersion, ...), Used by enterprise;
-    #   bridge  -- PINT ``model.get_barycentric_toas(toas)``;
-    #   native  -- ``TimingModel.compute_barycentric_toas`` after model build
-    #              (see ``with_bary_seconds``).
-    # None when no model was available at conversion time.
-    bary_seconds: Optional[Float[Array, " n_toas"]] = eqx.field(default=None)
+    # Time coordinate (seconds) that GP Fourier bases and ECORR quantization
+    # are evaluated at.
+    # The conventions in use:
+    #   bridge / native loader -- barycentered TOAs (TDB minus every delay
+    #     ahead of the binary component: solar-system Roemer/Shapiro,
+    #     dispersion, ...), the enterprise/discovery convention for real data,
+    #     evaluated once at the par-file parameter values.  Bridge: PINT
+    #     ``model.get_barycentric_toas``; native: ``native_toas_to_jax``
+    #     stamps them at conversion time when a par is supplied.
+    #   synthetic / test data with zero solar-system geometry -- TDB, which
+    #     equals the barycentric time exactly when all such delays are zero.
+    #   PINT-parity tests -- TDB deliberately, to compare pure math against
+    #     PINT at PINT's own time coordinate (tests/test_pl_noise_vs_pint.py).
+    basis_seconds: Optional[Float[Array, " n_toas"]] = eqx.field(default=None)
+    # Which coordinate ``basis_seconds`` holds ("barycentric" | "tdb").
+    basis_coord: Optional[BasisCoord] = eqx.field(static=True, default=None)
+
+    def __check_init__(self):
+        if (self.basis_seconds is None) != (self.basis_coord is None):
+            raise ValueError(
+                "basis_seconds and basis_coord must be set together: the GP "
+                "basis times are only meaningful with their coordinate label "
+                f"(got basis_seconds={'set' if self.basis_seconds is not None else None}, "
+                f"basis_coord={self.basis_coord!r})."
+            )
+        if self.basis_coord is not None and self.basis_coord not in get_args(
+            BasisCoord
+        ):
+            raise ValueError(
+                f"Unknown basis_coord {self.basis_coord!r}; "
+                f"expected one of {get_args(BasisCoord)}."
+            )
 
     # -- Derived timestamps --
 
@@ -126,14 +159,42 @@ class TOAData(eqx.Module):
         """
         return self.tdb_int * 86400.0 + self.tdb_frac * 86400.0
 
-    def with_bary_seconds(self, bary_seconds: Float[Array, " n_toas"]) -> "TOAData":
-        """Return a copy with ``bary_seconds`` set (see the field docs)."""
-        return eqx.tree_at(
-            lambda td: td.bary_seconds,
+    def with_basis_seconds(
+        self, basis_seconds: Float[Array, " n_toas"], coord: BasisCoord
+    ) -> "TOAData":
+        """Return a copy with ``basis_seconds`` + its coordinate label set.
+
+        ``coord`` is required: the producer declares which time coordinate
+        the values are in (see the field docs).  Goes through ``__init__``
+        (``dataclasses.replace``) so ``__check_init__`` re-validates —
+        ``basis_coord`` is a static field, which ``eqx.tree_at`` cannot
+        replace.
+        """
+        return dataclasses.replace(
             self,
-            jnp.asarray(bary_seconds, dtype=jnp.float64),
-            is_leaf=lambda x: x is None,
+            basis_seconds=jnp.asarray(basis_seconds, dtype=jnp.float64),
+            basis_coord=coord,
         )
+
+    def require_basis_seconds(self) -> Float[Array, " n_toas"]:
+        """``basis_seconds``, raising a diagnosable error when unset.
+
+        GP components must not silently pick a time coordinate: an unset
+        field means the producer of this TOAData never made the choice.  The
+        check is on static pytree structure (None-ness), so it fires at trace
+        time and is jit-safe.
+        """
+        if self.basis_seconds is None:
+            raise ValueError(
+                "TOAData.basis_seconds is not set, but a GP basis / ECORR "
+                "quantization needs an explicit time coordinate. Real data: "
+                "the converters set barycentered TOAs when given a model "
+                "(bridge: pint_toas_to_jax(toas, model=...); native: "
+                "native_toas_to_jax(tim, par_result)). Synthetic data with "
+                "zero solar-system geometry: with_basis_seconds(tdb_seconds, "
+                "'tdb') (exactly equal to barycentric time there)."
+            )
+        return self.basis_seconds
 
     # -- Flag masks --
 

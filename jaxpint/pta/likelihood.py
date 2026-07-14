@@ -110,6 +110,27 @@ class PTAConfig(eqx.Module):
                 f"{n_tm} timing models, {n_nm} noise models. "
                 f"All three must have the same length (one per pulsar)."
             )
+        # GP basis times must live in one frame across the whole PTA: the
+        # correlated (HD/CURN) kernels compare basis phases *between* pulsars,
+        # so a config mixing e.g. barycentric- and TDB-based pulsars computes
+        # cross-terms in inconsistent coordinates.  ``basis_coord`` is each
+        # producer's declaration (see TOAData.basis_coord); unset entries are
+        # allowed here — pulsars without GP components never read it, and
+        # ``require_basis_seconds`` raises for the ones that do.
+        # getattr: tests construct shape-only configs with None placeholders
+        # in toa_data_list, which have no coordinate to check.
+        coords = {
+            p: getattr(td, "basis_coord", None)
+            for p, td in enumerate(self.toa_data_list)
+        }
+        coords = {p: c for p, c in coords.items() if c is not None}
+        if len(set(coords.values())) > 1:
+            raise ValueError(
+                "Mixed GP basis time coordinates across pulsars: "
+                f"{coords}. All TOAData in one PTAConfig must declare the "
+                "same basis_coord ('barycentric' for bridge/native-loaded "
+                "real data, 'tdb' for zero-geometry synthetic data)."
+            )
 
     @property
     def n_pulsars(self) -> int:
