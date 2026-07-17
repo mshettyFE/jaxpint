@@ -25,7 +25,7 @@ from jaxpint.pta.signals.gwb import (
     fourier_basis,
 )
 from jaxpint.pta.signals.orf import hd_orf
-from jaxpint.pta.signals.spectrum import SpectralModel
+from jaxpint.spectra import SpectralModel
 
 
 class HDCorrelatedGWBInjector(CorrelatedSignalInjector):

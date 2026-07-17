@@ -36,8 +36,8 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
 
-from jaxpint._psd import expand_sin_cos, powerlaw_psd
 from jaxpint.components import NoiseComponent
+from jaxpint.spectra import PowerLawSpectrum, SpectralModel
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -88,6 +88,26 @@ class _FourierGPNoise(NoiseComponent):
         get this for free from :class:`_PowerLawFourierNoise`.
         """
         raise NotImplementedError
+
+    def _weights_from(
+        self,
+        spectrum: SpectralModel,
+        name_map: dict[str, str],
+        params: ParameterVector,
+    ) -> Float[Array, " n_basis"]:
+        """Delegate ``psd_weights`` to a :class:`~jaxpint.spectra.SpectralModel`.
+
+        The PSD-shape arithmetic lives once in :mod:`jaxpint.spectra`; a noise
+        component supplies the model plus ``name_map`` (spectrum hyperparameter
+        *suffix* -> this component's :class:`ParameterVector` name) and this
+        builds the ``value_of`` lookup the model expects, passing the component's
+        own ``freqs`` / ``freq_bin_widths``.
+        """
+        return spectrum.psd_weights(
+            self.freqs,
+            self.freq_bin_widths,
+            lambda suffix: params.param_value(name_map[suffix]),
+        )
 
     def _basis(
         self,
@@ -153,12 +173,13 @@ class _PowerLawFourierNoise(_FourierGPNoise):
     # -- power-law weights -----------------------------------------------
 
     def psd_weights(self, params: ParameterVector) -> Float[Array, " n_basis"]:
-        """Power-law PSD weights, one per basis column (sin/cos share a value).
+        """Power-law PSD weights, delegated to :class:`~jaxpint.spectra.PowerLawSpectrum`.
 
-        ``P(f) = (A² / 12π²) · f_yr^(γ-3) · f^(-γ)``; each weight is
-        ``P(f) · Δf``, repeated twice for the sin/cos pair at that frequency.
+        ``P(f) = (A² / 12π²) · f_yr^(γ-3) · f^(-γ)``; each weight is ``P(f) · Δf``,
+        repeated for the sin/cos pair. The formula lives once in ``jaxpint.spectra``.
         """
-        log10_A = params.param_value(self._amp_name)
-        gamma = params.param_value(self._gam_name)
-        psd = powerlaw_psd(self.freqs, log10_A, gamma)
-        return expand_sin_cos(psd * self.freq_bin_widths)
+        return self._weights_from(
+            PowerLawSpectrum(),
+            {"log10_A": self._amp_name, "gamma": self._gam_name},
+            params,
+        )

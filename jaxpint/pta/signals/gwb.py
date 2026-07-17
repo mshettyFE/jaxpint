@@ -27,7 +27,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.types import TOAData
 from jaxpint.pta.injectors import SignalInjector
-from jaxpint.pta.signals.spectrum import (
+from jaxpint.spectra import (
     PowerLawSpectrum,
     SpectralModel,
     validate_spectrum_components,

@@ -21,10 +21,12 @@ from jaxpint.noise import FreeSpectrumNoise, NoiseModel, PLRedNoise
 from jaxpint.pta.likelihood import PTAConfig, pta_logL
 from jaxpint._psd import powerlaw_psd
 from jaxpint.pta.signals import (
-    BrokenPowerLawSpectrum,
     CURNInjector,
-    FreeSpectrum,
     HDCorrelatedGWBInjector,
+)
+from jaxpint.spectra import (
+    BrokenPowerLawSpectrum,
+    FreeSpectrum,
     PowerLawSpectrum,
 )
 from jaxpint.types import GlobalParams

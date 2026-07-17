@@ -28,8 +28,8 @@ from __future__ import annotations
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from jaxpint._psd import expand_sin_cos, free_spectrum_psd
 from jaxpint.noise._fourier_gp import _FourierGPNoise
+from jaxpint.spectra import FreeSpectrum
 from jaxpint.types import ParameterVector
 
 
@@ -62,9 +62,15 @@ class FreeSpectrumNoise(_FourierGPNoise):
             )
 
     def psd_weights(self, params: ParameterVector) -> Float[Array, " n_basis"]:
-        """Per-bin weights ``10^(2·log10_ρ_k)``, repeated for the sin/cos pair."""
-        log10_rho = params.param_values(self.rho_names)
-        return expand_sin_cos(free_spectrum_psd(log10_rho))
+        """Per-bin weights ``10^(2·log10_ρ_k)``, delegated to :class:`~jaxpint.spectra.FreeSpectrum`.
+
+        The free-spectrum assembly lives once in ``jaxpint.spectra``; map its
+        ordered ``log10_rho_k`` suffixes to this component's ``rho_names``.
+        """
+        spec = FreeSpectrum(len(self.rho_names))
+        return self._weights_from(
+            spec, dict(zip(spec.param_names, self.rho_names)), params
+        )
 
     def static_basis(self) -> Float[Array, "n_toas n_basis"]:
         # Fixed basis -> advertise it so NoiseModel can pre-stack it once.
