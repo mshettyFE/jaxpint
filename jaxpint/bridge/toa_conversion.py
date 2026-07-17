@@ -18,6 +18,7 @@ from pint.observatory import get_observatory
 from pint.observatory.topo_obs import TopoObs
 from pint.toa import TOAs
 
+from jaxpint.clock.tropo_geometry import tropo_fields
 from jaxpint.constants import JD_MJD_OFFSET, PLANETS
 from jaxpint.utils import split_longdouble_days
 from jaxpint.types import TOAData
@@ -301,36 +302,24 @@ def pint_toas_to_jax(
     if model is not None and "TroposphereDelay" in model.components:
         tropo_comp = model.components["TroposphereDelay"]
         if tropo_comp.CORRECT_TROPOSPHERE.value:
+            # Resolve the source-specific inputs (radec + per-observatory
+            # EarthLocation); the shared tropo_fields owns the AltAz + clamp.
+            # This uses astropy AltAz rather than PINT's _get_target_altitude
+            # (verified to agree to ~2e-11 rad in tests/test_native_tropo.py).
             radec = tropo_comp._get_target_skycoord()
-
-            alt_arr = np.zeros(n_toas, dtype=np.float64)
-            lat_arr = np.zeros(n_toas, dtype=np.float64)
-            height_arr = np.zeros(n_toas, dtype=np.float64)
-            valid_arr = np.zeros(n_toas, dtype=bool)
-
+            mjd = mjd_int + mjd_frac
+            obs_groups: dict[str, tuple] = {}
             for key, grp in toas.get_obs_groups():
                 obsobj = get_observatory(key)
-                if not isinstance(obsobj, TopoObs):
-                    # Non-topocentric: leave as zeros, valid=False
+                if not isinstance(obsobj, TopoObs):  # non-topocentric: skip
                     continue
+                obs_groups[key] = (obsobj.earth_location_itrf(), grp)
 
-                obs = obsobj.earth_location_itrf()
-                alt = tropo_comp._get_target_altitude(obs, tbl[grp], radec)
-
-                alt_arr[grp] = alt.to(u.rad).value
-                lat_arr[grp] = obs.lat.to(u.rad).value
-                height_arr[grp] = obs.height.to(u.km).value
-                valid_arr[grp] = True
-
-            # Validate altitudes: must be in [0, pi/2]
-            bad = (alt_arr < 0.0) | (alt_arr > np.pi / 2.0)
-            valid_arr[bad] = False
-            alt_arr[bad] = np.pi / 2.0  # replace invalid with zenith
-
-            tropo_alt = alt_arr
-            tropo_alt_valid = valid_arr
-            obs_geodetic_lat = lat_arr
-            obs_height_km = height_arr
+            fields = tropo_fields(radec, obs_groups, mjd, n_toas)
+            tropo_alt = fields["tropo_alt"]
+            tropo_alt_valid = fields["tropo_alt_valid"]
+            obs_geodetic_lat = fields["obs_geodetic_lat"]
+            obs_height_km = fields["obs_height_km"]
 
     # -- GP basis time coordinate: barycentered TOAs -------------------------
     # Model-dependent, so left unset when no model was supplied — building GP

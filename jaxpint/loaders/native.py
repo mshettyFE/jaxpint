@@ -21,6 +21,7 @@ from ..clock.correction import correct
 from ..clock.observatory import resolve_observatory
 from ..clock.posvels import compute_posvels
 from ..clock.timescale import to_tdb
+from ..clock.tropo_geometry import tropo_fields
 from ..constants import PLANETS
 from ..utils import barycentric_radio_freq
 from ..par.components import Component
@@ -446,8 +447,7 @@ def _build_tropo_fields(core, par_result: ParResult) -> Optional[dict]:
         return None
 
     from astropy import units as u
-    from astropy.coordinates import AltAz, EarthLocation, SkyCoord
-    from astropy.time import Time
+    from astropy.coordinates import EarthLocation, SkyCoord
 
     params = par_result.params
     if Component.ASTROMETRY_ECLIPTIC in par_result.component_set:
@@ -462,43 +462,23 @@ def _build_tropo_fields(core, par_result: ParResult) -> Optional[dict]:
             float(params.param_value("DECJ")) * u.rad,
         )
 
-    n = core.n_toas
-    alt = np.zeros(n, dtype=np.float64)
-    lat = np.zeros(n, dtype=np.float64)
-    height = np.zeros(n, dtype=np.float64)
-    valid = np.zeros(n, dtype=bool)
-
-    mjd = core.mjd_int + core.mjd_frac
     groups: dict[str, list[int]] = {}
     for i, name in enumerate(core.obs_canonical):
         groups.setdefault(name, []).append(i)
 
+    # Resolve each topocentric observatory to an EarthLocation (native's
+    # source-specific part); tropo_fields owns the shared AltAz + clamp.
+    obs_groups: dict[str, tuple] = {}
     for name, idx in groups.items():
         cfg = resolve_observatory(name)
         if cfg.itrf_xyz is None:  # non-topocentric (barycenter/geocenter): skip
             continue
         xyz = np.asarray(cfg.itrf_xyz, dtype=np.float64)
         loc = EarthLocation.from_geocentric(xyz[0] * u.m, xyz[1] * u.m, xyz[2] * u.m)
-        obstime = Time(mjd[idx], format="mjd", scale="utc")
-        # astropy SkyCoord / transform_to are under-typed (return Optional in stubs).
-        a = radec.transform_to(AltAz(location=loc, obstime=obstime)).alt.to_value(u.rad)  # pyright: ignore[reportCallIssue, reportOptionalCall, reportOptionalMemberAccess]
-        idx_a = np.asarray(idx)
-        alt[idx_a] = a
-        lat[idx_a] = loc.lat.to_value(u.rad)
-        height[idx_a] = loc.height.to_value(u.km)
-        valid[idx_a] = True
+        obs_groups[name] = (loc, np.asarray(idx))
 
-    # Validate altitudes: must be in [0, pi/2]; clamp invalid to zenith.
-    bad = (alt < 0.0) | (alt > np.pi / 2.0)
-    valid[bad] = False
-    alt[bad] = np.pi / 2.0
-
-    return {
-        "tropo_alt": alt,
-        "tropo_alt_valid": valid,
-        "obs_geodetic_lat": lat,
-        "obs_height_km": height,
-    }
+    mjd = core.mjd_int + core.mjd_frac
+    return tropo_fields(radec, obs_groups, mjd, core.n_toas)
 
 
 def _has_astrometry(par: ParResult) -> bool:
