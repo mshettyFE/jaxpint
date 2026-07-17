@@ -14,7 +14,6 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent, ParamDecl
-from jaxpint.constants import DMCONST
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import fourier_sum
 
@@ -99,27 +98,4 @@ class DMWaveX(DispersionDelayComponent):
 
         return fourier_sum(dt_days, freqs, sins, coses)
 
-    def __call__(
-        self,
-        toa_data: TOAData,
-        params: ParameterVector,
-        delay: Float[Array, " n_toas"],
-    ) -> Float[Array, " n_toas"]:
-        """Compute DMWaveX delay contribution.
-
-        Parameters
-        ----------
-        toa_data : TOAData
-            Pre-extracted TOA data.
-        params : ParameterVector
-            Timing-model parameters.
-        delay : array, shape (n_toas,)
-            Accumulated signal delay from prior components in seconds.
-
-        Returns
-        -------
-        array, shape (n_toas,)
-            DMWaveX delay in seconds.
-        """
-        dm = self.compute_dm(toa_data, params, delay)
-        return dm * DMCONST / toa_data.freq**2
+    # __call__ (dm · K_DM / freq²) is inherited from DispersionDelayComponent.

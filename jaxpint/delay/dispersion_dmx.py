@@ -19,7 +19,6 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent, ParamDecl
-from jaxpint.constants import DMCONST
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -105,29 +104,3 @@ class DispersionDMX(DispersionDelayComponent):
             dm = dm + jnp.where(in_bin, dmx_val, 0.0)
 
         return dm
-
-    def __call__(
-        self,
-        toa_data: TOAData,
-        params: ParameterVector,
-        delay: Float[Array, " n_toas"],
-    ) -> Float[Array, " n_toas"]:
-        """Compute piecewise dispersion delay contribution.
-
-        Parameters
-        ----------
-        toa_data : TOAData
-            Pre-extracted TOA data (MJD times, frequencies, etc.).
-        params : ParameterVector
-            Timing-model parameters containing DMX, DMXR1, DMXR2 values.
-        delay : array, shape (n_toas,)
-            Accumulated signal delay from prior components in **seconds**.
-            Not used by this component.
-
-        Returns
-        -------
-        array, shape (n_toas,)
-            Dispersion delay in **seconds**.
-        """
-        dm = self.compute_dm(toa_data, params, delay)
-        return dm * DMCONST / toa_data.freq**2

@@ -44,6 +44,7 @@ Example::
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from dataclasses import dataclass
 from typing import ClassVar, Optional
 
@@ -51,6 +52,7 @@ import equinox as eqx
 import jax
 from jaxtyping import Array, Float
 
+from jaxpint.constants import DMCONST
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.types.dual_float import DualFloat
 
@@ -397,13 +399,24 @@ class DelayComponent(eqx.Module):
 class DispersionDelayComponent(DelayComponent):
     """Base class for delay components that contribute to dispersion measure.
 
-    Subclasses must implement :meth:`compute_dm` returning the DM
-    contribution in pc/cm³, in addition to ``__call__`` (inherited from
-    :class:`DelayComponent`) which returns delay in seconds.  The timing
-    model uses ``compute_dm`` to evaluate the total model DM for wideband
-    fitting.
+    Subclasses implement :meth:`compute_dm` (the DM contribution in pc/cm³);
+    the concrete ``__call__`` here turns it into a delay via the dispersion law
+    ``dm · K_DM / freq²``.  (:class:`~jaxpint.delay.dispersion_jump.DispersionJump`
+    overrides ``__call__`` to return zero — it shifts the model DM but adds no
+    timing delay.)  The timing model uses ``compute_dm`` to evaluate the total
+    model DM for wideband fitting.
     """
 
+    def __call__(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+        delay: Float[Array, " n_toas"],
+    ) -> Float[Array, " n_toas"]:
+        """Dispersion delay in seconds: ``compute_dm · K_DM / freq²``."""
+        return self.compute_dm(toa_data, params, delay) * DMCONST / toa_data.freq**2
+
+    @abstractmethod
     def compute_dm(
         self,
         toa_data: TOAData,
@@ -444,3 +457,45 @@ class BinaryDelayComponent(DelayComponent):
     recognized automatically instead of having to be added to a hand-maintained
     roster.  Pure marker: it adds nothing to :class:`DelayComponent`.
     """
+
+
+class ChromaticDelayComponent(DelayComponent):
+    """Base class for chromatic-measure delay components.
+
+    The chromatic analogue of :class:`DispersionDelayComponent`: subclasses
+    implement :meth:`compute_cm` (the chromatic measure — a Taylor expansion,
+    per-epoch bins, or a Fourier series), and the concrete ``__call__`` applies
+    the shared frequency scaling ``cm · K_DM · freq^(-alpha)`` with the chromatic
+    index ``alpha = TNCHROMIDX`` (vs dispersion's fixed ``alpha = 2``).  The
+    ``tnchromidx_name`` field lives here so subclasses don't each redeclare it
+    (keyword-only, so it composes with subclass positional fields).
+    """
+
+    tnchromidx_name: str = eqx.field(static=True, default="TNCHROMIDX", kw_only=True)
+
+    def __call__(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+        delay: Float[Array, " n_toas"],
+    ) -> Float[Array, " n_toas"]:
+        """Chromatic delay in seconds: ``compute_cm · K_DM · freq^(-alpha)``."""
+        cm = self.compute_cm(toa_data, params, delay)
+        alpha = params.param_value(self.tnchromidx_name)
+        return cm * DMCONST * toa_data.freq ** (-alpha)
+
+    @abstractmethod
+    def compute_cm(
+        self,
+        toa_data: TOAData,
+        params: ParameterVector,
+        delay: Float[Array, " n_toas"],
+    ) -> Float[Array, " n_toas"]:
+        """Return this component's chromatic measure (override in subclasses).
+
+        Raises
+        ------
+        NotImplementedError
+            Must be overridden by subclasses.
+        """
+        raise NotImplementedError

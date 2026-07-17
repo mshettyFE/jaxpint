@@ -18,12 +18,11 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent, ParamDecl
-from jaxpint.constants import DMCONST
+from jaxpint.components import ChromaticDelayComponent, ParamDecl
 from jaxpint.types import TOAData, ParameterVector
 
 
-class ChromaticCMX(DelayComponent):
+class ChromaticCMX(ChromaticDelayComponent):
     """Piecewise-constant chromatic measure delay (CMX model).
 
     Parameters
@@ -59,7 +58,7 @@ class ChromaticCMX(DelayComponent):
     cmx_names: tuple[str, ...] = eqx.field(static=True)
     cmxr1_names: tuple[str, ...] = eqx.field(static=True)
     cmxr2_names: tuple[str, ...] = eqx.field(static=True)
-    tnchromidx_name: str = eqx.field(static=True, default="TNCHROMIDX")
+    # tnchromidx_name inherited from ChromaticDelayComponent (kw_only).
 
     def __check_init__(self):
         if self.n_bins < 1:
@@ -71,27 +70,16 @@ class ChromaticCMX(DelayComponent):
                     f"does not match n_bins ({self.n_bins})"
                 )
 
-    def __call__(
+    def compute_cm(
         self,
         toa_data: TOAData,
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
-        """Compute piecewise chromatic delay contribution.
+        """Piecewise-constant chromatic measure ``CM(t)`` over CMX bins.
 
-        Parameters
-        ----------
-        toa_data : TOAData
-            Pre-extracted TOA data (MJD times, frequencies).
-        params : ParameterVector
-            Timing-model parameters containing CMX, CMXR1, CMXR2, TNCHROMIDX.
-        delay : array, shape (n_toas,)
-            Accumulated signal delay from prior components in seconds.
-
-        Returns
-        -------
-        array, shape (n_toas,)
-            Chromatic delay in seconds.
+        The base ``__call__`` applies ``· K_DM · freq^(-TNCHROMIDX)`` to give
+        the delay in seconds.
         """
         toa_mjd = toa_data.mjd.total
 
@@ -105,5 +93,4 @@ class ChromaticCMX(DelayComponent):
             cmx_val = params.param_value(self.cmx_names[i])
             cm = cm + jnp.where(in_bin, cmx_val, 0.0)
 
-        alpha = params.param_value(self.tnchromidx_name)
-        return cm * DMCONST * toa_data.freq ** (-alpha)
+        return cm
