@@ -57,14 +57,13 @@ class DMWaveX(DispersionDelayComponent):
     dmwxepoch_name: str = eqx.field(static=True, default="DMWXEPOCH")
 
     def __check_init__(self):
-        if self.n_components < 1:
-            raise ValueError("DMWaveX requires at least one component")
-        for attr in ("dmwxfreq_names", "dmwxsin_names", "dmwxcos_names"):
-            if len(getattr(self, attr)) != self.n_components:
-                raise ValueError(
-                    f"Length of {attr} ({len(getattr(self, attr))}) "
-                    f"does not match n_components ({self.n_components})"
-                )
+        self.check_name_tuples(
+            "n_components",
+            "dmwxfreq_names",
+            "dmwxsin_names",
+            "dmwxcos_names",
+            label="component",
+        )
 
     def compute_dm(
         self,

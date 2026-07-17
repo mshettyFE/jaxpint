@@ -14,6 +14,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import (
     BinaryDelayComponent,
+    ComponentIndexMixin,
     DelayComponent,
     DispersionDelayComponent,
     ParamDecl,
@@ -25,7 +26,7 @@ from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
 
-class TimingModel(eqx.Module):
+class TimingModel(ComponentIndexMixin):
     """Orchestrates delay and phase components.
 
     Parameters
@@ -254,46 +255,8 @@ class TimingModel(eqx.Module):
         """Return all components, delay components first then phase components."""
         return self.delay_components + self.phase_components
 
-    @property
-    def component_names(self) -> tuple[str, ...]:
-        """Unique names for all components, auto-disambiguated for duplicates."""
-        return _make_component_names(self.components)
-
-    def __getitem__(
-        self, key: str | int | slice
-    ) -> DelayComponent | PhaseComponent | tuple[DelayComponent | PhaseComponent, ...]:
-        """Retrieve component(s) by name, integer index, or slice.
-
-        Parameters
-        ----------
-        key : str, int, or slice
-            If ``str``, looks up a component by its unique name (see
-            :attr:`component_names`).  If ``int`` or ``slice``, indexes
-            into the combined ``(delay_components + phase_components)``
-            tuple.
-
-        Returns
-        -------
-        DelayComponent, PhaseComponent, or tuple thereof
-            The matched component(s).
-
-        Raises
-        ------
-        KeyError
-            If *key* is a string that does not match any component name.
-        TypeError
-            If *key* is not ``str``, ``int``, or ``slice``.
-        """
-        if isinstance(key, str):
-            names = self.component_names
-            comps = self.components
-            for i, name in enumerate(names):
-                if name == key:
-                    return comps[i]
-            raise KeyError(f"{key!r} not found. Available components: {names}")
-        elif isinstance(key, (int, slice)):
-            return self.components[key]
-        raise TypeError(f"indices must be str, int, or slice, not {type(key).__name__}")
+    # component_names + __getitem__ (name/index access) inherited from
+    # ComponentIndexMixin, over the `components` property above.
 
     # ------------------------------------------------------------------
     # Per-component decomposition (diagnostic / inspection only)

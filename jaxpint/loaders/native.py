@@ -21,7 +21,7 @@ from ..clock.correction import correct
 from ..clock.observatory import resolve_observatory
 from ..clock.posvels import compute_posvels
 from ..clock.timescale import to_tdb
-from ..clock.tropo_geometry import tropo_fields
+from ..tropo_geometry import tropo_fields
 from ..constants import PLANETS
 from ..utils import barycentric_radio_freq
 from ..par.components import Component

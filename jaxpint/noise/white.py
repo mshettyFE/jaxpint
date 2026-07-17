@@ -16,6 +16,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import NoiseComponent, ParamDecl
+from jaxpint.noise._white_common import apply_efac_equad
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -80,21 +81,9 @@ class ScaleToaError(NoiseComponent):
         sigma_scaled : (n_toas,)
             Scaled uncertainties in seconds.
         """
-        sigma_sq = toa_data.error**2
-
-        for equad_name in self.equad_names:
-            mask = toa_data.flag_mask(equad_name)
-            equad_val = params.param_value(equad_name)
-            sigma_sq = jnp.where(mask, sigma_sq + equad_val**2, sigma_sq)
-
-        sigma = jnp.sqrt(sigma_sq)
-
-        for efac_name in self.efac_names:
-            mask = toa_data.flag_mask(efac_name)
-            efac_val = params.param_value(efac_name)
-            sigma = jnp.where(mask, sigma * efac_val, sigma)
-
-        return sigma
+        return apply_efac_equad(
+            toa_data.error, toa_data, params, self.efac_names, self.equad_names
+        )
 
     def covariance(
         self,

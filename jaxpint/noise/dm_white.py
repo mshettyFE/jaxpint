@@ -11,10 +11,10 @@ mask (pre-computed by the bridge layer and stored in ``TOAData.flag_masks``).
 from __future__ import annotations
 
 import equinox as eqx
-import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import NoiseComponent, ParamDecl
+from jaxpint.noise._white_common import apply_efac_equad
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -62,18 +62,6 @@ class ScaleDmError(NoiseComponent):
             Scaled DM uncertainties in pc/cm³.
         """
         assert toa_data.dm_errors is not None  # DM white noise requires DM data
-        sigma_sq = toa_data.dm_errors**2
-
-        for dmequad_name in self.dmequad_names:
-            mask = toa_data.flag_mask(dmequad_name)
-            dmequad_val = params.param_value(dmequad_name)
-            sigma_sq = jnp.where(mask, sigma_sq + dmequad_val**2, sigma_sq)
-
-        sigma = jnp.sqrt(sigma_sq)
-
-        for dmefac_name in self.dmefac_names:
-            mask = toa_data.flag_mask(dmefac_name)
-            dmefac_val = params.param_value(dmefac_name)
-            sigma = jnp.where(mask, sigma * dmefac_val, sigma)
-
-        return sigma
+        return apply_efac_equad(
+            toa_data.dm_errors, toa_data, params, self.dmefac_names, self.dmequad_names
+        )

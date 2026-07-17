@@ -67,7 +67,7 @@ def h0_95_closed_form(
 
     Parameters
     ----------
-    X, Y : scalars
+    X, Y : float
         From :func:`jaxpint.pta.extraction.quadratic_coeffs` (or the
         contractions of :func:`jaxpint.pta.extraction.basis_quadratics`
         blocks).  ``Y`` must be positive.

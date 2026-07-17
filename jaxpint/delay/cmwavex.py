@@ -65,14 +65,13 @@ class CMWaveX(ChromaticDelayComponent):
     # tnchromidx_name inherited from ChromaticDelayComponent (kw_only).
 
     def __check_init__(self):
-        if self.n_components < 1:
-            raise ValueError("CMWaveX requires at least one component")
-        for attr in ("cmwxfreq_names", "cmwxsin_names", "cmwxcos_names"):
-            if len(getattr(self, attr)) != self.n_components:
-                raise ValueError(
-                    f"Length of {attr} ({len(getattr(self, attr))}) "
-                    f"does not match n_components ({self.n_components})"
-                )
+        self.check_name_tuples(
+            "n_components",
+            "cmwxfreq_names",
+            "cmwxsin_names",
+            "cmwxcos_names",
+            label="component",
+        )
 
     def compute_cm(
         self,

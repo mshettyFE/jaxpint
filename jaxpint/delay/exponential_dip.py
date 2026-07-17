@@ -90,19 +90,14 @@ class ExponentialDip(DelayComponent):
     expdipfref_name: str = eqx.field(static=True, default="EXPDIPFREF")
 
     def __check_init__(self):
-        if self.n_dips < 1:
-            raise ValueError("ExponentialDip requires at least one dip event")
-        for attr in (
+        self.check_name_tuples(
+            "n_dips",
             "expdipep_names",
             "expdipamp_names",
             "expdipidx_names",
             "expdiptau_names",
-        ):
-            if len(getattr(self, attr)) != self.n_dips:
-                raise ValueError(
-                    f"Length of {attr} ({len(getattr(self, attr))}) "
-                    f"does not match n_dips ({self.n_dips})"
-                )
+            label="dip event",
+        )
 
     def __call__(
         self,

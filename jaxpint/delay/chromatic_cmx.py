@@ -61,14 +61,9 @@ class ChromaticCMX(ChromaticDelayComponent):
     # tnchromidx_name inherited from ChromaticDelayComponent (kw_only).
 
     def __check_init__(self):
-        if self.n_bins < 1:
-            raise ValueError("ChromaticCMX requires at least one bin")
-        for attr in ("cmx_names", "cmxr1_names", "cmxr2_names"):
-            if len(getattr(self, attr)) != self.n_bins:
-                raise ValueError(
-                    f"Length of {attr} ({len(getattr(self, attr))}) "
-                    f"does not match n_bins ({self.n_bins})"
-                )
+        self.check_name_tuples(
+            "n_bins", "cmx_names", "cmxr1_names", "cmxr2_names", label="bin"
+        )
 
     def compute_cm(
         self,

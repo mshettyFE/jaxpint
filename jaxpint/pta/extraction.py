@@ -66,7 +66,7 @@ def quadratic_coeffs(
 
     Returns
     -------
-    X, Y : scalars
+    X, Y : float
         Matched filter ``X=(d|s_hat)`` and signal power ``Y=(s_hat|s_hat)``.
 
     Notes
@@ -257,8 +257,8 @@ def basis_quadratics(
         the sky position and the timing-marginalized PTA likelihood.
     orientations : (k, 3) array
         Probe ``(cos_inc, psi, phase0)`` points; ``k >= 10`` (from symmetry of M)
-        and well spread (re: design matrix c_k should be full rank and small condition number;
-                         random draw of orientations seems to work fine).
+        and well spread (re: design matrix c_k should be full rank and small
+        condition number; random draw of orientations seems to work fine).
 
     Returns
     -------

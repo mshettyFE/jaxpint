@@ -25,7 +25,8 @@ class TOAData(eqx.Module):
     are stripped; see unit conventions below.
 
     Unit conventions (the dtype half is enforced by :meth:`from_arrays`, the
-    single builder both loaders route through; units are the caller's contract):
+    single builder both loaders route through; units are the caller's contract)::
+
         mjd_int, mjd_frac:      days (integer MJD + fractional day in [0, 1))
         tdb_int, tdb_frac:      days (TDB timescale, same split)
         error:                  seconds
