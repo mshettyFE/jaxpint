@@ -48,13 +48,8 @@ from jaxpint.types import GlobalParams, ParameterVector, TOAData
 from jaxpint.utils import concat_woodbury_blocks
 from jaxpint.pta.likelihood import (
     PTAConfig,
-    _assemble_basis_overlap_joint_kpb,
-    _assemble_basis_proj_residual_joint_kpb,
-    _collect_per_pulsar_external_inputs,
-    _n_basis_per_injector,
-    _per_pulsar_intermediates,
-    _phi_and_phi_inv_joint,
-    _stacked_fourier_basis,
+    joint_correlated_blocks,
+    n_basis_per_injector,
 )
 
 __all__ = [
@@ -223,49 +218,11 @@ def conditional_gwb(
             "conditional_single_pulsar (with the injector's (U, Phi) as "
             "external_cov)."
         )
-    n_psr = config.n_pulsars
-    n_basis_per_k = _n_basis_per_injector(
-        config.correlated_injectors, config.toa_data_list[0]
-    )
-
-    basis_proj_residual_per_pulsar = []
-    basis_overlap_per_pulsar = []
-    for p in range(n_psr):
-        ext_delay, ext_cov = _collect_per_pulsar_external_inputs(
-            p,
-            config.toa_data_list[p],
-            pulsar_params[p],
-            global_params,
-            config.signal_injectors,
-        )
-        F_stack_p = _stacked_fourier_basis(
-            config.correlated_injectors, config.toa_data_list[p]
-        )
-        _rCr, _logdet, basis_proj_residual_p, basis_overlap_p = (
-            _per_pulsar_intermediates(
-                config.toa_data_list[p],
-                config.timing_models[p],
-                config.noise_models[p],
-                pulsar_params[p],
-                F_stack_p,
-                external_delay=ext_delay,
-                external_cov=ext_cov,
-            )
-        )
-        basis_proj_residual_per_pulsar.append(basis_proj_residual_p)
-        basis_overlap_per_pulsar.append(basis_overlap_p)
-
-    _Phi_joint, Phi_joint_inv = _phi_and_phi_inv_joint(
-        config.correlated_injectors, global_params
-    )
-    basis_overlap_joint = _assemble_basis_overlap_joint_kpb(
-        basis_overlap_per_pulsar, n_basis_per_k, n_psr
-    )
-    basis_proj_residual_joint = _assemble_basis_proj_residual_joint_kpb(
-        basis_proj_residual_per_pulsar, n_basis_per_k, n_psr
-    )
+    # Same joint blocks the correlated pta_logL branch assembles; the
+    # conditional reads them as its precision (Phi_joint_inv + FᵀC⁻¹F) and RHS.
+    blk = joint_correlated_blocks(global_params, pulsar_params, config)
     return _conditional_from_blocks(
-        Phi_joint_inv, basis_overlap_joint, basis_proj_residual_joint
+        blk.Phi_joint_inv, blk.basis_overlap_joint, blk.basis_proj_residual_joint
     )
 
 
@@ -347,7 +304,7 @@ def _pulsar_bases_and_indices(
         vector, column-aligned with the matching ``J``.
     """
     n_psr = config.n_pulsars
-    n_basis_per_k = _n_basis_per_injector(
+    n_basis_per_k = n_basis_per_injector(
         config.correlated_injectors, config.toa_data_list[0]
     )
     bases: list[list[Float[Array, "n_times n_basis_k"]]] = [[] for _ in range(n_psr)]
