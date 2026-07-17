@@ -432,3 +432,15 @@ class DispersionDelayComponent(DelayComponent):
             Must be overridden by subclasses.
         """
         raise NotImplementedError
+
+
+class BinaryDelayComponent(DelayComponent):
+    """Marker base for binary orbital-delay components.
+
+    Identifies the components whose ``__call__`` is the binary orbital delay
+    so :meth:`jaxpint.model.TimingModel.compute_delay_to_binary` knows where to
+    stop (mirroring PINT's ``delay(cutoff=<binary>)``).  Membership is by *type*
+    — inheriting this is the single source of truth, so a new binary model is
+    recognized automatically instead of having to be added to a hand-maintained
+    roster.  Pure marker: it adds nothing to :class:`DelayComponent`.
+    """

@@ -13,6 +13,7 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import (
+    BinaryDelayComponent,
     DelayComponent,
     DispersionDelayComponent,
     ParamDecl,
@@ -121,26 +122,9 @@ class TimingModel(eqx.Module):
         time to the binary barycentre, but not the binary orbital delay itself.
         With no binary component this equals :meth:`compute_delay`.
         """
-        from jaxpint.binary import (
-            BinaryBT,
-            BinaryBTPiecewise,
-            BinaryDD,
-            BinaryDDGR,
-            BinaryDDK,
-            BinaryELL1,
-        )
-
-        binary_types = (
-            BinaryBT,
-            BinaryBTPiecewise,
-            BinaryDD,
-            BinaryDDGR,
-            BinaryDDK,
-            BinaryELL1,
-        )
         delay = jnp.zeros(toa_data.n_toas)
         for comp in self.delay_components:
-            if isinstance(comp, binary_types):
+            if isinstance(comp, BinaryDelayComponent):
                 break
             delay = delay + comp(toa_data, params, delay)
         return delay
