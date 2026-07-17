@@ -1,6 +1,6 @@
 """Fisher-matrix sky-localization for a continuous-GW source.
 
-Companion to :mod:`jaxpint.pta.cw_upper_limit` (which gives analytic upper
+Companion to :mod:`jaxpint.bayes.cw_upper_limit` (which gives analytic upper
 limits on strain). Here we go the other way: assume a *known* signal of
 amplitude ``h0`` and compute the per-pixel 2-D Fisher information for the GW
 sky position ``(cos_gwtheta, gwphi)``.
@@ -27,6 +27,16 @@ from jaxtyping import Array, Float
 
 from jaxpint.stats.regions import gaussian_credible_area
 from jaxpint.types import GlobalParams
+
+__all__ = [
+    "h0_for_snr",
+    "make_logL_2sky",
+    "gram_at_pixel",
+    "gram_block_at_pair",
+    "assemble_joint_fisher",
+    "per_source_credible_areas_deg2",
+    "credible_area_deg2",
+]
 
 
 # Solid-angle conversion: (180/π)² deg² per steradian.

@@ -10,7 +10,7 @@ Method (Fisher matrix at the truth point; see ``jaxpint/pta/cw_localization.py``
 
 1. Each pixel of a HEALPix grid is a candidate true sky position. At that pixel
    the unit-strain signal power ``Y = (s_hat | s_hat)`` is computed via
-   :func:`jaxpint.pta.cw_upper_limit.quadratic_coeffs`; ``h0`` is calibrated per
+   :func:`jaxpint.bayes.cw_upper_limit.quadratic_coeffs`; ``h0`` is calibrated per
    pixel so the optimal matched-filter SNR equals ``SNR_TARGET`` (default 20).
 2. With ``h0`` fixed at that calibration the timing-marginalized log-likelihood is
    approximately quadratic in the sky parameters ``(cos_gwtheta, gwphi)`` near

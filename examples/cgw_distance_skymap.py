@@ -4,7 +4,7 @@ Reproduces, approximately, the sky map of the 95% *lower limit on the distance*
 to a continuous-GW source of fixed chirp mass and frequency from the NANOGrav
 15-yr individual-SMBHB paper (arXiv:2306.16222, Fig. 8), without running MCMC.
 
-Method (see ``jaxpint/pta/cw_upper_limit.py`` for the math):
+Method (see ``jaxpint/bayes/cw_upper_limit.py`` for the math):
 
 1. The CW residual is exactly linear in the strain ``h0`` (Earth-term only by
    default, and also when ``--include-pulsar-term`` is passed because pulsar
@@ -194,7 +194,7 @@ def compute_skymap(
     from jaxpint.types import GlobalParams
     from jaxpint.pta.signals.cw import CWInjector
     from jaxpint.frequentist.detection import fstat
-    from jaxpint.pta.cw_upper_limit import (
+    from jaxpint.bayes.cw_upper_limit import (
         h0_95_closed_form,
         h0_to_distance,
         h0_95_marginalized,

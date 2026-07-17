@@ -8,7 +8,7 @@ information that collapses the comb.
 
 This driver injects one source, extracts the per-pulsar ``(b, M)`` over a HEALPix grid
 **once**, then sweeps the number of *anchored* pulsars (``is_tight`` in
-:func:`jaxpint.pta.incoherent_ul.mixed_phase_A`, with ``sigma_L`` sub-fringe) -- a
+:func:`jaxpint.bayes.incoherent_ul.mixed_phase_A`, with ``sigma_L`` sub-fringe) -- a
 pure reduction sweep, anchoring **loudest-first** by per-pulsar SNR^2
 ``a_i^T M_i a_i`` (SkyScan's ranking) -- and reports the argmax offset from truth, the 68% HPD area,
 and the credible level at truth as a function of ``n_anchors``.  The area/offset fall
@@ -98,7 +98,7 @@ def compute_anchor_ladder(
 
     from jaxpint.stats.regions import credible_level_map, credible_region_area
     from jaxpint.pta.signals.cw import cw_delay_from_array, CWInjector, _KPC_TO_M, _C
-    from jaxpint.pta.incoherent_ul import mixed_phase_A, total_logL_marg
+    from jaxpint.bayes.incoherent_ul import mixed_phase_A, total_logL_marg
     from jaxpint.pta.extraction import extract_pulsar_bM
     from jaxpint.pta.cw_localization import h0_for_snr
     from jaxpint.types import GlobalParams

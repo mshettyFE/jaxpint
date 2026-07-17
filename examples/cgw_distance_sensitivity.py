@@ -150,7 +150,7 @@ def compute_distance_sensitivity(
 
     from jaxpint import map_pulsars
     from jaxpint.bayes import marginalize_single_pulsar
-    from jaxpint.pta.cw_upper_limit import h0_to_distance
+    from jaxpint.bayes.cw_upper_limit import h0_to_distance
     from jaxpint.pta.extraction import default_extraction_orientations
     from jaxpint.frequentist.sensitivity import earth_term_gram, unit_noncentrality
     from jaxpint.pta.signals.cw import evolution_ok

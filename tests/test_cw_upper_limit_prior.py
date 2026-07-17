@@ -14,7 +14,7 @@ import pytest
 pytest.importorskip("numpyro")
 import numpyro.distributions as dist
 
-from jaxpint.pta.cw_upper_limit import h0_95_marginalized
+from jaxpint.bayes.cw_upper_limit import h0_95_marginalized
 from jaxpint.stats.regions import truncated_gaussian_upper_limit
 
 

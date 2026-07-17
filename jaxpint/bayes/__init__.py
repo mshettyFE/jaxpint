@@ -9,6 +9,12 @@ to act as a visible flag that the script is making Bayesian assumptions
 (here: analytic marginalization over nuisance parameters).  Pure likelihood
 scans don't need this subpackage.
 
+Analytic Bayesian CW upper limits live in the ``jaxpint.bayes.cw_upper_limit``
+(strain, closed-form / grid-marginalized) and ``jaxpint.bayes.incoherent_ul``
+(distance, incoherent) submodules.  They carry explicit prior assumptions, so
+they belong on the Bayesian side rather than in the arm-neutral
+``jaxpint.pta``; import them by their full module path.
+
 Prior specification and sampling live under ``jaxpint.bayes.samplers``
 (NumPyro, opt-in); that is where prior-distribution objects and the
 composition helpers are exposed.

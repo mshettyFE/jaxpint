@@ -4,7 +4,7 @@ The *numerical* counterpart of :mod:`jaxpint.bayes.marginal` (the analytic Woodb
 marginalization of timing parameters).  Reach for these when the log-likelihood is
 **not quadratic** in the nuisance, so the Gaussian/Woodbury closed form does not
 apply -- e.g. a continuous-wave source's pulsar-term phase, where the nuisance
-enters through ``cos delta / sin delta`` (see :mod:`jaxpint.pta.incoherent_ul`).  The
+enters through ``cos delta / sin delta`` (see :mod:`jaxpint.bayes.incoherent_ul`).  The
 likelihood is evaluated on a grid of the nuisance and then reduced: **integrate**
 it (the Bayesian marginal, :func:`grid_log_marginal`) or **maximize** it (the
 frequentist profile, :func:`grid_log_profile`).
