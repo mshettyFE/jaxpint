@@ -255,6 +255,44 @@ class TestBridge:
 
 
 # ---------------------------------------------------------------------------
+# Tests: model.compute_dm parity (solar-wind DM reaches the total DM)
+# ---------------------------------------------------------------------------
+
+
+class TestComputeDM:
+    """Solar-wind DM flows into ``TimingModel.compute_dm`` and matches PINT.
+
+    ``SolarWindDispersion`` is a :class:`DispersionDelayComponent`, so its DM must
+    be summed into the model's total DM (used for wideband fitting), matching
+    PINT's ``total_dm`` (which includes the solar wind via ``dm_value_funcs``).
+    """
+
+    @pytest.mark.parametrize("par_str", [_PAR_SWM0, _PAR_SWM1])
+    def test_compute_dm_matches_pint_total_dm(self, par_str):
+        model = get_model(StringIO(par_str))
+        toas = make_fake_toas_uniform(
+            startMJD=54500, endMJD=55500,
+            ntoas=50, model=model, freq=1400.0,
+            add_noise=False,
+        )
+        toas.compute_TDBs()
+        toas.compute_posvels()
+
+        toa_data = pint_toas_to_jax(toas, model)
+        params = pint_model_to_params(model).params
+        jax_model, _ = build_timing_model(model)
+
+        jax_dm = np.array(jax_model.compute_dm(toa_data, params))
+        pint_dm = np.array(model.total_dm(toas).to("pc/cm^3").value)
+
+        np.testing.assert_allclose(jax_dm, pint_dm, rtol=1e-10, atol=1e-12)
+
+        # The solar wind must actually contribute: total DM is not just the flat
+        # constant DM (3.138) but carries a time/geometry-dependent piece.
+        assert np.max(np.abs(jax_dm - 3.138)) > 1e-6
+
+
+# ---------------------------------------------------------------------------
 # Tests: Validation
 # ---------------------------------------------------------------------------
 

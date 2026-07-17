@@ -42,10 +42,9 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.components import DispersionDelayComponent, ParamDecl
 from jaxpint.constants import (
     AU_KM,
-    DMCONST,
     PC_TO_KM,
 )
 from jaxpint.delay._epoch import dt_years_from_epoch
@@ -174,7 +173,7 @@ def _solar_wind_geometry_swm1(
     return geometry_km / PC_TO_KM
 
 
-class SolarWindDispersion(DelayComponent):
+class SolarWindDispersion(DispersionDelayComponent):
     """Dispersion delay from the solar wind.
 
     Parameters
@@ -246,13 +245,18 @@ class SolarWindDispersion(DelayComponent):
     # Public API
     # ------------------------------------------------------------------
 
-    def __call__(
+    def compute_dm(
         self,
         toa_data: TOAData,
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
-        """Compute solar wind dispersion delay.
+        """Compute the solar wind DM contribution.
+
+        The base :class:`~jaxpint.components.DispersionDelayComponent` turns this
+        into a timing delay via the dispersion law; returning the DM here (rather
+        than the delay) also lets it flow into ``TimingModel.compute_dm`` for
+        wideband fitting, matching PINT's ``dm_value_funcs`` convention.
 
         Parameters
         ----------
@@ -266,7 +270,7 @@ class SolarWindDispersion(DelayComponent):
         Returns
         -------
         array, shape (n_toas,)
-            Solar wind dispersion delay in seconds.
+            Solar wind dispersion measure in pc/cm³.
         """
         # 1. Pulsar direction (unit vector, ICRS).
         psr_dir = compute_pulsar_direction(
@@ -297,6 +301,6 @@ class SolarWindDispersion(DelayComponent):
         ne_sw_coeffs = params.param_values(self.ne_sw_param_names)
         ne_sw = taylor_horner(dt_yr, ne_sw_coeffs)
 
-        # 5. Solar wind DM (pc / cm^3) and delay (seconds).
+        # 5. Solar wind DM (pc / cm^3); the base class applies the dispersion law.
         dm_sw = ne_sw * geometry_pc
-        return dm_sw * DMCONST / toa_data.freq**2
+        return dm_sw
