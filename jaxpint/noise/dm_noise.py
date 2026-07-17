@@ -5,7 +5,7 @@ matrix is pre-scaled by ``(1400 / f_obs)²`` by the bridge, so DM's
 inverse-frequency-squared dependence is baked into the basis and the
 component is otherwise identical to :class:`~jaxpint.noise.PLRedNoise`.
 Shared machinery lives in
-:class:`~jaxpint.noise._power_law._PowerLawFourierNoise`.
+:class:`~jaxpint.noise._fourier_gp._PowerLawFourierNoise`.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl
-from jaxpint.noise._power_law import _PowerLawFourierNoise
+from jaxpint.noise._fourier_gp import _PowerLawFourierNoise
 
 
 class PLDMNoise(_PowerLawFourierNoise):
