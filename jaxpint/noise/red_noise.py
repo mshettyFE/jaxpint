@@ -11,7 +11,7 @@ The noise covariance is decomposed as::
 where *F* is a Fourier design matrix (pre-computed by the bridge) and
 *w* are the power-law PSD weights computed from the amplitude and
 spectral index parameters. The shared machinery lives in
-:class:`~jaxpint.noise._power_law._PowerLawFourierNoise`.
+:class:`~jaxpint.noise._fourier_gp._PowerLawFourierNoise`.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl
-from jaxpint.noise._power_law import _PowerLawFourierNoise
+from jaxpint.noise._fourier_gp import _PowerLawFourierNoise
 
 
 class PLRedNoise(_PowerLawFourierNoise):

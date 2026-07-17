@@ -14,7 +14,7 @@ The geometry factor depends on the pulsar direction and observer-Sun position
 (and fitted astrometry), so the basis is computed at runtime (dynamic-basis
 component) reusing the geometry functions from :mod:`jaxpint.delay.solar_wind`.
 Shared machinery lives in
-:class:`~jaxpint.noise._power_law._PowerLawFourierNoise`.
+:class:`~jaxpint.noise._fourier_gp._PowerLawFourierNoise`.
 
 References
 ----------
@@ -36,7 +36,7 @@ from jaxpint.delay.solar_wind import (
     _solar_wind_geometry_swm1,
     _sun_angle_and_distance,
 )
-from jaxpint.noise._power_law import _PowerLawFourierNoise
+from jaxpint.noise._fourier_gp import _PowerLawFourierNoise
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
 

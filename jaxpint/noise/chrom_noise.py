@@ -5,7 +5,7 @@ multiplied at evaluation time by ``(f_ref / f_obs)^α``, where ``α`` is the
 chromatic index (``TNCHROMIDX``). Because the scaling depends on a (possibly
 fitted) parameter, this is a *dynamic*-basis component (it does not pre-stack)
 and the scaling is computed at runtime to stay JAX-differentiable. Shared
-machinery lives in :class:`~jaxpint.noise._power_law._PowerLawFourierNoise`.
+machinery lives in :class:`~jaxpint.noise._fourier_gp._PowerLawFourierNoise`.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl
-from jaxpint.noise._power_law import _PowerLawFourierNoise
+from jaxpint.noise._fourier_gp import _PowerLawFourierNoise
 from jaxpint.types import TOAData, ParameterVector
 
 

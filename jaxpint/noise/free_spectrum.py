@@ -29,11 +29,11 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint._psd import expand_sin_cos, free_spectrum_psd
-from jaxpint.noise._power_law import _PowerLawFourierNoise
+from jaxpint.noise._fourier_gp import _FourierGPNoise
 from jaxpint.types import ParameterVector
 
 
-class FreeSpectrumNoise(_PowerLawFourierNoise):
+class FreeSpectrumNoise(_FourierGPNoise):
     """Free-spectrum noise on a fixed alternating sin/cos Fourier basis.
 
     Parameters
