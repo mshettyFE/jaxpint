@@ -28,6 +28,7 @@ from jaxpint.binary.common import (
     compute_ecc,
     compute_a1,
     compute_omega_bt,
+    compute_orbital_phase,
 )
 
 
@@ -156,7 +157,7 @@ class BinaryBTPiecewise(DelayComponent):
 
         # --- Solve Kepler's equation ---
         t0_per_toa = DualFloat(int=t0_int_per_toa, frac=t0_frac_per_toa)
-        M = _compute_orbital_phase_piecewise(
+        M = compute_orbital_phase(
             toa_data.tdb,
             t0_per_toa,
             pb_d,
@@ -167,38 +168,3 @@ class BinaryBTPiecewise(DelayComponent):
         E = compute_eccentric_anomaly(ecc, M)
 
         return _bt_delay_formula(a1, ecc, omega, gamma, pb_d, pbdot, tt0_s, E)
-
-
-def _compute_orbital_phase_piecewise(
-    tdb,
-    epoch,
-    pb_d,
-    pbdot,
-    xpbdot,
-    delay=None,
-):
-    """Orbital phase with per-TOA epoch (vectorized version of compute_orbital_phase)."""
-    dt = tdb - epoch
-    dt_int_days = dt.int
-    dt_frac_days = dt.frac
-    if delay is not None:
-        dt_frac_days = dt_frac_days - delay / SECS_PER_DAY
-
-    n_orbits = jnp.floor(dt_int_days / pb_d)
-    rem_int_days = dt_int_days - n_orbits * pb_d
-
-    rem_days = rem_int_days + dt_frac_days
-    extra = jnp.floor(rem_days / pb_d)
-    rem_days = rem_days - extra * pb_d
-
-    frac_orbit = rem_days / pb_d
-
-    tt0_s = (dt_int_days + dt_frac_days) * SECS_PER_DAY
-    pb_s = pb_d * SECS_PER_DAY
-    ratio = tt0_s / pb_s
-    pbdot_corr = -0.5 * (pbdot + xpbdot) * ratio**2
-
-    frac_total = frac_orbit + pbdot_corr
-    frac_total = frac_total - jnp.floor(frac_total)
-
-    return 2.0 * jnp.pi * frac_total
