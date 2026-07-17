@@ -17,19 +17,45 @@ continuity with the literature the implementations follow.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import jax
 import jax.numpy as jnp
 from jax.scipy.special import ndtr, ndtri
 from jaxtyping import Array, Float
 
+if TYPE_CHECKING:
+    from numpyro.distributions import Distribution
+
 __all__ = [
     "truncated_gaussian_upper_limit",
     "mixture_truncated_gaussian_upper_limit",
     "grid_credible_upper_limit",
+    "masked_log_prior",
     "gaussian_credible_area",
     "credible_level_map",
     "credible_region_area",
 ]
+
+
+def masked_log_prior(
+    x: Float[Array, " n"],
+    prior: "Distribution",
+) -> Float[Array, " n"]:
+    """Prior log-density at grid points ``x``, ``-inf`` outside the support.
+
+    numpyro's ``log_prob`` does **not** self-mask, so before folding a bounded
+    prior into grid weights, points outside its support must be set to ``-inf``
+    by hand.  A ``None`` support (numpyro's unconstrained base distribution)
+    means every point is in support.
+    """
+    support = prior.support
+    in_support = (
+        jnp.ones(x.shape, dtype=bool)
+        if support is None
+        else jnp.asarray(support(x), dtype=bool)
+    )
+    return jnp.where(in_support, prior.log_prob(x), -jnp.inf)
 
 
 def truncated_gaussian_upper_limit(

@@ -46,7 +46,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.stats.regions import grid_credible_upper_limit
+from jaxpint.stats.regions import grid_credible_upper_limit, masked_log_prior
 from jaxpint.stats.grids import grid_log_marginal, grid_log_profile
 from jaxpint.pta.signals.cw import _C, _KPC_TO_M
 
@@ -372,13 +372,5 @@ def h0_95_grid(
         h0, b_stack, M_stack, A_stack
     )
     if prior is not None:
-        # numpyro log_prob does not self-mask; restrict to the prior's support.
-        # A ``None`` support (unconstrained base) means every point is in support.
-        support = prior.support
-        in_support = (
-            jnp.ones(h0.shape, dtype=bool)
-            if support is None
-            else jnp.asarray(support(h0), dtype=bool)
-        )
-        logpost = logpost + jnp.where(in_support, prior.log_prob(h0), -jnp.inf)
+        logpost = logpost + masked_log_prior(h0, prior)
     return grid_credible_upper_limit(h0, logpost, level)
