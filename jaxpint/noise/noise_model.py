@@ -16,13 +16,13 @@ from typing import Optional
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import ComponentIndexMixin, NoiseComponent
+from jaxpint.components import ComponentIndexed, NoiseComponent
 from jaxpint.noise.dm_white import ScaleDmError
 from jaxpint.noise.white import ScaleToaError
 from jaxpint.types import TOAData, ParameterVector
 
 
-class NoiseModel(ComponentIndexMixin):
+class NoiseModel(ComponentIndexed):
     """Container that aggregates all noise sources into a single interface.
 
     Provides a unified Woodbury covariance decomposition::
@@ -160,4 +160,4 @@ class NoiseModel(ComponentIndexMixin):
         return tuple(result)
 
     # component_names + __getitem__ (name/index access) inherited from
-    # ComponentIndexMixin, over the `components` property above.
+    # ComponentIndexed, over the `components` property above.

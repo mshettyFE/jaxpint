@@ -130,6 +130,53 @@ CURN_PARAM_DEFAULTS: dict[str, float] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Shared spectrum-backed injector plumbing (composition, not inheritance)
+# ---------------------------------------------------------------------------
+# CURNInjector and HDCorrelatedGWBInjector sit under different ABCs
+# (SignalInjector vs CorrelatedSignalInjector) but share the same spectrum
+# setup: store the config, build the parameter spec from the spectrum, and
+# register those globals under `prefix`. Kept as free functions the injectors
+# delegate to, so neither hierarchy grows a second base (no mixin / MRO).
+
+
+def _setup_spectrum(
+    inj,
+    n_components: int,
+    T_span: float,
+    prefix: str,
+    initial_values: Optional[dict[str, float]],
+    spectrum: Optional[SpectralModel],
+    *,
+    label: str,
+) -> None:
+    """Populate an injector's spectrum config in place (shared ``__init__`` body).
+
+    ``label`` names the injector only for the "unknown parameter" error message.
+    """
+    inj.n_components = n_components
+    inj.T_span = T_span
+    inj.prefix = prefix
+    inj.spectrum = PowerLawSpectrum() if spectrum is None else spectrum
+    validate_spectrum_components(inj.spectrum, n_components)
+
+    inj.param_spec = inj.spectrum.param_defaults()
+    if initial_values is not None:
+        unknown = set(initial_values) - set(inj.param_spec)
+        if unknown:
+            raise ValueError(
+                f"Unknown {label} parameters: {unknown}. "
+                f"Valid parameters: {list(inj.param_spec)}"
+            )
+        inj.param_spec.update(initial_values)
+
+
+def _register_spectrum_params(inj, global_params):
+    """Append the injector's prefixed spectrum globals (shared ``register_params``)."""
+    names = [f"{inj.prefix}{n}" for n in inj.param_spec]
+    return global_params.add_params(names, list(inj.param_spec.values()))
+
+
 class CURNInjector(SignalInjector):
     """Uncorrelated common red noise (CURN, Gamma = I) injector.
 
@@ -163,21 +210,9 @@ class CURNInjector(SignalInjector):
         initial_values: Optional[dict[str, float]] = None,
         spectrum: Optional[SpectralModel] = None,
     ):
-        self.n_components = n_components
-        self.T_span = T_span
-        self.prefix = prefix
-        self.spectrum = PowerLawSpectrum() if spectrum is None else spectrum
-        validate_spectrum_components(self.spectrum, n_components)
-
-        self.param_spec: dict[str, float] = self.spectrum.param_defaults()
-        if initial_values is not None:
-            unknown = set(initial_values) - set(self.param_spec)
-            if unknown:
-                raise ValueError(
-                    f"Unknown CURN parameters: {unknown}. "
-                    f"Valid parameters: {list(self.param_spec.keys())}"
-                )
-            self.param_spec.update(initial_values)
+        _setup_spectrum(
+            self, n_components, T_span, prefix, initial_values, spectrum, label="CURN"
+        )
 
     # -- SignalInjector ABC -----------------------------------------------------
 
@@ -195,9 +230,7 @@ class CURNInjector(SignalInjector):
             Updated copy with ``{prefix}log10_A`` and ``{prefix}gamma``
             appended.
         """
-        names = [f"{self.prefix}{n}" for n in self.param_spec]
-        values = list(self.param_spec.values())
-        return global_params.add_params(names, values)
+        return _register_spectrum_params(self, global_params)
 
     # delay() inherited from SignalInjector — returns None (CURN is stochastic)
 

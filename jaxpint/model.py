@@ -14,7 +14,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import (
     BinaryDelayComponent,
-    ComponentIndexMixin,
+    ComponentIndexed,
     DelayComponent,
     DispersionDelayComponent,
     ParamDecl,
@@ -26,7 +26,7 @@ from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
 
-class TimingModel(ComponentIndexMixin):
+class TimingModel(ComponentIndexed):
     """Orchestrates delay and phase components.
 
     Parameters
@@ -256,7 +256,7 @@ class TimingModel(ComponentIndexMixin):
         return self.delay_components + self.phase_components
 
     # component_names + __getitem__ (name/index access) inherited from
-    # ComponentIndexMixin, over the `components` property above.
+    # ComponentIndexed, over the `components` property above.
 
     # ------------------------------------------------------------------
     # Per-component decomposition (diagnostic / inspection only)
