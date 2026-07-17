@@ -17,14 +17,13 @@ from __future__ import annotations
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent, ParamDecl
-from jaxpint.constants import DMCONST
+from jaxpint.components import ChromaticDelayComponent, ParamDecl
 from jaxpint.delay._epoch import dt_years_from_epoch
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
 
 
-class ChromaticCM(DelayComponent):
+class ChromaticCM(ChromaticDelayComponent):
     """Chromatic measure delay using a Taylor expansion about CMEPOCH.
 
     Parameters
@@ -52,36 +51,22 @@ class ChromaticCM(DelayComponent):
 
     cm_param_names: tuple[str, ...] = eqx.field(static=True)
     cmepoch_name: str = eqx.field(static=True, default="CMEPOCH")
-    tnchromidx_name: str = eqx.field(static=True, default="TNCHROMIDX")
 
     def __check_init__(self):
         if len(self.cm_param_names) == 0:
             raise ValueError("ChromaticCM requires at least one CM term")
 
-    def __call__(
+    def compute_cm(
         self,
         toa_data: TOAData,
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
-        """Compute chromatic CM delay contribution.
+        """Chromatic measure ``CM(t)`` (Taylor expansion about CMEPOCH).
 
-        Parameters
-        ----------
-        toa_data : TOAData
-            Pre-extracted TOA data.
-        params : ParameterVector
-            Timing-model parameters containing CM, CM1, ..., CMEPOCH, TNCHROMIDX.
-        delay : array, shape (n_toas,)
-            Accumulated signal delay from prior components in seconds.
-
-        Returns
-        -------
-        array, shape (n_toas,)
-            Chromatic delay in seconds.
+        The base ``__call__`` applies the frequency scaling
+        ``· K_DM · freq^(-TNCHROMIDX)`` to give the delay in seconds.
         """
         dt_yr = dt_years_from_epoch(toa_data, params, self.cmepoch_name)
         cm_coeffs = params.param_values(self.cm_param_names)
-        cm = taylor_horner(dt_yr, cm_coeffs)
-        alpha = params.param_value(self.tnchromidx_name)
-        return cm * DMCONST * toa_data.freq ** (-alpha)
+        return taylor_horner(dt_yr, cm_coeffs)

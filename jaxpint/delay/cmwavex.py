@@ -17,13 +17,12 @@ from __future__ import annotations
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent, ParamDecl
-from jaxpint.constants import DMCONST
+from jaxpint.components import ChromaticDelayComponent, ParamDecl
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import fourier_sum
 
 
-class CMWaveX(DelayComponent):
+class CMWaveX(ChromaticDelayComponent):
     """Fourier-basis chromatic noise (CMWaveX).
 
     Parameters
@@ -63,7 +62,7 @@ class CMWaveX(DelayComponent):
     cmwxsin_names: tuple[str, ...] = eqx.field(static=True)
     cmwxcos_names: tuple[str, ...] = eqx.field(static=True)
     cmwxepoch_name: str = eqx.field(static=True, default="CMWXEPOCH")
-    tnchromidx_name: str = eqx.field(static=True, default="TNCHROMIDX")
+    # tnchromidx_name inherited from ChromaticDelayComponent (kw_only).
 
     def __check_init__(self):
         if self.n_components < 1:
@@ -75,27 +74,16 @@ class CMWaveX(DelayComponent):
                     f"does not match n_components ({self.n_components})"
                 )
 
-    def __call__(
+    def compute_cm(
         self,
         toa_data: TOAData,
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
-        """Compute CMWaveX delay contribution.
+        """Chromatic measure ``CM(t)`` as a Fourier series about CMWXEPOCH.
 
-        Parameters
-        ----------
-        toa_data : TOAData
-            Pre-extracted TOA data.
-        params : ParameterVector
-            Timing-model parameters.
-        delay : array, shape (n_toas,)
-            Accumulated signal delay from prior components in seconds.
-
-        Returns
-        -------
-        array, shape (n_toas,)
-            CMWaveX delay in seconds.
+        The base ``__call__`` applies ``· K_DM · freq^(-TNCHROMIDX)`` to give
+        the delay in seconds.
         """
         epoch = params.epoch_dual(self.cmwxepoch_name)
         dt_days = (toa_data.tdb - epoch).total
@@ -104,6 +92,4 @@ class CMWaveX(DelayComponent):
         sins = params.param_values(self.cmwxsin_names)
         coses = params.param_values(self.cmwxcos_names)
 
-        cm = fourier_sum(dt_days, freqs, sins, coses)
-        alpha = params.param_value(self.tnchromidx_name)
-        return cm * DMCONST * toa_data.freq ** (-alpha)
+        return fourier_sum(dt_days, freqs, sins, coses)

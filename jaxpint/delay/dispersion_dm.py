@@ -18,7 +18,6 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent, ParamDecl
-from jaxpint.constants import DMCONST
 from jaxpint.delay._epoch import dt_years_from_epoch
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
@@ -90,30 +89,3 @@ class DispersionDM(DispersionDelayComponent):
         dt_yr = dt_years_from_epoch(toa_data, params, self.dmepoch_name)
         dm_coeffs = params.param_values(self.dm_param_names)
         return taylor_horner(dt_yr, dm_coeffs)
-
-    def __call__(
-        self,
-        toa_data: TOAData,
-        params: ParameterVector,
-        delay: Float[Array, " n_toas"],
-    ) -> Float[Array, " n_toas"]:
-        """Compute dispersion delay contribution.
-
-        Parameters
-        ----------
-        toa_data : TOAData
-            Pre-extracted TOA data (TDB times, frequencies, etc.).
-        params : ParameterVector
-            Timing-model parameters containing DM, DM1, ..., and DMEPOCH.
-        delay : array, shape (n_toas,)
-            Accumulated signal delay from prior components in **seconds**.
-            Not used by this component (dispersion is frequency-dependent,
-            not time-dependent), but accepted for API consistency.
-
-        Returns
-        -------
-        array, shape (n_toas,)
-            Dispersion delay in **seconds**.
-        """
-        dm = self.compute_dm(toa_data, params, delay)
-        return dm * DMCONST / toa_data.freq**2
