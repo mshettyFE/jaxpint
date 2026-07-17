@@ -7,6 +7,7 @@ from typing import Literal, Optional, get_args
 
 import equinox as eqx
 import jax.numpy as jnp
+import numpy as np
 from jaxtyping import Array, Bool, Float, Int
 
 from jaxpint.types.dual_float import DualFloat
@@ -23,7 +24,8 @@ class TOAData(eqx.Module):
     Created by the bridge layer from PINT ``TOAs`` objects. All astropy units
     are stripped; see unit conventions below.
 
-    Unit conventions (enforced by bridge, not by this class):
+    Unit conventions (the dtype half is enforced by :meth:`from_arrays`, the
+    single builder both loaders route through; units are the caller's contract):
         mjd_int, mjd_frac:      days (integer MJD + fractional day in [0, 1))
         tdb_int, tdb_frac:      days (TDB timescale, same split)
         error:                  seconds
@@ -272,4 +274,94 @@ class TOAData(eqx.Module):
             tzr_ssb_obs_pos=None,
             tzr_obs_sun_pos=None,
             tzr_planet_positions=None,
+        )
+
+    @classmethod
+    def from_arrays(
+        cls,
+        *,
+        mjd_int,
+        mjd_frac,
+        tdb_int,
+        tdb_frac,
+        error,
+        freq,
+        delta_pulse_number,
+        ssb_obs_pos,
+        ssb_obs_vel,
+        obs_sun_pos,
+        obs_indices,
+        n_toas: int,
+        obs_names: tuple[str, ...],
+        flag_masks: Optional[dict] = None,
+        planet_positions: Optional[dict] = None,
+        dm_values=None,
+        dm_errors=None,
+        tropo_alt=None,
+        tropo_alt_valid=None,
+        obs_geodetic_lat=None,
+        obs_height_km=None,
+        tzr_tdb_int=None,
+        tzr_tdb_frac=None,
+        tzr_freq=None,
+        tzr_ssb_obs_pos=None,
+        tzr_obs_sun_pos=None,
+        tzr_planet_positions=None,
+        basis_seconds=None,
+        basis_coord: Optional[BasisCoord] = None,
+    ) -> "TOAData":
+        """Build a TOAData from raw NumPy/JAX arrays, owning all dtype coercion.
+
+        The single home for the dtype contract (see the class docstring): every
+        continuous field is cast to ``float64``, ``obs_indices`` to ``int32``,
+        and the boolean fields (``flag_masks`` values, ``tropo_alt_valid``) to
+        ``bool_``; the optional blocks pass ``None`` through untouched.  Both
+        loaders — the native ``.par``/``.tim`` pipeline and the PINT bridge —
+        assemble their ``TOAData`` through here, so the coercion lives once
+        rather than field-for-field in each.  Inputs may be NumPy (including
+        longdouble, downcast via ``np.asarray`` first) or JAX arrays.
+        """
+        f = lambda a: jnp.asarray(np.asarray(a), dtype=jnp.float64)  # noqa: E731
+        fopt = lambda a: None if a is None else f(a)  # noqa: E731
+        planets = lambda d: (  # noqa: E731
+            None if d is None else {k: f(v) for k, v in d.items()}
+        )
+        return cls(
+            mjd_int=f(mjd_int),
+            mjd_frac=f(mjd_frac),
+            tdb_int=f(tdb_int),
+            tdb_frac=f(tdb_frac),
+            error=f(error),
+            freq=f(freq),
+            delta_pulse_number=f(delta_pulse_number),
+            ssb_obs_pos=f(ssb_obs_pos),
+            ssb_obs_vel=f(ssb_obs_vel),
+            obs_sun_pos=f(obs_sun_pos),
+            obs_indices=jnp.asarray(np.asarray(obs_indices), dtype=jnp.int32),
+            flag_masks=(
+                {}
+                if not flag_masks
+                else {k: jnp.asarray(v, dtype=jnp.bool_) for k, v in flag_masks.items()}
+            ),
+            planet_positions=planets(planet_positions),
+            dm_values=fopt(dm_values),
+            dm_errors=fopt(dm_errors),
+            tropo_alt=fopt(tropo_alt),
+            tropo_alt_valid=(
+                None
+                if tropo_alt_valid is None
+                else jnp.asarray(tropo_alt_valid, dtype=jnp.bool_)
+            ),
+            obs_geodetic_lat=fopt(obs_geodetic_lat),
+            obs_height_km=fopt(obs_height_km),
+            n_toas=n_toas,
+            obs_names=obs_names,
+            tzr_tdb_int=tzr_tdb_int,
+            tzr_tdb_frac=tzr_tdb_frac,
+            tzr_freq=tzr_freq,
+            tzr_ssb_obs_pos=fopt(tzr_ssb_obs_pos),
+            tzr_obs_sun_pos=fopt(tzr_obs_sun_pos),
+            tzr_planet_positions=planets(tzr_planet_positions),
+            basis_seconds=fopt(basis_seconds),
+            basis_coord=basis_coord,
         )

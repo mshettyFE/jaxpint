@@ -329,7 +329,13 @@ class WidebandGLSFitter(BaseFitter):
 
     def _default_threshold(self, full_cov: bool = False) -> float:
         if self.noise_model is not None and self.noise_model.has_correlated:
-            _, U_init, _ = self.noise_model.covariance(self.toa_data, self.params)
+            # Read n_basis from the SAME wideband path the solve uses
+            # (_get_wideband_noise -> wideband_covariance), NOT the narrowband
+            # covariance(): the two agree only because wideband_covariance
+            # currently delegates to it, so reading covariance() here would
+            # silently miscalibrate the SVD threshold the day that delegation
+            # changes.  Mirrors GLSFitter._default_threshold (which uses _get_noise).
+            _s, _Nd, U_init, _Phi, _sdm = self._get_wideband_noise(self.params)
             n_basis = U_init.shape[1]
         else:
             n_basis = 0

@@ -11,7 +11,6 @@ import logging
 from typing import Optional
 
 import astropy.units as u
-import jax.numpy as jnp
 import numpy as np
 from pint.models.parameter import maskParameter
 from pint.models.timing_model import TimingModel as PINTTimingModel
@@ -354,47 +353,31 @@ def pint_toas_to_jax(
         tzr_tdb_int = tzr_info["tdb_int"]
         tzr_tdb_frac = tzr_info["tdb_frac"]
         tzr_freq = tzr_info["freq"]
-        tzr_ssb_obs_pos = jnp.asarray(tzr_info["ssb_obs_pos"], dtype=jnp.float64)
-        tzr_obs_sun_pos = jnp.asarray(tzr_info["obs_sun_pos"], dtype=jnp.float64)
-        if tzr_info["planet_positions"] is not None:
-            tzr_planet_positions = {
-                k: jnp.asarray(v, dtype=jnp.float64)
-                for k, v in tzr_info["planet_positions"].items()
-            }
+        tzr_ssb_obs_pos = tzr_info["ssb_obs_pos"]
+        tzr_obs_sun_pos = tzr_info["obs_sun_pos"]
+        tzr_planet_positions = tzr_info["planet_positions"]
 
-    # -- Assemble TOAData ------------------------------------------------
-    to_jnp = lambda arr: jnp.asarray(arr, dtype=jnp.float64)
-    jnp_flag_masks = {k: jnp.asarray(v, dtype=jnp.bool_) for k, v in flag_masks.items()}
-    jnp_planets = (
-        {k: to_jnp(v) for k, v in planet_positions.items()}
-        if planet_positions is not None
-        else None
-    )
-
-    return TOAData(
-        mjd_int=to_jnp(mjd_int),
-        mjd_frac=to_jnp(mjd_frac),
-        tdb_int=to_jnp(tdb_int),
-        tdb_frac=to_jnp(tdb_frac),
-        error=to_jnp(error_s),
-        freq=to_jnp(freq_mhz),
-        delta_pulse_number=to_jnp(delta_pulse_number),
-        ssb_obs_pos=to_jnp(ssb_obs_pos),
-        ssb_obs_vel=to_jnp(ssb_obs_vel),
-        obs_sun_pos=to_jnp(obs_sun_pos),
-        obs_indices=jnp.asarray(obs_indices, dtype=jnp.int32),
-        flag_masks=jnp_flag_masks,
-        planet_positions=jnp_planets,
-        dm_values=to_jnp(dm_values) if dm_values is not None else None,
-        dm_errors=to_jnp(dm_errors) if dm_errors is not None else None,
-        tropo_alt=to_jnp(tropo_alt) if tropo_alt is not None else None,
-        tropo_alt_valid=jnp.asarray(tropo_alt_valid, dtype=jnp.bool_)
-        if tropo_alt_valid is not None
-        else None,
-        obs_geodetic_lat=to_jnp(obs_geodetic_lat)
-        if obs_geodetic_lat is not None
-        else None,
-        obs_height_km=to_jnp(obs_height_km) if obs_height_km is not None else None,
+    # -- Assemble TOAData (from_arrays owns the dtype coercion) ----------
+    return TOAData.from_arrays(
+        mjd_int=mjd_int,
+        mjd_frac=mjd_frac,
+        tdb_int=tdb_int,
+        tdb_frac=tdb_frac,
+        error=error_s,
+        freq=freq_mhz,
+        delta_pulse_number=delta_pulse_number,
+        ssb_obs_pos=ssb_obs_pos,
+        ssb_obs_vel=ssb_obs_vel,
+        obs_sun_pos=obs_sun_pos,
+        obs_indices=obs_indices,
+        flag_masks=flag_masks,
+        planet_positions=planet_positions,
+        dm_values=dm_values,
+        dm_errors=dm_errors,
+        tropo_alt=tropo_alt,
+        tropo_alt_valid=tropo_alt_valid,
+        obs_geodetic_lat=obs_geodetic_lat,
+        obs_height_km=obs_height_km,
         tzr_tdb_int=tzr_tdb_int,
         tzr_tdb_frac=tzr_tdb_frac,
         tzr_freq=tzr_freq,
@@ -403,6 +386,6 @@ def pint_toas_to_jax(
         tzr_planet_positions=tzr_planet_positions,
         n_toas=n_toas,
         obs_names=obs_names,
-        basis_seconds=to_jnp(basis_seconds) if basis_seconds is not None else None,
+        basis_seconds=basis_seconds,
         basis_coord="barycentric" if basis_seconds is not None else None,
     )
