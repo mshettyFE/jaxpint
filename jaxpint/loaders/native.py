@@ -15,7 +15,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-import jax.numpy as jnp
 import numpy as np
 
 from ..clock.correction import correct
@@ -206,13 +205,9 @@ def native_toas_to_jax(
         limits=limits,
     )
 
-    to_jnp = lambda a: jnp.asarray(np.asarray(a), dtype=jnp.float64)  # noqa: E731
-
     freq = core.freq_mhz
     if par_result is not None and _has_astrometry(par_result):
-        toa_data_topo = _assemble(
-            core, freq, to_jnp, planet_positions=core.planet_positions
-        )
+        toa_data_topo = _assemble(core, freq, planet_positions=core.planet_positions)
         freq = np.asarray(_barycentric_freq(toa_data_topo, par_result))
 
     flag_masks = _build_flag_masks(core, par_result)
@@ -232,7 +227,6 @@ def native_toas_to_jax(
     toa_data = _assemble(
         core,
         freq,
-        to_jnp,
         planet_positions=core.planet_positions,
         flag_masks=flag_masks,
         tzr=tzr,
@@ -277,57 +271,41 @@ def _build_flag_masks(core, par_result: Optional[ParResult]) -> dict:
     }
 
 
-def _assemble(
-    core, freq, to_jnp, *, planet_positions, flag_masks=None, tzr=None, tropo=None
-):
-    jnp_planets = (
-        None
-        if planet_positions is None
-        else {k: to_jnp(v) for k, v in planet_positions.items()}
-    )
-    tzr_planets = (
-        None
-        if tzr is None or tzr["tzr_planet_positions"] is None
-        else {k: to_jnp(v) for k, v in tzr["tzr_planet_positions"].items()}
-    )
-    return TOAData(
-        mjd_int=to_jnp(core.mjd_int),
-        mjd_frac=to_jnp(core.mjd_frac),
-        tdb_int=to_jnp(core.tdb_int),
-        tdb_frac=to_jnp(core.tdb_frac),
-        error=to_jnp(core.error_s),
-        freq=to_jnp(freq),
-        delta_pulse_number=to_jnp(core.delta_pulse_number),
-        flag_masks=(
-            {}
-            if not flag_masks
-            else {k: jnp.asarray(v, dtype=jnp.bool_) for k, v in flag_masks.items()}
-        ),
-        ssb_obs_pos=to_jnp(core.ssb_obs_pos),
-        ssb_obs_vel=to_jnp(core.ssb_obs_vel),
-        obs_sun_pos=to_jnp(core.obs_sun_pos),
-        planet_positions=jnp_planets,
-        dm_values=(None if core.dm_values is None else to_jnp(core.dm_values)),
-        dm_errors=(None if core.dm_errors is None else to_jnp(core.dm_errors)),
-        # Troposphere geometry: None unless CORRECT_TROPOSPHERE is set (matches
-        # PINT, which leaves these unset otherwise).
-        tropo_alt=(None if tropo is None else to_jnp(tropo["tropo_alt"])),
-        tropo_alt_valid=(
-            None
-            if tropo is None
-            else jnp.asarray(tropo["tropo_alt_valid"], dtype=jnp.bool_)
-        ),
-        obs_geodetic_lat=(None if tropo is None else to_jnp(tropo["obs_geodetic_lat"])),
-        obs_height_km=(None if tropo is None else to_jnp(tropo["obs_height_km"])),
+def _assemble(core, freq, *, planet_positions, flag_masks=None, tzr=None, tropo=None):
+    """Map the native ``_Core`` (+ optional tzr/tropo dicts) onto TOAData.
+
+    Field-name mapping only; all dtype coercion lives in
+    :meth:`TOAData.from_arrays`.  ``tropo`` is ``None`` unless CORRECT_TROPOSPHERE
+    is set (matching PINT, which leaves those fields unset otherwise).
+    """
+    return TOAData.from_arrays(
+        mjd_int=core.mjd_int,
+        mjd_frac=core.mjd_frac,
+        tdb_int=core.tdb_int,
+        tdb_frac=core.tdb_frac,
+        error=core.error_s,
+        freq=freq,
+        delta_pulse_number=core.delta_pulse_number,
+        ssb_obs_pos=core.ssb_obs_pos,
+        ssb_obs_vel=core.ssb_obs_vel,
+        obs_sun_pos=core.obs_sun_pos,
+        obs_indices=core.obs_indices,
         n_toas=core.n_toas,
         obs_names=core.obs_names,
-        obs_indices=jnp.asarray(core.obs_indices, dtype=jnp.int32),
-        tzr_tdb_int=(None if tzr is None else tzr["tzr_tdb_int"]),
-        tzr_tdb_frac=(None if tzr is None else tzr["tzr_tdb_frac"]),
-        tzr_freq=(None if tzr is None else tzr["tzr_freq"]),
-        tzr_ssb_obs_pos=(None if tzr is None else to_jnp(tzr["tzr_ssb_obs_pos"])),
-        tzr_obs_sun_pos=(None if tzr is None else to_jnp(tzr["tzr_obs_sun_pos"])),
-        tzr_planet_positions=tzr_planets,
+        flag_masks=flag_masks,
+        planet_positions=planet_positions,
+        dm_values=core.dm_values,
+        dm_errors=core.dm_errors,
+        tropo_alt=None if tropo is None else tropo["tropo_alt"],
+        tropo_alt_valid=None if tropo is None else tropo["tropo_alt_valid"],
+        obs_geodetic_lat=None if tropo is None else tropo["obs_geodetic_lat"],
+        obs_height_km=None if tropo is None else tropo["obs_height_km"],
+        tzr_tdb_int=None if tzr is None else tzr["tzr_tdb_int"],
+        tzr_tdb_frac=None if tzr is None else tzr["tzr_tdb_frac"],
+        tzr_freq=None if tzr is None else tzr["tzr_freq"],
+        tzr_ssb_obs_pos=None if tzr is None else tzr["tzr_ssb_obs_pos"],
+        tzr_obs_sun_pos=None if tzr is None else tzr["tzr_obs_sun_pos"],
+        tzr_planet_positions=None if tzr is None else tzr["tzr_planet_positions"],
     )
 
 
