@@ -160,7 +160,26 @@ PRIOR_DEFAULTS: dict[str, _DistFactory] = {
     "gw_gamma": lambda: dist.Uniform(0.0, 7.0),
     # Free-spectrum per-bin RMS (seconds); range mirrors discovery
     "log10_rho": lambda: dist.Uniform(-9.0, -4.0),
+    # Continuous-wave source parameters (prefixed per source; see cw_priors).
+    "log10_h": lambda: dist.Uniform(-18.0, -11.0),
+    "log10_fgw": lambda: dist.Uniform(-9.0, -7.0),
+    "cos_gwtheta": lambda: dist.Uniform(-1.0, 1.0),
+    "gwphi": lambda: dist.Uniform(0.0, 2.0 * np.pi),
+    "cos_inc": lambda: dist.Uniform(-1.0, 1.0),
+    "psi": lambda: dist.Uniform(0.0, np.pi),
+    "phase0": lambda: dist.Uniform(0.0, 2.0 * np.pi),
 }
+
+# The seven canonical CW parameter suffixes, in PriorSpec order (see cw_priors).
+_CW_SUFFIXES: tuple[str, ...] = (
+    "log10_h",
+    "log10_fgw",
+    "cos_gwtheta",
+    "gwphi",
+    "cos_inc",
+    "psi",
+    "phase0",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -349,24 +368,27 @@ def _maybe_par_uncert(pp: "ParameterVector", name: str) -> Optional[float]:
 # ---------------------------------------------------------------------------
 
 
-def cw_priors(prefix: str = "cw_") -> PriorSpec:
+def cw_priors(
+    prefix: str = "cw_",
+    *,
+    defaults: Mapping[str, _DistFactory] = PRIOR_DEFAULTS,
+) -> PriorSpec:
     """Standard continuous-wave source priors (no ``phi_psr`` nuisances).
 
-    The seven canonical CW parameters used by :class:`~jaxpint.pta.CWInjector`.
-    No per-pulsar ``phi_psr`` is included: JaxPINT parameterises the pulsar-term
-    phase via the physical distance ``PX`` (see :func:`distance_priors`), so a
-    free phase per pulsar is redundant.  For the discovery-style
-    distance-marginalised parameterisation, use :func:`cw_phi_psr_priors`.
+    The seven canonical CW parameters used by :class:`~jaxpint.pta.CWInjector`,
+    drawn from ``defaults`` (``PRIOR_DEFAULTS`` by default) keyed by the bare
+    suffix, so their bounds are overridable in the same table-driven way as the
+    other bulk helpers.  No per-pulsar ``phi_psr`` is included: JaxPINT
+    parameterises the pulsar-term phase via the physical distance ``PX`` (see
+    :func:`distance_priors`), so a free phase per pulsar is redundant.  For the
+    discovery-style distance-marginalised parameterisation, use
+    :func:`cw_phi_psr_priors`.
     """
     return PriorSpec(
         {
-            f"{prefix}log10_h": dist.Uniform(-18.0, -11.0),
-            f"{prefix}log10_fgw": dist.Uniform(-9.0, -7.0),
-            f"{prefix}cos_gwtheta": dist.Uniform(-1.0, 1.0),
-            f"{prefix}gwphi": dist.Uniform(0.0, 2.0 * np.pi),
-            f"{prefix}cos_inc": dist.Uniform(-1.0, 1.0),
-            f"{prefix}psi": dist.Uniform(0.0, np.pi),
-            f"{prefix}phase0": dist.Uniform(0.0, 2.0 * np.pi),
+            f"{prefix}{suffix}": defaults[suffix]()
+            for suffix in _CW_SUFFIXES
+            if suffix in defaults
         }
     )
 
