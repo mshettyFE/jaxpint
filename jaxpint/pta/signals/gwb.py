@@ -33,8 +33,6 @@ from jaxpint.pta.signals.spectrum import (
     validate_spectrum_components,
 )
 
-from jaxpint._psd import expand_sin_cos, powerlaw_psd
-
 
 def fourier_basis(
     toas_seconds: Float[Array, " n_toas"],
@@ -111,12 +109,18 @@ def gwb_covariance(
         Fourier design matrix.
     Phi : (2 * n_components,) array
         PSD values for each basis function.
+
+    Notes
+    -----
+    A scalar-input convenience for injecting a *fixed* power-law CURN into a
+    single-pulsar likelihood (no injector / ``GlobalParams`` ceremony).  The PSD
+    is routed through :meth:`PowerLawSpectrum.psd_weights` — the same path
+    :meth:`CURNInjector.covariance` takes — so the power-law formula lives in one
+    place, not a parallel copy here.
     """
-    toas_seconds = toa_data.require_basis_seconds()
-    F, freqs = fourier_basis(toas_seconds, n_components, T_span)
-    df = 1.0 / T_span
-    psd = powerlaw_psd(freqs, log10_A, gamma) * df
-    Phi = expand_sin_cos(psd)  # same PSD for sin and cos
+    F, freqs = fourier_basis(toa_data.require_basis_seconds(), n_components, T_span)
+    vals = {"log10_A": log10_A, "gamma": gamma}
+    Phi = PowerLawSpectrum().psd_weights(freqs, 1.0 / T_span, vals.__getitem__)
     return F, Phi
 
 
