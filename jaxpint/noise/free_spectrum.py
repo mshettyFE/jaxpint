@@ -26,9 +26,9 @@ enterprise/discovery noise dictionaries and chain files, named
 from __future__ import annotations
 
 import equinox as eqx
-import jax.numpy as jnp
 from jaxtyping import Array, Float
 
+from jaxpint._psd import expand_sin_cos, free_spectrum_psd
 from jaxpint.noise._power_law import _PowerLawFourierNoise
 from jaxpint.types import ParameterVector
 
@@ -64,7 +64,7 @@ class FreeSpectrumNoise(_PowerLawFourierNoise):
     def psd_weights(self, params: ParameterVector) -> Float[Array, " n_basis"]:
         """Per-bin weights ``10^(2·log10_ρ_k)``, repeated for the sin/cos pair."""
         log10_rho = params.param_values(self.rho_names)
-        return jnp.repeat(10.0 ** (2.0 * log10_rho), 2)
+        return expand_sin_cos(free_spectrum_psd(log10_rho))
 
     def static_basis(self) -> Float[Array, "n_toas n_basis"]:
         # Fixed basis -> advertise it so NoiseModel can pre-stack it once.

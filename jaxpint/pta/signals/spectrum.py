@@ -1,23 +1,15 @@
-"""Pluggable PSD models for Fourier-basis GP processes.
+r"""Pluggable PSD models for Fourier-basis GP processes.
 
 A :class:`SpectralModel` maps named hyperparameters to the diagonal PSD
-weights ``Φ`` of a Fourier-basis Gaussian process — the ``Phidiag`` of the
-Woodbury triple ``C = diag(N) + U diag(Φ) Uᵀ``.  Every model here keeps
-``Φ`` **diagonal**: swapping the spectrum (power law → broken power law →
+weights ``\Phi`` of a Fourier-basis Gaussian process — the ``Phidiag`` of the
+Woodbury triple ``C = diag(N) + U diag(\Phi) U^T``.  Every model here keeps
+``\Phi`` **diagonal**: swapping the spectrum (power law → broken power law →
 free spectrum) only changes how the diagonal is filled and how many
 hyperparameters exist; the Woodbury solve path is untouched.  (What *would*
 break the diagonal fast path is a dense inter-frequency covariance, e.g.
 discovery's FFT/time-domain kernels — none of these models need that yet.)
 
-Conventions match ``discovery.signals``:
-
-- ``powerlaw``: ``S(f) = A²/(12π²) · f_yr^(γ-3) · f^(-γ)``, weight
-  ``S(f)·Δf`` per frequency, repeated for the (sin, cos) pair.
-- ``brokenpowerlaw``: the power law times a smooth bend
-  ``(1 + (f/f_b)^(1/κ))^(κγ)`` with ``κ = 0.1`` (Arzoumanian et al. 2020
-  convention, δ = 0 above the bend).
-- ``freespectrum``: one weight ``10^(2·log10_ρ_k)`` per frequency bin;
-  ``ρ_k`` is the per-bin RMS in seconds and absorbs ``Δf``.
+Conventions match ``discovery.signals``
 
 Injectors resolve parameter names through a ``value_of`` callable so the
 same model works for prefixed :class:`~jaxpint.types.GlobalParams` (common
@@ -32,6 +24,13 @@ from typing import Callable, Optional, Sequence, Union
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 from jaxtyping import Array, Float
+
+from jaxpint._psd import (
+    broken_powerlaw_psd,
+    expand_sin_cos,
+    free_spectrum_psd,
+    powerlaw_psd,
+)
 
 __all__ = [
     "SpectralModel",
@@ -91,10 +90,8 @@ class PowerLawSpectrum(SpectralModel):
         return dict(self.defaults)
 
     def psd_weights(self, freqs, df, value_of) -> Float[Array, " n_basis"]:
-        from jaxpint.pta.signals.gwb import powerlaw_psd
-
         psd = powerlaw_psd(freqs, value_of("log10_A"), value_of("gamma"))
-        return jnp.repeat(psd * df, 2)
+        return expand_sin_cos(psd * df)
 
 
 class BrokenPowerLawSpectrum(SpectralModel):
@@ -120,13 +117,14 @@ class BrokenPowerLawSpectrum(SpectralModel):
         return dict(self.defaults)
 
     def psd_weights(self, freqs, df, value_of) -> Float[Array, " n_basis"]:
-        from jaxpint.pta.signals.gwb import powerlaw_psd
-
-        gamma = value_of("gamma")
-        psd = powerlaw_psd(freqs, value_of("log10_A"), gamma)
-        fb = 10.0 ** value_of("log10_fb")
-        bend = (1.0 + (freqs / fb) ** (1.0 / self.kappa)) ** (self.kappa * gamma)
-        return jnp.repeat(psd * bend * df, 2)
+        psd = broken_powerlaw_psd(
+            freqs,
+            value_of("log10_A"),
+            value_of("gamma"),
+            value_of("log10_fb"),
+            self.kappa,
+        )
+        return expand_sin_cos(psd * df)
 
 
 class FreeSpectrum(SpectralModel):
@@ -174,7 +172,7 @@ class FreeSpectrum(SpectralModel):
 
     def psd_weights(self, freqs, df, value_of) -> Float[Array, " n_basis"]:
         log10_rho = jnp.stack([value_of(n) for n in self._names])
-        return jnp.repeat(10.0 ** (2.0 * log10_rho), 2)
+        return expand_sin_cos(free_spectrum_psd(log10_rho))
 
 
 def validate_spectrum_components(spectrum: SpectralModel, n_components: int) -> None:

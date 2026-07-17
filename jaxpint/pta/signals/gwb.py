@@ -33,50 +33,7 @@ from jaxpint.pta.signals.spectrum import (
     validate_spectrum_components,
 )
 
-from jaxpint.constants import FYR
-
-
-def powerlaw_psd(
-    f: Float[Array, " n_freq"],
-    log10_A: Float[Array, ""],
-    gamma: Float[Array, ""],
-) -> Float[Array, " n_freq"]:
-    """Power-law power spectral density (NANOGrav convention).
-
-    Follows the parameterisation of Arzoumanian et al. (2016) [gwb_a16]_ Eq. 1,
-    derived from the characteristic-strain relation of Phinney (2001) [gwb_p01]_:
-    ``S(f) = h_c^2(f) / (12 pi^2 f^3)``.
-
-    .. math::
-        S(f) = \\frac{A^2}{12\\pi^2}
-               \\left(\\frac{f}{f_{\\rm yr}}\\right)^{-\\gamma}
-               f_{\\rm yr}^{-3}
-
-    Parameters
-    ----------
-    f : (n_freq,) array
-        Frequencies in Hz.
-    log10_A : scalar
-        Log-10 of the dimensionless amplitude.
-    gamma : scalar
-        Spectral index (positive for red noise).
-
-    Returns
-    -------
-    psd : (n_freq,) array
-        Power spectral density in units of s^3.
-
-    References
-    ----------
-    .. [gwb_a16] Arzoumanian et al. (2016), ApJ 821, 13.
-    .. [gwb_p01] Phinney (2001), astro-ph/0108028.
-    """
-    return (
-        (10.0 ** (2.0 * log10_A))
-        / (12.0 * jnp.pi**2)
-        * FYR ** (gamma - 3.0)
-        * f ** (-gamma)
-    )
+from jaxpint._psd import expand_sin_cos, powerlaw_psd
 
 
 def fourier_basis(
@@ -159,7 +116,7 @@ def gwb_covariance(
     F, freqs = fourier_basis(toas_seconds, n_components, T_span)
     df = 1.0 / T_span
     psd = powerlaw_psd(freqs, log10_A, gamma) * df
-    Phi = jnp.repeat(psd, 2)  # same PSD for sin and cos
+    Phi = expand_sin_cos(psd)  # same PSD for sin and cos
     return F, Phi
 
 

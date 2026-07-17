@@ -15,7 +15,6 @@ from jaxpint.pta.signals.gwb import (
     CURNInjector,
     fourier_basis,
     gwb_covariance,
-    powerlaw_psd,
 )
 from jaxpint.pta.signals.orf import dipole_orf, hd_orf, monopole_orf
 from jaxpint.pta.signals.correlated_gwb import HDCorrelatedGWBInjector
@@ -43,7 +42,6 @@ __all__ = [
     "CURNInjector",
     "fourier_basis",
     "gwb_covariance",
-    "powerlaw_psd",
     "hd_orf",
     "monopole_orf",
     "dipole_orf",
