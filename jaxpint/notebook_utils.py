@@ -410,7 +410,7 @@ def inject_and_build_config(
     global_params : GlobalParams
         Populated with every injector's parameters, in registration order.
     config : PTAConfig
-        Ready to pass to :func:`jaxpint.pta.likelihood.pta_logL`.
+        Ready to pass to :func:`jaxpint.pta.pta_logL`.
     """
     gp = GlobalParams.empty()
     for inj in injectors:

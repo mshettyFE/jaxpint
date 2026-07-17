@@ -71,9 +71,8 @@ class PiecewiseSpindown(PhaseComponent):
     pwf2_names: tuple[str, ...] = eqx.field(static=True)
 
     def __check_init__(self):
-        if self.n_pieces < 1:
-            raise ValueError("PiecewiseSpindown requires at least one piece")
-        for attr in (
+        self.check_name_tuples(
+            "n_pieces",
             "pwstart_names",
             "pwstop_names",
             "pwep_names",
@@ -81,12 +80,8 @@ class PiecewiseSpindown(PhaseComponent):
             "pwf0_names",
             "pwf1_names",
             "pwf2_names",
-        ):
-            if len(getattr(self, attr)) != self.n_pieces:
-                raise ValueError(
-                    f"Length of {attr} ({len(getattr(self, attr))}) "
-                    f"does not match n_pieces ({self.n_pieces})"
-                )
+            label="piece",
+        )
 
     def __call__(
         self,

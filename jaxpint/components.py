@@ -21,7 +21,7 @@ distinct conventions**, used at two different stages of a component's life:
    runtime — e.g. ``raj_name="RAJ"`` or ``spin_param_names=("F0","F1","F2")``.
    The model builder fills these in from a parsed model, and they are static
    ``eqx.field`` values so they stay constant inside JIT.  The naming convention
-   lets :meth:`PhaseComponent.required_params` (etc.) discover them via
+   lets :meth:`Component.required_params` (etc.) discover them via
    ``_collect_param_names``.
 
 **How they relate.**
@@ -162,7 +162,91 @@ def _collect_param_names(module) -> tuple[str, ...]:
     return tuple(sorted(set(names)))
 
 
-class PhaseComponent(eqx.Module):
+class Component(eqx.Module):
+    """Base for every timing-model component (phase, delay, noise).
+
+    Holds the two things all component kinds share: the ``PARAMS`` static schema
+    (empty here; concrete components override it — see the module docstring and
+    :mod:`jaxpint.par.spec`), and :meth:`required_params`, which discovers the
+    concrete parameter names a configured instance reads.
+    """
+
+    PARAMS: ClassVar[tuple[ParamDecl, ...]] = ()
+
+    def required_params(self) -> tuple[str, ...]:
+        """Parameter names this component reads from the ParameterVector.
+
+        Discovered by convention: fields ending in ``_name`` (single
+        parameter) or ``_names`` (tuple of parameters).  New component
+        fields that hold parameter names **must** follow this convention.
+        """
+        return _collect_param_names(self)
+
+    def check_name_tuples(
+        self, count_attr: str, *name_attrs: str, label: str = "entry"
+    ) -> None:
+        """Validate a count field against its parallel ``*_names`` tuples.
+
+        Shared ``__check_init__`` helper for indexed/repeatable components
+        (WaveX, DMX, glitches, …): raises ``ValueError`` if
+        ``getattr(self, count_attr) < 1``, or if any ``name_attrs`` tuple has a
+        length different from that count.  *label* names the unit in the
+        "requires at least one …" message.
+        """
+        n = getattr(self, count_attr)
+        if n < 1:
+            raise ValueError(f"{type(self).__name__} requires at least one {label}")
+        for attr in name_attrs:
+            length = len(getattr(self, attr))
+            if length != n:
+                raise ValueError(
+                    f"Length of {attr} ({length}) does not match {count_attr} ({n})"
+                )
+
+
+class ComponentIndexMixin(eqx.Module):
+    """Name/index access over a ``components`` tuple (``.component_names``, ``m[key]``).
+
+    Mixed into :class:`~jaxpint.model.TimingModel` and
+    :class:`~jaxpint.noise.NoiseModel`; each supplies the ``components`` property
+    (its own assembly of the underlying component tuples), and this provides the
+    shared lookup by unique name, integer index, or slice.
+    """
+
+    @property
+    @abstractmethod
+    def components(self) -> tuple:
+        """The ordered component tuple this model exposes (subclass-provided)."""
+        ...
+
+    @property
+    def component_names(self) -> tuple[str, ...]:
+        """Unique names for all components, auto-disambiguated for duplicates."""
+        return _make_component_names(self.components)
+
+    def __getitem__(self, key):
+        """Retrieve component(s) by unique name, integer index, or slice.
+
+        Raises
+        ------
+        KeyError
+            If *key* is a string not matching any component name.
+        TypeError
+            If *key* is not ``str``, ``int``, or ``slice``.
+        """
+        if isinstance(key, str):
+            names = self.component_names
+            comps = self.components
+            for i, name in enumerate(names):
+                if name == key:
+                    return comps[i]
+            raise KeyError(f"{key!r} not found. Available components: {names}")
+        elif isinstance(key, (int, slice)):
+            return self.components[key]
+        raise TypeError(f"indices must be str, int, or slice, not {type(key).__name__}")
+
+
+class PhaseComponent(Component):
     """Base class for components that contribute to pulse phase.
 
     Subclasses implement ``__call__(self, toa_data, params, delay) -> DualFloat``.
@@ -171,13 +255,11 @@ class PhaseComponent(eqx.Module):
     and their phase contributions are summed.
 
     Fields that store parameter names must end with ``_name`` (single)
-    or ``_names`` (tuple).  This enables :meth:`required_params`.
+    or ``_names`` (tuple).  This enables :meth:`Component.required_params`.
 
     Concrete subclasses must declare ``PARAMS`` (the parameters they model);
     the native ``.par`` parser aggregates these (see :mod:`jaxpint.par.spec`).
     """
-
-    PARAMS: ClassVar[tuple[ParamDecl, ...]] = ()
 
     def __call__(
         self,
@@ -208,17 +290,8 @@ class PhaseComponent(eqx.Module):
         """
         raise NotImplementedError
 
-    def required_params(self) -> tuple[str, ...]:
-        """Parameter names this component reads from the ParameterVector.
 
-        Discovered by convention: fields ending in ``_name`` (single
-        parameter) or ``_names`` (tuple of parameters).  New component
-        fields that hold parameter names **must** follow this convention.
-        """
-        return _collect_param_names(self)
-
-
-class NoiseComponent(eqx.Module):
+class NoiseComponent(Component):
     """Base class for stochastic noise sources.
 
     Every noise source decomposes its covariance as::
@@ -235,13 +308,11 @@ class NoiseComponent(eqx.Module):
     basis matrices and weight vectors.
 
     Fields that store parameter names must end with ``_name`` (single)
-    or ``_names`` (tuple).  This enables :meth:`required_params`.
+    or ``_names`` (tuple).  This enables :meth:`Component.required_params`.
 
     Concrete subclasses must declare ``PARAMS`` (the parameters they model);
     the native ``.par`` parser aggregates these (see :mod:`jaxpint.par.spec`).
     """
-
-    PARAMS: ClassVar[tuple[ParamDecl, ...]] = ()
 
     def covariance(
         self,
@@ -315,15 +386,6 @@ class NoiseComponent(eqx.Module):
         """
         raise NotImplementedError
 
-    def required_params(self) -> tuple[str, ...]:
-        """Parameter names this component reads from the ParameterVector.
-
-        Discovered by convention: fields ending in ``_name`` (single
-        parameter) or ``_names`` (tuple of parameters).  New component
-        fields that hold parameter names **must** follow this convention.
-        """
-        return _collect_param_names(self)
-
     # ------------------------------------------------------------------
     # Optional pre-stacking hooks
     #
@@ -340,7 +402,7 @@ class NoiseComponent(eqx.Module):
         return None
 
 
-class DelayComponent(eqx.Module):
+class DelayComponent(Component):
     """Base class for components that contribute to signal delay.
 
     Subclasses implement ``__call__(self, toa_data, params, delay) -> Array``.
@@ -349,13 +411,11 @@ class DelayComponent(eqx.Module):
     each component sees the accumulated delay from prior components.
 
     Fields that store parameter names must end with ``_name`` (single)
-    or ``_names`` (tuple).  This enables :meth:`required_params`.
+    or ``_names`` (tuple).  This enables :meth:`Component.required_params`.
 
     Concrete subclasses must declare ``PARAMS`` (the parameters they model);
     the native ``.par`` parser aggregates these (see :mod:`jaxpint.par.spec`).
     """
-
-    PARAMS: ClassVar[tuple[ParamDecl, ...]] = ()
 
     def __call__(
         self,
@@ -386,24 +446,15 @@ class DelayComponent(eqx.Module):
         """
         raise NotImplementedError
 
-    def required_params(self) -> tuple[str, ...]:
-        """Parameter names this component reads from the ParameterVector.
-
-        Discovered by convention: fields ending in ``_name`` (single
-        parameter) or ``_names`` (tuple of parameters).  New component
-        fields that hold parameter names **must** follow this convention.
-        """
-        return _collect_param_names(self)
-
 
 class DispersionDelayComponent(DelayComponent):
     """Base class for delay components that contribute to dispersion measure.
 
     Subclasses implement :meth:`compute_dm` (the DM contribution in pc/cm³);
     the concrete ``__call__`` here turns it into a delay via the dispersion law
-    ``dm · K_DM / freq²``.  (:class:`~jaxpint.delay.dispersion_jump.DispersionJump`
-    overrides ``__call__`` to return zero — it shifts the model DM but adds no
-    timing delay.)  The timing model uses ``compute_dm`` to evaluate the total
+    ``dm · K_DM / freq²``.  (``DispersionJump`` overrides ``__call__`` to return
+    zero — it shifts the model DM but adds no timing delay.)  The timing model
+    uses ``compute_dm`` to evaluate the total
     model DM for wideband fitting.
     """
 

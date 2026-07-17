@@ -13,17 +13,16 @@ from __future__ import annotations
 
 from typing import Optional
 
-import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import NoiseComponent, _make_component_names
+from jaxpint.components import ComponentIndexMixin, NoiseComponent
 from jaxpint.noise.dm_white import ScaleDmError
 from jaxpint.noise.white import ScaleToaError
 from jaxpint.types import TOAData, ParameterVector
 
 
-class NoiseModel(eqx.Module):
+class NoiseModel(ComponentIndexMixin):
     """Container that aggregates all noise sources into a single interface.
 
     Provides a unified Woodbury covariance decomposition::
@@ -160,19 +159,5 @@ class NoiseModel(eqx.Module):
             result.append(self.dm_white_noise)
         return tuple(result)
 
-    @property
-    def component_names(self) -> tuple[str, ...]:
-        """Unique names for all components, auto-disambiguated for duplicates."""
-        return _make_component_names(self.components)
-
-    def __getitem__(self, key):
-        if isinstance(key, str):
-            names = self.component_names
-            comps = self.components
-            for i, name in enumerate(names):
-                if name == key:
-                    return comps[i]
-            raise KeyError(f"{key!r} not found. Available components: {names}")
-        elif isinstance(key, (int, slice)):
-            return self.components[key]
-        raise TypeError(f"indices must be str, int, or slice, not {type(key).__name__}")
+    # component_names + __getitem__ (name/index access) inherited from
+    # ComponentIndexMixin, over the `components` property above.

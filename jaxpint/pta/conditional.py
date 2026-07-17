@@ -20,7 +20,7 @@ coefficients are Gaussian, ``a | r ~ N(\hat{a}, \Sigma)``, with
   coefficients across the whole array, jointly coupled through the ORF
   prior ``\Gamma \otimes diag(S)``.  This is the inferred GWB realization: the
   posterior precision is exactly the ``Sigma_joint`` matrix the
-  correlated :func:`~jaxpint.pta.likelihood.pta_logL` already factors,
+  correlated :func:`~jaxpint.pta.pta_logL` already factors,
   and ``F_p^T C_p^{-1} r_p`` / ``F_p^T C_p^{-1} F_p`` are the same
   inner-tier blocks it consumes.
 
@@ -191,7 +191,7 @@ def conditional_gwb(
     r"""Joint posterior of the correlated-signal coefficients across the array.
 
     The conditional counterpart of the correlated
-    :func:`~jaxpint.pta.likelihood.pta_logL` branch: the same per-pulsar
+    :func:`~jaxpint.pta.pta_logL` branch: the same per-pulsar
     inner-tier blocks and the same joint prior
     ``Phi_joint = blockdiag_k(\Gamma_k \otimes diag(S_k))`` assemble the posterior
     precision ``P = Phi_joint^{-1} + blockdiag_p(F_p^{T} C_p^{-1} F_p)`` and mean
@@ -208,7 +208,7 @@ def conditional_gwb(
     Parameters
     ----------
     global_params, pulsar_params, config
-        As for :func:`~jaxpint.pta.likelihood.pta_logL`;
+        As for :func:`~jaxpint.pta.pta_logL`;
         ``config.correlated_injectors`` must be non-empty.
     """
     if not config.correlated_injectors:

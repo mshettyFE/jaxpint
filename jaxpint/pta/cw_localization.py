@@ -278,7 +278,7 @@ def per_source_credible_areas_deg2(
     Inverts the joint Fisher to get ``Sigma = F^{-1}``,
     slices the ``2 x 2`` marginal sky covariance per source
     ``Sigma_k = Sigma[2k:2k+2, 2k:2k+2]``, and computes its credible area from
-    ``det Sigma_k`` via :func:`~jaxpint.bayes.gaussian_credible_area`.
+    ``det Sigma_k`` via :func:`~jaxpint.stats.gaussian_credible_area`.
 
     Returns ``inf`` for sources where the marginal covariance is degenerate
     (e.g., coincident sources, or any other case where the joint Fisher is

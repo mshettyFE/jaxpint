@@ -65,9 +65,8 @@ class Glitch(PhaseComponent):
     gltd_names: tuple[str, ...] = eqx.field(static=True)
 
     def __check_init__(self):
-        if self.n_glitches < 1:
-            raise ValueError("Glitch requires at least one glitch")
-        for attr in (
+        self.check_name_tuples(
+            "n_glitches",
             "glep_names",
             "glph_names",
             "glf0_names",
@@ -75,12 +74,8 @@ class Glitch(PhaseComponent):
             "glf2_names",
             "glf0d_names",
             "gltd_names",
-        ):
-            if len(getattr(self, attr)) != self.n_glitches:
-                raise ValueError(
-                    f"Length of {attr} ({len(getattr(self, attr))}) "
-                    f"does not match n_glitches ({self.n_glitches})"
-                )
+            label="glitch",
+        )
 
     def __call__(
         self,

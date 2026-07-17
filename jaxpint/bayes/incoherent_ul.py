@@ -239,7 +239,7 @@ def logL_pulsar_marg(
 ) -> Float[Array, ""]:
     """Per-pulsar log-likelihood **marginalized** over the grid ``A``
     (``log mean_Δ exp logL``) -- the Bayesian reduction (integrate the
-    distance/phase nuisance), via :func:`jaxpint.bayes.grid_log_marginal` over the
+    distance/phase nuisance), via :func:`jaxpint.stats.grid_log_marginal` over the
     flat (uniform-prior) phase grid.
 
     Parameters
@@ -262,7 +262,7 @@ def logL_pulsar_profile(
     A: Float[Array, "n 2"],
 ) -> Float[Array, ""]:
     """Per-pulsar **profile** log-likelihood (``max_Δ logL``) -- the frequentist
-    reduction (maximize the nuisance), via :func:`jaxpint.bayes.grid_log_profile`.
+    reduction (maximize the nuisance), via :func:`jaxpint.stats.grid_log_profile`.
     The sharper but alias-prone twin of :func:`logL_pulsar_marg`; for localization
     it is a diagnostic, not the credible-region map.
 

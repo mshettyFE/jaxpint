@@ -68,14 +68,9 @@ class Wave(PhaseComponent):
     f0_name: str = eqx.field(static=True, default="F0")
 
     def __check_init__(self):
-        if self.n_terms < 1:
-            raise ValueError("Wave requires at least one term")
-        for attr in ("wave_sin_names", "wave_cos_names"):
-            if len(getattr(self, attr)) != self.n_terms:
-                raise ValueError(
-                    f"Length of {attr} ({len(getattr(self, attr))}) "
-                    f"does not match n_terms ({self.n_terms})"
-                )
+        self.check_name_tuples(
+            "n_terms", "wave_sin_names", "wave_cos_names", label="term"
+        )
 
     def __call__(
         self,

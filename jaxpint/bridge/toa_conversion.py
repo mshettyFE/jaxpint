@@ -18,7 +18,7 @@ from pint.observatory import get_observatory
 from pint.observatory.topo_obs import TopoObs
 from pint.toa import TOAs
 
-from jaxpint.clock.tropo_geometry import tropo_fields
+from jaxpint.tropo_geometry import tropo_fields
 from jaxpint.constants import JD_MJD_OFFSET, PLANETS
 from jaxpint.utils import split_longdouble_days
 from jaxpint.types import TOAData

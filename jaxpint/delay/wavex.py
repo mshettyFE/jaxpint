@@ -57,14 +57,13 @@ class WaveX(DelayComponent):
     wxepoch_name: str = eqx.field(static=True, default="WXEPOCH")
 
     def __check_init__(self):
-        if self.n_components < 1:
-            raise ValueError("WaveX requires at least one component")
-        for attr in ("wxfreq_names", "wxsin_names", "wxcos_names"):
-            if len(getattr(self, attr)) != self.n_components:
-                raise ValueError(
-                    f"Length of {attr} ({len(getattr(self, attr))}) "
-                    f"does not match n_components ({self.n_components})"
-                )
+        self.check_name_tuples(
+            "n_components",
+            "wxfreq_names",
+            "wxsin_names",
+            "wxcos_names",
+            label="component",
+        )
 
     def __call__(
         self,

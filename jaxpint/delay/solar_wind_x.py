@@ -93,14 +93,14 @@ class SolarWindDispersionX(DelayComponent):
     obliquity_arcsec: Optional[float] = eqx.field(static=True, default=None)
 
     def __check_init__(self):
-        if self.n_bins < 1:
-            raise ValueError("SolarWindDispersionX requires at least one segment")
-        for attr in ("swxdm_names", "swxp_names", "swxr1_names", "swxr2_names"):
-            if len(getattr(self, attr)) != self.n_bins:
-                raise ValueError(
-                    f"Length of {attr} ({len(getattr(self, attr))}) "
-                    f"does not match n_bins ({self.n_bins})"
-                )
+        self.check_name_tuples(
+            "n_bins",
+            "swxdm_names",
+            "swxp_names",
+            "swxr1_names",
+            "swxr2_names",
+            label="segment",
+        )
 
     def __call__(
         self,
