@@ -385,10 +385,17 @@ def compute_phase_residuals(
         Phase residuals in cycles (fractional part of adjusted phase).
     """
     phase = model.compute_phase(toa_data, params)
-    adjusted = DualFloat.from_cycles(
-        phase.int + toa_data.delta_pulse_number,
-        phase.frac,
-    )
+    # Only the *fractional* part of delta_pulse_number affects a nearest-pulse
+    # residual: an integer offset (a PHASE command) shifts which pulse is
+    # "nearest" but not the residual to it (frac(phi + N) == frac(phi)), while a
+    # fractional offset (a -padd flag) genuinely shifts the residual -- matching
+    # PINT, which adds delta_pulse_number to the model phase before wrapping.
+    # Reduce to the fractional part first so the addition stays O(1) and keeps
+    # phase.frac's full precision (adding the raw, possibly large offset would
+    # drop its low-order bits and hand from_cycles an out-of-bounds frac).
+    dpn = toa_data.delta_pulse_number
+    dpn_frac = dpn - jnp.round(dpn)
+    adjusted = DualFloat.from_cycles(phase.int, phase.frac + dpn_frac)
     return adjusted.frac
 
 

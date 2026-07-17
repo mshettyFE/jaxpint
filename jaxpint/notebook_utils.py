@@ -341,10 +341,6 @@ def pulsar_positions_from_models(pint_models: list) -> Float[Array, "n_psr 3"]:
     return jnp.array(np.array(positions))
 
 
-# Backward-compatible private alias (public since the examples need it directly).
-_pulsar_positions_from_models = pulsar_positions_from_models
-
-
 def build_cw_injectors(
     pint_models: list,
     n_sources: int,

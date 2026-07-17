@@ -32,9 +32,7 @@ __all__ = [
 
 
 def powerlaw_psd(
-    f: Float[Array, " n_freq"],
-    log10_A: ArrayLike,
-    gamma: ArrayLike,
+    f: Float[Array, " n_freq"], log10_A: Float, gamma: Float
 ) -> Float[Array, " n_freq"]:
     r"""Power-law power spectral density (NANOGrav convention).
 

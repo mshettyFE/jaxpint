@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -45,10 +44,13 @@ class RawTOA:
     freq_mhz: float  # MHz (0 -> inf convention, matching PINT)
     obs: str  # raw observatory token as written
     flags: dict[str, str] = field(default_factory=dict)
-    # integer whole-rotation offset added to the model's pulse (turn) number so
-    # this TOA tracks its *correct* pulse, not just the nearest one -- resolves
+    # Pulse-number offset added to the model's pulse (turn) number so this TOA
+    # tracks its *correct* pulse, not just the nearest one -- resolves
     # pulse-number ambiguity across glitches/observing gaps.  0 for well-timed
-    # pulsars; populated downstream from the '-phase' flag (see get_phase_offset).
+    # pulsars.  Set by the parser as PINT's delta_pulse_number = accumulated
+    # PHASE command (integer) + this TOA's -padd flag (possibly fractional).
+    # The integer PHASE part is also kept as the ``KnownFlag.PHASE`` flag for
+    # read-level parity with PINT's read_toa_file.
     delta_pulse_number: float = 0.0
 
 
@@ -109,20 +111,3 @@ def get_time_offset(flags: dict[str, str]) -> float:
     """The ``-to`` (TIME command) offset in seconds; 0.0 if absent."""
     v = flags.get(KnownFlag.TO.value)
     return float(v) if v is not None else 0.0
-
-
-def get_phase_offset(flags: dict[str, str]) -> int:
-    """The cumulative integer ``-phase`` offset; 0 if absent."""
-    v = flags.get(KnownFlag.PHASE.value)
-    return int(v) if v is not None else 0
-
-
-def get_jump(flags: dict[str, str]) -> Optional[int]:
-    """The 1-based phase-jump block index, or ``None`` if this TOA is unjumped."""
-    v = flags.get(KnownFlag.JUMP.value)
-    return int(v) if v is not None else None
-
-
-def get_info(flags: dict[str, str]) -> Optional[str]:
-    """The ``-info`` string tag, or ``None``."""
-    return flags.get(KnownFlag.INFO.value)

@@ -487,10 +487,6 @@ def _build_dispersion_jump(ctx: BuildContext):
     return DispersionJump(dmjump_names=dmjump_names)
 
 
-def _build_binary_comp(ctx: BuildContext):
-    return _build_binary(ctx)
-
-
 def _build_frequency_dependent(ctx: BuildContext):
     from jaxpint.delay.frequency_dependent import FrequencyDependent
 
@@ -885,8 +881,8 @@ _BUILDERS: dict[Component, Callable[[BuildContext], object]] = {
     Component.DISPERSION_DM: _build_dispersion_dm,
     Component.DISPERSION_DMX: _build_dispersion_dmx,
     Component.DISPERSION_JUMP: _build_dispersion_jump,
-    Component.BINARY: _build_binary_comp,
-    Component.BINARY_BT_PIECEWISE: _build_binary_comp,
+    Component.BINARY: _build_binary,
+    Component.BINARY_BT_PIECEWISE: _build_binary,
     Component.FREQUENCY_DEPENDENT: _build_frequency_dependent,
     Component.FD_JUMP: _build_fd_jump,
     Component.CHROMATIC_CM: _build_chromatic_cm,

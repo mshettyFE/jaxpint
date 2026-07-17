@@ -60,14 +60,6 @@ def snapshot_info() -> Optional[dict]:
     return fetch.read_snapshot(clock_dir())
 
 
-def read_index() -> list[fetch.IndexEntry]:
-    """Parsed ``index.txt`` from the active dir (empty if not downloaded yet)."""
-    path = clock_dir() / "index.txt"
-    if not path.exists():
-        return []
-    return fetch.parse_index(path.read_text())
-
-
 def _to_date(value) -> datetime.date:
     if value is None:
         return datetime.date.today()

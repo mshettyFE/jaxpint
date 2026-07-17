@@ -155,8 +155,6 @@ class CURNInjector(SignalInjector):
         keeps ``Φ`` diagonal, so the Woodbury path is identical.
     """
 
-    param_defaults = CURN_PARAM_DEFAULTS
-
     def __init__(
         self,
         n_components: int,
