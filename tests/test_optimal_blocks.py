@@ -26,7 +26,7 @@ from jaxpint.pta.likelihood import (
     _per_pulsar_intermediates,
 )
 from jaxpint.pta.signals.correlated_gwb import HDCorrelatedGWBInjector
-from jaxpint.pta.signals.gwb import powerlaw_psd
+from jaxpint._psd import powerlaw_psd
 from jaxpint.pta.signals.orf import hd_orf
 
 from tests.helpers import make_simple_pulsar, make_params

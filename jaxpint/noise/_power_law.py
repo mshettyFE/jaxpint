@@ -28,8 +28,8 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
 
+from jaxpint._psd import expand_sin_cos, powerlaw_psd
 from jaxpint.components import NoiseComponent
-from jaxpint.constants import FYR
 from jaxpint.types import TOAData, ParameterVector
 
 
@@ -104,9 +104,8 @@ class _PowerLawFourierNoise(NoiseComponent):
         """
         log10_A = params.param_value(self._amp_name)
         gamma = params.param_value(self._gam_name)
-        A = 10.0**log10_A
-        psd = A**2 / (12.0 * jnp.pi**2) * FYR ** (gamma - 3.0) * self.freqs ** (-gamma)
-        return jnp.repeat(psd * self.freq_bin_widths, 2)
+        psd = powerlaw_psd(self.freqs, log10_A, gamma)
+        return expand_sin_cos(psd * self.freq_bin_widths)
 
     def covariance(
         self,

@@ -24,9 +24,9 @@ from jaxpint.pta.signals.cw import (
     fplus_fcross, cw_delay, cw_delay_from_array, sum_cw_delays,
     CWInjector, CWInjectorStack, CW_PARAM_DEFAULTS, log10_strain_from_binary,
 )
-from jaxpint.pta.signals.gwb import (
-    powerlaw_psd, fourier_basis, CURNInjector, FYR,
-)
+from jaxpint.pta.signals.gwb import fourier_basis, CURNInjector
+from jaxpint._psd import powerlaw_psd
+from jaxpint.constants import FYR
 from jaxpint.pta.signals.orf import hd_orf, dipole_orf
 from jaxpint.pta.likelihood import PTAConfig
 from jaxpint.pta.fisher import flatten_params, unflatten_params

@@ -39,7 +39,6 @@ from jaxpint.pta.signals import (
     fplus_fcross,
     fourier_basis,
     gwb_covariance,
-    powerlaw_psd,
     hd_orf,
     monopole_orf,
     dipole_orf,
@@ -77,7 +76,6 @@ __all__ = [
     "HDCorrelatedGWBInjector",
     "fourier_basis",
     "gwb_covariance",
-    "powerlaw_psd",
     # Spectral models (constructor args for the GWB/CURN injectors)
     "SpectralModel",
     "PowerLawSpectrum",

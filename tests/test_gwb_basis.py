@@ -17,7 +17,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from jaxpint.pta.signals.gwb import fourier_basis, powerlaw_psd
+from jaxpint._psd import powerlaw_psd
+from jaxpint.pta.signals.gwb import fourier_basis
 
 
 jax.config.update("jax_enable_x64", True)
