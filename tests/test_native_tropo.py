@@ -113,6 +113,56 @@ def test_tropo_delay_parity_vs_pint(tmp_path, _pinned_clock):
     assert np.max(np.abs(nat_delay)) > 0.0
 
 
+# --------------------------------------------------------------------------- C: bridge anchor
+
+
+@pytest.mark.slow
+def test_bridge_tropo_alt_matches_pint_get_target_altitude(tmp_path, _pinned_clock):
+    """Direct anchor: the bridge's astropy-AltAz tropo_alt == PINT's altitude.
+
+    Without this the bridge/PINT agreement would only hold transitively (native
+    vs bridge + native vs PINT).  Both arrays are in PINT table order, so no
+    re-alignment is needed.
+    """
+    import astropy.units as u
+    from pint.observatory import get_observatory
+    from pint.observatory.topo_obs import TopoObs
+
+    from jaxpint.bridge import pint_toas_to_jax
+
+    parp, timp = _tropo_par(tmp_path, enabled=True)
+    try:
+        model, toas = _load_pint(parp, timp)
+    except OSError as exc:  # missing example file / ephemeris download
+        pytest.skip(f"PINT could not load: {exc}")
+
+    td = pint_toas_to_jax(toas, model=model)  # bridge -> astropy AltAz
+    assert td.tropo_alt is not None
+
+    # Reference: PINT's _get_target_altitude, exactly as the pre-2.3 bridge did.
+    tropo_comp = model.components["TroposphereDelay"]
+    radec = tropo_comp._get_target_skycoord()
+    tbl = toas.table
+    n = toas.ntoas
+    alt_ref = np.zeros(n, dtype=np.float64)
+    valid_ref = np.zeros(n, dtype=bool)
+    for key, grp in toas.get_obs_groups():
+        obsobj = get_observatory(key)
+        if not isinstance(obsobj, TopoObs):
+            continue
+        obs = obsobj.earth_location_itrf()
+        alt_ref[grp] = tropo_comp._get_target_altitude(obs, tbl[grp], radec).to(u.rad).value
+        valid_ref[grp] = True
+    bad = (alt_ref < 0.0) | (alt_ref > np.pi / 2.0)
+    valid_ref[bad] = False
+    alt_ref[bad] = np.pi / 2.0
+
+    assert valid_ref.sum() > 0  # tropo actually exercised
+    assert np.max(np.abs(np.asarray(td.tropo_alt) - alt_ref)) < 1e-9, \
+        float(np.max(np.abs(np.asarray(td.tropo_alt) - alt_ref)))
+    assert np.array_equal(np.asarray(td.tropo_alt_valid), valid_ref)
+
+
 # --------------------------------------------------------------------------- C: off path
 
 
