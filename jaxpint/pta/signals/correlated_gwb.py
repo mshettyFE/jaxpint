@@ -105,8 +105,21 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
         self,
         toa_data: TOAData,
     ) -> Float[Array, "n_toas n_basis"]:
-        toas_seconds = toa_data.require_basis_seconds()
-        F, _ = fourier_basis(toas_seconds, self.n_components, self.T_span)
+        return self.get_fourier_basis_at(toa_data.tdb_seconds)
+
+    def get_fourier_basis_at(
+        self,
+        toas_seconds: Float[Array, " n_times"],
+    ) -> Float[Array, "n_times n_basis"]:
+        """Fourier basis evaluated at arbitrary times (seconds).
+
+        The basis is analytic in time, so conditional-GP realizations can
+        be evaluated on a dense grid (smooth waveform-reconstruction
+        curves) or beyond the observed span, not just at TOA epochs.
+        Not base abstract method since tabulated bases without interpolation
+        cant evaluate except at existing TOAs
+        """
+        F, _ = fourier_basis(jnp.asarray(toas_seconds), self.n_components, self.T_span)
         return F
 
     def get_psd(
