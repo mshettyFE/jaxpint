@@ -19,13 +19,13 @@ from jaxtyping import Array, Float
 from jaxpint.types import TOAData
 from jaxpint.types import GlobalParams
 from jaxpint.pta.injectors import CorrelatedSignalInjector
-from jaxpint.pta.signals.gwb import fourier_basis
-from jaxpint.pta.signals.orf import hd_orf
-from jaxpint.pta.signals.spectrum import (
-    PowerLawSpectrum,
-    SpectralModel,
-    validate_spectrum_components,
+from jaxpint.pta.signals.gwb import (
+    _register_spectrum_params,
+    _setup_spectrum,
+    fourier_basis,
 )
+from jaxpint.pta.signals.orf import hd_orf
+from jaxpint.pta.signals.spectrum import SpectralModel
 
 
 class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
@@ -68,21 +68,9 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
         initial_values: Optional[dict[str, float]] = None,
         spectrum: Optional[SpectralModel] = None,
     ):
-        self.n_components = n_components
-        self.T_span = T_span
-        self.prefix = prefix
-        self.spectrum = PowerLawSpectrum() if spectrum is None else spectrum
-        validate_spectrum_components(self.spectrum, n_components)
-
-        self.param_spec: dict[str, float] = self.spectrum.param_defaults()
-        if initial_values is not None:
-            unknown = set(initial_values) - set(self.param_spec)
-            if unknown:
-                raise ValueError(
-                    f"Unknown GWB parameters: {unknown}. "
-                    f"Valid: {list(self.param_spec.keys())}"
-                )
-            self.param_spec.update(initial_values)
+        _setup_spectrum(
+            self, n_components, T_span, prefix, initial_values, spectrum, label="GWB"
+        )
 
         # Precompute ORF matrix
         n_psr = pulsar_positions.shape[0]
@@ -97,9 +85,7 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
     # -- CorrelatedSignalInjector ABC ------------------------------------------
 
     def register_params(self, global_params: GlobalParams) -> GlobalParams:
-        names = [f"{self.prefix}{n}" for n in self.param_spec]
-        values = list(self.param_spec.values())
-        return global_params.add_params(names, values)
+        return _register_spectrum_params(self, global_params)
 
     def get_fourier_basis(
         self,

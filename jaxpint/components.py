@@ -204,13 +204,14 @@ class Component(eqx.Module):
                 )
 
 
-class ComponentIndexMixin(eqx.Module):
+class ComponentIndexed(eqx.Module):
     """Name/index access over a ``components`` tuple (``.component_names``, ``m[key]``).
 
-    Mixed into :class:`~jaxpint.model.TimingModel` and
-    :class:`~jaxpint.noise.NoiseModel`; each supplies the ``components`` property
-    (its own assembly of the underlying component tuples), and this provides the
-    shared lookup by unique name, integer index, or slice.
+    Shared base class of :class:`~jaxpint.model.TimingModel` and
+    :class:`~jaxpint.noise.NoiseModel` (each subclasses it directly — single
+    inheritance, not mixed in): each supplies the ``components`` property (its own
+    assembly of the underlying component tuples), and this provides the shared
+    lookup by unique name, integer index, or slice.
     """
 
     @property
