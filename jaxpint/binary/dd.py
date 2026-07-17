@@ -19,7 +19,7 @@ from typing import Optional
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.components import BinaryDelayComponent, ParamDecl
 from jaxpint.binary._param_decls import BINARY_CORE
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.binary.common import (
@@ -36,7 +36,7 @@ from jaxpint.binary.common import (
 )
 
 
-class BinaryDD(DelayComponent):
+class BinaryDD(BinaryDelayComponent):
     """Damour-Deruelle binary delay model.
 
     Supports three Shapiro delay parameterizations via ``shapiro_mode``:

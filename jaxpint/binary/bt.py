@@ -16,7 +16,7 @@ from typing import Optional
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.components import BinaryDelayComponent, ParamDecl
 from jaxpint.binary._param_decls import BINARY_CORE
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.binary.common import (
@@ -30,7 +30,7 @@ from jaxpint.binary.common import (
 )
 
 
-class BinaryBT(DelayComponent):
+class BinaryBT(BinaryDelayComponent):
     """Blandford-Teukolsky binary delay model.
 
     Parameters

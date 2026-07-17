@@ -21,7 +21,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.components import BinaryDelayComponent, ParamDecl
 from jaxpint.binary._param_decls import BINARY_CORE
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.constants import SECS_PER_DAY, RAD_PER_MAS, KPC_TO_KM
@@ -38,7 +38,7 @@ from jaxpint.binary.common import (
 )
 
 
-class BinaryDDK(DelayComponent):
+class BinaryDDK(BinaryDelayComponent):
     """DDK binary delay model.
 
     Parameters

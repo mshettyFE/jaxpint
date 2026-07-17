@@ -20,7 +20,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.components import BinaryDelayComponent, ParamDecl
 from jaxpint.binary._param_decls import BINARY_CORE
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.constants import SECS_PER_DAY, TSUN
@@ -94,7 +94,7 @@ _droemer_dPhi = jax.vmap(_droemer_dPhi_scalar, in_axes=(0, 0, 0))
 _d2roemer_dPhi2 = jax.vmap(_d2roemer_dPhi2_scalar, in_axes=(0, 0, 0))
 
 
-class BinaryELL1(DelayComponent):
+class BinaryELL1(BinaryDelayComponent):
     """ELL1 binary delay model for low-eccentricity orbits.
 
     Uses rectangular eccentricity (EPS1, EPS2) and TASC epoch.

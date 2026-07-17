@@ -17,7 +17,7 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.components import BinaryDelayComponent, ParamDecl
 from jaxpint.binary._param_decls import BINARY_CORE
 from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
@@ -32,7 +32,7 @@ from jaxpint.binary.common import (
 )
 
 
-class BinaryBTPiecewise(DelayComponent):
+class BinaryBTPiecewise(BinaryDelayComponent):
     """Piecewise BT binary delay model.
 
     Allows different T0 and A1 values for non-overlapping time intervals.
