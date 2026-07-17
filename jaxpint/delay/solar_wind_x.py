@@ -29,14 +29,14 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.components import DelayComponent, ParamDecl
-from jaxpint.constants import AU_KM, DMCONST
+from jaxpint.components import DispersionDelayComponent, ParamDecl
+from jaxpint.constants import AU_KM
 from jaxpint.delay.solar_wind import _solar_wind_geometry_swm1, _sun_angle_and_distance
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
 
 
-class SolarWindDispersionX(DelayComponent):
+class SolarWindDispersionX(DispersionDelayComponent):
     """Piecewise solar wind dispersion delay (SWX model).
 
     Parameters
@@ -102,13 +102,18 @@ class SolarWindDispersionX(DelayComponent):
             label="segment",
         )
 
-    def __call__(
+    def compute_dm(
         self,
         toa_data: TOAData,
         params: ParameterVector,
         delay: Float[Array, " n_toas"],
     ) -> Float[Array, " n_toas"]:
-        """Compute piecewise solar wind dispersion delay.
+        """Compute the piecewise solar wind DM contribution.
+
+        The base :class:`~jaxpint.components.DispersionDelayComponent` turns this
+        into a timing delay via the dispersion law; returning the DM here (rather
+        than the delay) also lets it flow into ``TimingModel.compute_dm`` for
+        wideband fitting, matching PINT's ``dm_value_funcs`` convention.
 
         Parameters
         ----------
@@ -122,7 +127,7 @@ class SolarWindDispersionX(DelayComponent):
         Returns
         -------
         array, shape (n_toas,)
-            Solar wind dispersion delay in seconds.
+            Solar wind dispersion measure in pc/cm³.
         """
         # 1. Pulsar direction (unit vector, ICRS).
         psr_dir = compute_pulsar_direction(
@@ -173,4 +178,4 @@ class SolarWindDispersionX(DelayComponent):
 
             dm = dm + jnp.where(in_bin, swxdm * scaling, 0.0)
 
-        return dm * DMCONST / toa_data.freq**2
+        return dm
