@@ -29,6 +29,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.stats.regions import (
     grid_credible_upper_limit,
+    masked_log_prior,
     mixture_truncated_gaussian_upper_limit,
     truncated_gaussian_upper_limit,
 )
@@ -214,13 +215,5 @@ def _marginalized_ul_grid(
     logL = logsumexp(
         h0[:, None] * Xs[None, :] - 0.5 * Ys[None, :] * h0[:, None] ** 2, axis=1
     )
-    # A ``None`` support (numpyro's unconstrained base) means every point is in
-    # support; otherwise mask out-of-support points (log_prob doesn't self-mask).
-    support = prior.support
-    in_support = (
-        jnp.ones(h0.shape, dtype=bool)
-        if support is None
-        else jnp.asarray(support(h0), dtype=bool)
-    )
-    log_prior = jnp.where(in_support, prior.log_prob(h0), -jnp.inf)
+    log_prior = masked_log_prior(h0, prior)
     return grid_credible_upper_limit(h0, logL + log_prior, level)

@@ -39,17 +39,10 @@ from jaxpint.par.core import raw_params_to_result
 from jaxpint.par.raw_params import ParamKind, RawParam
 from jaxpint.par.registry import BinaryModel, Component, binary_component_for
 from jaxpint.par.result import ParResult
+from jaxpint.par.spec import spec_for
 from jaxpint.types import ParameterVector
 
 log = logging.getLogger(__name__)
-
-
-# PINT float parameters that are metadata, not fitted quantities, and whose
-# values may legitimately be non-finite (e.g. `TZRFRQ=inf` for an
-# asymptotic-frequency reference TOA). They're stashed in `metadata` and kept
-# out of the JAX-backed values vector, where `inf` would trip `JAX_DEBUG_INFS`
-# at array construction.
-_METADATA_ONLY_FLOAT_PARAMS: frozenset[str] = frozenset({"TZRFRQ"})
 
 
 # ---------------------------------------------------------------------------
@@ -128,9 +121,13 @@ def _pint_to_raw_params(model: PINTTimingModel) -> list[RawParam]:
                 raw.append(RawParam(pname, ParamKind.INT, int_value=int(param.value)))
             continue
 
-        # Metadata-only floats (e.g. TZRFRQ=inf): stash as a string so the value
-        # stays out of the JAX array.
-        if pname in _METADATA_ONLY_FLOAT_PARAMS:
+        # Metadata-only floats (e.g. TZRFRQ=inf): a float-presented param that the
+        # spec (par.spec, the vocabulary's single owner) declares kind="str" is
+        # metadata, not a fitted quantity, and may be non-finite. Stash it as a
+        # string so the value stays out of the JAX array, where `inf` would trip
+        # JAX_DEBUG_INFS at construction.
+        spec = spec_for(pname)
+        if spec is not None and spec["kind"] == "str":
             if getattr(param, "value", None) is not None:
                 raw.append(RawParam(pname, ParamKind.STR, str_value=str(param.value)))
             continue
