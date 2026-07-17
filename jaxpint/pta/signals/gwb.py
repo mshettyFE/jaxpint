@@ -33,8 +33,7 @@ from jaxpint.pta.signals.spectrum import (
     validate_spectrum_components,
 )
 
-# Year in seconds (NANOGrav convention)
-FYR: float = 1.0 / (365.25 * 86400.0)
+from jaxpint.constants import FYR
 
 
 def powerlaw_psd(
