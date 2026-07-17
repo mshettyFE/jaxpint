@@ -363,7 +363,7 @@ def _stacked_fourier_basis(
     )
 
 
-def _n_basis_per_injector(
+def n_basis_per_injector(
     correlated_injectors: tuple[CorrelatedSignalInjector, ...],
     toa_data_0: TOAData,
 ) -> tuple[int, ...]:
@@ -484,6 +484,123 @@ def _assemble_basis_proj_residual_joint_kpb(
             )
             for k in range(len(n_basis_per_k))
         ]
+    )
+
+
+class JointCorrelatedBlocks(NamedTuple):
+    r"""Shared joint outer-tier blocks for the correlated-signal system.
+
+    The substrate both the correlated :func:`pta_logL` branch and
+    :func:`~jaxpint.pta.conditional.conditional_gwb` build on: each pulsar's
+    inner-tier Woodbury projections summed / stacked into the joint ``(k, p, b)``
+    layout, plus the joint prior and its inverse.  ``pta_logL`` forms the
+    marginal likelihood from these; the conditional posterior reads
+    ``Phi_joint_inv`` / ``basis_overlap_joint`` as its precision and
+    ``basis_proj_residual_joint`` as its right-hand side.  They differ *only* in
+    what they do with these blocks — so the (injector, pulsar, basis)/(k,p,b)
+    layout contract lives in one place (:func:`joint_correlated_blocks`) rather than being duplicated.
+
+    Attributes
+    ----------
+    sum_rCr : scalar
+        ``\Sigma_p r_p^T C_p^{-1} r_p`` — each pulsar's noise ``C_p`` *excludes* the
+        correlated signal.
+    sum_logdetC : scalar
+        ``\Sigma_p log|C_p|``.
+    basis_proj_residual_joint : (n_joint,) array
+        ``stack_p(F_p^T C_p^{-1} r_p)`` in (k, p, b) layout.
+    basis_overlap_joint : (n_joint, n_joint) array
+        ``blockdiag_p(F_p^T C_p^{-1} F_p)`` in (k, p, b) layout.
+    Phi_joint : (n_joint, n_joint) array
+        Joint prior ``blockdiag_k(\Gamma_k \otimes diag(S_k))``.
+    Phi_joint_inv : (n_joint, n_joint) array
+        Its inverse (``kron(\Gamma_k^{-1}, diag(1/S_k))`` per injector).
+    """
+
+    sum_rCr: Float[Array, ""]
+    sum_logdetC: Float[Array, ""]
+    basis_proj_residual_joint: Float[Array, " n_joint"]
+    basis_overlap_joint: Float[Array, "n_joint n_joint"]
+    Phi_joint: Float[Array, "n_joint n_joint"]
+    Phi_joint_inv: Float[Array, "n_joint n_joint"]
+
+
+def joint_correlated_blocks(
+    global_params: GlobalParams,
+    pulsar_params: tuple[ParameterVector, ...],
+    config: PTAConfig,
+) -> JointCorrelatedBlocks:
+    """Assemble the shared joint outer-tier blocks for the correlated system.
+
+    Runs each pulsar's inner-tier Woodbury solve against the stacked
+    correlated-signal basis, accumulates the residual quadratic form ``sum_rCr``
+    and noise log-determinant ``sum_logdetC``, and assembles the per-pulsar
+    ``(k, b)`` slabs plus the joint prior into the ``(k, p, b)`` joint layout.
+
+    Both the correlated :func:`pta_logL` branch and
+    :func:`~jaxpint.pta.conditional.conditional_gwb` call this and then diverge:
+    ``pta_logL`` takes the logdets and the Cholesky quadratic correction, the
+    conditional takes the precision and RHS.  ``config.correlated_injectors``
+    must be non-empty (both callers guard this upstream).
+    """
+    n_psr = config.n_pulsars
+    n_basis_per_k = n_basis_per_injector(
+        config.correlated_injectors, config.toa_data_list[0]
+    )
+
+    sum_rCr = jnp.float64(0.0)
+    sum_logdetC = jnp.float64(0.0)
+    # Per-pulsar slabs in (k, b) layout from the inner tier.
+    basis_proj_residual_per_pulsar = []  # each (n_basis_total,)
+    basis_overlap_per_pulsar = []  # each (n_basis_total, n_basis_total)
+
+    for p in range(n_psr):
+        ext_delay, ext_cov = _collect_per_pulsar_external_inputs(
+            p,
+            config.toa_data_list[p],
+            pulsar_params[p],
+            global_params,
+            config.signal_injectors,
+        )
+        F_stack_p = _stacked_fourier_basis(
+            config.correlated_injectors, config.toa_data_list[p]
+        )
+        (
+            rCr_p,
+            logdetC_p,
+            basis_proj_residual_p,
+            basis_overlap_p,
+        ) = _per_pulsar_intermediates(
+            config.toa_data_list[p],
+            config.timing_models[p],
+            config.noise_models[p],
+            pulsar_params[p],
+            F_stack_p,
+            external_delay=ext_delay,
+            external_cov=ext_cov,
+        )
+        sum_rCr = sum_rCr + rCr_p
+        sum_logdetC = sum_logdetC + logdetC_p
+        basis_proj_residual_per_pulsar.append(basis_proj_residual_p)
+        basis_overlap_per_pulsar.append(basis_overlap_p)
+
+    # Assemble the joint outer-tier system directly in (k, p, b) layout.
+    Phi_joint, Phi_joint_inv = _phi_and_phi_inv_joint(
+        config.correlated_injectors, global_params
+    )
+    basis_overlap_joint = _assemble_basis_overlap_joint_kpb(
+        basis_overlap_per_pulsar, n_basis_per_k, n_psr
+    )
+    basis_proj_residual_joint = _assemble_basis_proj_residual_joint_kpb(
+        basis_proj_residual_per_pulsar, n_basis_per_k, n_psr
+    )
+    return JointCorrelatedBlocks(
+        sum_rCr=sum_rCr,
+        sum_logdetC=sum_logdetC,
+        basis_proj_residual_joint=basis_proj_residual_joint,
+        basis_overlap_joint=basis_overlap_joint,
+        Phi_joint=Phi_joint,
+        Phi_joint_inv=Phi_joint_inv,
     )
 
 
@@ -686,90 +803,28 @@ def pta_logL(
             )
         return total
 
-    # ---- Correlated path: collect each pulsar's SignalInjector contributions
-    #      once (shared across the inner-tier solves below), then ONE joint
-    #      outer-tier solve over all correlated injectors. ----
-    per_pulsar_delays: list[Optional[Float[Array, " n_toas"]]] = []
-    per_pulsar_covs: list[
-        Optional[tuple[Float[Array, "n_toas n_ext"], Float[Array, " n_ext"]]]
-    ] = []
-    for p in range(n_psr):
-        ext_delay, ext_cov = _collect_per_pulsar_external_inputs(
-            p,
-            config.toa_data_list[p],
-            pulsar_params[p],
-            global_params,
-            config.signal_injectors,
-        )
-        per_pulsar_delays.append(ext_delay)
-        per_pulsar_covs.append(ext_cov)
+    # ---- Correlated path: the shared joint blocks (same substrate as
+    #      conditional_gwb), then ONE outer-tier solve for the marginal logL. ----
+    blk = joint_correlated_blocks(global_params, pulsar_params, config)
 
-    n_basis_per_k = _n_basis_per_injector(
-        config.correlated_injectors, config.toa_data_list[0]
-    )
-
-    sum_rCr = jnp.float64(0.0)
-    sum_logdetC = jnp.float64(0.0)
-    # Per-pulsar slabs in (k, b) layout from the inner tier.
-    basis_proj_residual_per_pulsar = []  # each (n_basis_total,)
-    basis_overlap_per_pulsar = []  # each (n_basis_total, n_basis_total)
-
-    for p in range(n_psr):
-        F_stack_p = _stacked_fourier_basis(
-            config.correlated_injectors, config.toa_data_list[p]
-        )
-        (
-            rCr_p,
-            logdetC_p,
-            basis_proj_residual_p,
-            basis_overlap_p,
-        ) = _per_pulsar_intermediates(
-            config.toa_data_list[p],
-            config.timing_models[p],
-            config.noise_models[p],
-            pulsar_params[p],
-            F_stack_p,
-            external_delay=per_pulsar_delays[p],
-            external_cov=per_pulsar_covs[p],
-        )
-        sum_rCr = sum_rCr + rCr_p
-        sum_logdetC = sum_logdetC + logdetC_p
-        basis_proj_residual_per_pulsar.append(basis_proj_residual_p)
-        basis_overlap_per_pulsar.append(basis_overlap_p)
-
-    # Assemble the joint outer-tier system directly in (k, p, b) layout.
-    Phi_joint, Phi_joint_inv = _phi_and_phi_inv_joint(
-        config.correlated_injectors, global_params
-    )
-    basis_overlap_joint = _assemble_basis_overlap_joint_kpb(
-        basis_overlap_per_pulsar,
-        n_basis_per_k,
-        n_psr,
-    )
-    basis_proj_residual_joint = _assemble_basis_proj_residual_joint_kpb(
-        basis_proj_residual_per_pulsar,
-        n_basis_per_k,
-        n_psr,
-    )
-
-    Sigma_joint = Phi_joint_inv + basis_overlap_joint
+    Sigma_joint = blk.Phi_joint_inv + blk.basis_overlap_joint
     Sigma_cf = jax.scipy.linalg.cho_factor(Sigma_joint)
     correction = jnp.dot(
-        basis_proj_residual_joint,
-        jax.scipy.linalg.cho_solve(Sigma_cf, basis_proj_residual_joint),
+        blk.basis_proj_residual_joint,
+        jax.scipy.linalg.cho_solve(Sigma_cf, blk.basis_proj_residual_joint),
     )
 
     # slogdet breaks 2nd-order autodiff (sign branch is non-smooth, NaNs out
     # the Hessian even when sign is constantly +1). Use Cholesky-diag-log
     # instead, matching the pattern in utils.py:434, 612.
-    Phi_joint_cf = jax.scipy.linalg.cho_factor(Phi_joint)
+    Phi_joint_cf = jax.scipy.linalg.cho_factor(blk.Phi_joint)
     logdet_Phi_joint = 2.0 * jnp.sum(jnp.log(jnp.abs(jnp.diag(Phi_joint_cf[0]))))
     logdet_Sigma_joint = 2.0 * jnp.sum(jnp.log(jnp.diag(Sigma_cf[0])))
 
     n_toas_total = sum(td.n_toas for td in config.toa_data_list)
     total_logL = (
-        -0.5 * (sum_rCr - correction)
-        - 0.5 * (sum_logdetC + logdet_Phi_joint + logdet_Sigma_joint)
+        -0.5 * (blk.sum_rCr - correction)
+        - 0.5 * (blk.sum_logdetC + logdet_Phi_joint + logdet_Sigma_joint)
         - 0.5 * n_toas_total * jnp.log(2.0 * jnp.pi)
     )
     return total_logL
