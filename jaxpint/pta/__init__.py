@@ -9,6 +9,16 @@ same :func:`pta_logL` entry point via the
 
 from jaxpint.types import GlobalParams
 from jaxpint.pta.injectors import CorrelatedSignalInjector, SignalInjector
+from jaxpint.pta.conditional import (
+    ConditionalGP,
+    DelayBand,
+    conditional_covariance,
+    conditional_gwb,
+    conditional_gwb_delay_bands,
+    conditional_gwb_delays,
+    conditional_single_pulsar,
+    sample_conditional,
+)
 from jaxpint.pta.likelihood import (
     GWBlocks,
     PTAConfig,
@@ -75,6 +85,15 @@ __all__ = [
     "precompute_single_pulsar_pta_factor",
     "per_pulsar_gw_blocks",
     "GWBlocks",
+    # Conditional GP posteriors
+    "ConditionalGP",
+    "DelayBand",
+    "conditional_single_pulsar",
+    "conditional_gwb",
+    "conditional_gwb_delays",
+    "conditional_gwb_delay_bands",
+    "conditional_covariance",
+    "sample_conditional",
     # Dependency-aware grid scans
     "scan_logL",
     "PerPulsarScanAxis",
