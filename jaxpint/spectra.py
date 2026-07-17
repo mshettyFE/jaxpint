@@ -9,11 +9,16 @@ hyperparameters exist; the Woodbury solve path is untouched.  (What *would*
 break the diagonal fast path is a dense inter-frequency covariance, e.g.
 discovery's FFT/time-domain kernels — none of these models need that yet.)
 
-Conventions match ``discovery.signals``
+Conventions match ``discovery.signals``.
 
-Injectors resolve parameter names through a ``value_of`` callable so the
-same model works for prefixed :class:`~jaxpint.types.GlobalParams` (common
-processes) and per-pulsar :class:`~jaxpint.types.ParameterVector` use.
+This module is the single home for the "PSD shape → diagonal weights" step and
+is a **foundation both arms build on**: it sits below both ``jaxpint.pta``
+(common-process / GWB injectors) and ``jaxpint.noise`` (per-pulsar red / DM /
+chromatic / solar-wind GP components), so each depends on it downward and no
+PSD-shape logic is duplicated.  Callers resolve parameter names through a
+``value_of`` callable so the same model serves prefixed
+:class:`~jaxpint.types.GlobalParams` (common processes) and per-pulsar
+:class:`~jaxpint.types.ParameterVector` use.
 """
 
 from __future__ import annotations

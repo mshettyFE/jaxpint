@@ -40,11 +40,7 @@ from jaxpint.pta.signals import (
     CWInjector,
     CURN_PARAM_DEFAULTS,
     CURNInjector,
-    BrokenPowerLawSpectrum,
-    FreeSpectrum,
     HDCorrelatedGWBInjector,
-    PowerLawSpectrum,
-    SpectralModel,
     cw_delay,
     fplus_fcross,
     fourier_basis,
@@ -114,11 +110,6 @@ __all__ = [
     "HDCorrelatedGWBInjector",
     "fourier_basis",
     "gwb_covariance",
-    # Spectral models (constructor args for the GWB/CURN injectors)
-    "SpectralModel",
-    "PowerLawSpectrum",
-    "BrokenPowerLawSpectrum",
-    "FreeSpectrum",
     # Overlap reduction functions
     "hd_orf",
     "monopole_orf",

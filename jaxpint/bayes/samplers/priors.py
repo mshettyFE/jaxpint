@@ -42,7 +42,7 @@ import numpy as np
 import numpyro.distributions as dist
 
 if TYPE_CHECKING:
-    from jaxpint.pta.signals import FreeSpectrum
+    from jaxpint.spectra import FreeSpectrum
     from jaxpint.types import GlobalParams, ParameterVector
 
 
