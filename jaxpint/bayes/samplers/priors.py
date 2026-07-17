@@ -331,10 +331,9 @@ def _par_file_gaussian_args(
 def _maybe_par_uncert(pp: "ParameterVector", name: str) -> Optional[float]:
     """Per-parameter 1-sigma uncertainty from a ParameterVector.
 
-    Prefers the canonical :meth:`ParameterVector.param_uncertainty` accessor
-    (returns ``nan`` when the par file reported none); falls back to a few
-    legacy accessor names for non-``ParameterVector`` bundles.  Returns ``None``
-    when no usable source is found.
+    Uses the canonical :meth:`ParameterVector.param_uncertainty` accessor
+    (which returns ``nan`` when the par file reported none).  Returns ``None``
+    when the accessor is absent or raises for *name*.
     """
     accessor = getattr(pp, "param_uncertainty", None)
     if callable(accessor):
@@ -342,20 +341,6 @@ def _maybe_par_uncert(pp: "ParameterVector", name: str) -> Optional[float]:
             return float(cast(float, accessor(name)))
         except (KeyError, ValueError, IndexError, TypeError):
             pass
-    for attr in ("param_uncert", "param_sigma", "uncertainties", "sigmas"):
-        meth = getattr(pp, attr, None)
-        if meth is None:
-            continue
-        try:
-            if callable(meth):
-                return float(cast(float, meth(name)))
-            if isinstance(meth, dict):
-                if name in meth:
-                    return float(meth[name])
-            elif hasattr(meth, "__getitem__"):
-                return float(meth[pp.names.index(name)])
-        except (KeyError, ValueError, IndexError, TypeError):
-            continue
     return None
 
 

@@ -91,10 +91,83 @@ def test_time_and_phase_accumulate(tmp_path):
         "PHASE 2\n"
         "J1 1400.0 55000.5 1.0 gbt\n",
     )
-    f = read_tim(p).toas[0].flags
+    toa = read_tim(p).toas[0]
     # PHASE accumulates via += float(...) exactly as PINT does, so the flag is
     # the float string "2.0" (matching PINT's read_toa_file), not "2".
-    assert f["to"] == "1.5" and f["phase"] == "2.0"
+    assert toa.flags["to"] == "1.5" and toa.flags["phase"] == "2.0"
+    # ...and the accumulated turns are applied to delta_pulse_number (the field
+    # the phase residual actually uses), same sign as the flag.
+    assert toa.delta_pulse_number == 2.0
+
+
+def test_phase_accumulates_into_delta_pulse_number(tmp_path):
+    # PHASE applies only to *subsequent* TOAs and accumulates (signed) across
+    # commands: first TOA sees 0, then +2, then +2-3 = -1.
+    p = _write(
+        tmp_path,
+        "FORMAT 1\n"
+        "J1 1400.0 55000.5 1.0 gbt\n"
+        "PHASE 2\n"
+        "J1 1400.0 55001.5 1.0 gbt\n"
+        "PHASE -3\n"
+        "J1 1400.0 55002.5 1.0 gbt\n",
+    )
+    dpn = [t.delta_pulse_number for t in read_tim(p).toas]
+    assert dpn == [0.0, 2.0, -1.0]
+
+
+def test_phase_delta_pulse_number_parity_vs_pint(tmp_path):
+    # delta_pulse_number must match PINT's get_TOAs on the same file (the flag
+    # is compared by the read_toa_file parity suite; this pins the applied field).
+    pytest.importorskip("pint")
+    import numpy as np
+    from pint.toa import get_TOAs
+
+    p = _write(
+        tmp_path,
+        "FORMAT 1\n"
+        "J1 1400.0 55000.5 1.0 gbt\n"
+        "PHASE 2\n"
+        "J1 1400.0 55001.5 1.0 gbt\n"
+        "PHASE 3\n"
+        "J1 1400.0 55002.5 1.0 gbt\n",
+    )
+    native = np.array([t.delta_pulse_number for t in read_tim(p).toas])
+    pint_dpn = np.asarray(get_TOAs(str(p)).table["delta_pulse_number"], dtype=float)
+    assert np.array_equal(native, pint_dpn)
+
+
+def test_padd_folds_into_delta_pulse_number(tmp_path):
+    # -padd is a per-TOA (possibly fractional) phase offset; it sums with the
+    # accumulated PHASE command into delta_pulse_number, same sign as each.
+    p = _write(
+        tmp_path,
+        "FORMAT 1\n"
+        "J1 1400.0 55000.5 1.0 gbt\n"
+        "J1 1400.0 55001.5 1.0 gbt -padd 0.25\n"
+        "PHASE 2\n"
+        "J1 1400.0 55002.5 1.0 gbt -padd -0.5\n",
+    )
+    dpn = [t.delta_pulse_number for t in read_tim(p).toas]
+    assert dpn == [0.0, 0.25, 1.5]  # 0 ; padd ; PHASE(2) + padd(-0.5)
+
+
+def test_padd_delta_pulse_number_parity_vs_pint(tmp_path):
+    pytest.importorskip("pint")
+    import numpy as np
+    from pint.toa import get_TOAs
+
+    p = _write(
+        tmp_path,
+        "FORMAT 1\n"
+        "J1 1400.0 55000.5 1.0 gbt\n"
+        "J1 1400.0 55001.5 1.0 gbt -padd 0.25\n"
+        "PHASE 2\n"
+        "J1 1400.0 55002.5 1.0 gbt -padd -0.5\n",
+    )
+    native = np.array([t.delta_pulse_number for t in read_tim(p).toas])
+    pint_dpn = np.asarray(get_TOAs(str(p)).table["delta_pulse_number"], dtype=float)
+    assert np.array_equal(native, pint_dpn)
 
 
 def test_jump_block_counter(tmp_path):

@@ -370,8 +370,6 @@ class CWInjector(SignalInjector):
         in ``jaxpint.pta.cw_upper_limit``.  Default False.
     """
 
-    param_defaults = CW_PARAM_DEFAULTS
-
     def __init__(
         self,
         pulsar_positions: Float[Array, "n_psr 3"],

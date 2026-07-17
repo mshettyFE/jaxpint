@@ -303,6 +303,11 @@ def _read_tim(
                 freq_mhz=freq_mhz,
                 obs=obs,
                 flags=flags,
+                # PINT's delta_pulse_number: the accumulated PHASE-command turns
+                # (integer, cumulative) plus this TOA's -padd flag (possibly
+                # fractional, per-TOA); same sign as each source.
+                delta_pulse_number=float(cdict["PHASE"])
+                + float(flags.get("padd", 0.0)),
             )
         )
         ntoas += 1
