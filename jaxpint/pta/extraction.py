@@ -11,7 +11,7 @@ noise-weighted, timing-marginalized Gram — from a heavy likelihood, so that
 downstream work (upper limits, detection statistics, localization scans,
 sensitivity forecasts) becomes cheap algebra on the blocks.  Both inference
 arms consume this module (the Bayesian upper limits in
-``jaxpint.pta.cw_upper_limit`` / ``jaxpint.pta.incoherent_ul`` and the
+``jaxpint.bayes.cw_upper_limit`` / ``jaxpint.bayes.incoherent_ul`` and the
 frequentist statistics in ``jaxpint.frequentist``), which is why it lives in
 ``pta/`` below both.
 

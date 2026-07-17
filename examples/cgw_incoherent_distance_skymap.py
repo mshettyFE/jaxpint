@@ -8,7 +8,7 @@ prior ``L ∈ [1/PX − kσ_L, 1/PX + kσ_L]`` (σ_L = σ_PX/PX²; σ_PX from th
 ``param_uncertainty``).  Because the prior spans ≫1 phase cycle for any realistic
 parallax (Δ_p ~ 1e4-1e6 rad), this collapses to the exact flat-phase limit -- so
 **every** pulsar contributes its pulsar term, no PX sign/anchor restriction.  See
-:mod:`jaxpint.pta.incoherent_ul` for the construction.
+:mod:`jaxpint.bayes.incoherent_ul` for the construction.
 
 Fixed orientation (face-on), ``data_mode='real'``.  Usage::
 
@@ -79,8 +79,8 @@ def compute_skymap(
     from loguru import logger
 
     from jaxpint.pta.signals.cw import cw_delay_from_array
-    from jaxpint.pta.cw_upper_limit import h0_to_distance
-    from jaxpint.pta.incoherent_ul import h0_95_grid, mixed_phase_A
+    from jaxpint.bayes.cw_upper_limit import h0_to_distance
+    from jaxpint.bayes.incoherent_ul import h0_95_grid, mixed_phase_A
     from jaxpint.pta.extraction import extract_pulsar_bM
 
     import_healpy()  # fail fast if the optional skymap extra is missing

@@ -43,6 +43,25 @@ from jaxpint.pta.signals import (
     monopole_orf,
     dipole_orf,
 )
+from jaxpint.pta.extraction import (
+    EXTRACTION_ORIENTATIONS,
+    bM2_coeffs,
+    basis_quadratics,
+    default_extraction_orientations,
+    extract_pulsar_bM,
+    extract_pulsar_blocks,
+    orientation_coeffs,
+    quadratic_coeffs,
+)
+from jaxpint.pta.cw_localization import (
+    assemble_joint_fisher,
+    credible_area_deg2,
+    gram_at_pixel,
+    gram_block_at_pair,
+    h0_for_snr,
+    make_logL_2sky,
+    per_source_credible_areas_deg2,
+)
 
 __all__ = [
     # Core
@@ -85,4 +104,21 @@ __all__ = [
     "hd_orf",
     "monopole_orf",
     "dipole_orf",
+    # CW (b, M) block extraction -- frequentist / localization building blocks
+    "EXTRACTION_ORIENTATIONS",
+    "bM2_coeffs",
+    "basis_quadratics",
+    "default_extraction_orientations",
+    "extract_pulsar_bM",
+    "extract_pulsar_blocks",
+    "orientation_coeffs",
+    "quadratic_coeffs",
+    # CW Fisher-matrix sky localization
+    "h0_for_snr",
+    "make_logL_2sky",
+    "gram_at_pixel",
+    "gram_block_at_pair",
+    "assemble_joint_fisher",
+    "per_source_credible_areas_deg2",
+    "credible_area_deg2",
 ]

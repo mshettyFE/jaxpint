@@ -3,9 +3,9 @@
 Injects ``S`` CW sources into the (synthetic) data and localizes **each** of them
 with the conditioned scan -- scanning one source over the sky while the other
 ``S-1`` are baked at their truth positions
-(:func:`jaxpint.pta.incoherent_ul.condition_on_statics`).  For every source it emits
+(:func:`jaxpint.bayes.incoherent_ul.condition_on_statics`).  For every source it emits
 two distance-marginalized credible-region maps (Tier-1 reductions over a
-:func:`~jaxpint.pta.incoherent_ul.mixed_phase_A` phase grid):
+:func:`~jaxpint.bayes.incoherent_ul.mixed_phase_A` phase grid):
 
 * **unconditioned** -- the naive single-source matched filter ``b0`` (which sees
   *all* the signals), and
@@ -97,7 +97,7 @@ def compute_conditioned_localization(
 
     from jaxpint.stats.regions import credible_level_map, credible_region_area
     from jaxpint.pta.signals.cw import cw_delay_from_array, CWInjector, _KPC_TO_M, _C
-    from jaxpint.pta.incoherent_ul import (
+    from jaxpint.bayes.incoherent_ul import (
         condition_on_statics,
         mixed_phase_A,
         total_logL_marg,

@@ -73,7 +73,7 @@ def quadrature_blocks(
     ``S = (d | sin), C = (d | cos)`` (data projection) and ``G_ab = (q_a | q_b)`` for
     the two quadratures ``q = {sin, cos}(2 pi f (t - t_ref))``, in the pulsar's
     timing-marginalized GLS metric (via
-    ``jaxpint.pta.incoherent_ul.extract_pulsar_blocks``).  Both are
+    ``jaxpint.bayes.incoherent_ul.extract_pulsar_blocks``).  Both are
     **sky-independent** (Earth term), so extract once per pulsar per frequency and
     reuse for the whole sky map and every background realization.
 

@@ -120,7 +120,7 @@ def compute_localization(
 
     from jaxpint.stats.regions import credible_level_map, credible_region_area
     from jaxpint.pta.signals.cw import cw_delay_from_array, CWInjector
-    from jaxpint.pta.incoherent_ul import (
+    from jaxpint.bayes.incoherent_ul import (
         mixed_phase_A,
         total_logL_marg,
         total_logL_profile,

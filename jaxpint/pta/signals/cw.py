@@ -367,7 +367,7 @@ class CWInjector(SignalInjector):
         ``"h0"``) instead of ``log10(h0)`` (named ``"log10_h"``).  In this mode
         the residual is exactly linear in the amplitude, so the log-likelihood is
         exactly quadratic in it — required by the analytic upper-limit machinery
-        in ``jaxpint.pta.cw_upper_limit``.  Default False.
+        in ``jaxpint.bayes.cw_upper_limit``.  Default False.
     """
 
     def __init__(
@@ -514,7 +514,7 @@ def cw_delay_from_array(
         If True, ``cw_params[0]`` is the *linear* strain ``h0`` instead of
         ``log10(h0)``.  The residual is then exactly linear in that entry, which
         is what makes the log-likelihood exactly quadratic in the amplitude (used
-        by the analytic upper-limit machinery, ``jaxpint.pta.cw_upper_limit``).
+        by the analytic upper-limit machinery, ``jaxpint.bayes.cw_upper_limit``).
         Default False keeps the ``log10_h`` parametrization.
 
     Parameters
@@ -543,7 +543,7 @@ def cw_delay_from_array(
         If True, keep ONLY the pulsar-term contribution to the residual (the
         ``full - earth`` piece: ``delta_sin = -sin(phase_pulsar)``).  Used with
         ``pulsar_term_phase`` to build the pulsar-term quadrature templates for the
-        incoherent distance-marginalized upper limit (``jaxpint.pta.incoherent_ul``).
+        incoherent distance-marginalized upper limit (``jaxpint.bayes.incoherent_ul``).
     pulsar_term_phase : float, optional
         When given (a static float), the pulsar-term phase lag is set DIRECTLY to
         this value instead of computed from ``pulsar_dist`` -- distance-independent.
