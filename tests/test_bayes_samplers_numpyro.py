@@ -22,7 +22,11 @@ from jaxpint.bayes.samplers.numpyro import (
     build_single_pulsar_model,
     run_nuts,
 )
-from jaxpint.bayes.samplers.priors import collect_free_fqns, resolve_priors
+from jaxpint.bayes.samplers.priors import (
+    PriorResolutionError,
+    collect_free_fqns,
+    resolve_priors,
+)
 
 from tests.helpers import make_simple_pulsar
 
@@ -181,5 +185,5 @@ def test_build_model_missing_prior_raises():
         over=over, toa_data=toa_data, timing_model=tm, noise_model=nm,
         fiducial_params=params, validate_linearity=False,
     )
-    with pytest.raises(KeyError, match="no prior distribution"):
+    with pytest.raises(PriorResolutionError, match="no prior distribution"):
         build_single_pulsar_model(likelihood, {}, skel)  # empty priors

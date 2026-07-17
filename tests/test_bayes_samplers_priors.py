@@ -12,6 +12,7 @@ pytest.importorskip("numpyro")  # opt-in `sampling` extra
 import numpyro.distributions as dist
 
 from jaxpint.bayes.samplers.priors import (
+    PRIOR_DEFAULTS,
     PriorResolutionError,
     PriorSpec,
     cw_priors,
@@ -167,6 +168,14 @@ def test_cw_priors():
     }
     assert float(spec.flat["cw_gwphi"].high) == pytest.approx(2 * math.pi)
     assert float(spec.flat["cw_cos_inc"].low) == -1.0
+
+
+def test_cw_priors_defaults_overridable():
+    # Bounds are now table-driven, so a `defaults` override flows through.
+    custom = {**PRIOR_DEFAULTS, "log10_h": lambda: dist.Uniform(-20.0, -10.0)}
+    spec = cw_priors(defaults=custom)
+    assert float(spec.flat["cw_log10_h"].low) == -20.0
+    assert float(spec.flat["cw_log10_h"].high) == -10.0
 
 
 # ---------------------------------------------------------------------------

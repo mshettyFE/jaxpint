@@ -31,6 +31,7 @@ import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS, init_to_value
 
+from jaxpint.bayes.samplers.priors import PriorResolutionError
 from jaxpint.types import GlobalParams, ParameterVector
 
 
@@ -143,9 +144,13 @@ def build_pta_model(
 
 
 def _check_priors(site_names, priors: Mapping[str, dist.Distribution], *, label: str):
+    # Same "no silent prior" contract as resolve_priors, enforced here because
+    # build_*_model is public and may be handed a prior mapping that never went
+    # through resolve_priors. Raise the *same* exception type so a caller's
+    # `except PriorResolutionError` covers the gap wherever it is first caught.
     missing = [s for s in site_names if s not in priors]
     if missing:
-        raise KeyError(
+        raise PriorResolutionError(
             f"build_{label}_model: no prior distribution for sampled site(s) "
             f"{sorted(missing)}. Resolve priors covering every free parameter "
             f"(see jaxpint.bayes.samplers.resolve_priors)."
