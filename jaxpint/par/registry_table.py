@@ -1,54 +1,32 @@
-"""Single source of truth for timing-model components.
+"""Parser/bridge derivations over the component self-registration registry.
 
-A component is declared in one of two ways, which coexist:
+Every component self-registers: its class carries ``@register_component`` /
+``register_family`` (see :mod:`jaxpint.par._component_registry`), which records
+its identity, PINT names, classes, binary flag, and builder in one place.  This
+module holds the small ``derive_*`` functions that project that registry into
+the shapes the parser (:mod:`jaxpint.par.spec`) and PINT bridge
+(:mod:`jaxpint.par.components`) need — plus the execution-order constants.
 
-- **Manual** (legacy): a :class:`ComponentSpec` in ``_MANUAL_COMPONENTS`` plus a
-  ``_param_classes`` entry plus a ``_build_*`` in ``model_builder``.
-- **Self-registered** (preferred): the component class carries
-  ``@register_component`` / ``register_family`` (see
-  :mod:`jaxpint.par._component_registry`); its spec / classes / builder are
-  *derived* from that one declaration.
-
-Migrating a component moves it from the first form to the second.
-
-The full table (``COMPONENTS`` / ``COMPONENT_SPECS``) is assembled **lazily**
-(:func:`_components`): self-registration requires importing the component
-modules, so eager assembly during ``import`` could re-enter a component
-mid-import (a cycle).  Deferring to first use — after the component packages
-finish importing — avoids that.  ``COMPONENTS`` / ``COMPONENT_SPECS`` are exposed
-as module attributes via ``__getattr__`` for backward compatibility.
+The derivations are **lazy** (via :func:`_registry`): self-registration requires
+importing the component modules, so reading the registry eagerly during
+``import`` could re-enter a component mid-import (a cycle).  Deferring to first
+use — after the component packages finish importing — avoids that.  A consequence
+is that :func:`_validate` runs on first derivation (e.g. first parse), not at
+bare ``import``.
 
 ``EXECUTION_ORDER`` / ``PRIORITY`` are the exception: they name only the
 ``Component`` enum (never the classes), so they stay eager, import-light module
 constants that ``model_builder`` can read directly to order the delay chain
-without forcing table assembly.
+without forcing the registry to assemble.
 """
 
 from __future__ import annotations
 
 import functools
-from dataclasses import dataclass
 
 from jaxpint.par.registry import Component
 
 C = Component
-
-
-@dataclass(frozen=True)
-class ComponentSpec:
-    """Declarative metadata for one timing-model component.
-
-    Today the table drives the parser/order/PINT-name derivations.  A future
-    phase may attach a per-component ``build`` callable here to also derive the
-    model-builder dispatch (see the plan); that is intentionally not done yet.
-    """
-
-    component: Component
-    # PINT component class names mapping to this Component (>=0; "FD" and
-    # "SimpleExponentialDip" differ from Component.value; binary has none).
-    pint_names: tuple[str, ...] = ()
-    # Feeds spec.BINARY_PARAMS; excluded from TRIGGER_MAP.
-    is_binary: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -103,110 +81,67 @@ PRIORITY: dict[Component, int] = {comp: i for i, comp in enumerate(EXECUTION_ORD
 
 
 # ---------------------------------------------------------------------------
-# Manual registry.  Every component is now self-registered (its ``ComponentSpec``
-# is derived from the class decorator in :func:`_components`), so this is empty.
-# Kept as the merge seam for any future component that can't self-register; the
-# scaffolding is slated for removal once that's confirmed unnecessary.
+# Lazy registry access -- the ONLY part that reaches the component packages.
 # ---------------------------------------------------------------------------
 
-_MANUAL_COMPONENTS: tuple[ComponentSpec, ...] = ()
 
+def _validate(registry: dict) -> None:
+    """Sanity (on first registry use): full enum coverage + well-formed order.
 
-def _validate(comps: tuple[ComponentSpec, ...]) -> None:
-    """Sanity (on assembly): unique components, full enum coverage, sane order."""
-    seen = [s.component for s in comps]
-    if len(seen) != len(set(seen)):
-        dupes = {c for c in seen if seen.count(c) > 1}
-        raise ValueError(f"duplicate ComponentSpec entries: {dupes}")
-    missing = set(Component) - set(seen)
+    The registry is keyed by ``Component`` (so duplicate components are
+    impossible); what remains to check is that every enum member registered and
+    that ``EXECUTION_ORDER`` — the single source of ordering — has no duplicates
+    and references only registered components.
+    """
+    seen = set(registry)
+    missing = set(Component) - seen
     if missing:
-        raise ValueError(f"COMPONENTS does not cover the Component enum: {missing}")
-    # EXECUTION_ORDER is the single source of ordering: position is the order, so
-    # it may contain no duplicates and may reference only known components.
+        raise ValueError(f"registry does not cover the Component enum: {missing}")
     if len(EXECUTION_ORDER) != len(set(EXECUTION_ORDER)):
         raise ValueError("duplicate entries in EXECUTION_ORDER")
-    unknown = set(EXECUTION_ORDER) - set(seen)
+    unknown = set(EXECUTION_ORDER) - seen
     if unknown:
         raise ValueError(f"EXECUTION_ORDER references unknown components: {unknown}")
 
 
 @functools.cache
-def _components() -> tuple[ComponentSpec, ...]:
-    """The full component table: manual entries + self-registered (derived).
+def _registry() -> dict:
+    """Validated snapshot of the registry (``Component -> RegisteredComponent``).
 
-    Lazy + cached: the first call imports the registry, whose contents come from
-    importing the (migrated) component modules, so it must run *after* they
-    finish importing — never at module import (that could re-enter a component
-    mid-import).  See the module docstring.
+    Lazy + cached: the first call reads the registry, whose contents come from
+    importing the component modules, so it must run *after* they finish importing
+    — never at module import (that could re-enter a component mid-import).  See the
+    module docstring.
     """
     from jaxpint.par._component_registry import registered
 
-    derived = tuple(
-        ComponentSpec(rc.component, rc.pint_names, is_binary=rc.is_binary)
-        for rc in registered().values()
-    )
-    comps = _MANUAL_COMPONENTS + derived
-    _validate(comps)
-    return comps
-
-
-@functools.cache
-def _component_specs() -> dict[Component, ComponentSpec]:
-    """``Component -> ComponentSpec`` view of the assembled table."""
-    return {s.component: s for s in _components()}
-
-
-def __getattr__(name: str):
-    # Expose COMPONENTS / COMPONENT_SPECS lazily (assembled on first access) so
-    # existing ``registry_table.COMPONENTS`` callers keep working.
-    if name == "COMPONENTS":
-        return _components()
-    if name == "COMPONENT_SPECS":
-        return _component_specs()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-# ---------------------------------------------------------------------------
-# Lazy class resolution -- the ONLY part that imports component packages.
-# ---------------------------------------------------------------------------
-
-
-@functools.cache
-def _param_classes() -> dict[Component, tuple[type, ...]]:
-    """Component -> classes whose ``PARAMS`` feed the parser spec.
-
-    Every component is self-registered, so its class(es) come straight from the
-    registry (binary being many-to-one: every ``Binary*`` model contributes its
-    PARAMS to ``Component.BINARY``).  The top-level/admin params (``TimingModel``)
-    are paired with ``None`` directly in :func:`derive_component_classes`, not here.
-    """
-    from jaxpint.par._component_registry import registered
-
-    return {rc.component: rc.classes for rc in registered().values()}
+    registry = registered()
+    _validate(registry)
+    return registry
 
 
 def derive_component_classes() -> list[tuple]:
     """``(class, owner)`` pairs feeding ``spec._tables()``.
 
-    ``owner`` is the ``Component`` enum, except ``TimingModel`` (the top-level /
-    admin params) which is paired with ``None`` so its params never become
-    triggers.
+    ``owner`` is the ``Component`` a class's params belong to, except
+    ``TimingModel`` (the top-level / admin params) which is paired with ``None``
+    so its params never become detection triggers.  Binary is many-to-one: every
+    ``Binary*`` class contributes its PARAMS to ``Component.BINARY``.
     """
     from jaxpint.model import TimingModel
 
-    classes = _param_classes()
     pairs: list[tuple] = [(TimingModel, None)]  # top-level/admin params
-    for s in _components():
-        for cls in classes.get(s.component, ()):
-            pairs.append((cls, s.component))
+    for rc in _registry().values():
+        for cls in rc.classes:
+            pairs.append((cls, rc.component))
     return pairs
 
 
 def derive_pint_component_map() -> dict[str, Component]:
     """PINT class name -> Component."""
-    return {name: s.component for s in _components() for name in s.pint_names}
+    return {name: rc.component for rc in _registry().values() for name in rc.pint_names}
 
 
 def binary_components() -> frozenset[Component]:
     """Components flagged ``is_binary`` (feeds spec's binary handling)."""
-    return frozenset(s.component for s in _components() if s.is_binary)
+    return frozenset(rc.component for rc in _registry().values() if rc.is_binary)

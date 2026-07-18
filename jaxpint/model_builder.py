@@ -18,13 +18,8 @@ from jaxpint.types import TOAData
 # BuildContext and the parse-result helpers live in a neutral module so component
 # ``build`` methods can reference them without importing this module (a cycle).
 # The model builder still assembles the context and resolves astrometry names, so
-# it imports the two helpers ``_resolve_astrometry`` needs (aliased to their
-# historical private names).
-from jaxpint._build_context import (
-    BuildContext,
-    epoch_or_pepoch as _epoch_or_pepoch,
-    param_is_set as _param_is_set,
-)
+# it imports the two helpers ``_resolve_astrometry`` needs.
+from jaxpint._build_context import BuildContext, epoch_or_pepoch, param_is_set
 
 log = logging.getLogger(__name__)
 
@@ -52,34 +47,33 @@ def _resolve_astrometry(par: ParResult):
         from jaxpint.constants import OBLIQUITY_ARCSEC
 
         raj, decj = "ELONG", "ELAT"
-        if _param_is_set(par, "PMELONG"):
+        if param_is_set(par, "PMELONG"):
             pmra = "PMELONG"
-        if _param_is_set(par, "PMELAT"):
+        if param_is_set(par, "PMELAT"):
             pmdec = "PMELAT"
         ecl_name = par.metadata.get("ECL", "IERS2010")
         obliquity_arcsec = OBLIQUITY_ARCSEC[ecl_name]
     elif Component.ASTROMETRY_EQUATORIAL in cs:
-        if _param_is_set(par, "PMRA"):
+        if param_is_set(par, "PMRA"):
             pmra = "PMRA"
-        if _param_is_set(par, "PMDEC"):
+        if param_is_set(par, "PMDEC"):
             pmdec = "PMDEC"
 
     if pmra is not None or pmdec is not None:
-        posepoch = _epoch_or_pepoch(par, "POSEPOCH")
+        posepoch = epoch_or_pepoch(par, "POSEPOCH")
 
     return raj, decj, pmra, pmdec, posepoch, obliquity_arcsec
 
 
-# Component -> builder.  Every component is now self-registered, so the whole
-# table is derived from the registry: each component module supplies its own
-# ``build`` (see the component classes + jaxpint/binary/_build.py for the family).
-# A component absent here that is nonetheless active raises NotImplementedError in
-# build_model.
-_BUILDERS: dict[Component, Callable[[BuildContext], object]] = {}
-
+# Component -> builder, derived entirely from the self-registration registry:
+# each component module supplies its own ``build`` (see the component classes +
+# jaxpint/binary/_build.py for the family).  A component missing here that is
+# nonetheless active raises NotImplementedError in build_model.
 from jaxpint.par._component_registry import registered as _registered  # noqa: E402
 
-_BUILDERS.update({rc.component: rc.build for rc in _registered().values()})
+_BUILDERS: dict[Component, Callable[[BuildContext], object]] = {
+    rc.component: rc.build for rc in _registered().values()
+}
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +226,7 @@ def build_model(
         obliquity_arcsec=obliquity_arcsec,
     )
 
-    phoff_name = "PHOFF" if _param_is_set(par, "PHOFF") else None
+    phoff_name = "PHOFF" if param_is_set(par, "PHOFF") else None
 
     # Process the active components in PINT execution order and route each
     # result to its bucket by base class.  Iteration order is the priority

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from jaxpint._build_context import opt_name as _opt_name, param_is_set as _param_is_set
+from jaxpint._build_context import opt_name, param_is_set
 from jaxpint.binary.bt import BinaryBT
 from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
 from jaxpint.binary.dd import BinaryDD
@@ -33,16 +33,16 @@ def _dd_common_kwargs(par: ParResult) -> dict:
         a1_name="A1",
         ecc_name="ECC",
         om_name="OM",
-        pbdot_name=_opt_name(par, "PBDOT"),
-        omdot_name=_opt_name(par, "OMDOT"),
-        edot_name=_opt_name(par, "EDOT"),
-        a1dot_name=_opt_name(par, "A1DOT"),
-        xpbdot_name=_opt_name(par, "XPBDOT"),
-        gamma_name=_opt_name(par, "GAMMA"),
-        dr_name=_opt_name(par, "DR"),
-        dth_name=_opt_name(par, "DTH"),
-        a0_name=_opt_name(par, "A0"),
-        b0_name=_opt_name(par, "B0"),
+        pbdot_name=opt_name(par, "PBDOT"),
+        omdot_name=opt_name(par, "OMDOT"),
+        edot_name=opt_name(par, "EDOT"),
+        a1dot_name=opt_name(par, "A1DOT"),
+        xpbdot_name=opt_name(par, "XPBDOT"),
+        gamma_name=opt_name(par, "GAMMA"),
+        dr_name=opt_name(par, "DR"),
+        dth_name=opt_name(par, "DTH"),
+        a0_name=opt_name(par, "A0"),
+        b0_name=opt_name(par, "B0"),
     )
 
 
@@ -53,9 +53,9 @@ def _ell1_common_kwargs(par: ParResult) -> dict:
         a1_name="A1",
         eps1_name="EPS1",
         eps2_name="EPS2",
-        pbdot_name=_opt_name(par, "PBDOT"),
-        a1dot_name=_opt_name(par, "A1DOT"),
-        xpbdot_name=_opt_name(par, "XPBDOT"),
+        pbdot_name=opt_name(par, "PBDOT"),
+        a1dot_name=opt_name(par, "A1DOT"),
+        xpbdot_name=opt_name(par, "XPBDOT"),
     )
 
 
@@ -74,26 +74,26 @@ def build_binary(ctx: "BuildContext") -> object:
                 a1_name="A1",
                 ecc_name="ECC",
                 om_name="OM",
-                pbdot_name=_opt_name(par, "PBDOT"),
-                omdot_name=_opt_name(par, "OMDOT"),
-                edot_name=_opt_name(par, "EDOT"),
-                a1dot_name=_opt_name(par, "A1DOT"),
-                gamma_name=_opt_name(par, "GAMMA"),
-                xpbdot_name=_opt_name(par, "XPBDOT"),
+                pbdot_name=opt_name(par, "PBDOT"),
+                omdot_name=opt_name(par, "OMDOT"),
+                edot_name=opt_name(par, "EDOT"),
+                a1dot_name=opt_name(par, "A1DOT"),
+                gamma_name=opt_name(par, "GAMMA"),
+                xpbdot_name=opt_name(par, "XPBDOT"),
             )
 
         case BinaryModel.DD:
             return BinaryDD(
                 **_dd_common_kwargs(par),
-                m2_name=_opt_name(par, "M2"),
-                sini_name=_opt_name(par, "SINI"),
+                m2_name=opt_name(par, "M2"),
+                sini_name=opt_name(par, "SINI"),
                 shapiro_mode="standard",
             )
 
         case BinaryModel.DDS:
             return BinaryDD(
                 **_dd_common_kwargs(par),
-                m2_name=_opt_name(par, "M2"),
+                m2_name=opt_name(par, "M2"),
                 shapmax_name="SHAPMAX",
                 shapiro_mode="shapmax",
             )
@@ -109,30 +109,30 @@ def build_binary(ctx: "BuildContext") -> object:
         case BinaryModel.ELL1:
             return BinaryELL1(
                 **_ell1_common_kwargs(par),
-                eps1dot_name=_opt_name(par, "EPS1DOT"),
-                eps2dot_name=_opt_name(par, "EPS2DOT"),
-                m2_name=_opt_name(par, "M2"),
-                sini_name=_opt_name(par, "SINI"),
-                shapiro_mode="standard" if _param_is_set(par, "M2") else "none",
+                eps1dot_name=opt_name(par, "EPS1DOT"),
+                eps2dot_name=opt_name(par, "EPS2DOT"),
+                m2_name=opt_name(par, "M2"),
+                sini_name=opt_name(par, "SINI"),
+                shapiro_mode="standard" if param_is_set(par, "M2") else "none",
             )
 
         case BinaryModel.ELL1H:
-            if _param_is_set(par, "STIGMA"):
+            if param_is_set(par, "STIGMA"):
                 shapiro_mode = "h3stigma"
-            elif _param_is_set(par, "H4"):
+            elif param_is_set(par, "H4"):
                 shapiro_mode = "h3h4"
-            elif _param_is_set(par, "H3"):
+            elif param_is_set(par, "H3"):
                 shapiro_mode = "h3nharms"
             else:
                 shapiro_mode = "none"
             nharms = par.int_params.get("NHARMS", 7)
             return BinaryELL1(
                 **_ell1_common_kwargs(par),
-                eps1dot_name=_opt_name(par, "EPS1DOT"),
-                eps2dot_name=_opt_name(par, "EPS2DOT"),
-                h3_name=_opt_name(par, "H3"),
-                stigma_name=_opt_name(par, "STIGMA"),
-                h4_name=_opt_name(par, "H4"),
+                eps1dot_name=opt_name(par, "EPS1DOT"),
+                eps2dot_name=opt_name(par, "EPS2DOT"),
+                h3_name=opt_name(par, "H3"),
+                stigma_name=opt_name(par, "STIGMA"),
+                h4_name=opt_name(par, "H4"),
                 shapiro_mode=shapiro_mode,
                 nharms=nharms,
             )
@@ -140,18 +140,18 @@ def build_binary(ctx: "BuildContext") -> object:
         case BinaryModel.ELL1k:
             return BinaryELL1(
                 **_ell1_common_kwargs(par),
-                omdot_name=_opt_name(par, "OMDOT"),
-                lnedot_name=_opt_name(par, "LNEDOT"),
-                m2_name=_opt_name(par, "M2"),
-                sini_name=_opt_name(par, "SINI"),
-                shapiro_mode="standard" if _param_is_set(par, "M2") else "none",
+                omdot_name=opt_name(par, "OMDOT"),
+                lnedot_name=opt_name(par, "LNEDOT"),
+                m2_name=opt_name(par, "M2"),
+                sini_name=opt_name(par, "SINI"),
+                shapiro_mode="standard" if param_is_set(par, "M2") else "none",
             )
 
         case BinaryModel.DDK:
             k96 = par.bool_params.get("K96", False)
             return BinaryDDK(
                 **_dd_common_kwargs(par),
-                m2_name=_opt_name(par, "M2"),
+                m2_name=opt_name(par, "M2"),
                 kin_name="KIN",
                 kom_name="KOM",
                 px_name="PX",
@@ -172,12 +172,12 @@ def build_binary(ctx: "BuildContext") -> object:
                 om_name="OM",
                 mtot_name="MTOT",
                 m2_name="M2",
-                edot_name=_opt_name(par, "EDOT"),
-                a1dot_name=_opt_name(par, "A1DOT"),
-                xomdot_name=_opt_name(par, "XOMDOT"),
-                xpbdot_name=_opt_name(par, "XPBDOT"),
-                a0_name=_opt_name(par, "A0"),
-                b0_name=_opt_name(par, "B0"),
+                edot_name=opt_name(par, "EDOT"),
+                a1dot_name=opt_name(par, "A1DOT"),
+                xomdot_name=opt_name(par, "XOMDOT"),
+                xpbdot_name=opt_name(par, "XPBDOT"),
+                a0_name=opt_name(par, "A0"),
+                b0_name=opt_name(par, "B0"),
             )
 
         case BinaryModel.BT_PIECEWISE:
@@ -193,12 +193,12 @@ def build_binary(ctx: "BuildContext") -> object:
                 a1_name="A1",
                 ecc_name="ECC",
                 om_name="OM",
-                pbdot_name=_opt_name(par, "PBDOT"),
-                omdot_name=_opt_name(par, "OMDOT"),
-                edot_name=_opt_name(par, "EDOT"),
-                a1dot_name=_opt_name(par, "A1DOT"),
-                gamma_name=_opt_name(par, "GAMMA"),
-                xpbdot_name=_opt_name(par, "XPBDOT"),
+                pbdot_name=opt_name(par, "PBDOT"),
+                omdot_name=opt_name(par, "OMDOT"),
+                edot_name=opt_name(par, "EDOT"),
+                a1dot_name=opt_name(par, "A1DOT"),
+                gamma_name=opt_name(par, "GAMMA"),
+                xpbdot_name=opt_name(par, "XPBDOT"),
                 n_pieces=n_pieces,
                 t0x_names=tuple(t0x_names),
                 a1x_names=tuple(a1x_names),
