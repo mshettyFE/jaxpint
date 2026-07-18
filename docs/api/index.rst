@@ -10,6 +10,7 @@ Core
    jaxpint.types
    jaxpint.components
    jaxpint.model
+   jaxpint.spectra
    jaxpint.likelihood
    jaxpint.simulation
    jaxpint.utils
