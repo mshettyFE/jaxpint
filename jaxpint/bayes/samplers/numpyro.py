@@ -30,9 +30,11 @@ from jax.typing import ArrayLike
 import numpyro
 import numpyro.distributions as dist
 from numpyro.distributions import constraints
-from numpyro.infer import MCMC, NUTS, init_to_value
+from numpyro.infer import HMCGibbs, MCMC, NUTS, init_to_value
 
 from jaxpint.bayes.samplers.priors import PriorResolutionError
+from jaxpint.pta.conditional import conditional_gwb, sample_conditional
+from jaxpint.pta.likelihood import PTAConfig
 from jaxpint.types import GlobalParams, ParameterVector
 
 
@@ -40,7 +42,9 @@ __all__ = [
     "build_single_pulsar_model",
     "build_pta_model",
     "build_pta_clogL_model",
+    "make_conditional_gibbs_fn",
     "run_nuts",
+    "run_clogL_gibbs",
 ]
 
 
@@ -147,7 +151,7 @@ def build_pta_model(
 
 def build_pta_clogL_model(
     clogL: Callable[
-        [GlobalParams, tuple[ParameterVector, ...], jnp.ndarray], jnp.ndarray
+        [GlobalParams, tuple[ParameterVector, ...], ArrayLike], jnp.ndarray
     ],
     priors: Mapping[str, dist.Distribution],
     reduced_skeletons: tuple[ParameterVector, ...],
@@ -238,8 +242,42 @@ def _check_priors(site_names, priors: Mapping[str, dist.Distribution], *, label:
 
 
 # ---------------------------------------------------------------------------
-# NUTS runner
+# Runners
 # ---------------------------------------------------------------------------
+
+
+def _drive_mcmc(
+    kernel,
+    *,
+    key,
+    num_warmup: int,
+    num_samples: int,
+    num_chains: int,
+    chain_method: str,
+    progress_bar: bool,
+    extra_fields: tuple[str, ...],
+    return_arviz: bool,
+) -> Union[tuple[Any, MCMC], MCMC]:
+    """Run an MCMC ``kernel`` and (optionally) hand back an ArviZ ``InferenceData``.
+
+    The shared tail of :func:`run_nuts` and :func:`run_clogL_gibbs`: build
+    ``MCMC``, run it, and convert to ArviZ unless ``return_arviz`` is False.
+    """
+    mcmc = MCMC(
+        kernel,
+        num_warmup=num_warmup,
+        num_samples=num_samples,
+        num_chains=num_chains,
+        chain_method=chain_method,
+        progress_bar=progress_bar,
+    )
+    mcmc.run(key, extra_fields=extra_fields)
+
+    if not return_arviz:
+        return mcmc
+    import arviz as az
+
+    return az.from_numpyro(mcmc), mcmc
 
 
 @overload
@@ -316,18 +354,113 @@ def run_nuts(
         target_accept_prob=target_accept_prob,
         dense_mass=dense_mass,
     )
-    mcmc = MCMC(
+    return _drive_mcmc(
         kernel,
+        key=key,
         num_warmup=num_warmup,
         num_samples=num_samples,
         num_chains=num_chains,
         chain_method=chain_method,
         progress_bar=progress_bar,
+        extra_fields=extra_fields,
+        return_arviz=return_arviz,
     )
-    mcmc.run(key, extra_fields=extra_fields)
 
-    if not return_arviz:
-        return mcmc
-    import arviz as az
 
-    return az.from_numpyro(mcmc), mcmc
+def make_conditional_gibbs_fn(
+    config: PTAConfig,
+    reduced_skeletons: tuple[ParameterVector, ...],
+    global_skeleton: GlobalParams,
+    pulsar_names: tuple[str, ...],
+    *,
+    coefficient_site: str = "gwb_coefficients",
+) -> Callable[[Any, Mapping, Mapping], dict]:
+    r"""Build an exact-Gibbs update for the GWB coefficients.
+
+    The coefficient conditional ``a | \theta, r`` is *exactly* Gaussian —
+    ``N(\hat a(\theta), \Sigma(\theta))`` = :func:`~jaxpint.pta.conditional_gwb`
+    — so it can be drawn directly with :func:`~jaxpint.pta.sample_conditional`
+    rather than explored by HMC.  This returns the ``gibbs_fn`` that
+    :func:`run_clogL_gibbs` (via NumPyro's ``HMCGibbs``) calls each sweep:
+    reconstruct ``\theta`` from the HMC sites, form the conditional at that
+    ``\theta``, and return one exact coefficient draw.  Pairing it with NUTS on
+    ``\theta`` gives a rejection-free coefficient step and typically far better
+    mixing than the fully-joint NUTS of :func:`build_pta_clogL_model` alone.
+
+    Parameters
+    ----------
+    config
+        The same :class:`~jaxpint.pta.PTAConfig` the model's ``clogL`` closes
+        over; ``config.correlated_injectors`` must be non-empty.
+    reduced_skeletons, global_skeleton, pulsar_names
+        As passed to :func:`build_pta_clogL_model` — used to repack the sampled
+        HMC-site scalars back into ``ParameterVector`` / ``GlobalParams``.
+    coefficient_site
+        The coefficient site name (must match the model's, default
+        ``"gwb_coefficients"``).
+
+    Returns
+    -------
+    gibbs_fn : callable
+        ``(rng_key, gibbs_sites, hmc_sites) -> {coefficient_site: draw}``, the
+        signature NumPyro's ``HMCGibbs`` expects.
+    """
+
+    def gibbs_fn(rng_key, gibbs_sites, hmc_sites):
+        pulsar_params = tuple(
+            _pack_free(skel, hmc_sites, prefix)
+            for prefix, skel in zip(pulsar_names, reduced_skeletons)
+        )
+        gp = _pack_global(global_skeleton, hmc_sites)
+        cond = conditional_gwb(gp, pulsar_params, config)
+        return {coefficient_site: sample_conditional(rng_key, cond)}
+
+    return gibbs_fn
+
+
+def run_clogL_gibbs(
+    model: Callable[[], None],
+    gibbs_fn: Callable[[Any, Mapping, Mapping], dict],
+    *,
+    gibbs_sites: tuple[str, ...] = ("gwb_coefficients",),
+    init: Optional[Mapping[str, ArrayLike]] = None,
+    key,
+    num_warmup: int = 1000,
+    num_samples: int = 1000,
+    num_chains: int = 1,
+    max_tree_depth: int = 8,
+    target_accept_prob: float = 0.8,
+    dense_mass: bool = False,
+    chain_method: str = "vectorized",
+    progress_bar: bool = True,
+    extra_fields: tuple[str, ...] = (),
+    return_arviz: bool = True,
+) -> Union[tuple[Any, MCMC], MCMC]:
+    """Run HMC-within-Gibbs: exact coefficient draws + NUTS on the hyperparameters.
+
+    ``model`` and ``init`` are the outputs of :func:`build_pta_clogL_model`;
+    ``init`` seeds both the hyperparameters (at ``y_fid``) and the coefficient
+    site (at ``conditional_gwb(...).mean``).
+    """
+    numpyro.enable_x64()
+
+    init_strategy = init_to_value(values=dict(init)) if init else None
+    inner = NUTS(
+        model,
+        init_strategy=init_strategy,
+        max_tree_depth=max_tree_depth,
+        target_accept_prob=target_accept_prob,
+        dense_mass=dense_mass,
+    )
+    kernel = HMCGibbs(inner, gibbs_fn=gibbs_fn, gibbs_sites=list(gibbs_sites))
+    return _drive_mcmc(
+        kernel,
+        key=key,
+        num_warmup=num_warmup,
+        num_samples=num_samples,
+        num_chains=num_chains,
+        chain_method=chain_method,
+        progress_bar=progress_bar,
+        extra_fields=extra_fields,
+        return_arviz=return_arviz,
+    )
