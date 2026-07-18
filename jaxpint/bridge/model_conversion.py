@@ -282,7 +282,9 @@ def _pint_detect_components(
     metadata_extra: dict[str, str] = {}
 
     for comp_name, comp in model.components.items():
-        if comp_name in ("AbsPhase",):
+        # PINT components JaxPINT handles outside the component_set (not "unknown"):
+        # AbsPhase → TZR extraction; PhaseOffset → TimingModel.phoff_name (from PHOFF).
+        if comp_name in ("AbsPhase", "PhaseOffset"):
             continue
         if comp_name in _PINT_COMPONENT_MAP:
             component_set.add(_PINT_COMPONENT_MAP[comp_name])

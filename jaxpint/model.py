@@ -65,7 +65,7 @@ class TimingModel(ComponentIndexed):
             "TZRFRQ", kind="str"
         ),  # metadata (may be inf); never in the JAX vector
         ParamDecl("TZRSITE", kind="str"),
-        ParamDecl("PHOFF"),  # triggers PHASE_OFFSET (see par.spec)
+        ParamDecl("PHOFF"),  # model-level phase offset; sets TimingModel.phoff_name
         ParamDecl("RM"),
         ParamDecl("CHI2"),
         ParamDecl("CHI2R"),

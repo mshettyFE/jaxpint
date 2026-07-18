@@ -28,9 +28,7 @@ class BinaryModel(Enum):
 class Component(Enum):
     """JaxPINT timing model component that owns a parameter."""
 
-    NONE = ""
     SPINDOWN = "Spindown"
-    PHASE_OFFSET = "PhaseOffset"
     ASTROMETRY_EQUATORIAL = "AstrometryEquatorial"
     ASTROMETRY_ECLIPTIC = "AstrometryEcliptic"
     DISPERSION_DM = "DispersionDM"
