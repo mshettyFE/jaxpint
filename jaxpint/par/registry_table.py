@@ -117,10 +117,10 @@ _MANUAL_COMPONENTS: tuple[ComponentSpec, ...] = (
     ComponentSpec(C.SOLAR_WIND_DISPERSION, ("SolarWindDispersion",)),
     ComponentSpec(C.SOLAR_WIND_DISPERSION_X, ("SolarWindDispersionX",)),
     ComponentSpec(C.DISPERSION_DM, ("DispersionDM",)),
-    ComponentSpec(C.DISPERSION_DMX, ("DispersionDMX",)),
+    # DISPERSION_DMX is self-registered (jaxpint/delay/dispersion_dmx.py).
     ComponentSpec(C.DISPERSION_JUMP, ("DispersionJump",)),
-    ComponentSpec(C.BINARY, (), is_binary=True),
-    ComponentSpec(C.BINARY_BT_PIECEWISE, (), is_binary=True),
+    # BINARY and BINARY_BT_PIECEWISE are self-registered as a family
+    # (jaxpint/binary/_build.py).
     ComponentSpec(C.FREQUENCY_DEPENDENT, ("FD",)),
     ComponentSpec(C.FD_JUMP, ("FDJump",)),
     ComponentSpec(C.CHROMATIC_CM, ("ChromaticCM",)),
@@ -130,7 +130,7 @@ _MANUAL_COMPONENTS: tuple[ComponentSpec, ...] = (
     ComponentSpec(C.DM_WAVE_X, ("DMWaveX",)),
     ComponentSpec(C.CM_WAVE_X, ("CMWaveX",)),
     # --- Phase components ---
-    ComponentSpec(C.SPINDOWN, ("Spindown",)),
+    # SPINDOWN is self-registered (jaxpint/phase/spin.py).
     ComponentSpec(C.GLITCH, ("Glitch",)),
     ComponentSpec(C.PIECEWISE_SPINDOWN, ("PiecewiseSpindown",)),
     ComponentSpec(C.PHASE_JUMP, ("PhaseJump",)),
@@ -140,7 +140,7 @@ _MANUAL_COMPONENTS: tuple[ComponentSpec, ...] = (
     ComponentSpec(C.SCALE_TOA_ERROR, ("ScaleToaError",)),
     ComponentSpec(C.SCALE_DM_ERROR, ("ScaleDmError",)),
     ComponentSpec(C.ECORR_NOISE, ("EcorrNoise",)),
-    ComponentSpec(C.PL_RED_NOISE, ("PLRedNoise",)),
+    # PL_RED_NOISE is self-registered (jaxpint/noise/red_noise.py).
     ComponentSpec(C.PL_DM_NOISE, ("PLDMNoise",)),
     ComponentSpec(C.PL_CHROM_NOISE, ("PLChromNoise",)),
     ComponentSpec(C.PL_SW_NOISE, ("PLSWNoise",)),
@@ -217,7 +217,6 @@ def _param_classes() -> dict[Component, tuple[type, ...]]:
     Self-registered components contribute their class(es) via the registry merge
     at the end (so migrating a component out of the manual dict is a no-op here).
     """
-    from jaxpint.phase.spin import Spindown
     from jaxpint.phase.glitch import Glitch
     from jaxpint.phase.wave import Wave
     from jaxpint.phase.jump import PhaseJump
@@ -225,7 +224,6 @@ def _param_classes() -> dict[Component, tuple[type, ...]]:
     from jaxpint.phase.ifunc import IFunc
     from jaxpint.delay.astrometry import AstrometryEquatorial, AstrometryEcliptic
     from jaxpint.delay.dispersion_dm import DispersionDM
-    from jaxpint.delay.dispersion_dmx import DispersionDMX
     from jaxpint.delay.dispersion_jump import DispersionJump
     from jaxpint.delay.shapiro import SolarSystemShapiroDelay
     from jaxpint.delay.solar_wind import SolarWindDispersion
@@ -239,16 +237,9 @@ def _param_classes() -> dict[Component, tuple[type, ...]]:
     from jaxpint.delay.frequency_dependent import FrequencyDependent
     from jaxpint.delay.fdjump import FDJump
     from jaxpint.delay.exponential_dip import ExponentialDip
-    from jaxpint.binary.bt import BinaryBT
-    from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
-    from jaxpint.binary.dd import BinaryDD
-    from jaxpint.binary.ddk import BinaryDDK
-    from jaxpint.binary.ddgr import BinaryDDGR
-    from jaxpint.binary.ell1 import BinaryELL1
     from jaxpint.noise.white import ScaleToaError
     from jaxpint.noise.dm_white import ScaleDmError
     from jaxpint.noise.ecorr import EcorrNoise
-    from jaxpint.noise.red_noise import PLRedNoise
     from jaxpint.noise.dm_noise import PLDMNoise
     from jaxpint.noise.chrom_noise import PLChromNoise
     from jaxpint.noise.sw_noise import PLSWNoise
@@ -256,7 +247,6 @@ def _param_classes() -> dict[Component, tuple[type, ...]]:
     from jaxpint.par._component_registry import registered
 
     manual = {
-        C.SPINDOWN: (Spindown,),
         C.GLITCH: (Glitch,),
         C.WAVE: (Wave,),
         C.PHASE_JUMP: (PhaseJump,),
@@ -265,7 +255,6 @@ def _param_classes() -> dict[Component, tuple[type, ...]]:
         C.ASTROMETRY_EQUATORIAL: (AstrometryEquatorial,),
         C.ASTROMETRY_ECLIPTIC: (AstrometryEcliptic,),
         C.DISPERSION_DM: (DispersionDM,),
-        C.DISPERSION_DMX: (DispersionDMX,),
         C.DISPERSION_JUMP: (DispersionJump,),
         C.SOLAR_SYSTEM_SHAPIRO: (SolarSystemShapiroDelay,),
         C.SOLAR_WIND_DISPERSION: (SolarWindDispersion,),
@@ -279,12 +268,9 @@ def _param_classes() -> dict[Component, tuple[type, ...]]:
         C.FREQUENCY_DEPENDENT: (FrequencyDependent,),
         C.FD_JUMP: (FDJump,),
         C.EXPONENTIAL_DIP: (ExponentialDip,),
-        C.BINARY: (BinaryBT, BinaryDD, BinaryDDK, BinaryDDGR, BinaryELL1),
-        C.BINARY_BT_PIECEWISE: (BinaryBTPiecewise,),
         C.SCALE_TOA_ERROR: (ScaleToaError,),
         C.SCALE_DM_ERROR: (ScaleDmError,),
         C.ECORR_NOISE: (EcorrNoise,),
-        C.PL_RED_NOISE: (PLRedNoise,),
         C.PL_DM_NOISE: (PLDMNoise,),
         C.PL_CHROM_NOISE: (PLChromNoise,),
         C.PL_SW_NOISE: (PLSWNoise,),

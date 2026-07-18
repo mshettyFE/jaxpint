@@ -10,7 +10,7 @@ import logging
 import re
 from typing import Callable, Optional
 
-from jaxpint.par.registry import BinaryModel, Component
+from jaxpint.par.registry import Component
 from jaxpint.par.registry_table import PRIORITY
 
 import jax.numpy as jnp
@@ -80,204 +80,6 @@ def _resolve_astrometry(par: ParResult):
         posepoch = _epoch_or_pepoch(par, "POSEPOCH")
 
     return raj, decj, pmra, pmdec, posepoch, obliquity_arcsec
-
-
-# ---------------------------------------------------------------------------
-# Binary model construction
-# ---------------------------------------------------------------------------
-
-
-def _dd_common_kwargs(par: ParResult) -> dict:
-    return dict(
-        pb_name="PB",
-        t0_name="T0",
-        a1_name="A1",
-        ecc_name="ECC",
-        om_name="OM",
-        pbdot_name=_opt_name(par, "PBDOT"),
-        omdot_name=_opt_name(par, "OMDOT"),
-        edot_name=_opt_name(par, "EDOT"),
-        a1dot_name=_opt_name(par, "A1DOT"),
-        xpbdot_name=_opt_name(par, "XPBDOT"),
-        gamma_name=_opt_name(par, "GAMMA"),
-        dr_name=_opt_name(par, "DR"),
-        dth_name=_opt_name(par, "DTH"),
-        a0_name=_opt_name(par, "A0"),
-        b0_name=_opt_name(par, "B0"),
-    )
-
-
-def _ell1_common_kwargs(par: ParResult) -> dict:
-    return dict(
-        pb_name="PB",
-        tasc_name="TASC",
-        a1_name="A1",
-        eps1_name="EPS1",
-        eps2_name="EPS2",
-        pbdot_name=_opt_name(par, "PBDOT"),
-        a1dot_name=_opt_name(par, "A1DOT"),
-        xpbdot_name=_opt_name(par, "XPBDOT"),
-    )
-
-
-def _build_binary(ctx: BuildContext) -> object:
-    """Construct the appropriate binary delay component."""
-    from jaxpint.binary.bt import BinaryBT
-    from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
-    from jaxpint.binary.dd import BinaryDD
-    from jaxpint.binary.ddk import BinaryDDK
-    from jaxpint.binary.ddgr import BinaryDDGR
-    from jaxpint.binary.ell1 import BinaryELL1
-
-    par = ctx.par
-    bname = par.binary_model
-    if bname is None:
-        raise ValueError("No BINARY model specified in .par file")
-
-    match bname:
-        case BinaryModel.BT:
-            return BinaryBT(
-                pb_name="PB",
-                t0_name="T0",
-                a1_name="A1",
-                ecc_name="ECC",
-                om_name="OM",
-                pbdot_name=_opt_name(par, "PBDOT"),
-                omdot_name=_opt_name(par, "OMDOT"),
-                edot_name=_opt_name(par, "EDOT"),
-                a1dot_name=_opt_name(par, "A1DOT"),
-                gamma_name=_opt_name(par, "GAMMA"),
-                xpbdot_name=_opt_name(par, "XPBDOT"),
-            )
-
-        case BinaryModel.DD:
-            return BinaryDD(
-                **_dd_common_kwargs(par),
-                m2_name=_opt_name(par, "M2"),
-                sini_name=_opt_name(par, "SINI"),
-                shapiro_mode="standard",
-            )
-
-        case BinaryModel.DDS:
-            return BinaryDD(
-                **_dd_common_kwargs(par),
-                m2_name=_opt_name(par, "M2"),
-                shapmax_name="SHAPMAX",
-                shapiro_mode="shapmax",
-            )
-
-        case BinaryModel.DDH:
-            return BinaryDD(
-                **_dd_common_kwargs(par),
-                h3_name="H3",
-                stigma_name="STIGMA",
-                shapiro_mode="h3stigma",
-            )
-
-        case BinaryModel.ELL1:
-            return BinaryELL1(
-                **_ell1_common_kwargs(par),
-                eps1dot_name=_opt_name(par, "EPS1DOT"),
-                eps2dot_name=_opt_name(par, "EPS2DOT"),
-                m2_name=_opt_name(par, "M2"),
-                sini_name=_opt_name(par, "SINI"),
-                shapiro_mode="standard" if _param_is_set(par, "M2") else "none",
-            )
-
-        case BinaryModel.ELL1H:
-            if _param_is_set(par, "STIGMA"):
-                shapiro_mode = "h3stigma"
-            elif _param_is_set(par, "H4"):
-                shapiro_mode = "h3h4"
-            elif _param_is_set(par, "H3"):
-                shapiro_mode = "h3nharms"
-            else:
-                shapiro_mode = "none"
-            nharms = par.int_params.get("NHARMS", 7)
-            return BinaryELL1(
-                **_ell1_common_kwargs(par),
-                eps1dot_name=_opt_name(par, "EPS1DOT"),
-                eps2dot_name=_opt_name(par, "EPS2DOT"),
-                h3_name=_opt_name(par, "H3"),
-                stigma_name=_opt_name(par, "STIGMA"),
-                h4_name=_opt_name(par, "H4"),
-                shapiro_mode=shapiro_mode,
-                nharms=nharms,
-            )
-
-        case BinaryModel.ELL1k:
-            return BinaryELL1(
-                **_ell1_common_kwargs(par),
-                omdot_name=_opt_name(par, "OMDOT"),
-                lnedot_name=_opt_name(par, "LNEDOT"),
-                m2_name=_opt_name(par, "M2"),
-                sini_name=_opt_name(par, "SINI"),
-                shapiro_mode="standard" if _param_is_set(par, "M2") else "none",
-            )
-
-        case BinaryModel.DDK:
-            k96 = par.bool_params.get("K96", False)
-            return BinaryDDK(
-                **_dd_common_kwargs(par),
-                m2_name=_opt_name(par, "M2"),
-                kin_name="KIN",
-                kom_name="KOM",
-                px_name="PX",
-                raj_name=ctx.raj,
-                decj_name=ctx.decj,
-                pmra_name=ctx.pmra,
-                pmdec_name=ctx.pmdec,
-                posepoch_name=ctx.posepoch,
-                k96=k96,
-            )
-
-        case BinaryModel.DDGR:
-            return BinaryDDGR(
-                pb_name="PB",
-                t0_name="T0",
-                a1_name="A1",
-                ecc_name="ECC",
-                om_name="OM",
-                mtot_name="MTOT",
-                m2_name="M2",
-                edot_name=_opt_name(par, "EDOT"),
-                a1dot_name=_opt_name(par, "A1DOT"),
-                xomdot_name=_opt_name(par, "XOMDOT"),
-                xpbdot_name=_opt_name(par, "XPBDOT"),
-                a0_name=_opt_name(par, "A0"),
-                b0_name=_opt_name(par, "B0"),
-            )
-
-        case BinaryModel.BT_PIECEWISE:
-            t0x_names = par.params.names_with_prefix("T0X_")
-            a1x_names = par.params.names_with_prefix("A1X_")
-            xr1_names = par.params.names_with_prefix("XR1_")
-            xr2_names = par.params.names_with_prefix("XR2_")
-            n_pieces = len(xr1_names)
-
-            return BinaryBTPiecewise(
-                pb_name="PB",
-                t0_name="T0",
-                a1_name="A1",
-                ecc_name="ECC",
-                om_name="OM",
-                pbdot_name=_opt_name(par, "PBDOT"),
-                omdot_name=_opt_name(par, "OMDOT"),
-                edot_name=_opt_name(par, "EDOT"),
-                a1dot_name=_opt_name(par, "A1DOT"),
-                gamma_name=_opt_name(par, "GAMMA"),
-                xpbdot_name=_opt_name(par, "XPBDOT"),
-                n_pieces=n_pieces,
-                t0x_names=tuple(t0x_names),
-                a1x_names=tuple(a1x_names),
-                xr1_names=tuple(xr1_names),
-                xr2_names=tuple(xr2_names),
-            )
-
-        case _:
-            raise NotImplementedError(
-                f"Binary model {bname!r} is not yet ported to JaxPINT"
-            )
 
 
 # ---------------------------------------------------------------------------
@@ -421,20 +223,6 @@ def _build_dispersion_dm(ctx: BuildContext):
     )
 
 
-def _build_dispersion_dmx(ctx: BuildContext):
-    from jaxpint.delay.dispersion_dmx import DispersionDMX
-
-    dmx_indices = ctx.par.params.prefix_indices("DMX_")
-    if not dmx_indices:
-        return None
-    return DispersionDMX(
-        n_bins=len(dmx_indices),
-        dmx_names=tuple(f"DMX_{i:04d}" for i in dmx_indices),
-        dmxr1_names=tuple(f"DMXR1_{i:04d}" for i in dmx_indices),
-        dmxr2_names=tuple(f"DMXR2_{i:04d}" for i in dmx_indices),
-    )
-
-
 def _build_dispersion_jump(ctx: BuildContext):
     from jaxpint.delay.dispersion_jump import DispersionJump
 
@@ -575,15 +363,6 @@ def _build_cm_wave_x(ctx: BuildContext):
 # ---- Phase components ----
 
 
-def _build_spindown(ctx: BuildContext):
-    from jaxpint.phase.spin import Spindown
-
-    par = ctx.par
-    # Spin Taylor coefficients: base F0 (order 0) then F1, F2, ... numeric order.
-    spin_names = ["F0"] + [f"F{i}" for i in par.params.prefix_indices("F") if i != 0]
-    return Spindown(spin_param_names=tuple(spin_names))
-
-
 def _build_glitch(ctx: BuildContext):
     from jaxpint.phase.glitch import Glitch
 
@@ -717,28 +496,6 @@ def _build_ecorr(ctx: BuildContext):
     return None
 
 
-def _build_pl_red_noise(ctx: BuildContext):
-    from jaxpint.noise.red_noise import PLRedNoise
-    from jaxpint.utils import build_fourier_basis
-
-    par = ctx.par
-    toa_data = ctx.toa_data
-    if toa_data is None:
-        return None
-    basis_s = _basis_seconds(toa_data)
-    n_freqs = par.int_params.get("TNREDC", 30)
-    T = _span_seconds(par, basis_s, "TNREDTSPAN")
-
-    F, freqs, freq_bin_widths = build_fourier_basis(basis_s, n_freqs, T)
-    return PLRedNoise(
-        fourier_basis=jnp.asarray(F),
-        freqs=jnp.asarray(freqs),
-        freq_bin_widths=jnp.asarray(freq_bin_widths),
-        tnredamp_name="TNREDAMP",
-        tnredgam_name="TNREDGAM",
-    )
-
-
 def _build_pl_dm_noise(ctx: BuildContext):
     from jaxpint.noise.dm_noise import PLDMNoise
     from jaxpint.utils import build_fourier_basis
@@ -825,9 +582,10 @@ def _build_pl_sw_noise(ctx: BuildContext):
     )
 
 
-# Component -> builder.  BINARY and BINARY_BT_PIECEWISE share one builder (it
-# reads par.binary_model to pick the model); a component absent here that is
-# nonetheless active raises NotImplementedError in build_model.
+# Component -> builder for the still-manual components.  Self-registered
+# components (Spindown / DispersionDMX / PLRedNoise / the binary family) are
+# merged in below from the registry.  A component absent from the merged table
+# that is nonetheless active raises NotImplementedError in build_model.
 _BUILDERS: dict[Component, Callable[[BuildContext], object]] = {
     Component.ASTROMETRY_EQUATORIAL: _build_astrometry_equatorial,
     Component.ASTROMETRY_ECLIPTIC: _build_astrometry_ecliptic,
@@ -836,10 +594,7 @@ _BUILDERS: dict[Component, Callable[[BuildContext], object]] = {
     Component.SOLAR_WIND_DISPERSION: _build_solar_wind,
     Component.SOLAR_WIND_DISPERSION_X: _build_solar_wind_x,
     Component.DISPERSION_DM: _build_dispersion_dm,
-    Component.DISPERSION_DMX: _build_dispersion_dmx,
     Component.DISPERSION_JUMP: _build_dispersion_jump,
-    Component.BINARY: _build_binary,
-    Component.BINARY_BT_PIECEWISE: _build_binary,
     Component.FREQUENCY_DEPENDENT: _build_frequency_dependent,
     Component.FD_JUMP: _build_fd_jump,
     Component.CHROMATIC_CM: _build_chromatic_cm,
@@ -848,7 +603,6 @@ _BUILDERS: dict[Component, Callable[[BuildContext], object]] = {
     Component.WAVE_X: _build_wave_x,
     Component.DM_WAVE_X: _build_dm_wave_x,
     Component.CM_WAVE_X: _build_cm_wave_x,
-    Component.SPINDOWN: _build_spindown,
     Component.GLITCH: _build_glitch,
     Component.PIECEWISE_SPINDOWN: _build_piecewise_spindown,
     Component.PHASE_JUMP: _build_phase_jump,
@@ -857,14 +611,13 @@ _BUILDERS: dict[Component, Callable[[BuildContext], object]] = {
     Component.SCALE_TOA_ERROR: _build_scale_toa_error,
     Component.SCALE_DM_ERROR: _build_scale_dm_error,
     Component.ECORR_NOISE: _build_ecorr,
-    Component.PL_RED_NOISE: _build_pl_red_noise,
     Component.PL_DM_NOISE: _build_pl_dm_noise,
     Component.PL_CHROM_NOISE: _build_pl_chrom_noise,
     Component.PL_SW_NOISE: _build_pl_sw_noise,
 }
 
-# Self-registered components supply their builder here too (empty until a
-# component migrates, so this is a no-op merge while the manual table is full).
+# Self-registered components supply their builder here (Spindown, DispersionDMX,
+# PLRedNoise, and the binary family — see jaxpint/binary/_build.py).
 from jaxpint.par._component_registry import registered as _registered  # noqa: E402
 
 _BUILDERS.update({rc.component: rc.build for rc in _registered().values()})

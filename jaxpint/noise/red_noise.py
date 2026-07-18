@@ -16,13 +16,22 @@ spectral index parameters. The shared machinery lives in
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
+import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl
 from jaxpint.noise._fourier_gp import _PowerLawFourierNoise
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
+
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
 
+@register_component(component=Component.PL_RED_NOISE, pint_names=("PLRedNoise",))
 class PLRedNoise(_PowerLawFourierNoise):
     """Power-law red noise via an alternating Fourier basis.
 
@@ -69,3 +78,29 @@ class PLRedNoise(_PowerLawFourierNoise):
     def static_basis(self) -> Float[Array, "n_toas n_basis"]:
         # Fixed basis -> advertise it so NoiseModel can pre-stack it once.
         return self.fourier_basis
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[PLRedNoise]":
+        """Construct from a parsed model (co-located with the physics it builds).
+
+        Builds the Fourier design matrix from the pulsar's basis times; ``None``
+        when no TOA data is available (the basis can't be built).
+        """
+        from jaxpint._build_context import basis_seconds, span_seconds
+        from jaxpint.utils import build_fourier_basis
+
+        toa_data = ctx.toa_data
+        if toa_data is None:
+            return None
+        basis_s = basis_seconds(toa_data)
+        n_freqs = ctx.par.int_params.get("TNREDC", 30)
+        T = span_seconds(ctx.par, basis_s, "TNREDTSPAN")
+
+        F, freqs, freq_bin_widths = build_fourier_basis(basis_s, n_freqs, T)
+        return cls(
+            fourier_basis=jnp.asarray(F),
+            freqs=jnp.asarray(freqs),
+            freq_bin_widths=jnp.asarray(freq_bin_widths),
+            tnredamp_name="TNREDAMP",
+            tnredgam_name="TNREDGAM",
+        )

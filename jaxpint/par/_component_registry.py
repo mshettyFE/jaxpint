@@ -4,7 +4,7 @@ A component declares its identity + ``build`` on the class itself, via
 :func:`register_component` (the 1:1 class decorator) or :func:`register_family`
 (many classes -> one :class:`~jaxpint.par.registry.Component`, e.g. the
 binaries).  The registry / parser / model-builder wiring then *derive* from that
-one declaration instead of from parallel manual tables.
+one declaration.
 
 Registration is a **side effect of importing the component module**.  This
 module holds only the registry dict + the (de)registration API and imports
@@ -40,6 +40,7 @@ class RegisteredComponent:
 _REGISTRY: dict[Component, RegisteredComponent] = {}
 
 
+# Not a decorator since import happens upon jaxpint/binary/_build.py import
 def register_family(
     *,
     component: Component,
