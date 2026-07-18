@@ -18,13 +18,14 @@ from __future__ import annotations
 import pytest
 
 from jaxpint.par import registry_table as R
+from jaxpint.par._component_registry import registered
 from jaxpint.par.registry import Component
 
 
-def test_registry_covers_enum_uniquely():
-    comps = [s.component for s in R.COMPONENTS]
-    assert len(comps) == len(set(comps)), "duplicate components in COMPONENTS"
-    assert set(comps) == set(Component), "COMPONENTS must cover the Component enum"
+def test_registry_covers_enum():
+    # ``_registry()`` validates on first use (coverage + EXECUTION_ORDER sanity)
+    # and returns a dict keyed by Component, so uniqueness is structural.
+    assert set(R._registry()) == set(Component), "registry must cover the Component enum"
 
 
 def test_binary_components_match():
@@ -35,11 +36,11 @@ def test_binary_components_match():
     }
 
 
-def test_param_classes_resolve():
-    """Every lazily-referenced component class imports and carries PARAMS."""
-    for comp, classes in R._param_classes().items():
-        assert classes, f"{comp} maps to no classes"
-        for cls in classes:
+def test_registered_classes_resolve():
+    """Every self-registered component carries at least one class with PARAMS."""
+    for comp, rc in registered().items():
+        assert rc.classes, f"{comp} maps to no classes"
+        for cls in rc.classes:
             assert hasattr(cls, "PARAMS"), f"{cls.__name__} has no PARAMS"
 
 
