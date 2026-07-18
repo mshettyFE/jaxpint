@@ -25,13 +25,22 @@ from jaxpint.par.registry import BinaryModel, Component, binary_component_for
 log = logging.getLogger(__name__)
 
 
-# PINT component class name -> JaxPINT Component enum.  Used only by the PINT
-# bridge (which reads PINT's own model.components); the native detector uses the
-# components' trigger declarations instead.  Derived from the registry's
-# ``pint_names`` (single source of truth).
-PINT_COMPONENT_MAP: dict[str, Component] = registry_table.derive_pint_component_map()
-
 _ASTROMETRY = {Component.ASTROMETRY_EQUATORIAL, Component.ASTROMETRY_ECLIPTIC}
+
+
+def __getattr__(name: str):
+    # PINT component class name -> JaxPINT Component enum.  Used only by the PINT
+    # bridge (which reads PINT's own model.components); the native detector uses
+    # the components' trigger declarations instead.  Derived from the registry's
+    # ``pint_names`` (single source of truth).
+    #
+    # Lazy (via module ``__getattr__``): ``derive_pint_component_map`` triggers
+    # the registry's lazy table assembly (importing the component modules), which
+    # must not run during the ``jaxpint.par`` import cascade — deferring it to
+    # first access avoids a self-registration import cycle.
+    if name == "PINT_COMPONENT_MAP":
+        return registry_table.derive_pint_component_map()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _detect_binary(

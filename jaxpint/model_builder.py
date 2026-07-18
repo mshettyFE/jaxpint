@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
 from typing import Callable, Optional
 
 from jaxpint.par.registry import BinaryModel, Component
-from jaxpint._component_order import PRIORITY, DEFAULT_ORDER
+from jaxpint.par.registry_table import PRIORITY
 
 import jax.numpy as jnp
 import numpy as np
@@ -21,26 +20,25 @@ from jaxpint.par.result import ParResult
 from jaxpint.types import TOAData
 from jaxpint.utils import build_quantization_matrix as _build_quantization_matrix
 
+# BuildContext and the parse-result helpers live in a neutral module so component
+# ``build`` methods can reference them without importing this module (a cycle).
+# Imported here (aliased to the private names the builders below use) because the
+# model builder assembles the context and calls the helpers itself.
+from jaxpint._build_context import (
+    BuildContext,
+    basis_seconds as _basis_seconds,
+    opt_name as _opt_name,
+    param_is_set as _param_is_set,
+    span_seconds as _span_seconds,
+    value as _value,
+)
+
 log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _param_is_set(par: ParResult, name: str) -> bool:
-    """Check whether *name* exists in the ParameterVector and is non-zero."""
-    return name in par.params and float(par.params.param_value(name)) != 0.0
-
-
-def _opt_name(par: ParResult, name: str) -> Optional[str]:
-    return name if _param_is_set(par, name) else None
-
-
-def _value(par: ParResult, name: str) -> float:
-    """Float value of parameter *name* (caller guarantees it exists)."""
-    return float(par.params.param_value(name))
 
 
 def _epoch_or_pepoch(par: ParResult, name: str) -> str:
@@ -82,47 +80,6 @@ def _resolve_astrometry(par: ParResult):
         posepoch = _epoch_or_pepoch(par, "POSEPOCH")
 
     return raj, decj, pmra, pmdec, posepoch, obliquity_arcsec
-
-
-def _basis_seconds(toa_data) -> np.ndarray:
-    """Time coordinate for GP bases / ECORR quantization, as float64 numpy.
-
-    Raises when the producer of the TOAData never chose one — see
-    :attr:`jaxpint.types.TOAData.basis_seconds` for the conventions.
-    """
-    return np.asarray(toa_data.require_basis_seconds(), dtype=np.float64)
-
-
-def _span_seconds(par: ParResult, basis_s, tspan_param: Optional[str] = None) -> float:
-    """Observation span in seconds.
-
-    The default is ``max - min`` of the supplied basis times; an explicit
-    ``T...TSPAN`` parameter (in days), when present, overrides it (matches
-    PINT / enterprise's per-pulsar-span default).
-    """
-    T = float(np.max(basis_s) - np.min(basis_s))
-    if tspan_param is not None and (tspan_param in par.params):
-        tspan_days = _value(par, tspan_param)
-        T = tspan_days * 86400.0
-    return T
-
-
-@dataclass(frozen=True)
-class BuildContext:
-    """Shared inputs threaded to every ``_build_<comp>`` function.
-
-    Bundles the parse result, optional TOA data, and the astrometry names
-    resolved once up front (see ``_resolve_astrometry``).
-    """
-
-    par: ParResult
-    toa_data: Optional[TOAData]
-    raj: str
-    decj: str
-    pmra: Optional[str]
-    pmdec: Optional[str]
-    posepoch: Optional[str]
-    obliquity_arcsec: Optional[float]
 
 
 # ---------------------------------------------------------------------------
@@ -906,6 +863,12 @@ _BUILDERS: dict[Component, Callable[[BuildContext], object]] = {
     Component.PL_SW_NOISE: _build_pl_sw_noise,
 }
 
+# Self-registered components supply their builder here too (empty until a
+# component migrates, so this is a no-op merge while the manual table is full).
+from jaxpint.par._component_registry import registered as _registered  # noqa: E402
+
+_BUILDERS.update({rc.component: rc.build for rc in _registered().values()})
+
 
 # ---------------------------------------------------------------------------
 # Main entry point
@@ -1067,9 +1030,7 @@ def build_model(
     phase_components = []
     noise_components = []  # in priority order: white, dm_white, then correlated
 
-    for comp in sorted(
-        active, key=lambda c: (PRIORITY.get(c, len(DEFAULT_ORDER)), c.value)
-    ):
+    for comp in sorted(active, key=lambda c: (PRIORITY.get(c, len(PRIORITY)), c.value)):
         builder = _BUILDERS.get(comp)
         if builder is None:
             raise NotImplementedError(
