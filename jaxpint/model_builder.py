@@ -918,12 +918,9 @@ def _active_components(par: ParResult) -> set[Component]:
     Components enabled only by special conditions (not membership in
     ``par.component_set`` alone) are added here: Shapiro rides with astrometry,
     troposphere with ``CORRECT_TROPOSPHERE``, and a binary with any
-    ``BINARY`` line.  ``PHASE_OFFSET`` (a ``TimingModel`` field) and ``NONE``
-    (admin params) have no builder and are excluded.
+    ``BINARY`` line.
     """
     _auto_detect_only = {
-        Component.NONE,
-        Component.PHASE_OFFSET,
         Component.TROPOSPHERE_DELAY,
         Component.SOLAR_SYSTEM_SHAPIRO,
     }

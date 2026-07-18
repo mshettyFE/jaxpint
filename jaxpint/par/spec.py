@@ -143,11 +143,6 @@ def _tables() -> dict:
             continue
         trigger_map[name] = comp
 
-    # PHOFF is modeled as a TimingModel field (phoff_name), not a dedicated
-    # component class, but its presence must still activate PHASE_OFFSET.
-    if "PHOFF" in known:
-        trigger_map["PHOFF"] = Component.PHASE_OFFSET
-
     return {
         "PARAM_SPEC": param_spec,
         "ALIAS_MAP": alias_map,
