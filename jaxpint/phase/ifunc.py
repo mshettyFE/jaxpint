@@ -14,16 +14,24 @@ arrays (not fittable parameters).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.IFUNC, pint_names=("IFunc",))
 class IFunc(PhaseComponent):
     """Interpolation function model.
 
@@ -55,6 +63,30 @@ class IFunc(PhaseComponent):
     control_mjds: tuple[float, ...] = eqx.field(static=True)
     control_delays: tuple[float, ...] = eqx.field(static=True)
     f0_name: str = eqx.field(static=True, default="F0")
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[IFunc]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        from jaxpint._build_context import value
+
+        par = ctx.par
+        ifunc_indices = par.params.indexed_family("IFUNC", "_A")
+        if not ifunc_indices:
+            return None
+        interp_type = par.int_params.get("SIFUNC", 0)
+        mjds = []
+        delays = []
+        for i in ifunc_indices:
+            mjds.append(value(par, f"IFUNC{i}_A"))
+            delays.append(value(par, f"IFUNC{i}_B"))
+
+        sorted_pairs = sorted(zip(mjds, delays))
+        sorted_mjds, sorted_delays = zip(*sorted_pairs)
+        return cls(
+            interp_type=interp_type,
+            control_mjds=tuple(float(x) for x in sorted_mjds),
+            control_delays=tuple(float(x) for x in sorted_delays),
+        )
 
     def __check_init__(self):
         if self.interp_type not in (0, 2):

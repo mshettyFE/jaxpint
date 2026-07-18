@@ -12,14 +12,24 @@ combines an exponential decay with a smooth logistic onset.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(
+    component=Component.EXPONENTIAL_DIP, pint_names=("SimpleExponentialDip",)
+)
 class ExponentialDip(DelayComponent):
     """Exponential dip delay model.
 
@@ -88,6 +98,24 @@ class ExponentialDip(DelayComponent):
     expdiptau_names: tuple[str, ...] = eqx.field(static=True)
     expdipeps_name: str = eqx.field(static=True, default="EXPDIPEPS")
     expdipfref_name: str = eqx.field(static=True, default="EXPDIPFREF")
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[ExponentialDip]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        dip_indices = ctx.par.params.prefix_indices("EXPDIPEPOCH_")
+        if not dip_indices:
+            dip_indices = ctx.par.params.prefix_indices("EXPDIPEP_")
+        if not dip_indices:
+            return None
+        return cls(
+            n_dips=len(dip_indices),
+            expdipeps_name="EXPDIPEPS",
+            expdipfref_name="EXPDIPFREF",
+            expdipep_names=tuple(f"EXPDIPEP_{i}" for i in dip_indices),
+            expdipamp_names=tuple(f"EXPDIPAMP_{i}" for i in dip_indices),
+            expdipidx_names=tuple(f"EXPDIPIDX_{i}" for i in dip_indices),
+            expdiptau_names=tuple(f"EXPDIPTAU_{i}" for i in dip_indices),
+        )
 
     def __check_init__(self):
         self.check_name_tuples(

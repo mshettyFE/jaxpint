@@ -12,14 +12,22 @@ and the sum is over the polynomial orders p present for system q.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.FD_JUMP, pint_names=("FDJump",))
 class FDJump(DelayComponent):
     """System-dependent FD polynomial delay (FDJump).
 
@@ -106,6 +114,28 @@ class FDJump(DelayComponent):
     fdjump_param_names: tuple[str, ...] = eqx.field(static=True)
     fdjump_fd_indices: tuple[int, ...] = eqx.field(static=True)
     use_log: bool = eqx.field(static=True, default=True)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[FDJump]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        import re
+
+        par = ctx.par
+        fdjump_names = []
+        fdjump_indices = []
+        for pname in par.params.names:
+            m = re.match(r"FD(\d+)JUMP\d+", pname)
+            if m:
+                fdjump_names.append(pname)
+                fdjump_indices.append(int(m.group(1)))
+        use_log = par.bool_params.get("FDJUMPLOG", True)
+        if not fdjump_names:
+            return None
+        return cls(
+            fdjump_param_names=tuple(fdjump_names),
+            fdjump_fd_indices=tuple(fdjump_indices),
+            use_log=use_log,
+        )
 
     def __check_init__(self):
         if len(self.fdjump_param_names) != len(self.fdjump_fd_indices):

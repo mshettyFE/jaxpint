@@ -6,14 +6,22 @@ wideband fitting) but do **not** contribute to timing delay.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent, ParamDecl
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.DISPERSION_JUMP, pint_names=("DispersionJump",))
 class DispersionJump(DispersionDelayComponent):
     """Constant DM offsets per flag group (DMJUMP).
 
@@ -28,6 +36,14 @@ class DispersionJump(DispersionDelayComponent):
     PARAMS = (ParamDecl("DMJUMP1", kind="mask", aliases=("DMJUMP",), prefix="DMJUMP"),)
 
     dmjump_names: tuple[str, ...] = eqx.field(static=True)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[DispersionJump]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        dmjump_names = ctx.par.params.names_with_prefix("DMJUMP")
+        if not dmjump_names:
+            return None
+        return cls(dmjump_names=dmjump_names)
 
     def compute_dm(
         self,

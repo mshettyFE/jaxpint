@@ -6,6 +6,7 @@ from jaxpint.delay.chromatic_cmx import ChromaticCMX
 from jaxpint.delay.cmwavex import CMWaveX
 from jaxpint.delay.dispersion_dm import DispersionDM
 from jaxpint.delay.dispersion_dmx import DispersionDMX
+from jaxpint.delay.dispersion_jump import DispersionJump
 from jaxpint.delay.dmwavex import DMWaveX
 from jaxpint.delay.exponential_dip import ExponentialDip
 from jaxpint.delay.fdjump import FDJump
@@ -25,6 +26,7 @@ __all__ = [
     "DMWaveX",
     "DispersionDM",
     "DispersionDMX",
+    "DispersionJump",
     "ExponentialDip",
     "FDJump",
     "FrequencyDependent",

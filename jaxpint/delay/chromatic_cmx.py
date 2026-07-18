@@ -14,14 +14,22 @@ where freq is in MHz and alpha = TNCHROMIDX.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import ChromaticDelayComponent, ParamDecl
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.CHROMATIC_CMX, pint_names=("ChromaticCMX",))
 class ChromaticCMX(ChromaticDelayComponent):
     """Piecewise-constant chromatic measure delay (CMX model).
 
@@ -59,6 +67,20 @@ class ChromaticCMX(ChromaticDelayComponent):
     cmxr1_names: tuple[str, ...] = eqx.field(static=True)
     cmxr2_names: tuple[str, ...] = eqx.field(static=True)
     # tnchromidx_name inherited from ChromaticDelayComponent (kw_only).
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[ChromaticCMX]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        cmx_indices = ctx.par.params.prefix_indices("CMX_")
+        if not cmx_indices:
+            return None
+        return cls(
+            n_bins=len(cmx_indices),
+            cmx_names=tuple(f"CMX_{i:04d}" for i in cmx_indices),
+            cmxr1_names=tuple(f"CMXR1_{i:04d}" for i in cmx_indices),
+            cmxr2_names=tuple(f"CMXR2_{i:04d}" for i in cmx_indices),
+            tnchromidx_name="TNCHROMIDX",
+        )
 
     def __check_init__(self):
         self.check_name_tuples(

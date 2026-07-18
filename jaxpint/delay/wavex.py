@@ -9,15 +9,23 @@ The delay is modelled as a sum of sinusoids at specified frequencies:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import SECS_PER_DAY
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import fourier_sum
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.WAVE_X, pint_names=("WaveX",))
 class WaveX(DelayComponent):
     """Fourier-basis timing noise (WaveX).
 
@@ -63,6 +71,23 @@ class WaveX(DelayComponent):
             "wxsin_names",
             "wxcos_names",
             label="component",
+        )
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[WaveX]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        from jaxpint._build_context import epoch_or_pepoch
+
+        wx_indices = ctx.par.params.prefix_indices("WXFREQ_")
+        if not wx_indices:
+            return None
+        wxepoch_name = epoch_or_pepoch(ctx.par, "WXEPOCH")
+        return cls(
+            n_components=len(wx_indices),
+            wxepoch_name=wxepoch_name,
+            wxfreq_names=tuple(f"WXFREQ_{i:04d}" for i in wx_indices),
+            wxsin_names=tuple(f"WXSIN_{i:04d}" for i in wx_indices),
+            wxcos_names=tuple(f"WXCOS_{i:04d}" for i in wx_indices),
         )
 
     def __call__(

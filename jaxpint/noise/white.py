@@ -10,6 +10,8 @@ mask (pre-computed by the bridge layer and stored in ``TOAData.flag_masks``).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -17,9 +19,15 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import NoiseComponent, ParamDecl
 from jaxpint.noise._white_common import apply_efac_equad
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.SCALE_TOA_ERROR, pint_names=("ScaleToaError",))
 class ScaleToaError(NoiseComponent):
     """White noise model: EFAC/EQUAD scaling of TOA uncertainties.
 
@@ -57,6 +65,14 @@ class ScaleToaError(NoiseComponent):
 
     efac_names: tuple[str, ...] = eqx.field(static=True)
     equad_names: tuple[str, ...] = eqx.field(static=True)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "ScaleToaError":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        par = ctx.par
+        efac_names = par.params.names_with_prefix("EFAC")
+        equad_names = par.params.names_with_prefix("EQUAD")
+        return cls(efac_names=efac_names, equad_names=equad_names)
 
     def scaled_sigma(
         self,

@@ -10,14 +10,22 @@ machinery lives in :class:`~jaxpint.noise._fourier_gp._PowerLawFourierNoise`.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl
 from jaxpint.noise._fourier_gp import _PowerLawFourierNoise
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.PL_CHROM_NOISE, pint_names=("PLChromNoise",))
 class PLChromNoise(_PowerLawFourierNoise):
     """Power-law chromatic noise with arbitrary chromatic index.
 
@@ -55,6 +63,33 @@ class PLChromNoise(_PowerLawFourierNoise):
     tnchromgam_name: str = eqx.field(static=True)
     tnchromidx_name: str = eqx.field(static=True)
     fref: float = eqx.field(static=True, default=1400.0)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[PLChromNoise]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        import jax.numpy as jnp
+        from jaxpint._build_context import basis_seconds, span_seconds
+        from jaxpint.utils import build_fourier_basis
+
+        par = ctx.par
+        toa_data = ctx.toa_data
+        if toa_data is None:
+            return None
+        basis_s = basis_seconds(toa_data)
+        n_freqs = par.int_params.get("TNCHROMC", 30)
+        T = span_seconds(par, basis_s, "TNCHROMTSPAN")
+
+        F, freqs, freq_bin_widths = build_fourier_basis(basis_s, n_freqs, T)
+
+        return cls(
+            fourier_basis=jnp.asarray(F),
+            freqs=jnp.asarray(freqs),
+            freq_bin_widths=jnp.asarray(freq_bin_widths),
+            tnchromamp_name="TNCHROMAMP",
+            tnchromgam_name="TNCHROMGAM",
+            tnchromidx_name="TNCHROMIDX",
+            fref=1400.0,
+        )
 
     @property
     def _amp_name(self) -> str:

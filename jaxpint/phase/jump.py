@@ -8,15 +8,23 @@ select which TOAs each jump applies to.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl, PhaseComponent
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.PHASE_JUMP, pint_names=("PhaseJump",))
 class PhaseJump(PhaseComponent):
     """Arbitrary phase jumps applied to TOA subsets.
 
@@ -44,6 +52,14 @@ class PhaseJump(PhaseComponent):
 
     jump_param_names: tuple[str, ...] = eqx.field(static=True)
     f0_name: str = eqx.field(static=True, default="F0")
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[PhaseJump]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        jump_names = ctx.par.params.names_with_prefix("JUMP")
+        if not jump_names:
+            return None
+        return cls(jump_param_names=jump_names)
 
     def __check_init__(self):
         if len(self.jump_param_names) == 0:

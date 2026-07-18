@@ -10,14 +10,22 @@ The DM is modelled as a Fourier sum and converted to delay via DM dispersion:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent, ParamDecl
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import fourier_sum
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.DM_WAVE_X, pint_names=("DMWaveX",))
 class DMWaveX(DispersionDelayComponent):
     """Fourier-basis DM noise (DMWaveX).
 
@@ -63,6 +71,23 @@ class DMWaveX(DispersionDelayComponent):
             "dmwxsin_names",
             "dmwxcos_names",
             label="component",
+        )
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[DMWaveX]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        from jaxpint._build_context import epoch_or_pepoch
+
+        dmwx_indices = ctx.par.params.prefix_indices("DMWXFREQ_")
+        if not dmwx_indices:
+            return None
+        dmwxepoch_name = epoch_or_pepoch(ctx.par, "DMWXEPOCH")
+        return cls(
+            n_components=len(dmwx_indices),
+            dmwxepoch_name=dmwxepoch_name,
+            dmwxfreq_names=tuple(f"DMWXFREQ_{i:04d}" for i in dmwx_indices),
+            dmwxsin_names=tuple(f"DMWXSIN_{i:04d}" for i in dmwx_indices),
+            dmwxcos_names=tuple(f"DMWXCOS_{i:04d}" for i in dmwx_indices),
         )
 
     def compute_dm(

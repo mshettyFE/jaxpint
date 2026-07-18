@@ -10,13 +10,21 @@ Shared machinery lives in
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl
 from jaxpint.noise._fourier_gp import _PowerLawFourierNoise
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
+
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
 
+@register_component(component=Component.PL_DM_NOISE, pint_names=("PLDMNoise",))
 class PLDMNoise(_PowerLawFourierNoise):
     """Power-law DM noise via a frequency-scaled Fourier basis.
 
@@ -48,6 +56,36 @@ class PLDMNoise(_PowerLawFourierNoise):
 
     tndmamp_name: str = eqx.field(static=True)
     tndmgam_name: str = eqx.field(static=True)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[PLDMNoise]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        import numpy as np
+        import jax.numpy as jnp
+        from jaxpint._build_context import basis_seconds, span_seconds
+        from jaxpint.utils import build_fourier_basis
+
+        par = ctx.par
+        toa_data = ctx.toa_data
+        if toa_data is None:
+            return None
+        basis_s = basis_seconds(toa_data)
+        n_freqs = par.int_params.get("TNDMC", 30)
+        T = span_seconds(par, basis_s, "TNDMTSPAN")
+
+        F, freqs, freq_bin_widths = build_fourier_basis(basis_s, n_freqs, T)
+
+        bary_freqs_mhz = np.asarray(toa_data.freq)
+        D = (1400.0 / bary_freqs_mhz) ** 2
+        F_dm = F * D[:, None]
+
+        return cls(
+            fourier_basis=jnp.asarray(F_dm),
+            freqs=jnp.asarray(freqs),
+            freq_bin_widths=jnp.asarray(freq_bin_widths),
+            tndmamp_name="TNDMAMP",
+            tndmgam_name="TNDMGAM",
+        )
 
     @property
     def _amp_name(self) -> str:

@@ -12,6 +12,8 @@ are pre-computed in the bridge layer (requires astropy AltAz transforms).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
@@ -33,7 +35,12 @@ from jaxpint.constants import (
     NIELL_DOY_OFFSET,
     NIELL_LAT_BREAKS,
 )
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
+
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +208,9 @@ def _wet_mapping(
 # ---------------------------------------------------------------------------
 
 
+@register_component(
+    component=Component.TROPOSPHERE_DELAY, pint_names=("TroposphereDelay",)
+)
 class TroposphereDelay(DelayComponent):
     """Troposphere delay for topocentric TOAs.
 
@@ -213,6 +223,11 @@ class TroposphereDelay(DelayComponent):
     """
 
     PARAMS = (ParamDecl("CORRECT_TROPOSPHERE", kind="bool"),)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "TroposphereDelay":
+        """Construct from a parsed model (auto-added with CORRECT_TROPOSPHERE)."""
+        return cls()
 
     def __call__(
         self,

@@ -23,7 +23,8 @@ References
 
 from __future__ import annotations
 
-from typing import Optional
+import logging
+from typing import TYPE_CHECKING, Optional
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -32,10 +33,20 @@ from jaxtyping import Array, Float
 from jaxpint.components import DispersionDelayComponent, ParamDecl
 from jaxpint.constants import AU_KM
 from jaxpint.delay.solar_wind import _solar_wind_geometry_swm1, _sun_angle_and_distance
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+log = logging.getLogger(__name__)
+
+
+@register_component(
+    component=Component.SOLAR_WIND_DISPERSION_X, pint_names=("SolarWindDispersionX",)
+)
 class SolarWindDispersionX(DispersionDelayComponent):
     """Piecewise solar wind dispersion delay (SWX model).
 
@@ -91,6 +102,36 @@ class SolarWindDispersionX(DispersionDelayComponent):
     pmdec_name: Optional[str] = eqx.field(static=True, default=None)
     posepoch_name: Optional[str] = eqx.field(static=True, default=None)
     obliquity_arcsec: Optional[float] = eqx.field(static=True, default=None)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[SolarWindDispersionX]":
+        """Construct from a parsed model (astrometry names resolved on ``ctx``)."""
+        par = ctx.par
+        swx_indices = par.params.prefix_indices("SWXDM_")
+        if not swx_indices:
+            return None
+
+        theta0_str = par.metadata.get("_SWX_THETA0_RAD")
+        if theta0_str is not None:
+            theta0_rad = float(theta0_str)
+        else:
+            theta0_rad = 0.0
+            log.warning("SolarWindDispersionX theta0 not available — using 0.0")
+
+        return cls(
+            n_bins=len(swx_indices),
+            swxdm_names=tuple(f"SWXDM_{i:04d}" for i in swx_indices),
+            swxp_names=tuple(f"SWXP_{i:04d}" for i in swx_indices),
+            swxr1_names=tuple(f"SWXR1_{i:04d}" for i in swx_indices),
+            swxr2_names=tuple(f"SWXR2_{i:04d}" for i in swx_indices),
+            theta0=theta0_rad,
+            raj_name=ctx.raj,
+            decj_name=ctx.decj,
+            pmra_name=ctx.pmra,
+            pmdec_name=ctx.pmdec,
+            posepoch_name=ctx.posepoch,
+            obliquity_arcsec=ctx.obliquity_arcsec,
+        )
 
     def __check_init__(self):
         self.check_name_tuples(

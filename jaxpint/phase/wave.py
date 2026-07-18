@@ -14,16 +14,24 @@ Note: this is superseded by WaveX but retained for backward compatibility.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.WAVE, pint_names=("Wave",))
 class Wave(PhaseComponent):
     """Legacy WAVE timing noise model.
 
@@ -66,6 +74,24 @@ class Wave(PhaseComponent):
     waveepoch_name: str = eqx.field(static=True, default="WAVEEPOCH")
     wave_om_name: str = eqx.field(static=True, default="WAVE_OM")
     f0_name: str = eqx.field(static=True, default="F0")
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[Wave]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        from jaxpint._build_context import epoch_or_pepoch
+
+        par = ctx.par
+        wave_indices = par.params.indexed_family("WAVE", "_A")
+        if not wave_indices:
+            return None
+        waveepoch_name = epoch_or_pepoch(par, "WAVEEPOCH")
+        return cls(
+            n_terms=len(wave_indices),
+            waveepoch_name=waveepoch_name,
+            wave_om_name="WAVE_OM",
+            wave_sin_names=tuple(f"WAVE{i}_A" for i in wave_indices),
+            wave_cos_names=tuple(f"WAVE{i}_B" for i in wave_indices),
+        )
 
     def __check_init__(self):
         self.check_name_tuples(

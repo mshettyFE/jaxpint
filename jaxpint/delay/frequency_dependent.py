@@ -10,14 +10,22 @@ where f is the barycentric radio frequency in MHz.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, ParamDecl
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.FREQUENCY_DEPENDENT, pint_names=("FD",))
 class FrequencyDependent(DelayComponent):
     """Polynomial delay in log-frequency (FD model).
 
@@ -36,6 +44,14 @@ class FrequencyDependent(DelayComponent):
     PARAMS = (ParamDecl("FD1", unit="s", prefix="FD"),)
 
     fd_param_names: tuple[str, ...] = eqx.field(static=True)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[FrequencyDependent]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        fd_indices = ctx.par.params.prefix_indices("FD")
+        if not fd_indices:
+            return None
+        return cls(fd_param_names=tuple(f"FD{i}" for i in fd_indices))
 
     def __check_init__(self):
         if len(self.fd_param_names) == 0:

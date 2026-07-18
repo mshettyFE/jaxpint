@@ -26,6 +26,11 @@ def value(par: "ParResult", name: str) -> float:
     return float(par.params.param_value(name))
 
 
+def epoch_or_pepoch(par: "ParResult", name: str) -> str:
+    """Epoch parameter *name* if present, else fall back to ``PEPOCH`` (PINT)."""
+    return name if (name in par.params) else "PEPOCH"
+
+
 def basis_seconds(toa_data) -> np.ndarray:
     """Time coordinate for GP bases / ECORR quantization, as float64 numpy.
 
