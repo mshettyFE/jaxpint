@@ -8,6 +8,8 @@ to avoid forming the full n_toas x n_toas covariance matrix; see
 van Haasteren et al. (2009) [1]_ Appendix A and Lentati et al. (2013) [2]_
 Section II.B.
 
+There is also **conditioned** log-likelihood functionality where the GP coefficients are kept explicit (for HMC sampling).
+
 References
 ----------
 .. [1] van Haasteren et al. (2009), "On measuring the gravitational-wave
@@ -35,6 +37,41 @@ from jaxpint.utils import (
     woodbury_dot,
     woodbury_dot_qr,
 )
+
+
+def _residuals_and_woodbury(
+    toa_data: TOAData,
+    timing_model: TimingModel,
+    noise_model: NoiseModel,
+    params: ParameterVector,
+    external_delay: Optional[Float[Array, " n_toas"]] = None,
+    external_cov: Optional[
+        tuple[Float[Array, "n_toas n_basis"], Float[Array, " n_basis"]]
+    ] = None,
+) -> tuple[
+    Float[Array, " n_toas"],
+    Float[Array, " n_toas"],
+    Float[Array, "n_toas n_basis"],
+    Float[Array, " n_basis"],
+]:
+    """Residuals and the assembled per-pulsar Woodbury blocks ``(r, Ndiag, U, Phi)``.
+
+    The shared front half of every per-pulsar likelihood path
+    (:func:`single_pulsar_logL`, :func:`single_pulsar_clogL`,
+    :func:`~jaxpint.pta.conditional_single_pulsar`, and the PTA
+    inner tier ``_per_pulsar_intermediates``): compute residuals, subtract
+    any deterministic ``external_delay``, then stack the noise model's
+    ``(U, Phi)`` with an optional ``external_cov`` block so
+    ``C = diag(Ndiag) + U diag(Phi) Uᵀ``.
+    """
+    r = compute_time_residuals(timing_model, toa_data, params)
+    if external_delay is not None:
+        r = r - external_delay
+    Ndiag, U_noise, Phi_noise = noise_model.covariance(toa_data, params)
+    woodbury = concat_woodbury_blocks((U_noise, Phi_noise), external_cov)
+    assert woodbury is not None  # first block is always non-None
+    U, Phi = woodbury
+    return r, Ndiag, U, Phi
 
 
 def single_pulsar_logL(
@@ -79,25 +116,118 @@ def single_pulsar_logL(
     logL : float
         Log-likelihood value.
     """
-    # 1. Residuals from the timing model
-    r = compute_time_residuals(timing_model, toa_data, params)
+    r, Ndiag, U, Phi = _residuals_and_woodbury(
+        toa_data, timing_model, noise_model, params, external_delay, external_cov
+    )
 
-    # 2. Subtract external delay (positive delay = later arrival)
-    if external_delay is not None:
-        r = r - external_delay
-
-    # 3. Noise covariance, optionally augmented with external (U, Φ) blocks
-    Ndiag, U_noise, Phi_noise = noise_model.covariance(toa_data, params)
-    woodbury = concat_woodbury_blocks((U_noise, Phi_noise), external_cov)
-    assert woodbury is not None  # first block is always non-None
-    U, Phi = woodbury
-
-    # 5. Evaluate via Woodbury (square-root QR form when the basis may be
+    # Evaluate via Woodbury (square-root QR form when the basis may be
     # collinear, e.g. the marginalization design-matrix block at Φ=1e40).
     dot = woodbury_dot_qr if use_qr else woodbury_dot
     rCr, logdetC = dot(Ndiag, U, Phi, r, r)
     n = r.shape[0]
     return -0.5 * rCr - 0.5 * logdetC - 0.5 * n * jnp.log(2 * jnp.pi)
+
+
+def _validate_coefficient_length(
+    got: int,
+    expected: int,
+    *,
+    producer: str,
+    canonical: str,
+    system: str,
+) -> None:
+    """Raise an actionable error if a ``clogL`` coefficient vector is mis-sized.
+    The expected length is static  so it runs once during jit tracing."""
+    if got != expected:
+        raise ValueError(
+            f"{producer}: coefficients has length {got}, but this {system} "
+            f"expects {expected}. Pass {canonical}(...).mean, or a "
+            f"sample_conditional(key, {canonical}(...)) draw — both are "
+            f"always the right length and column order."
+        )
+
+
+def single_pulsar_clogL(
+    toa_data: TOAData,
+    timing_model: TimingModel,
+    noise_model: NoiseModel,
+    params: ParameterVector,
+    coefficients: Float[Array, " n_coeff"],
+    external_delay: Optional[Float[Array, " n_toas"]] = None,
+    external_cov: Optional[
+        tuple[Float[Array, "n_toas n_basis"], Float[Array, " n_basis"]]
+    ] = None,
+) -> Float[Array, ""]:
+    r"""Per-pulsar log-likelihood *conditioned* on explicit GP coefficients.
+
+    The counterpart of :func:`single_pulsar_logL`.  Where that function
+    marginalizes the GP coefficients ``a`` out via the Woodbury identity,
+    this one keeps them as an explicit input and evaluates the joint
+    Gaussian density of data-and-coefficients:
+
+    .. math::
+
+        \mathrm{clogL}(\theta, a)
+          = \underbrace{-\tfrac12 (r - U a)^T N^{-1} (r - U a)
+              - \tfrac12 \log|2\pi N|}_{\text{data} \mid a}
+            \underbrace{- \tfrac12 a^T \Phi^{-1} a
+              - \tfrac12 \log|2\pi \Phi|}_{\text{coeff. prior}},
+
+    where ``N`` is the white-noise diagonal, ``U`` the stacked correlated
+    basis (every ``noise_model`` correlated block, plus ``external_cov``
+    last) and ``\Phi`` the diagonal prior weights.  Both ``N`` and
+    ``\Phi`` are diagonal, so no factorization is needed — this is cheaper
+    than the marginal ``single_pulsar_logL``.
+
+    Parameters
+    ----------
+    toa_data, timing_model, noise_model, params, external_delay, external_cov
+        As for :func:`single_pulsar_logL`.
+    coefficients : (n_coeff,) array
+        GP coefficient vector, in the same stacked-column order as
+        :func:`~jaxpint.pta.conditional_single_pulsar`'s
+        ``mean`` (``noise_model.covariance`` columns first, then
+        ``external_cov``).  **The canonical way to obtain a valid vector is
+        the matching conditional** — its ``.mean`` or a
+        :func:`~jaxpint.pta.sample_conditional` draw — which is always the
+        right length and order.  To build one from scratch, its length is
+        ``conditional_single_pulsar(...).mean.shape[0]``.  A mismatched
+        length raises a ``ValueError`` naming the expected size.
+
+    Returns
+    -------
+    clogL : float
+        Joint log-density of the residuals and the supplied coefficients.
+    """
+    r, Ndiag, U, Phi = _residuals_and_woodbury(
+        toa_data, timing_model, noise_model, params, external_delay, external_cov
+    )
+
+    _validate_coefficient_length(
+        coefficients.shape[0],
+        U.shape[1],
+        producer="single_pulsar_clogL",
+        canonical="conditional_single_pulsar",
+        system="pulsar's GP basis",
+    )
+
+    # Data term against the white-noise diagonal, GP realization subtracted.
+    resid = r - U @ coefficients
+    n = r.shape[0]
+    log2pi = jnp.log(2 * jnp.pi)
+    data_term = (
+        -0.5 * jnp.sum(resid**2 / Ndiag)
+        - 0.5 * jnp.sum(jnp.log(Ndiag))
+        - 0.5 * n * log2pi
+    )
+    # Coefficient prior (diagonal Phi).
+    n_coeff = coefficients.shape[0]
+    prior_term = (
+        -0.5 * jnp.sum(coefficients**2 / Phi)
+        - 0.5 * jnp.sum(jnp.log(Phi))
+        - 0.5 * n_coeff * log2pi
+    )
+    return data_term + prior_term
 
 
 def precompute_single_pulsar_factor(

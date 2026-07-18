@@ -60,7 +60,7 @@ from .fitters import (
     compute_wideband_residuals,
 )
 from .model_builder import build_model
-from .likelihood import single_pulsar_logL
+from .likelihood import single_pulsar_clogL, single_pulsar_logL
 from . import native
 from .loaders import (
     NanogravPTA,
@@ -131,6 +131,7 @@ __all__ = [
     "SolarWindDispersion",
     "SolarWindDispersionX",
     "single_pulsar_logL",
+    "single_pulsar_clogL",
     "Spindown",
     "TOAData",
     "TimingModel",

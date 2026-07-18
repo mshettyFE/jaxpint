@@ -24,7 +24,9 @@ from jaxpint.pta.likelihood import (
     PTAConfig,
     per_pulsar_gw_blocks,
     precompute_single_pulsar_pta_factor,
+    pta_clogL,
     pta_logL,
+    pta_logL_and_clogL,
     single_pulsar_pta_logL,
     single_pulsar_pta_logL_with_factor,
 )
@@ -76,6 +78,8 @@ __all__ = [
     "SignalInjector",
     "CorrelatedSignalInjector",
     "pta_logL",
+    "pta_clogL",
+    "pta_logL_and_clogL",
     "single_pulsar_pta_logL",
     "single_pulsar_pta_logL_with_factor",
     "precompute_single_pulsar_pta_factor",

@@ -43,8 +43,9 @@ except ModuleNotFoundError:  # dev-only extra; without it jaxtyped is a no-op
     beartype = None
 from jaxtyping import Array, Float, jaxtyped
 
-from jaxpint.fitters import compute_time_residuals
 from jaxpint.likelihood import (
+    _residuals_and_woodbury,
+    _validate_coefficient_length,
     precompute_single_pulsar_factor,
     single_pulsar_logL,
     single_pulsar_logL_with_factor,
@@ -279,16 +280,10 @@ def _per_pulsar_intermediates(
         self-overlap matrix under the ``C_p^{-1}`` inner product.  This is
         the Fisher information matrix for pulsar p's Fourier coefficients.
     """
-    # 1. Residuals
-    r = compute_time_residuals(timing_model, toa_data, params)
-    if external_delay is not None:
-        r = r - external_delay
-
-    # 2. Per-pulsar noise covariance (optionally augmented with external_cov)
-    Ndiag, U_noise, Phi_noise = noise_model.covariance(toa_data, params)
-    woodbury = concat_woodbury_blocks((U_noise, Phi_noise), external_cov)
-    assert woodbury is not None  # first block is always non-None
-    U, Phi = woodbury
+    # 1-2. Residuals and the per-pulsar Woodbury blocks (shared preamble)
+    r, Ndiag, U, Phi = _residuals_and_woodbury(
+        toa_data, timing_model, noise_model, params, external_delay, external_cov
+    )
 
     # 3. Inner tier: per-pulsar Woodbury
     rCr_p, logdetC_p = woodbury_dot(Ndiag, U, Phi, r, r)
@@ -487,18 +482,29 @@ def _assemble_basis_proj_residual_joint_kpb(
     )
 
 
+def _logdet_from_cho(cf) -> Float[Array, ""]:
+    """``log|A|`` from a ``cho_factor`` output ``cf`` (``= 2 sum log diag L``).
+
+    Uses the Cholesky diagonal rather than ``slogdet``: the sign branch of
+    ``slogdet`` is non-smooth and NaNs out 2nd-order autodiff even when the
+    sign is constantly +1 (matches ``utils.py`` and the correlated
+    ``pta_logL`` tail).
+    """
+    return 2.0 * jnp.sum(jnp.log(jnp.abs(jnp.diag(cf[0]))))
+
+
 class JointCorrelatedBlocks(NamedTuple):
     r"""Shared joint outer-tier blocks for the correlated-signal system.
 
     The substrate both the correlated :func:`pta_logL` branch and
-    :func:`~jaxpint.pta.conditional.conditional_gwb` build on: each pulsar's
+    :func:`~jaxpint.pta.conditional_gwb` build on: each pulsar's
     inner-tier Woodbury projections summed / stacked into the joint ``(k, p, b)``
     layout, plus the joint prior and its inverse.  ``pta_logL`` forms the
     marginal likelihood from these; the conditional posterior reads
     ``Phi_joint_inv`` / ``basis_overlap_joint`` as its precision and
     ``basis_proj_residual_joint`` as its right-hand side.  They differ *only* in
     what they do with these blocks — so the (injector, pulsar, basis)/(k,p,b)
-    layout contract lives in one place (:func:`joint_correlated_blocks`) rather than being duplicated.
+    layout contract lives in one place (``joint_correlated_blocks``) rather than being duplicated.
 
     Attributes
     ----------
@@ -511,18 +517,23 @@ class JointCorrelatedBlocks(NamedTuple):
         ``stack_p(F_p^T C_p^{-1} r_p)`` in (k, p, b) layout.
     basis_overlap_joint : (n_joint, n_joint) array
         ``blockdiag_p(F_p^T C_p^{-1} F_p)`` in (k, p, b) layout.
-    Phi_joint : (n_joint, n_joint) array
-        Joint prior ``blockdiag_k(\Gamma_k \otimes diag(S_k))``.
     Phi_joint_inv : (n_joint, n_joint) array
-        Its inverse (``kron(\Gamma_k^{-1}, diag(1/S_k))`` per injector).
+        Inverse joint prior (``kron(\Gamma_k^{-1}, diag(1/S_k))`` per
+        injector) — the precision both consumers build ``\Sigma`` from.
+    logdet_Phi_joint : scalar
+        ``log|\Phi_\mathrm{joint}|`` with ``\Phi_\mathrm{joint} =
+        blockdiag_k(\Gamma_k \otimes diag(S_k))``.  Precomputed once here (the
+        prior depends only on ``global_params``); both the marginal
+        ``pta_logL`` and ``pta_clogL`` need it, and the dense ``Phi_joint``
+        itself has no other consumer, so only this scalar is carried.
     """
 
     sum_rCr: Float[Array, ""]
     sum_logdetC: Float[Array, ""]
     basis_proj_residual_joint: Float[Array, " n_joint"]
     basis_overlap_joint: Float[Array, "n_joint n_joint"]
-    Phi_joint: Float[Array, "n_joint n_joint"]
     Phi_joint_inv: Float[Array, "n_joint n_joint"]
+    logdet_Phi_joint: Float[Array, ""]
 
 
 def joint_correlated_blocks(
@@ -538,7 +549,7 @@ def joint_correlated_blocks(
     ``(k, b)`` slabs plus the joint prior into the ``(k, p, b)`` joint layout.
 
     Both the correlated :func:`pta_logL` branch and
-    :func:`~jaxpint.pta.conditional.conditional_gwb` call this and then diverge:
+    :func:`~jaxpint.pta.conditional_gwb` call this and then diverge:
     ``pta_logL`` takes the logdets and the Cholesky quadratic correction, the
     conditional takes the precision and RHS.  ``config.correlated_injectors``
     must be non-empty (both callers guard this upstream).
@@ -588,6 +599,10 @@ def joint_correlated_blocks(
     Phi_joint, Phi_joint_inv = _phi_and_phi_inv_joint(
         config.correlated_injectors, global_params
     )
+    # log|Phi_joint| is the prior's only remaining use, and both the marginal
+    # and conditional likelihoods need it — compute it once here rather than
+    # re-factoring the dense Phi_joint in each consumer.
+    logdet_Phi_joint = _logdet_from_cho(jax.scipy.linalg.cho_factor(Phi_joint))
     basis_overlap_joint = _assemble_basis_overlap_joint_kpb(
         basis_overlap_per_pulsar, n_basis_per_k, n_psr
     )
@@ -599,8 +614,105 @@ def joint_correlated_blocks(
         sum_logdetC=sum_logdetC,
         basis_proj_residual_joint=basis_proj_residual_joint,
         basis_overlap_joint=basis_overlap_joint,
-        Phi_joint=Phi_joint,
         Phi_joint_inv=Phi_joint_inv,
+        logdet_Phi_joint=logdet_Phi_joint,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Marginal / conditional likelihoods from the shared joint blocks
+# ---------------------------------------------------------------------------
+#
+# Both the marginal correlated ``pta_logL`` and the coefficient-conditioned
+# ``pta_clogL`` are thin contractions of the *same* ``JointCorrelatedBlocks``
+# (the expensive part is ``joint_correlated_blocks`` — the per-pulsar Woodbury
+# solves).  Keeping them as two helpers over one ``blk`` lets ``pta_logL_and_clogL``
+# hand back both from a single block computation, so a Gibbs/HMC step that
+# alternates marginal (hyperparameter) and conditional (coefficient) moves does
+# not pay for the inner tier twice.
+
+
+def _marginal_logL_from_blocks(
+    blk: JointCorrelatedBlocks,
+    n_toas_total: int,
+) -> Float[Array, ""]:
+    r"""Marginal correlated log-likelihood from the shared joint blocks.
+
+    Integrates the correlated coefficients out via the outer-tier Woodbury
+    solve: with ``\Sigma = \Phi_\mathrm{joint}^{-1} + F^T C^{-1} F`` and
+    ``correction = (F^T C^{-1} r)^T \Sigma^{-1} (F^T C^{-1} r)``,
+
+    .. math::
+
+        \mathrm{logL} = -\tfrac12(\mathrm{sum\_rCr} - \mathrm{correction})
+          - \tfrac12(\mathrm{sum\_logdetC} + \log|\Phi_\mathrm{joint}| + \log|\Sigma|)
+          - \tfrac12 n_\mathrm{toas} \log 2\pi.
+    """
+    Sigma_joint = blk.Phi_joint_inv + blk.basis_overlap_joint
+    Sigma_cf = jax.scipy.linalg.cho_factor(Sigma_joint)
+    correction = jnp.dot(
+        blk.basis_proj_residual_joint,
+        jax.scipy.linalg.cho_solve(Sigma_cf, blk.basis_proj_residual_joint),
+    )
+    logdet_Sigma_joint = _logdet_from_cho(Sigma_cf)
+    return (
+        -0.5 * (blk.sum_rCr - correction)
+        - 0.5 * (blk.sum_logdetC + blk.logdet_Phi_joint + logdet_Sigma_joint)
+        - 0.5 * n_toas_total * jnp.log(2.0 * jnp.pi)
+    )
+
+
+def _clogL_from_blocks(
+    blk: JointCorrelatedBlocks,
+    coefficients: Float[Array, " n_joint"],
+    n_toas_total: int,
+) -> Float[Array, ""]:
+    r"""Correlated log-likelihood *conditioned* on explicit coefficients.
+
+    The density counterpart of :func:`_marginal_logL_from_blocks`: instead
+    of integrating the coefficients out it holds ``a = coefficients`` fixed
+    and evaluates the joint Gaussian density.  Using the expanded quadratic
+    form (the data term runs against the per-pulsar Woodbury ``C_p``):
+
+    .. math::
+
+        \mathrm{clogL} =
+          -\tfrac12\big(\mathrm{sum\_rCr}
+            - 2\, a\!\cdot\!(F^T C^{-1} r)
+            + a\!\cdot\!(F^T C^{-1} F)\,a\big)
+          - \tfrac12 \mathrm{sum\_logdetC} - \tfrac12 n_\mathrm{toas}\log 2\pi
+          - \tfrac12 a\!\cdot\!\Phi_\mathrm{joint}^{-1} a
+          - \tfrac12 \log|\Phi_\mathrm{joint}| - \tfrac12 n_\mathrm{joint}\log 2\pi.
+
+    ``coefficients`` follow the (k, p, b) layout of
+    :func:`~jaxpint.pta.conditional_gwb`'s ``mean``.  Because
+    ``basis_overlap_joint`` is block-diagonal over pulsars, the quadratic
+    ``a·(basis_overlap_joint a)`` is exactly ``\Sigma_p a_p^T (F_p^T C_p^{-1}
+    F_p) a_p``, i.e. the per-pulsar data misfit.
+    """
+    a = coefficients
+    _validate_coefficient_length(
+        a.shape[0],
+        blk.basis_proj_residual_joint.shape[0],
+        producer="pta_clogL",
+        canonical="conditional_gwb",
+        system="correlated system",
+    )
+    log2pi = jnp.log(2.0 * jnp.pi)
+    data_quad = (
+        blk.sum_rCr
+        - 2.0 * jnp.dot(a, blk.basis_proj_residual_joint)
+        + jnp.dot(a, blk.basis_overlap_joint @ a)
+    )
+    prior_quad = jnp.dot(a, blk.Phi_joint_inv @ a)
+    n_joint = a.shape[0]
+    return (
+        -0.5 * data_quad
+        - 0.5 * blk.sum_logdetC
+        - 0.5 * n_toas_total * log2pi
+        - 0.5 * prior_quad
+        - 0.5 * blk.logdet_Phi_joint
+        - 0.5 * n_joint * log2pi
     )
 
 
@@ -806,28 +918,103 @@ def pta_logL(
     # ---- Correlated path: the shared joint blocks (same substrate as
     #      conditional_gwb), then ONE outer-tier solve for the marginal logL. ----
     blk = joint_correlated_blocks(global_params, pulsar_params, config)
-
-    Sigma_joint = blk.Phi_joint_inv + blk.basis_overlap_joint
-    Sigma_cf = jax.scipy.linalg.cho_factor(Sigma_joint)
-    correction = jnp.dot(
-        blk.basis_proj_residual_joint,
-        jax.scipy.linalg.cho_solve(Sigma_cf, blk.basis_proj_residual_joint),
-    )
-
-    # slogdet breaks 2nd-order autodiff (sign branch is non-smooth, NaNs out
-    # the Hessian even when sign is constantly +1). Use Cholesky-diag-log
-    # instead, matching the pattern in utils.py:434, 612.
-    Phi_joint_cf = jax.scipy.linalg.cho_factor(blk.Phi_joint)
-    logdet_Phi_joint = 2.0 * jnp.sum(jnp.log(jnp.abs(jnp.diag(Phi_joint_cf[0]))))
-    logdet_Sigma_joint = 2.0 * jnp.sum(jnp.log(jnp.diag(Sigma_cf[0])))
-
     n_toas_total = sum(td.n_toas for td in config.toa_data_list)
-    total_logL = (
-        -0.5 * (blk.sum_rCr - correction)
-        - 0.5 * (blk.sum_logdetC + logdet_Phi_joint + logdet_Sigma_joint)
-        - 0.5 * n_toas_total * jnp.log(2.0 * jnp.pi)
+    return _marginal_logL_from_blocks(blk, n_toas_total)
+
+
+def pta_clogL(
+    global_params: GlobalParams,
+    pulsar_params: tuple[ParameterVector, ...],
+    config: PTAConfig,
+    coefficients: Float[Array, " n_joint"],
+) -> Float[Array, ""]:
+    r"""Multi-pulsar log-likelihood *conditioned* on the correlated coefficients.
+
+    The density dual of the correlated :func:`pta_logL` branch: instead of
+    marginalizing the correlated-signal (e.g. GWB) Fourier coefficients it
+    holds them fixed at ``coefficients`` and evaluates the joint Gaussian
+    density (discovery's ``ArrayLikelihood.clogL``).  Per-pulsar
+    uncorrelated processes (red noise, DM, ECORR, …) remain marginalized
+    into each ``C_p``; only the *correlated* coefficients are explicit —
+    exactly the ones :func:`~jaxpint.pta.conditional_gwb`
+    returns a posterior over.
+
+    ``coefficients`` must be in that function's (k, p, b) layout, so a
+    :func:`~jaxpint.pta.sample_conditional` draw feeds straight in._logL`).
+
+    Parameters
+    ----------
+    global_params, pulsar_params, config
+        As for :func:`pta_logL`; ``config.correlated_injectors`` must be
+        non-empty.
+    coefficients : (n_joint,) array
+        Correlated-signal coefficients in
+        :func:`~jaxpint.pta.conditional_gwb`'s (k, p, b) layout.
+        **The canonical way to obtain a valid vector is ``conditional_gwb``**
+        — its ``.mean`` or a :func:`~jaxpint.pta.sample_conditional` draw —
+        which is always the right length and layout.  To build one from
+        scratch, its length is ``conditional_gwb(...).mean.shape[0]``.  A
+        mismatched length raises a ``ValueError`` naming the expected size.
+
+    Returns
+    -------
+    clogL : float
+        Joint log-density of the residuals and the supplied coefficients.
+
+    Raises
+    ------
+    ValueError
+        If ``config.correlated_injectors`` is empty (use
+        :func:`~jaxpint.likelihood.single_pulsar_clogL` for a purely
+        uncorrelated model).
+    """
+    if not config.correlated_injectors:
+        raise ValueError(
+            "pta_clogL requires at least one correlated injector; for a "
+            "purely uncorrelated model condition per pulsar with "
+            "single_pulsar_clogL instead."
+        )
+    blk = joint_correlated_blocks(global_params, pulsar_params, config)
+    n_toas_total = sum(td.n_toas for td in config.toa_data_list)
+    return _clogL_from_blocks(blk, coefficients, n_toas_total)
+
+
+def pta_logL_and_clogL(
+    global_params: GlobalParams,
+    pulsar_params: tuple[ParameterVector, ...],
+    config: PTAConfig,
+    coefficients: Float[Array, " n_joint"],
+) -> tuple[Float[Array, ""], Float[Array, ""]]:
+    """Both the marginal ``pta_logL`` and conditional ``pta_clogL`` from one solve.
+
+    Convenience wrapper computing ``joint_correlated_blocks`` **once**
+    and contracting it two ways — the marginal (coefficients integrated
+    out) and the conditional (coefficients held at ``coefficients``).  The
+    expensive per-pulsar inner tier is shared, so this is the right entry
+    point for a Gibbs / HMC-within-Gibbs step that needs both at the same
+    parameter point.  Equivalent to calling :func:`pta_logL` and
+    :func:`pta_clogL` separately, but without recomputing the blocks.
+
+    Parameters
+    ----------
+    global_params, pulsar_params, config, coefficients
+        As for :func:`pta_clogL`.
+
+    Returns
+    -------
+    (logL, clogL) : tuple of float
+        The marginal and coefficient-conditioned log-likelihoods.
+    """
+    if not config.correlated_injectors:
+        raise ValueError(
+            "pta_logL_and_clogL requires at least one correlated injector."
+        )
+    blk = joint_correlated_blocks(global_params, pulsar_params, config)
+    n_toas_total = sum(td.n_toas for td in config.toa_data_list)
+    return (
+        _marginal_logL_from_blocks(blk, n_toas_total),
+        _clogL_from_blocks(blk, coefficients, n_toas_total),
     )
-    return total_logL
 
 
 # ---------------------------------------------------------------------------
