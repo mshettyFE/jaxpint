@@ -1,11 +1,17 @@
-"""Coefficient-sampling hook: numpyro model over explicit GP coefficients.
+"""Coefficient-sampling models over explicit GP coefficients.
 
-``build_pta_clogL_model`` adds one flat-prior coefficient site and a
-``pta_clogL`` factor so NUTS samples the correlated-signal Fourier
-coefficients as explicit latents.  Tests here pin the *wiring* (the model's
-log density is exactly ``clogL + hyperprior``, i.e. the improper coefficient
-site contributes zero and its Gaussian prior comes only from the factor) and
-smoke-run the full NUTS path; they do not assert convergence quality.
+Covers the two supported paths and their substrate:
+
+- ``build_pta_clogL_model`` — the conjugate model (flat coefficient site +
+  full ``pta_clogL`` factor); tests pin its *wiring* (log density is exactly
+  ``clogL + hyperprior``, so the improper site contributes zero and the
+  Gaussian prior comes only from the factor).  It is the substrate for
+  exact-Gibbs, ``run_clogL_gibbs``, whose coefficient step is verified to be
+  an exact ``sample_conditional`` draw.
+- ``build_pta_clogL_whitened_model`` — the non-centered all-HMC model; tested
+  against the conjugate one up to the change-of-variables Jacobian.
+
+End-to-end runs are smoke only (finite draws), not convergence checks.
 """
 
 from __future__ import annotations
@@ -22,12 +28,19 @@ from numpyro.infer.util import log_density
 
 from jaxpint.bayes.samplers import (
     build_pta_clogL_model,
+    build_pta_clogL_whitened_model,
     collect_free_fqns,
     make_conditional_gibbs_fn,
     run_clogL_gibbs,
     run_nuts,
 )
-from jaxpint.pta import conditional_gwb, pta_clogL, sample_conditional
+from jaxpint.pta import (
+    conditional_gwb,
+    joint_prior_cholesky,
+    pta_clogL,
+    pta_clogL_data,
+    sample_conditional,
+)
 
 from tests.test_conditional import _hd_config
 
@@ -97,14 +110,59 @@ def test_flat_coeff_prior_not_double_counted():
 
 
 # ---------------------------------------------------------------------------
-# End-to-end NUTS smoke
+# Whitened (non-centered) joint-NUTS coefficient model
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
-def test_pta_clogL_nuts_smoke():
+def test_whitened_model_matches_conjugate_up_to_jacobian():
+    """Whitened logp(θ, z) == conjugate logp(θ, a=Lz) + log det L(θ).
+
+    Proves the non-centered model targets the *same* (θ, a) posterior as the
+    conjugate ``build_pta_clogL_model``, differing only by the exact
+    change-of-variables Jacobian of ``a = L(θ) z`` — i.e. the whitening is
+    correct, not merely plausible.
+    """
     gp, pps, config, _ = _hd_config()
-    model, init, _, cond_mean = _build(config, gp, pps)
+    fid = _fiducial_sites(PULSAR_NAMES, pps, gp)
+    priors = {
+        s: dist.Normal(fid[s], 1.0) for s in collect_free_fqns(PULSAR_NAMES, pps, gp)
+    }
+    cond_mean = conditional_gwb(gp, pps, config).mean
+
+    conj_model, _ = build_pta_clogL_model(
+        lambda g, pp, c: pta_clogL(g, pp, config, c),
+        priors, pps, gp, PULSAR_NAMES, cond_mean,
+    )
+    whit_model, _ = build_pta_clogL_whitened_model(
+        lambda g, pp, c: pta_clogL_data(g, pp, config, c),
+        config, priors, pps, gp, PULSAR_NAMES, cond_mean,
+    )
+
+    # A whitened point z; hyperparameters at the fiducial.
+    L = joint_prior_cholesky(gp, config)
+    z = jax.random.normal(jax.random.PRNGKey(1), (cond_mean.shape[0],))
+    a = L @ z
+    hypers = {s: fid[s] for s in priors}
+
+    whit_lp, _ = log_density(whit_model, (), {}, {**hypers, "gwb_coefficients_white": z})
+    conj_lp, _ = log_density(conj_model, (), {}, {**hypers, "gwb_coefficients": a})
+
+    logdetL = float(jnp.sum(jnp.log(jnp.diag(L))))
+    npt.assert_allclose(float(whit_lp) - float(conj_lp), logdetL, rtol=1e-9)
+
+
+@pytest.mark.slow
+def test_whitened_nuts_end_to_end():
+    gp, pps, config, _ = _hd_config()
+    fid = _fiducial_sites(PULSAR_NAMES, pps, gp)
+    priors = {
+        s: dist.Normal(fid[s], 1.0) for s in collect_free_fqns(PULSAR_NAMES, pps, gp)
+    }
+    cond_mean = conditional_gwb(gp, pps, config).mean
+    model, init = build_pta_clogL_whitened_model(
+        lambda g, pp, c: pta_clogL_data(g, pp, config, c),
+        config, priors, pps, gp, PULSAR_NAMES, cond_mean,
+    )
 
     mcmc = run_nuts(
         model,
@@ -116,9 +174,12 @@ def test_pta_clogL_nuts_smoke():
         progress_bar=False,
         return_arviz=False,
     )
-    draws = mcmc.get_samples()["gwb_coefficients"]
-    assert draws.shape == (20, cond_mean.shape[0])
-    assert bool(jnp.all(jnp.isfinite(draws)))
+    samples = mcmc.get_samples()
+    assert "gwb_coefficients_white" in samples
+    # The physical coefficients are recorded as a deterministic site.
+    a = samples["gwb_coefficients"]
+    assert a.shape == (20, cond_mean.shape[0])
+    assert bool(jnp.all(jnp.isfinite(a)))
 
 
 # ---------------------------------------------------------------------------

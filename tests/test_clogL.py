@@ -28,11 +28,14 @@ from jaxpint.pta import (
     PTAConfig,
     conditional_gwb,
     conditional_single_pulsar,
+    joint_prior_cholesky,
     pta_clogL,
+    pta_clogL_data,
     pta_logL,
     pta_logL_and_clogL,
     sample_conditional,
 )
+from jaxpint.pta.likelihood import joint_correlated_blocks
 from jaxpint.utils import concat_woodbury_blocks
 
 # Reuse the conditional suite's fixtures verbatim so clogL is tested against
@@ -137,6 +140,47 @@ def test_pta_marginalization_identity():
         clogL_at_mean - 0.5 * _logdet_precision(cond) + 0.5 * n_joint * LOG2PI
     )
     npt.assert_allclose(reconstructed, float(pta_logL(gp, pps, config)), rtol=1e-9)
+
+
+def test_joint_prior_cholesky_matches_dense():
+    """Structured chol(Γ⊗diag S) == kron(chol Γ, diag √S); lower-tri, L Lᵀ = Φ_joint."""
+    gp, pps, config, inj = _hd_config()
+    L = np.asarray(joint_prior_cholesky(gp, config))
+    Phi_dense = np.kron(
+        np.asarray(inj.get_orf_matrix()), np.diag(np.asarray(inj.get_psd(gp)))
+    )
+    npt.assert_allclose(L, np.tril(L), atol=0.0)  # lower-triangular
+    npt.assert_allclose(L @ L.T, Phi_dense, rtol=1e-9, atol=1e-12)
+
+
+def test_analytic_logdet_phi_joint_matches_dense():
+    """Analytic kron log-det == dense slogdet(Φ_joint)."""
+    gp, pps, config, inj = _hd_config()
+    blk = joint_correlated_blocks(gp, pps, config)
+    Phi_dense = np.kron(
+        np.asarray(inj.get_orf_matrix()), np.diag(np.asarray(inj.get_psd(gp)))
+    )
+    sign, logdet_dense = np.linalg.slogdet(Phi_dense)
+    assert sign > 0
+    npt.assert_allclose(float(blk.logdet_Phi_joint), logdet_dense, rtol=1e-9)
+
+
+def test_pta_clogL_data_plus_gaussian_prior_equals_clogL():
+    """pta_clogL == pta_clogL_data + log N(a; 0, Phi_joint): the non-conjugate split."""
+    gp, pps, config, inj = _hd_config()
+    a = conditional_gwb(gp, pps, config).mean  # any valid (k, p, b) vector
+
+    data = float(pta_clogL_data(gp, pps, config, a))
+    # Built-in Gaussian coeff prior: Phi_joint = Gamma (x) diag(S) for one injector.
+    Phi_joint = np.kron(
+        np.asarray(inj.get_orf_matrix()), np.diag(np.asarray(inj.get_psd(gp)))
+    )
+    prior = multivariate_normal.logpdf(
+        np.asarray(a), mean=np.zeros(Phi_joint.shape[0]), cov=Phi_joint
+    )
+    npt.assert_allclose(
+        float(pta_clogL(gp, pps, config, a)), data + prior, rtol=1e-9
+    )
 
 
 def test_pta_clogL_grad_zero_at_mean():

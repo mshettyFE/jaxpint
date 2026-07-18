@@ -374,31 +374,77 @@ def n_basis_per_injector(
     )
 
 
-def _phi_and_phi_inv_joint(
+def _phi_inv_and_logdet_joint(
     correlated_injectors: tuple[CorrelatedSignalInjector, ...],
     global_params: GlobalParams,
-) -> tuple[Float[Array, "n_joint n_joint"], Float[Array, "n_joint n_joint"]]:
-    """Build joint ``(Phi_joint, Phi_joint_inv)`` in (k, p, b) ordering.
+) -> tuple[Float[Array, "n_joint n_joint"], Float[Array, ""]]:
+    r"""Joint prior inverse ``\Phi_\mathrm{joint}^{-1}`` and its log-determinant.
 
-    ``Phi_joint = blockdiag_k( Γ_k ⊗ diag(S_k) )``.  The K diagonal blocks
-    are independent across injectors (different correlated signals have
-    independent priors); inside each block, pulsars are coupled via Γ_k
-    and basis functions are independent (diagonal in b).
+    ``\Phi_\mathrm{joint} = blockdiag_k(\Gamma_k \otimes diag(S_k))`` in the
+    (k, p, b) layout.  The inverse is needed densely (it enters
+    ``\Sigma_\mathrm{joint}`` and the coefficient-prior quadratic), and follows
+    from the same kron structure, ``\Phi^{-1} = kron(\Gamma_k^{-1}, diag(1/S_k))``.
 
-    Each block has shape ``(n_psr * n_basis_k, n_psr * n_basis_k)``.  The
-    full matrix has shape ``(n_joint, n_joint)``.
+    ``\log|\Phi_\mathrm{joint}|`` is computed **analytically** from the same
+    structure rather than by a dense ``n_joint × n_joint`` Cholesky:
+
+    .. math::
+
+        \log|\Gamma_k \otimes diag(S_k)| = n_{basis,k}\,\log|\Gamma_k|
+            + n_\mathrm{psr}\,\textstyle\sum_b \log S_{k,b},
+
+    so the cost is ``O(K\,n_\mathrm{psr}^3)`` (one small ``chol(\Gamma_k)`` per
+    injector) instead of ``O(n_joint^3)``.  ``log|\Gamma_k|`` uses the
+    Cholesky diagonal (smooth under autodiff, unlike ``slogdet``).
     """
-    Phi_blocks = []
     Phi_inv_blocks = []
+    logdet = jnp.float64(0.0)
     for cinj in correlated_injectors:
+        Gamma = cinj.get_orf_matrix()  # (n_psr, n_psr)
+        S = cinj.get_psd(global_params)  # (n_basis_k,)
+        n_psr = Gamma.shape[0]
+        n_basis = S.shape[0]
+        Phi_inv_blocks.append(jnp.kron(jnp.linalg.inv(Gamma), jnp.diag(1.0 / S)))
+        logdet_Gamma = 2.0 * jnp.sum(jnp.log(jnp.diag(jnp.linalg.cholesky(Gamma))))
+        logdet = logdet + n_basis * logdet_Gamma + n_psr * jnp.sum(jnp.log(S))
+    return jax.scipy.linalg.block_diag(*Phi_inv_blocks), logdet
+
+
+def joint_prior_cholesky(
+    global_params: GlobalParams,
+    config: PTAConfig,
+) -> Float[Array, "n_joint n_joint"]:
+    r"""Cholesky ``L`` of the coefficient-prior covariance (``\Phi_\mathrm{joint} = L L^T``).
+
+    The whitening map ``a = L z`` (``z ~ N(0, I)`` realizes
+    ``a ~ N(0, \Phi_\mathrm{joint})``) for a non-centered coefficient sampler.
+    Exploits the kron/blockdiag structure —
+    ``chol(\Gamma_k \otimes diag(S_k)) = chol(\Gamma_k) \otimes diag(\sqrt{S_k})`` —
+    so it costs ``O(K\,n_\mathrm{psr}^3)`` (a small ``chol(\Gamma_k)`` per
+    injector) rather than a dense ``O(n_joint^3)`` Cholesky, and returns the
+    same lower-triangular factor.  Pure function of ``\theta`` (no data).
+
+    Parameters
+    ----------
+    global_params, config
+        As for :func:`pta_clogL`; ``config.correlated_injectors`` must be
+        non-empty.
+
+    Raises
+    ------
+    ValueError
+        If ``config.correlated_injectors`` is empty.
+    """
+    if not config.correlated_injectors:
+        raise ValueError(
+            "joint_prior_cholesky requires at least one correlated injector."
+        )
+    L_blocks = []
+    for cinj in config.correlated_injectors:
         Gamma = cinj.get_orf_matrix()
         S = cinj.get_psd(global_params)
-        Phi_blocks.append(jnp.kron(Gamma, jnp.diag(S)))
-        Phi_inv_blocks.append(jnp.kron(jnp.linalg.inv(Gamma), jnp.diag(1.0 / S)))
-    return (
-        jax.scipy.linalg.block_diag(*Phi_blocks),
-        jax.scipy.linalg.block_diag(*Phi_inv_blocks),
-    )
+        L_blocks.append(jnp.kron(jnp.linalg.cholesky(Gamma), jnp.diag(jnp.sqrt(S))))
+    return jax.scipy.linalg.block_diag(*L_blocks)
 
 
 def _assemble_basis_overlap_joint_kpb(
@@ -418,7 +464,7 @@ def _assemble_basis_overlap_joint_kpb(
     The result is the K×K block matrix whose ``(k_a, k_b)`` outer block is
     block-diagonal across pulsars with per-pulsar entries
     ``F_{k_a,p}ᵀ C_p⁻¹ F_{k_b,p}``.  The full matrix has shape
-    ``(n_joint, n_joint)`` and matches :func:`_phi_and_phi_inv_joint`'s
+    ``(n_joint, n_joint)`` and matches :func:`_phi_inv_and_logdet_joint`'s
     (k, p, b) layout so that ``Σ_joint = Phi_joint_inv + basis_overlap_joint``
     is a legal addition.
     """
@@ -461,7 +507,7 @@ def _assemble_basis_proj_residual_joint_kpb(
     The output is the flat (k, p, b) layout: outer concat over ``k``
     (injector), middle concat over ``p`` (pulsar), inner entries are the
     ``n_basis_k`` basis components.  Matches the layout of
-    :func:`_phi_and_phi_inv_joint` so that ``basis_proj_residual_joint``
+    :func:`_phi_inv_and_logdet_joint` so that ``basis_proj_residual_joint``
     can be solved against ``Σ_joint``.
     """
     local_slices = []
@@ -596,13 +642,12 @@ def joint_correlated_blocks(
         basis_overlap_per_pulsar.append(basis_overlap_p)
 
     # Assemble the joint outer-tier system directly in (k, p, b) layout.
-    Phi_joint, Phi_joint_inv = _phi_and_phi_inv_joint(
+    # Phi_joint_inv (dense, needed by Sigma_joint / the prior quadratic) and
+    # log|Phi_joint| both follow from the kron structure, so the log-det is
+    # analytic (O(K n_psr^3)) — no dense n_joint^3 Cholesky of Phi_joint.
+    Phi_joint_inv, logdet_Phi_joint = _phi_inv_and_logdet_joint(
         config.correlated_injectors, global_params
     )
-    # log|Phi_joint| is the prior's only remaining use, and both the marginal
-    # and conditional likelihoods need it — compute it once here rather than
-    # re-factoring the dense Phi_joint in each consumer.
-    logdet_Phi_joint = _logdet_from_cho(jax.scipy.linalg.cho_factor(Phi_joint))
     basis_overlap_joint = _assemble_basis_overlap_joint_kpb(
         basis_overlap_per_pulsar, n_basis_per_k, n_psr
     )
@@ -662,33 +707,30 @@ def _marginal_logL_from_blocks(
     )
 
 
-def _clogL_from_blocks(
+def _clogL_data_from_blocks(
     blk: JointCorrelatedBlocks,
     coefficients: Float[Array, " n_joint"],
     n_toas_total: int,
 ) -> Float[Array, ""]:
-    r"""Correlated log-likelihood *conditioned* on explicit coefficients.
+    r"""Data term of the conditional log-likelihood — ``log p(r | a, \theta)``.
 
-    The density counterpart of :func:`_marginal_logL_from_blocks`: instead
-    of integrating the coefficients out it holds ``a = coefficients`` fixed
-    and evaluates the joint Gaussian density.  Using the expanded quadratic
-    form (the data term runs against the per-pulsar Woodbury ``C_p``):
+    The Gaussian likelihood of the residuals *given* the coefficients, with
+    **no** coefficient prior:
 
     .. math::
 
-        \mathrm{clogL} =
+        \log p(r \mid a) =
           -\tfrac12\big(\mathrm{sum\_rCr}
             - 2\, a\!\cdot\!(F^T C^{-1} r)
             + a\!\cdot\!(F^T C^{-1} F)\,a\big)
-          - \tfrac12 \mathrm{sum\_logdetC} - \tfrac12 n_\mathrm{toas}\log 2\pi
-          - \tfrac12 a\!\cdot\!\Phi_\mathrm{joint}^{-1} a
-          - \tfrac12 \log|\Phi_\mathrm{joint}| - \tfrac12 n_\mathrm{joint}\log 2\pi.
+          - \tfrac12 \mathrm{sum\_logdetC} - \tfrac12 n_\mathrm{toas}\log 2\pi.
 
-    ``coefficients`` follow the (k, p, b) layout of
-    :func:`~jaxpint.pta.conditional_gwb`'s ``mean``.  Because
-    ``basis_overlap_joint`` is block-diagonal over pulsars, the quadratic
-    ``a·(basis_overlap_joint a)`` is exactly ``\Sigma_p a_p^T (F_p^T C_p^{-1}
-    F_p) a_p``, i.e. the per-pulsar data misfit.
+    Because ``basis_overlap_joint`` is block-diagonal over pulsars, the
+    quadratic ``a·(basis_overlap_joint a)`` is exactly ``\Sigma_p a_p^T
+    (F_p^T C_p^{-1} F_p) a_p``, i.e. the per-pulsar data misfit.  This is
+    the factor a *non-conjugate* coefficient model uses, pairing it with an
+    externally-specified (possibly non-Gaussian) prior on ``a`` instead of
+    the built-in ``N(0, \Phi_\mathrm{joint})``.
     """
     a = coefficients
     _validate_coefficient_length(
@@ -698,22 +740,57 @@ def _clogL_from_blocks(
         canonical="conditional_gwb",
         system="correlated system",
     )
-    log2pi = jnp.log(2.0 * jnp.pi)
     data_quad = (
         blk.sum_rCr
         - 2.0 * jnp.dot(a, blk.basis_proj_residual_joint)
         + jnp.dot(a, blk.basis_overlap_joint @ a)
     )
-    prior_quad = jnp.dot(a, blk.Phi_joint_inv @ a)
-    n_joint = a.shape[0]
     return (
         -0.5 * data_quad
         - 0.5 * blk.sum_logdetC
-        - 0.5 * n_toas_total * log2pi
-        - 0.5 * prior_quad
-        - 0.5 * blk.logdet_Phi_joint
-        - 0.5 * n_joint * log2pi
+        - 0.5 * n_toas_total * jnp.log(2.0 * jnp.pi)
     )
+
+
+def _clogL_prior_from_blocks(
+    blk: JointCorrelatedBlocks,
+    coefficients: Float[Array, " n_joint"],
+) -> Float[Array, ""]:
+    r"""Built-in Gaussian coefficient prior ``log N(a; 0, \Phi_\mathrm{joint})``.
+
+    .. math::
+
+        \log p(a) = -\tfrac12 a\!\cdot\!\Phi_\mathrm{joint}^{-1} a
+          - \tfrac12 \log|\Phi_\mathrm{joint}| - \tfrac12 n_\mathrm{joint}\log 2\pi.
+    """
+    a = coefficients
+    prior_quad = jnp.dot(a, blk.Phi_joint_inv @ a)
+    n_joint = a.shape[0]
+    return (
+        -0.5 * prior_quad
+        - 0.5 * blk.logdet_Phi_joint
+        - 0.5 * n_joint * jnp.log(2.0 * jnp.pi)
+    )
+
+
+def _clogL_from_blocks(
+    blk: JointCorrelatedBlocks,
+    coefficients: Float[Array, " n_joint"],
+    n_toas_total: int,
+) -> Float[Array, ""]:
+    r"""Conditional log-likelihood: data term + built-in Gaussian coeff prior.
+
+    The density counterpart of :func:`_marginal_logL_from_blocks`: holds
+    ``a = coefficients`` fixed and evaluates the joint Gaussian density
+    ``log p(r | a) + log N(a; 0, \Phi_\mathrm{joint})``, the sum of
+    :func:`_clogL_data_from_blocks` and :func:`_clogL_prior_from_blocks`.
+
+    ``coefficients`` follow the (k, p, b) layout of
+    :func:`~jaxpint.pta.conditional_gwb`'s ``mean``.
+    """
+    return _clogL_data_from_blocks(
+        blk, coefficients, n_toas_total
+    ) + _clogL_prior_from_blocks(blk, coefficients)
 
 
 # ---------------------------------------------------------------------------
@@ -977,6 +1054,47 @@ def pta_clogL(
     blk = joint_correlated_blocks(global_params, pulsar_params, config)
     n_toas_total = sum(td.n_toas for td in config.toa_data_list)
     return _clogL_from_blocks(blk, coefficients, n_toas_total)
+
+
+def pta_clogL_data(
+    global_params: GlobalParams,
+    pulsar_params: tuple[ParameterVector, ...],
+    config: PTAConfig,
+    coefficients: Float[Array, " n_joint"],
+) -> Float[Array, ""]:
+    r"""Data term of :func:`pta_clogL` — ``log p(r | a, \theta)`` with no coeff prior.
+
+    Identical to :func:`pta_clogL` **minus** the built-in Gaussian coefficient
+    prior ``log N(a; 0, \Phi_\mathrm{joint})``, i.e.
+    ``pta_clogL = pta_clogL_data + log N(a; 0, \Phi_\mathrm{joint})``.  This is
+    the factor for a **non-conjugate** coefficient model: pair it with an
+    externally-specified prior on ``a`` (a NumPyro distribution — Student-t,
+    a sparsity prior, or a whitened ``N(0, \Phi_\mathrm{joint})``) rather than
+    the Gaussian prior baked into :func:`pta_clogL`.  For the standard
+    conjugate case use :func:`pta_clogL` (or, better, the exact-Gibbs
+    :func:`~jaxpint.bayes.samplers.run_clogL_gibbs`).
+
+    Parameters
+    ----------
+    global_params, pulsar_params, config, coefficients
+        As for :func:`pta_clogL`.
+
+    Returns
+    -------
+    logp_data : float
+        ``log p(r | a, \theta)`` — the residual likelihood given the
+        coefficients, without any coefficient prior.
+
+    Raises
+    ------
+    ValueError
+        If ``config.correlated_injectors`` is empty.
+    """
+    if not config.correlated_injectors:
+        raise ValueError("pta_clogL_data requires at least one correlated injector.")
+    blk = joint_correlated_blocks(global_params, pulsar_params, config)
+    n_toas_total = sum(td.n_toas for td in config.toa_data_list)
+    return _clogL_data_from_blocks(blk, coefficients, n_toas_total)
 
 
 def pta_logL_and_clogL(

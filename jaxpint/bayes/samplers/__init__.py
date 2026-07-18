@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from jaxpint.bayes.samplers.numpyro import (
     build_pta_clogL_model,
+    build_pta_clogL_whitened_model,
     build_pta_model,
     build_single_pulsar_model,
     make_conditional_gibbs_fn,
@@ -58,6 +59,7 @@ __all__ = [
     "build_single_pulsar_model",
     "build_pta_model",
     "build_pta_clogL_model",
+    "build_pta_clogL_whitened_model",
     "make_conditional_gibbs_fn",
     "run_nuts",
     "run_clogL_gibbs",

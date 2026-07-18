@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Literal, Mapping, Optional, Union, overload
 
+import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 import numpyro
@@ -34,7 +35,7 @@ from numpyro.infer import HMCGibbs, MCMC, NUTS, init_to_value
 
 from jaxpint.bayes.samplers.priors import PriorResolutionError
 from jaxpint.pta.conditional import conditional_gwb, sample_conditional
-from jaxpint.pta.likelihood import PTAConfig
+from jaxpint.pta.likelihood import PTAConfig, joint_prior_cholesky
 from jaxpint.types import GlobalParams, ParameterVector
 
 
@@ -42,6 +43,7 @@ __all__ = [
     "build_single_pulsar_model",
     "build_pta_model",
     "build_pta_clogL_model",
+    "build_pta_clogL_whitened_model",
     "make_conditional_gibbs_fn",
     "run_nuts",
     "run_clogL_gibbs",
@@ -161,7 +163,20 @@ def build_pta_clogL_model(
     *,
     coefficient_site: str = "gwb_coefficients",
 ) -> tuple[Callable[[], None], dict[str, jnp.ndarray]]:
-    """Build a NumPyro model that samples GP coefficients jointly with hyperparams.
+    r"""Build the conjugate clogL model — the substrate for exact-Gibbs sampling.
+
+    A NumPyro model with the hyperparameter sites plus one coefficient site
+    carrying a *flat* (improper-uniform) prior, and the full
+    :func:`~jaxpint.pta.pta_clogL` (data **and** the built-in Gaussian
+    coefficient prior ``N(0, \Phi_\mathrm{joint})``) as the factor.
+
+    **Intended runner: :func:`run_clogL_gibbs`**, whose θ-step needs exactly
+    this factor (``p(\theta | a, r) \propto \mathrm{clogL}(\theta, a)\,p(\theta)``,
+    which includes the θ-dependent coefficient prior) and whose coefficient
+    step is an *exact* Gaussian draw.  You *can* run plain :func:`run_nuts` on
+    this model, but the coefficients then have a Neal's-funnel geometry — for
+    an all-HMC single kernel prefer the non-centered
+    :func:`build_pta_clogL_whitened_model` instead.
 
     Parameters
     ----------
@@ -223,6 +238,110 @@ def build_pta_clogL_model(
             dist.ImproperUniform(constraints.real, (), (n_coefficients,)),
         )
         numpyro.factor("clogL", clogL(gp, tuple(pulsar_params), coeffs))
+
+    return model, init
+
+
+def build_pta_clogL_whitened_model(
+    clogL_data: Callable[
+        [GlobalParams, tuple[ParameterVector, ...], ArrayLike], jnp.ndarray
+    ],
+    config: PTAConfig,
+    priors: Mapping[str, dist.Distribution],
+    reduced_skeletons: tuple[ParameterVector, ...],
+    global_skeleton: GlobalParams,
+    pulsar_names: tuple[str, ...],
+    coefficient_init: ArrayLike,
+    *,
+    coefficient_site: str = "gwb_coefficients",
+    whitened_site: str = "gwb_coefficients_white",
+) -> tuple[Callable[[], None], dict[str, jnp.ndarray]]:
+    r"""Build a whitened (non-centered) joint-NUTS model over the GP coefficients.
+
+    The reparameterized counterpart of :func:`build_pta_clogL_model` for the
+    **fully joint-NUTS** path.  Instead of sampling the coefficients ``a``
+    directly under their ``\theta``-dependent Gaussian prior — a
+    Neal's-funnel geometry that cripples HMC — it samples an isotropic
+    ``z ~ N(0, I)`` and sets ``a = L(\theta)\, z`` with ``L`` the Cholesky of
+    ``\Phi_\mathrm{joint}(\theta)`` (:func:`~jaxpint.pta.joint_prior_cholesky`).
+    The likelihood factor is the *data-only*
+    :func:`~jaxpint.pta.pta_clogL_data` (the Gaussian coefficient prior is
+    supplied by ``z``'s isotropic prior through the whitening map, so it must
+    **not** also be in the factor).  ``a`` is recorded as a
+    ``numpyro.deterministic`` under ``coefficient_site``.
+
+    This targets exactly the same ``(\theta, a)`` posterior as the conjugate
+    :func:`build_pta_clogL_model` (up to the change-of-variables Jacobian),
+    but with a geometry NUTS can traverse.  Prefer the exact-Gibbs
+    :func:`run_clogL_gibbs` when it applies; reach for this when you need a
+    single all-HMC kernel, or as the base for a non-Gaussian coefficient
+    prior via :func:`~jaxpint.pta.pta_clogL_data`.
+
+    Parameters
+    ----------
+    clogL_data
+        Closure ``(global_params, pulsar_params, coefficients) -> scalar`` —
+        typically ``lambda g, pp, a: pta_clogL_data(g, pp, config, a)``.
+    config
+        The PTA config whose ``\Phi_\mathrm{joint}(\theta)`` defines the
+        whitening map; ``config.correlated_injectors`` must be non-empty.
+    priors, reduced_skeletons, global_skeleton, pulsar_names
+        As for :func:`build_pta_clogL_model`.
+    coefficient_init : (n_joint,) array
+        Fiducial coefficients (``conditional_gwb(...).mean``); fixes the
+        dimension and seeds the whitened variable at ``z = L(\theta_fid)^{-1}
+        \hat a`` so the chain starts at the same physical point as the
+        conjugate / Gibbs samplers.
+    coefficient_site, whitened_site
+        Names of the deterministic coefficient site and the sampled whitened
+        site (defaults ``"gwb_coefficients"`` / ``"gwb_coefficients_white"``).
+
+    Returns
+    -------
+    (model, init) : tuple
+        ``init`` seeds the hyperparameters at ``y_fid`` and ``whitened_site``
+        at ``L(\theta_fid)^{-1} \hat a``.  Run with :func:`run_nuts`.
+    """
+    coefficient_init = jnp.asarray(coefficient_init)
+    n_coefficients = coefficient_init.shape[0]
+
+    site_names: list[str] = []
+    init: dict[str, jnp.ndarray] = {}
+    for prefix, skel in zip(pulsar_names, reduced_skeletons):
+        for b, v in zip(skel.free_names(), skel.free_values()):
+            site_names.append(f"{prefix}_{b}")
+            init[f"{prefix}_{b}"] = v
+    for n, v in zip(global_skeleton.names, global_skeleton.values):
+        site_names.append(n)
+        init[n] = v
+    # Whitened variable uses an isotropic N(0, I) prior — not in priors.
+    _check_priors(site_names, priors, label="PTA clogL whitened")
+
+    # Seed z at L(theta_fid)^{-1} a_hat so the chain starts where the conjugate
+    # and Gibbs samplers do (the conditional mean), not at a = 0.
+    L_fid = joint_prior_cholesky(global_skeleton, config)
+    init[whitened_site] = jax.scipy.linalg.solve_triangular(
+        L_fid, coefficient_init, lower=True
+    )
+
+    def model():
+        sampled: dict[str, ArrayLike] = {}
+        pulsar_params = []
+        for prefix, skel in zip(pulsar_names, reduced_skeletons):
+            for b in skel.free_names():
+                site = f"{prefix}_{b}"
+                sampled[site] = numpyro.sample(site, priors[site])
+            pulsar_params.append(_pack_free(skel, sampled, prefix))
+        for n in global_skeleton.names:
+            sampled[n] = numpyro.sample(n, priors[n])
+        gp = _pack_global(global_skeleton, sampled)
+        # Non-centered: isotropic z, then a = L(theta) z realizes a ~ N(0, Phi_joint).
+        z = numpyro.sample(
+            whitened_site, dist.Normal(0.0, 1.0).expand([n_coefficients]).to_event(1)
+        )
+        L = joint_prior_cholesky(gp, config)
+        coeffs = numpyro.deterministic(coefficient_site, L @ z)
+        numpyro.factor("clogL_data", clogL_data(gp, tuple(pulsar_params), coeffs))
 
     return model, init
 
