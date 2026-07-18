@@ -33,7 +33,7 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
 
     Registers the spectrum's global parameters (with *prefix*): for the
     default power law, ``{prefix}log10_A`` and ``{prefix}gamma``; for a
-    :class:`~jaxpint.pta.FreeSpectrum`,
+    :class:`~jaxpint.spectra.FreeSpectrum`,
     ``{prefix}log10_rho_0 … log10_rho_{n-1}``.  The ORF matrix is
     precomputed at construction time from the supplied pulsar positions
     and ORF function.
@@ -54,8 +54,8 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
     initial_values : dict, optional
         Override the spectrum's default initial values (keys must be
         parameter suffixes of the spectrum).
-    spectrum : ~jaxpint.pta.SpectralModel, optional
-        PSD model (default :class:`~jaxpint.pta.PowerLawSpectrum`).
+    spectrum : ~jaxpint.spectra.SpectralModel, optional
+        PSD model (default :class:`~jaxpint.spectra.PowerLawSpectrum`).
     """
 
     def __init__(

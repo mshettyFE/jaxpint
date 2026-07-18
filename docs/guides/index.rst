@@ -14,4 +14,4 @@ then dip into the API reference for specific components.
    pta_likelihood_flow
    differentiable_fitting
    clock_data
-   adding_a_component
+   adding_a_component_self_registered

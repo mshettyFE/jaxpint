@@ -95,6 +95,9 @@ nitpick_ignore_regex: list[tuple[str, str]] = [
     # Project-internal types referenced by bare name in docstrings
     ("py:class", r"ParameterVector\s*"),
     ("py:class", r"TOAData\s*"),
+    # BuildContext annotates every component ``build`` classmethod; it lives in
+    # the private ``jaxpint._build_context`` and is referenced by bare name.
+    ("py:class", r"BuildContext\s*"),
     ("py:class", r"NoiseModel\s*"),
     ("py:class", r"NoiseComponent\s*"),
     ("py:class", r"TimingModel\s*"),
