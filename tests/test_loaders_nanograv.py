@@ -278,7 +278,7 @@ def test_synthesize_pb_noop_without_fb0():
 
 
 def _ell1h_par_result(*, h3=False, h4=False, stigma=False, nharms=None):
-    """Minimal ParResult for the ELL1H branch of ``_build_binary``. Includes
+    """Minimal ParResult for the ELL1H branch of ``build_binary``. Includes
     only the orbital params the ELL1H builder reads — H3/H4/STIGMA are
     appended only when the matching kwarg is set."""
     import jax.numpy as jnp
@@ -311,9 +311,9 @@ def _ell1h_par_result(*, h3=False, h4=False, stigma=False, nharms=None):
 
 
 def _ell1h_ctx(**kwargs):
-    """Wrap an ELL1H ParResult in a BuildContext for ``_build_binary``.
+    """Wrap an ELL1H ParResult in a BuildContext for ``build_binary``.
 
-    ``_build_binary`` takes a single ``BuildContext``; the ELL1H branch only
+    ``build_binary`` takes a single ``BuildContext``; the ELL1H branch only
     reads ``ctx.par``, so the astrometry fields are placeholders.
     """
     from jaxpint._build_context import BuildContext
@@ -334,9 +334,9 @@ def test_ell1h_no_shapiro_params_uses_none_mode():
     """ELL1H par with no H3/H4/STIGMA must produce shapiro_mode='none' so
     the binary model never tries to read an absent H3 at logL time. Mirrors
     NANOGrav 15-yr J1802-2124 (BINARY ELL1H, NHARMS only)."""
-    from jaxpint.model_builder import _build_binary
+    from jaxpint.binary._build import build_binary
 
-    binary = _build_binary(_ell1h_ctx())
+    binary = build_binary(_ell1h_ctx())
     assert binary.shapiro_mode == "none"
     assert binary.h3_name is None
     assert binary.stigma_name is None
@@ -347,9 +347,9 @@ def test_ell1h_with_h3_only_uses_h3nharms():
     """H3 set but H4/STIGMA absent → Freire-Wex 2010 H3-only Fourier mode.
     Mirrors NANOGrav 15-yr J2145-0750 and J2317+1439 (BINARY ELL1H, H3 set,
     no STIGMA/H4)."""
-    from jaxpint.model_builder import _build_binary
+    from jaxpint.binary._build import build_binary
 
-    binary = _build_binary(_ell1h_ctx(h3=True, nharms=3))
+    binary = build_binary(_ell1h_ctx(h3=True, nharms=3))
     assert binary.shapiro_mode == "h3nharms"
     assert binary.h3_name == "H3"
     assert binary.nharms == 3
@@ -357,24 +357,24 @@ def test_ell1h_with_h3_only_uses_h3nharms():
 
 def test_ell1h_h3_only_default_nharms_is_seven():
     """Without NHARMS in int_params, the bridge falls back to 7 (PINT default)."""
-    from jaxpint.model_builder import _build_binary
+    from jaxpint.binary._build import build_binary
 
-    binary = _build_binary(_ell1h_ctx(h3=True))
+    binary = build_binary(_ell1h_ctx(h3=True))
     assert binary.nharms == 7
 
 
 def test_ell1h_with_h3_h4_uses_h3h4():
-    from jaxpint.model_builder import _build_binary
+    from jaxpint.binary._build import build_binary
 
-    binary = _build_binary(_ell1h_ctx(h3=True, h4=True))
+    binary = build_binary(_ell1h_ctx(h3=True, h4=True))
     assert binary.shapiro_mode == "h3h4"
     assert binary.h4_name == "H4"
 
 
 def test_ell1h_with_stigma_uses_h3stigma():
-    from jaxpint.model_builder import _build_binary
+    from jaxpint.binary._build import build_binary
 
-    binary = _build_binary(_ell1h_ctx(h3=True, stigma=True))
+    binary = build_binary(_ell1h_ctx(h3=True, stigma=True))
     assert binary.shapiro_mode == "h3stigma"
     assert binary.stigma_name == "STIGMA"
 

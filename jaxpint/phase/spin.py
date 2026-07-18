@@ -10,17 +10,25 @@ where dt = (t_TDB - PEPOCH) in seconds, minus accumulated delay.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner_deriv, taylor_horner_phase
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.SPINDOWN, pint_names=("Spindown",))
 class Spindown(PhaseComponent):
     """Polynomial spindown phase component.
 
@@ -55,6 +63,17 @@ class Spindown(PhaseComponent):
             raise ValueError(
                 f"First spin term must be 'F0', got '{self.spin_param_names[0]}'"
             )
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Spindown":
+        """Construct from a parsed model (co-located with the physics it builds).
+
+        Spin Taylor coefficients: base ``F0`` (order 0) then ``F1, F2, …`` in
+        numeric order.
+        """
+        idx = ctx.par.params.prefix_indices("F")
+        spin_names = ["F0"] + [f"F{i}" for i in idx if i != 0]
+        return cls(spin_param_names=tuple(spin_names))
 
     def _get_spin_coeffs(
         self, params: ParameterVector

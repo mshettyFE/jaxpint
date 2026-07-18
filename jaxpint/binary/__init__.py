@@ -7,6 +7,7 @@ from jaxpint.binary.dd import BinaryDD
 from jaxpint.binary.ddk import BinaryDDK
 from jaxpint.binary.ddgr import BinaryDDGR
 from jaxpint.binary.ell1 import BinaryELL1
+from jaxpint.binary import _build  # noqa: F401  (fires the binary family registration)
 
 __all__ = [
     "BinaryBT",

@@ -14,14 +14,22 @@ where freq is in MHz and K_DM = 1 / 2.41e-4 (MHz^2 s cm^3 / pc).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent, ParamDecl
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.DISPERSION_DMX, pint_names=("DispersionDMX",))
 class DispersionDMX(DispersionDelayComponent):
     """Piecewise-constant DM dispersion delay (DMX model).
 
@@ -59,6 +67,22 @@ class DispersionDMX(DispersionDelayComponent):
     def __check_init__(self):
         self.check_name_tuples(
             "n_bins", "dmx_names", "dmxr1_names", "dmxr2_names", label="bin"
+        )
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[DispersionDMX]":
+        """Construct from a parsed model (co-located with the physics it builds).
+
+        One bin per ``DMX_NNNN`` index present; ``None`` when there are none.
+        """
+        idx = ctx.par.params.prefix_indices("DMX_")
+        if not idx:
+            return None
+        return cls(
+            n_bins=len(idx),
+            dmx_names=tuple(f"DMX_{i:04d}" for i in idx),
+            dmxr1_names=tuple(f"DMXR1_{i:04d}" for i in idx),
+            dmxr2_names=tuple(f"DMXR2_{i:04d}" for i in idx),
         )
 
     def compute_dm(
