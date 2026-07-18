@@ -29,6 +29,7 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 import numpyro
 import numpyro.distributions as dist
+from numpyro.distributions import constraints
 from numpyro.infer import MCMC, NUTS, init_to_value
 
 from jaxpint.bayes.samplers.priors import PriorResolutionError
@@ -38,6 +39,7 @@ from jaxpint.types import GlobalParams, ParameterVector
 __all__ = [
     "build_single_pulsar_model",
     "build_pta_model",
+    "build_pta_clogL_model",
     "run_nuts",
 ]
 
@@ -139,6 +141,84 @@ def build_pta_model(
             sampled[n] = numpyro.sample(n, priors[n])
         gp = _pack_global(global_skeleton, sampled)
         numpyro.factor("logL", likelihood(gp, tuple(pulsar_params)))
+
+    return model, init
+
+
+def build_pta_clogL_model(
+    clogL: Callable[
+        [GlobalParams, tuple[ParameterVector, ...], jnp.ndarray], jnp.ndarray
+    ],
+    priors: Mapping[str, dist.Distribution],
+    reduced_skeletons: tuple[ParameterVector, ...],
+    global_skeleton: GlobalParams,
+    pulsar_names: tuple[str, ...],
+    coefficient_init: ArrayLike,
+    *,
+    coefficient_site: str = "gwb_coefficients",
+) -> tuple[Callable[[], None], dict[str, jnp.ndarray]]:
+    """Build a NumPyro model that samples GP coefficients jointly with hyperparams.
+
+    Parameters
+    ----------
+    clogL
+        Closure ``(global_params, pulsar_params, coefficients) -> scalar`` —
+        typically ``lambda g, pp, c: pta_clogL(g, pp, config, c)``.  The
+        coefficient argument must be in the ``(k, p, b)`` layout of
+        :func:`~jaxpint.pta.conditional.conditional_gwb`.
+    priors, reduced_skeletons, global_skeleton, pulsar_names
+        As for :func:`build_pta_model`.  ``priors`` must cover every
+        hyperparameter site (not the coefficient site).
+    coefficient_init : (n_joint,) array
+        Initial coefficient values; also fixes the coefficient site's length.
+        Use ``conditional_gwb(...).mean`` — the exact conditional posterior
+        mean at the fiducial hyperparameters, which both seeds the sampler
+        (analogous to the hyperparameters' fiducial ``y_fid``) and defines the
+        coefficient dimension.  A flat coefficient prior with no informed start
+        mixes poorly, so this is required rather than optional.
+    coefficient_site : str
+        Name of the coefficient sample site (default ``"gwb_coefficients"``).
+
+    Returns
+    -------
+    (model, init) : tuple
+        As for :func:`build_pta_model`; ``init`` additionally seeds
+        ``coefficient_site`` at ``coefficient_init``.
+    """
+    coefficient_init = jnp.asarray(coefficient_init)
+    n_coefficients = coefficient_init.shape[0]
+
+    site_names: list[str] = []
+    init: dict[str, jnp.ndarray] = {}
+    for prefix, skel in zip(pulsar_names, reduced_skeletons):
+        for b, v in zip(skel.free_names(), skel.free_values()):
+            site_names.append(f"{prefix}_{b}")
+            init[f"{prefix}_{b}"] = v
+    for n, v in zip(global_skeleton.names, global_skeleton.values):
+        site_names.append(n)
+        init[n] = v
+    # Coefficients use a flat prior, so they are NOT in site_names / priors.
+    _check_priors(site_names, priors, label="PTA clogL")
+    init[coefficient_site] = coefficient_init
+
+    def model():
+        sampled: dict[str, ArrayLike] = {}
+        pulsar_params = []
+        for prefix, skel in zip(pulsar_names, reduced_skeletons):
+            for b in skel.free_names():
+                site = f"{prefix}_{b}"
+                sampled[site] = numpyro.sample(site, priors[site])
+            pulsar_params.append(_pack_free(skel, sampled, prefix))
+        for n in global_skeleton.names:
+            sampled[n] = numpyro.sample(n, priors[n])
+        gp = _pack_global(global_skeleton, sampled)
+        # Flat prior over the n_joint coefficients; their real Gaussian prior
+        # is folded into the clogL factor below (do not double-count it).
+        coeffs = numpyro.sample(
+            coefficient_site,
+            dist.ImproperUniform(constraints.real, (), (n_coefficients,)),
+        )
+        numpyro.factor("clogL", clogL(gp, tuple(pulsar_params), coeffs))
 
     return model, init
 
