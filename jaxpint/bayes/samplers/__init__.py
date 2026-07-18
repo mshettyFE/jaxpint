@@ -19,6 +19,8 @@ from jaxpint.bayes.samplers.numpyro import (
     build_pta_clogL_model,
     build_pta_model,
     build_single_pulsar_model,
+    make_conditional_gibbs_fn,
+    run_clogL_gibbs,
     run_nuts,
 )
 from jaxpint.bayes.samplers.priors import (
@@ -56,5 +58,7 @@ __all__ = [
     "build_single_pulsar_model",
     "build_pta_model",
     "build_pta_clogL_model",
+    "make_conditional_gibbs_fn",
     "run_nuts",
+    "run_clogL_gibbs",
 ]
