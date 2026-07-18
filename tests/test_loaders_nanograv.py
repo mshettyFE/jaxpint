@@ -316,7 +316,7 @@ def _ell1h_ctx(**kwargs):
     ``_build_binary`` takes a single ``BuildContext``; the ELL1H branch only
     reads ``ctx.par``, so the astrometry fields are placeholders.
     """
-    from jaxpint.model_builder import BuildContext
+    from jaxpint._build_context import BuildContext
 
     return BuildContext(
         par=_ell1h_par_result(**kwargs),

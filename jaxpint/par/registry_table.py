@@ -1,17 +1,27 @@
 """Single source of truth for timing-model components.
 
-Every component is declared once here as a :class:`ComponentSpec`.
+A component is declared in one of two ways, which coexist:
 
-Adding a component therefore means adding one ``ComponentSpec`` entry (plus the
-component class itself).
+- **Manual** (legacy): a :class:`ComponentSpec` in ``_MANUAL_COMPONENTS`` plus a
+  ``_param_classes`` entry plus a ``_build_*`` in ``model_builder``.
+- **Self-registered** (preferred): the component class carries
+  ``@register_component`` / ``register_family`` (see
+  :mod:`jaxpint.par._component_registry`); its spec / classes / builder are
+  *derived* from that one declaration.
 
-The *metadata* (identity / order / PINT names / flags) is a
-plain module-level tuple that imports only the ``Component`` enum, so deriving
-the order and PINT-name maps stays import-light.
+Migrating a component moves it from the first form to the second.
 
-The component *classes* are resolved lazily in :func:`_param_classes`
-(function-local imports), so importing this module never forces the heavy
-component packages and cannot create a cycle.
+The full table (``COMPONENTS`` / ``COMPONENT_SPECS``) is assembled **lazily**
+(:func:`_components`): self-registration requires importing the component
+modules, so eager assembly during ``import`` could re-enter a component
+mid-import (a cycle).  Deferring to first use — after the component packages
+finish importing — avoids that.  ``COMPONENTS`` / ``COMPONENT_SPECS`` are exposed
+as module attributes via ``__getattr__`` for backward compatibility.
+
+``EXECUTION_ORDER`` / ``PRIORITY`` are the exception: they name only the
+``Component`` enum (never the classes), so they stay eager, import-light module
+constants that ``model_builder`` can read directly to order the delay chain
+without forcing table assembly.
 """
 
 from __future__ import annotations
@@ -86,12 +96,19 @@ EXECUTION_ORDER: tuple[Component, ...] = (
     C.PL_SW_NOISE,
 )
 
+# Component -> its position in EXECUTION_ORDER.  Used by ``build_model`` to order
+# the delay chain; components absent from EXECUTION_ORDER sort to the end.
+# Import-light (only the enum), so it is an eager module constant.
+PRIORITY: dict[Component, int] = {comp: i for i, comp in enumerate(EXECUTION_ORDER)}
+
 
 # ---------------------------------------------------------------------------
-# The registry.  Pure metadata -- imports only the Component enum.
+# Manual registry.  Pure metadata -- imports only the Component enum.
+# Self-registered components are NOT listed here; they are merged in by
+# :func:`_components` from the class decorators.
 # ---------------------------------------------------------------------------
 
-COMPONENTS: tuple[ComponentSpec, ...] = (
+_MANUAL_COMPONENTS: tuple[ComponentSpec, ...] = (
     # --- Delay components (PINT ordering) ---
     ComponentSpec(C.ASTROMETRY_EQUATORIAL, ("AstrometryEquatorial",)),
     ComponentSpec(C.ASTROMETRY_ECLIPTIC, ("AstrometryEcliptic",)),
@@ -129,12 +146,10 @@ COMPONENTS: tuple[ComponentSpec, ...] = (
     ComponentSpec(C.PL_SW_NOISE, ("PLSWNoise",)),
 )
 
-COMPONENT_SPECS: dict[Component, ComponentSpec] = {s.component: s for s in COMPONENTS}
 
-
-def _validate() -> None:
-    """Import-time sanity: unique components, full enum coverage, sane order."""
-    seen = [s.component for s in COMPONENTS]
+def _validate(comps: tuple[ComponentSpec, ...]) -> None:
+    """Sanity (on assembly): unique components, full enum coverage, sane order."""
+    seen = [s.component for s in comps]
     if len(seen) != len(set(seen)):
         dupes = {c for c in seen if seen.count(c) > 1}
         raise ValueError(f"duplicate ComponentSpec entries: {dupes}")
@@ -150,7 +165,40 @@ def _validate() -> None:
         raise ValueError(f"EXECUTION_ORDER references unknown components: {unknown}")
 
 
-_validate()
+@functools.cache
+def _components() -> tuple[ComponentSpec, ...]:
+    """The full component table: manual entries + self-registered (derived).
+
+    Lazy + cached: the first call imports the registry, whose contents come from
+    importing the (migrated) component modules, so it must run *after* they
+    finish importing — never at module import (that could re-enter a component
+    mid-import).  See the module docstring.
+    """
+    from jaxpint.par._component_registry import registered
+
+    derived = tuple(
+        ComponentSpec(rc.component, rc.pint_names, is_binary=rc.is_binary)
+        for rc in registered().values()
+    )
+    comps = _MANUAL_COMPONENTS + derived
+    _validate(comps)
+    return comps
+
+
+@functools.cache
+def _component_specs() -> dict[Component, ComponentSpec]:
+    """``Component -> ComponentSpec`` view of the assembled table."""
+    return {s.component: s for s in _components()}
+
+
+def __getattr__(name: str):
+    # Expose COMPONENTS / COMPONENT_SPECS lazily (assembled on first access) so
+    # existing ``registry_table.COMPONENTS`` callers keep working.
+    if name == "COMPONENTS":
+        return _components()
+    if name == "COMPONENT_SPECS":
+        return _component_specs()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +213,9 @@ def _param_classes() -> dict[Component, tuple[type, ...]]:
     Binary is many-to-one: every ``Binary*`` model contributes its PARAMS to
     ``Component.BINARY``.  The top-level/admin params (``TimingModel``) are paired
     with ``None`` directly in :func:`derive_component_classes`, not here.
+
+    Self-registered components contribute their class(es) via the registry merge
+    at the end (so migrating a component out of the manual dict is a no-op here).
     """
     from jaxpint.phase.spin import Spindown
     from jaxpint.phase.glitch import Glitch
@@ -202,7 +253,9 @@ def _param_classes() -> dict[Component, tuple[type, ...]]:
     from jaxpint.noise.chrom_noise import PLChromNoise
     from jaxpint.noise.sw_noise import PLSWNoise
 
-    return {
+    from jaxpint.par._component_registry import registered
+
+    manual = {
         C.SPINDOWN: (Spindown,),
         C.GLITCH: (Glitch,),
         C.WAVE: (Wave,),
@@ -236,6 +289,9 @@ def _param_classes() -> dict[Component, tuple[type, ...]]:
         C.PL_CHROM_NOISE: (PLChromNoise,),
         C.PL_SW_NOISE: (PLSWNoise,),
     }
+    # Self-registered components contribute their class(es) here too.
+    manual.update({rc.component: rc.classes for rc in registered().values()})
+    return manual
 
 
 def derive_component_classes() -> list[tuple]:
@@ -249,22 +305,17 @@ def derive_component_classes() -> list[tuple]:
 
     classes = _param_classes()
     pairs: list[tuple] = [(TimingModel, None)]  # top-level/admin params
-    for s in COMPONENTS:
+    for s in _components():
         for cls in classes.get(s.component, ()):
             pairs.append((cls, s.component))
     return pairs
 
 
-def derive_default_order() -> tuple[Component, ...]:
-    """Ordered components, mirroring PINT's DEFAULT_ORDER"""
-    return EXECUTION_ORDER
-
-
 def derive_pint_component_map() -> dict[str, Component]:
     """PINT class name -> Component."""
-    return {name: s.component for s in COMPONENTS for name in s.pint_names}
+    return {name: s.component for s in _components() for name in s.pint_names}
 
 
 def binary_components() -> frozenset[Component]:
     """Components flagged ``is_binary`` (feeds spec's binary handling)."""
-    return frozenset(s.component for s in COMPONENTS if s.is_binary)
+    return frozenset(s.component for s in _components() if s.is_binary)
