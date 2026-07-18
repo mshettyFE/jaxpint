@@ -14,15 +14,23 @@ where freq is in MHz and K_DM = 1 / 2.41e-4 (MHz^2 s cm^3 / pc).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import DispersionDelayComponent, ParamDecl
 from jaxpint.delay._epoch import dt_years_from_epoch
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.DISPERSION_DM, pint_names=("DispersionDM",))
 class DispersionDM(DispersionDelayComponent):
     """DM dispersion delay using a Taylor expansion about DMEPOCH.
 
@@ -51,6 +59,20 @@ class DispersionDM(DispersionDelayComponent):
 
     dm_param_names: tuple[str, ...] = eqx.field(static=True)
     dmepoch_name: str = eqx.field(static=True, default="DMEPOCH")
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "DispersionDM":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        from jaxpint._build_context import epoch_or_pepoch
+
+        par = ctx.par
+        # Taylor coefficients: base DM (order 0) then DM1, DM2, ... in numeric order.
+        dm_names = ["DM"] + [f"DM{i}" for i in par.params.indexed_family("DM")]
+        dmepoch_name = epoch_or_pepoch(par, "DMEPOCH")
+        return cls(
+            dm_param_names=tuple(dm_names),
+            dmepoch_name=dmepoch_name,
+        )
 
     def __check_init__(self):
         if len(self.dm_param_names) == 0:

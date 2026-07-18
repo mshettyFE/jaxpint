@@ -24,7 +24,7 @@ References
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import equinox as eqx
 from jaxtyping import Array, Float
@@ -37,10 +37,16 @@ from jaxpint.delay.solar_wind import (
     _sun_angle_and_distance,
 )
 from jaxpint.noise._fourier_gp import _PowerLawFourierNoise
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.PL_SW_NOISE, pint_names=("PLSWNoise",))
 class PLSWNoise(_PowerLawFourierNoise):
     """Power-law solar wind DM noise.
 
@@ -90,6 +96,42 @@ class PLSWNoise(_PowerLawFourierNoise):
     pmdec_name: Optional[str] = eqx.field(static=True, default=None)
     posepoch_name: Optional[str] = eqx.field(static=True, default=None)
     obliquity_arcsec: Optional[float] = eqx.field(static=True, default=None)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[PLSWNoise]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        import jax.numpy as jnp
+        from jaxpint._build_context import basis_seconds, span_seconds
+        from jaxpint.utils import build_fourier_basis
+
+        par = ctx.par
+        toa_data = ctx.toa_data
+        if toa_data is None:
+            return None
+        basis_s = basis_seconds(toa_data)
+        n_freqs = par.int_params.get("TNSWC", 100)
+        T = span_seconds(par, basis_s)
+
+        F, freqs, freq_bin_widths = build_fourier_basis(basis_s, n_freqs, T)
+
+        swm = par.int_params.get("SWM", 0)
+        swp_name = "SWP" if swm == 1 else None
+
+        return cls(
+            fourier_basis=jnp.asarray(F),
+            freqs=jnp.asarray(freqs),
+            freq_bin_widths=jnp.asarray(freq_bin_widths),
+            tnswamp_name="TNSWAMP",
+            tnswgam_name="TNSWGAM",
+            swm=swm,
+            swp_name=swp_name,
+            raj_name=ctx.raj,
+            decj_name=ctx.decj,
+            pmra_name=ctx.pmra,
+            pmdec_name=ctx.pmdec,
+            posepoch_name=ctx.posepoch,
+            obliquity_arcsec=ctx.obliquity_arcsec,
+        )
 
     @property
     def _amp_name(self) -> str:

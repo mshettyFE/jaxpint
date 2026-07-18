@@ -14,14 +14,22 @@ where alpha = TNCHROMIDX.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import ChromaticDelayComponent, ParamDecl
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import fourier_sum
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.CM_WAVE_X, pint_names=("CMWaveX",))
 class CMWaveX(ChromaticDelayComponent):
     """Fourier-basis chromatic noise (CMWaveX).
 
@@ -63,6 +71,24 @@ class CMWaveX(ChromaticDelayComponent):
     cmwxcos_names: tuple[str, ...] = eqx.field(static=True)
     cmwxepoch_name: str = eqx.field(static=True, default="CMWXEPOCH")
     # tnchromidx_name inherited from ChromaticDelayComponent (kw_only).
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[CMWaveX]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        from jaxpint._build_context import epoch_or_pepoch
+
+        cmwx_indices = ctx.par.params.prefix_indices("CMWXFREQ_")
+        if not cmwx_indices:
+            return None
+        cmwxepoch_name = epoch_or_pepoch(ctx.par, "CMWXEPOCH")
+        return cls(
+            n_components=len(cmwx_indices),
+            cmwxepoch_name=cmwxepoch_name,
+            cmwxfreq_names=tuple(f"CMWXFREQ_{i:04d}" for i in cmwx_indices),
+            cmwxsin_names=tuple(f"CMWXSIN_{i:04d}" for i in cmwx_indices),
+            cmwxcos_names=tuple(f"CMWXCOS_{i:04d}" for i in cmwx_indices),
+            tnchromidx_name="TNCHROMIDX",
+        )
 
     def __check_init__(self):
         self.check_name_tuples(

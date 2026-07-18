@@ -14,15 +14,23 @@ where freq is in MHz and alpha = TNCHROMIDX.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import ChromaticDelayComponent, ParamDecl
 from jaxpint.delay._epoch import dt_years_from_epoch
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.CHROMATIC_CM, pint_names=("ChromaticCM",))
 class ChromaticCM(ChromaticDelayComponent):
     """Chromatic measure delay using a Taylor expansion about CMEPOCH.
 
@@ -51,6 +59,21 @@ class ChromaticCM(ChromaticDelayComponent):
 
     cm_param_names: tuple[str, ...] = eqx.field(static=True)
     cmepoch_name: str = eqx.field(static=True, default="CMEPOCH")
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "ChromaticCM":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        from jaxpint._build_context import epoch_or_pepoch
+
+        par = ctx.par
+        # Taylor coefficients: base CM (order 0) then CM1, CM2, ... in numeric order.
+        cm_names = ["CM"] + [f"CM{i}" for i in par.params.indexed_family("CM")]
+        cmepoch_name = epoch_or_pepoch(par, "CMEPOCH")
+        return cls(
+            cm_param_names=tuple(cm_names),
+            cmepoch_name=cmepoch_name,
+            tnchromidx_name="TNCHROMIDX",
+        )
 
     def __check_init__(self):
         if len(self.cm_param_names) == 0:

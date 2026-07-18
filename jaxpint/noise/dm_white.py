@@ -10,14 +10,22 @@ mask (pre-computed by the bridge layer and stored in ``TOAData.flag_masks``).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import NoiseComponent, ParamDecl
 from jaxpint.noise._white_common import apply_efac_equad
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.SCALE_DM_ERROR, pint_names=("ScaleDmError",))
 class ScaleDmError(NoiseComponent):
     """White noise scaling of wideband DM uncertainties (DMEFAC/DMEQUAD).
 
@@ -37,6 +45,14 @@ class ScaleDmError(NoiseComponent):
 
     dmefac_names: tuple[str, ...] = eqx.field(static=True)
     dmequad_names: tuple[str, ...] = eqx.field(static=True)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "ScaleDmError":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        par = ctx.par
+        dmefac_names = par.params.names_with_prefix("DMEFAC")
+        dmequad_names = par.params.names_with_prefix("DMEQUAD")
+        return cls(dmefac_names=dmefac_names, dmequad_names=dmequad_names)
 
     def scaled_dm_sigma(
         self,

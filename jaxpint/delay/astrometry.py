@@ -16,7 +16,7 @@ for ecliptic coordinates it is computed from ELONG/ELAT and rotated to ICRS.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -24,8 +24,13 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import C_KM_PER_S, KPC_TO_KM
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, compute_pulsar_direction_ecl
+
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +84,9 @@ def _geometric_delay(
     return result
 
 
+@register_component(
+    component=Component.ASTROMETRY_EQUATORIAL, pint_names=("AstrometryEquatorial",)
+)
 class AstrometryEquatorial(DelayComponent):
     """Geometric delay for equatorial (ICRS) sky coordinates.
 
@@ -110,6 +118,20 @@ class AstrometryEquatorial(DelayComponent):
     pmdec_name: Optional[str] = eqx.field(static=True, default=None)
     px_name: Optional[str] = eqx.field(static=True, default=None)
     posepoch_name: Optional[str] = eqx.field(static=True, default=None)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "AstrometryEquatorial":
+        """Construct from a parsed model (astrometry names resolved on ``ctx``)."""
+        from jaxpint._build_context import opt_name
+
+        return cls(
+            raj_name=ctx.raj,
+            decj_name=ctx.decj,
+            pmra_name=ctx.pmra,
+            pmdec_name=ctx.pmdec,
+            px_name=opt_name(ctx.par, "PX"),
+            posepoch_name=ctx.posepoch,
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -165,6 +187,9 @@ class AstrometryEquatorial(DelayComponent):
         return _geometric_delay(L_hat, toa_data, params, self.px_name)
 
 
+@register_component(
+    component=Component.ASTROMETRY_ECLIPTIC, pint_names=("AstrometryEcliptic",)
+)
 class AstrometryEcliptic(DelayComponent):
     """Geometric delay for ecliptic sky coordinates.
 
@@ -206,6 +231,23 @@ class AstrometryEcliptic(DelayComponent):
     px_name: Optional[str] = eqx.field(static=True, default=None)
     posepoch_name: Optional[str] = eqx.field(static=True, default=None)
     obliquity_arcsec: float = eqx.field(static=True, default=84381.406)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "AstrometryEcliptic":
+        """Construct from a parsed model (astrometry names resolved on ``ctx``)."""
+        from jaxpint._build_context import opt_name
+
+        # An ecliptic-frame model always resolves obliquity in _resolve_astrometry.
+        assert ctx.obliquity_arcsec is not None
+        return cls(
+            elong_name=ctx.raj,
+            elat_name=ctx.decj,
+            pmelong_name=ctx.pmra,
+            pmelat_name=ctx.pmdec,
+            px_name=opt_name(ctx.par, "PX"),
+            posepoch_name=ctx.posepoch,
+            obliquity_arcsec=ctx.obliquity_arcsec,
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers

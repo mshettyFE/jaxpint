@@ -9,6 +9,8 @@ where *U* is a quantization matrix mapping TOAs to observing epochs.
 
 from __future__ import annotations
 
+import logging
+from typing import TYPE_CHECKING, Optional
 
 import equinox as eqx
 import jax
@@ -17,9 +19,17 @@ import numpy as np
 from jaxtyping import Array, Float
 
 from jaxpint.components import NoiseComponent, ParamDecl
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+log = logging.getLogger(__name__)
+
+
+@register_component(component=Component.ECORR_NOISE, pint_names=("EcorrNoise",))
 class EcorrNoise(NoiseComponent):
     """Epoch-correlated noise model (ECORR).
 
@@ -59,6 +69,41 @@ class EcorrNoise(NoiseComponent):
     ecorr_names: tuple[str, ...] = eqx.field(static=True)
     quantization_matrix: Float[Array, "n_toas n_epochs"]
     ecorr_epoch_slices: tuple[tuple[int, int], ...] = eqx.field(static=True)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[EcorrNoise]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        import numpy as np
+        import jax.numpy as jnp
+        from jaxpint._build_context import basis_seconds
+        from jaxpint.utils import build_quantization_matrix
+
+        par = ctx.par
+        toa_data = ctx.toa_data
+        ecorr_names = tuple(
+            sorted(n for n in par.params.names if n.startswith("ECORR"))
+        )
+        if toa_data is not None and len(ecorr_names) > 0:
+            basis_s = basis_seconds(toa_data)
+            # Missing mask -> all-False (this ECORR group selects no TOAs); the
+            # build-time _validate_flag_masks check flags genuinely-absent masks.
+            ecorr_masks = {
+                ename: np.asarray(toa_data.flag_mask(ename, default=False))
+                for ename in ecorr_names
+            }
+
+            U, eslices = build_quantization_matrix(basis_s, ecorr_masks)
+            ecorr_epoch_slices = tuple(eslices[n] for n in ecorr_names)
+            return cls(
+                ecorr_names=ecorr_names,
+                quantization_matrix=jnp.asarray(U),
+                ecorr_epoch_slices=ecorr_epoch_slices,
+            )
+        elif toa_data is None and len(ecorr_names) > 0:
+            log.warning(
+                "EcorrNoise found but no toa_data provided — ECORR not available"
+            )
+        return None
 
     def __post_init__(self):
         # Store the quantization matrix as numpy on host RAM (source of

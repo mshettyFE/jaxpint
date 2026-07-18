@@ -35,7 +35,7 @@ References
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -48,8 +48,13 @@ from jaxpint.constants import (
     PC_TO_KM,
 )
 from jaxpint.delay._epoch import dt_years_from_epoch
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation, taylor_horner
+
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +178,9 @@ def _solar_wind_geometry_swm1(
     return geometry_km / PC_TO_KM
 
 
+@register_component(
+    component=Component.SOLAR_WIND_DISPERSION, pint_names=("SolarWindDispersion",)
+)
 class SolarWindDispersion(DispersionDelayComponent):
     """Dispersion delay from the solar wind.
 
@@ -228,6 +236,42 @@ class SolarWindDispersion(DispersionDelayComponent):
     pmdec_name: Optional[str] = eqx.field(static=True, default=None)
     posepoch_name: Optional[str] = eqx.field(static=True, default=None)
     obliquity_arcsec: Optional[float] = eqx.field(static=True, default=None)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[SolarWindDispersion]":
+        """Construct from a parsed model (astrometry names resolved on ``ctx``)."""
+        from jaxpint._build_context import value, epoch_or_pepoch
+
+        par = ctx.par
+        # NE_SW Taylor coefficients: base NE_SW (order 0) plus NE_SW{i} that are
+        # actually set (nonzero). indexed_family gives them in numeric order, which
+        # the Taylor sum requires (tuple position == derivative order).
+        ne_sw_names = ["NE_SW"]
+        for i in par.params.indexed_family("NE_SW"):
+            name = f"NE_SW{i}"
+            if value(par, name) != 0.0:
+                ne_sw_names.append(name)
+
+        ne_sw_val = value(par, "NE_SW") if ("NE_SW" in par.params) else 0.0
+        if not (len(ne_sw_names) > 1 or ne_sw_val != 0.0):
+            return None
+
+        swm = par.int_params.get("SWM", 0)
+        swepoch_name = epoch_or_pepoch(par, "SWEPOCH")
+        swp_name = "SWP" if swm == 1 else None
+
+        return cls(
+            ne_sw_param_names=tuple(ne_sw_names),
+            swepoch_name=swepoch_name,
+            swm=swm,
+            swp_name=swp_name,
+            raj_name=ctx.raj,
+            decj_name=ctx.decj,
+            pmra_name=ctx.pmra,
+            pmdec_name=ctx.pmdec,
+            posepoch_name=ctx.posepoch,
+            obliquity_arcsec=ctx.obliquity_arcsec,
+        )
 
     def __check_init__(self):
         if len(self.ne_sw_param_names) == 0:

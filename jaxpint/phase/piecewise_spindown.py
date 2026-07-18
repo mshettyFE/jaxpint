@@ -9,17 +9,27 @@ The phase is modelled as a Taylor expansion within user-defined time bins:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import taylor_horner
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(
+    component=Component.PIECEWISE_SPINDOWN, pint_names=("PiecewiseSpindown",)
+)
 class PiecewiseSpindown(PhaseComponent):
     """Piecewise Taylor-expansion spindown model.
 
@@ -69,6 +79,23 @@ class PiecewiseSpindown(PhaseComponent):
     pwf0_names: tuple[str, ...] = eqx.field(static=True)
     pwf1_names: tuple[str, ...] = eqx.field(static=True)
     pwf2_names: tuple[str, ...] = eqx.field(static=True)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[PiecewiseSpindown]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        pw_indices = ctx.par.params.prefix_indices("PWEP_")
+        if not pw_indices:
+            return None
+        return cls(
+            n_pieces=len(pw_indices),
+            pwstart_names=tuple(f"PWSTART_{i}" for i in pw_indices),
+            pwstop_names=tuple(f"PWSTOP_{i}" for i in pw_indices),
+            pwep_names=tuple(f"PWEP_{i}" for i in pw_indices),
+            pwph_names=tuple(f"PWPH_{i}" for i in pw_indices),
+            pwf0_names=tuple(f"PWF0_{i}" for i in pw_indices),
+            pwf1_names=tuple(f"PWF1_{i}" for i in pw_indices),
+            pwf2_names=tuple(f"PWF2_{i}" for i in pw_indices),
+        )
 
     def __check_init__(self):
         self.check_name_tuples(

@@ -11,16 +11,24 @@ and tau = GLTD_N in seconds.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl, PhaseComponent
 from jaxpint.constants import SECS_PER_DAY
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import TOAData, ParameterVector
 
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
+
+@register_component(component=Component.GLITCH, pint_names=("Glitch",))
 class Glitch(PhaseComponent):
     """Pulsar glitch phase component.
 
@@ -63,6 +71,23 @@ class Glitch(PhaseComponent):
     glf2_names: tuple[str, ...] = eqx.field(static=True)
     glf0d_names: tuple[str, ...] = eqx.field(static=True)
     gltd_names: tuple[str, ...] = eqx.field(static=True)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "Optional[Glitch]":
+        """Construct from a parsed model (co-located with the physics it builds)."""
+        glep_indices = ctx.par.params.prefix_indices("GLEP_")
+        if not glep_indices:
+            return None
+        return cls(
+            n_glitches=len(glep_indices),
+            glep_names=tuple(f"GLEP_{i}" for i in glep_indices),
+            glph_names=tuple(f"GLPH_{i}" for i in glep_indices),
+            glf0_names=tuple(f"GLF0_{i}" for i in glep_indices),
+            glf1_names=tuple(f"GLF1_{i}" for i in glep_indices),
+            glf2_names=tuple(f"GLF2_{i}" for i in glep_indices),
+            glf0d_names=tuple(f"GLF0D_{i}" for i in glep_indices),
+            gltd_names=tuple(f"GLTD_{i}" for i in glep_indices),
+        )
 
     def __check_init__(self):
         self.check_name_tuples(

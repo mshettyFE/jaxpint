@@ -13,7 +13,7 @@ body direction and the pulsar direction, and AU is the astronomical unit.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -21,8 +21,13 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import DelayComponent, ParamDecl
 from jaxpint.constants import TSUN, AU_KM, PLANET_MASSES
+from jaxpint.par._component_registry import register_component
+from jaxpint.par.registry import Component
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import compute_pulsar_direction, ecl_to_icrs_rotation
+
+if TYPE_CHECKING:
+    from jaxpint._build_context import BuildContext
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +70,9 @@ def _ss_obj_shapiro_delay(
 # ---------------------------------------------------------------------------
 
 
+@register_component(
+    component=Component.SOLAR_SYSTEM_SHAPIRO, pint_names=("SolarSystemShapiro",)
+)
 class SolarSystemShapiroDelay(DelayComponent):
     """Solar system Shapiro delay (Sun + optional planets).
 
@@ -94,6 +102,20 @@ class SolarSystemShapiroDelay(DelayComponent):
     posepoch_name: Optional[str] = eqx.field(static=True, default=None)
     planet_shapiro: bool = eqx.field(static=True, default=False)
     obliquity_arcsec: Optional[float] = eqx.field(static=True, default=None)
+
+    @classmethod
+    def build(cls, ctx: "BuildContext") -> "SolarSystemShapiroDelay":
+        """Construct from a parsed model (astrometry names resolved on ``ctx``)."""
+        planet_shapiro = ctx.par.bool_params.get("PLANET_SHAPIRO", False)
+        return cls(
+            raj_name=ctx.raj,
+            decj_name=ctx.decj,
+            pmra_name=ctx.pmra,
+            pmdec_name=ctx.pmdec,
+            posepoch_name=ctx.posepoch,
+            planet_shapiro=planet_shapiro,
+            obliquity_arcsec=ctx.obliquity_arcsec,
+        )
 
     def __call__(
         self,
