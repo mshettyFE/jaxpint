@@ -16,6 +16,7 @@ Two layers:
 from __future__ import annotations
 
 from jaxpint.bayes.samplers.numpyro import (
+    build_pta_clogL_model,
     build_pta_model,
     build_single_pulsar_model,
     run_nuts,
@@ -54,5 +55,6 @@ __all__ = [
     # Model + runner
     "build_single_pulsar_model",
     "build_pta_model",
+    "build_pta_clogL_model",
     "run_nuts",
 ]
