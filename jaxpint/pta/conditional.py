@@ -41,11 +41,10 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike
 from jaxtyping import Array, Float, Int
 
-from jaxpint.fitters import compute_time_residuals
+from jaxpint.likelihood import _residuals_and_woodbury
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.types import GlobalParams, ParameterVector, TOAData
-from jaxpint.utils import concat_woodbury_blocks
 from jaxpint.pta.likelihood import (
     PTAConfig,
     joint_correlated_blocks,
@@ -170,14 +169,9 @@ def conditional_single_pulsar(
         Extra stochastic blocks (e.g. a CURN injector's contribution)
         appended to the noise model's basis.
     """
-    r = compute_time_residuals(timing_model, toa_data, params)
-    if external_delay is not None:
-        r = r - external_delay
-
-    Ndiag, U_noise, Phi_noise = noise_model.covariance(toa_data, params)
-    woodbury = concat_woodbury_blocks((U_noise, Phi_noise), external_cov)
-    assert woodbury is not None  # first block is always non-None
-    U, Phi = woodbury
+    r, Ndiag, U, Phi = _residuals_and_woodbury(
+        toa_data, timing_model, noise_model, params, external_delay, external_cov
+    )
 
     Ninv_U = U / Ndiag[:, None]
     return _conditional_from_blocks(jnp.diag(1.0 / Phi), U.T @ Ninv_U, Ninv_U.T @ r)
