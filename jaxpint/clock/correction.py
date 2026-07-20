@@ -25,6 +25,7 @@ the TEMPO2 timing-model paper, Edwards, Hobbs & Manchester (2006), MNRAS 372,
 from __future__ import annotations
 
 import functools
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -80,6 +81,66 @@ def _gps_clock() -> ClockFile:
 
 def _bipm_clock(version: str) -> ClockFile:
     return _load_named(f"tai2tt_{version.lower()}.clk")
+
+
+class UnsupportedClockRealization(UserWarning):
+    """A par file requested a ``CLK`` realization JaxPINT cannot provide."""
+
+
+def resolve_clock_config(
+    clk: str | None,
+    include_bipm: bool | None = None,
+    bipm_version: str | None = None,
+) -> tuple[bool, str | None]:
+    """Turn a par file's ``CLK``/``CLOCK`` line into ``(include_bipm, bipm_version)``.
+
+    Mirrors PINT's derivation in ``pint/toa.py:196-223``:
+
+    ================== ============================================
+    ``CLK`` value      result
+    ================== ============================================
+    ``TT(TAI)``        ``(False, None)`` -- no BIPM term at all
+    ``UNCORR``         ``(False, None)`` -- uncorrected
+    ``TT(BIPM)``       ``(True, default_bipm)``
+    ``TT(BIPM2019)``   ``(True, "BIPM2019")``
+    unrecognized       warn, fall back to ``(True, default_bipm)``
+    absent             ``(True, default_bipm)``
+    ================== ============================================
+
+    Explicitly-passed arguments always win -- this only *derives* the values the
+    caller left as ``None``, so ``get_TOAs(..., bipm_version="BIPM2019")`` still
+    overrides the file.
+
+    Why this matters: the BIPM realization is not cosmetic.  ``TT(BIPM2015)``
+    against ``BIPM2023`` differs by up to ~39 ns (concentrated after the earlier
+    file's publication date, i.e. in recent data), and honouring ``TT(TAI)``
+    matters far more -- the whole BIPM term is ~26.5-27.7 us, varying by ~1.2 us
+    across a typical PTA span.  Clock errors are common-mode across pulsars, so
+    they project onto the monopole and leak into correlated-signal searches.
+    """
+    if include_bipm is not None and bipm_version is not None:
+        return include_bipm, bipm_version
+
+    derived_include, derived_version = True, None
+    if clk is not None:
+        value = clk.strip()
+        upper = value.upper()
+        if upper in ("TT(TAI)", "UNCORR"):
+            derived_include = False
+        elif upper.startswith("TT(BIPM") and upper.endswith(")"):
+            inner = value[3:-1]  # strip "TT(" and ")"
+            derived_version = None if inner.upper() == "BIPM" else inner
+        elif value:
+            warnings.warn(
+                f"CLOCK = {value} is not implemented; using "
+                f"TT({read_metadata()['default_bipm']}) instead.",
+                UnsupportedClockRealization,
+                stacklevel=3,
+            )
+
+    include = derived_include if include_bipm is None else include_bipm
+    version = derived_version if bipm_version is None else bipm_version
+    return include, version
 
 
 def correct(
