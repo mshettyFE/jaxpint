@@ -132,6 +132,182 @@ def test_metadata_extra_merged():
 
 
 # ---------------------------------------------------------------------------
+# Duplicate mask-selector validation (parity with PINT's *.validate())
+# ---------------------------------------------------------------------------
+
+
+def _mask(name, key, key_value, value=1.0, unit=""):
+    return RawParam(
+        name, ParamKind.MASK, value=value, unit=unit,
+        mask_key=key, mask_key_value=key_value,
+    )
+
+
+@pytest.mark.parametrize(
+    "family,unit",
+    [("EFAC", ""), ("EQUAD", "us"), ("ECORR", "us"), ("DMEFAC", ""), ("DMEQUAD", "")],
+)
+def test_duplicate_mask_selector_raises_per_family(family, unit):
+    """Two params of one family selecting identical TOAs is an error, not a silent
+    double-application (PINT: "'EFACs' have duplicated keys and key values.")."""
+    raw = [
+        _mask(f"{family}1", "-f", "430_ASP", unit=unit),
+        _mask(f"{family}2", "-f", "430_ASP", unit=unit),
+    ]
+    with pytest.raises(ValueError, match="have duplicated keys and key values"):
+        raw_params_to_result(raw, component_set=set())
+
+
+def test_distinct_backends_do_not_collide():
+    """The must-not-overfire case: real multi-backend pars are legal."""
+    res = raw_params_to_result(
+        [_mask("EFAC1", "-f", "430_ASP"), _mask("EFAC2", "-f", "L-wide_PUPPI")],
+        component_set=set(),
+    )
+    assert set(res.mask_info) == {"EFAC1", "EFAC2"}
+
+
+def test_same_selector_different_families_do_not_collide():
+    """EFAC and EQUAD may (and normally do) share a selector."""
+    res = raw_params_to_result(
+        [_mask("EFAC1", "-f", "A"), _mask("EQUAD1", "-f", "A", unit="us")],
+        component_set=set(),
+    )
+    assert set(res.mask_info) == {"EFAC1", "EQUAD1"}
+
+
+def test_duplicate_detection_is_superset_of_pint_dash_variant():
+    """``-f A`` and ``f A`` select identical TOAs, so they are a duplicate.
+
+    PINT compares ``(key, key_value)`` verbatim and misses this; JaxPINT
+    normalizes the key, making the check a strict superset.  Deliberate.
+    """
+    raw = [_mask("EFAC1", "-f", "A"), _mask("EFAC2", "f", "A")]
+    with pytest.raises(ValueError, match="have duplicated keys and key values"):
+        raw_params_to_result(raw, component_set=set())
+
+
+# ---------------------------------------------------------------------------
+# TNEQ -> EQUAD synthesis (parity with PINT's ScaleToaError.setup)
+# ---------------------------------------------------------------------------
+
+
+def test_tneq_converts_to_equad_in_seconds():
+    """TNEQ is log10(seconds); EQUAD is microseconds -> stored as seconds."""
+    res = raw_params_to_result(
+        [RawParam("TNEQ1", ParamKind.MASK, value=-6.5, unit="dex(s)",
+                  mask_key="-f", mask_key_value="L-wide")],
+        component_set=set(),
+    )
+    assert "TNEQ1" not in res.params.names  # source convention, not a parameter
+    assert "TNEQ1" not in res.mask_info
+    np.testing.assert_allclose(
+        float(res.params.param_value("EQUAD1")), 10.0**-6.5, rtol=1e-12
+    )
+    assert res.mask_info["EQUAD1"].key == "-f"
+    assert res.mask_info["EQUAD1"].key_value == "L-wide"
+
+
+def test_tneq_uncertainty_propagates_by_delta_method():
+    """A dex sigma has a well-defined linear equivalent: sigma_x = x * ln(10) * sigma_y.
+
+    PINT drops the uncertainty when converting TNEQ (it copies quantity/key/
+    key_value only).  Propagating cannot break numerical parity -- a *parameter*
+    uncertainty never enters the likelihood or delay path -- and dropping it
+    would leave an arbitrary asymmetry against an explicitly-written EQUAD.
+    """
+    import math
+
+    res = raw_params_to_result(
+        [RawParam("TNEQ1", ParamKind.MASK, value=-6.5, uncertainty=0.1,
+                  unit="dex(s)", mask_key="-f", mask_key_value="A")],
+        component_set=set(),
+    )
+    value = float(res.params.param_value("EQUAD1"))
+    sigma = float(res.params.param_uncertainty("EQUAD1"))
+
+    np.testing.assert_allclose(value, 10.0**-6.5, rtol=1e-12)
+    np.testing.assert_allclose(sigma, value * math.log(10.0) * 0.1, rtol=1e-12)
+    # the delta-method signature: fractional sigma is ln(10) * sigma_dex,
+    # independent of the value itself
+    np.testing.assert_allclose(sigma / value, math.log(10.0) * 0.1, rtol=1e-12)
+
+
+def test_tneq_without_uncertainty_stays_nan():
+    res = raw_params_to_result(
+        [RawParam("TNEQ1", ParamKind.MASK, value=-6.5, unit="dex(s)",
+                  mask_key="-f", mask_key_value="A")],
+        component_set=set(),
+    )
+    assert np.isnan(float(res.params.param_uncertainty("EQUAD1")))
+
+
+def test_tneq_multi_backend():
+    res = raw_params_to_result(
+        [RawParam("TNEQ1", ParamKind.MASK, value=-6.5, unit="dex(s)",
+                  mask_key="-f", mask_key_value="A"),
+         RawParam("TNEQ2", ParamKind.MASK, value=-7.0, unit="dex(s)",
+                  mask_key="-f", mask_key_value="B")],
+        component_set=set(),
+    )
+    np.testing.assert_allclose(
+        float(res.params.param_value("EQUAD1")), 10.0**-6.5, rtol=1e-12
+    )
+    np.testing.assert_allclose(
+        float(res.params.param_value("EQUAD2")), 10.0**-7.0, rtol=1e-12
+    )
+    assert {res.mask_info[n].key_value for n in ("EQUAD1", "EQUAD2")} == {"A", "B"}
+
+
+def test_tneq_index_collision_keeps_both_and_does_not_duplicate_names(caplog):
+    """A TNEQ whose index collides with an EQUAD on a *different* selector.
+
+    PINT reuses the TNEQ's index and silently overwrites that EQUAD's value AND
+    key, destroying the user's parameter.  Reusing the index here would instead
+    emit a duplicate name into the ParameterVector, which ``names_with_prefix``
+    would apply twice.  We allocate a fresh index, keep both, and warn.
+    """
+    raw = [
+        _mask("EQUAD1", "-f", "BACKEND_A", value=5.0, unit="us"),
+        RawParam("TNEQ1", ParamKind.MASK, value=-6.0, unit="dex(s)",
+                 mask_key="-f", mask_key_value="BACKEND_B"),
+    ]
+    res = raw_params_to_result(raw, component_set=set())
+
+    equads = [n for n in res.params.names if n.startswith("EQUAD")]
+    assert len(equads) == len(set(equads)), f"duplicate names emitted: {equads}"
+    selectors = {
+        res.mask_info[n].key_value for n in res.mask_info if n.startswith("EQUAD")
+    }
+    assert selectors == {"BACKEND_A", "BACKEND_B"}, "a user EQUAD was destroyed"
+    # the user's value survives untouched
+    by_sel = {res.mask_info[n].key_value: n for n in res.mask_info}
+    np.testing.assert_allclose(
+        float(res.params.param_value(by_sel["BACKEND_A"])), 5.0e-6, rtol=1e-12
+    )
+    np.testing.assert_allclose(
+        float(res.params.param_value(by_sel["BACKEND_B"])), 10.0**-6.0, rtol=1e-12
+    )
+    assert any("would map to EQUAD1" in r.getMessage() for r in caplog.records), \
+        "the PINT divergence was not announced"
+
+
+def test_explicit_equad_wins_over_tneq_on_same_selector():
+    """PINT's setup() prefers an explicit EQUAD; the TNEQ is dropped, and the
+    result must not trip the duplicate-selector check."""
+    res = raw_params_to_result(
+        [RawParam("TNEQ1", ParamKind.MASK, value=-6.5, unit="dex(s)",
+                  mask_key="-f", mask_key_value="A"),
+         _mask("EQUAD1", "-f", "A", value=0.8, unit="us")],
+        component_set=set(),
+    )
+    assert "TNEQ1" not in res.params.names
+    np.testing.assert_allclose(
+        float(res.params.param_value("EQUAD1")), 0.8e-6, rtol=1e-12
+    )
+
+
+# ---------------------------------------------------------------------------
 # Source-level PINT-free invariant
 # ---------------------------------------------------------------------------
 

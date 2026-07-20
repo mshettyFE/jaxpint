@@ -11,6 +11,7 @@ TOAs the parameter applies to.  Keyed by parameter name, these populate
   per-TOA flag value;
 * one key-value -> exact equality; two -> inclusive range ``[lo, hi]`` (numeric);
   key-values are sorted; zero -> matches nothing.
+
 """
 
 from __future__ import annotations

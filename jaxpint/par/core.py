@@ -80,6 +80,53 @@ def _coerce_float(value: float, unit_str: str) -> tuple[float, str]:
     return float(value), unit_str
 
 
+# Masked-parameter families PINT validates for duplicate selectors.  Plain
+# ``startswith`` is unambiguous: ``DMEFAC1`` does not start with ``EFAC``.
+_MASK_DUP_FAMILIES = ("EFAC", "EQUAD", "ECORR", "DMEFAC", "DMEQUAD")
+
+
+def _mask_selector(info: MaskInfo) -> tuple[str, str, Optional[str]]:
+    """Normalized selector identity used for duplicate detection.
+
+    PINT
+    compares ``(key, key_value)`` verbatim and so misses ``EFAC -f A`` /
+    ``EFAC f A`` as a duplicate even though both select identical TOAs;
+    normalizing makes this check a strict superset of PINT's.
+    """
+    return (info.key.lstrip("-").lower(), info.key_value, info.key_value2)
+
+
+def validate_mask_duplicates(mask_info: dict[str, MaskInfo]) -> None:
+    """Raise if two masked parameters of one family share a selector.
+
+    Mirrors PINT's ``ScaleToaError.validate`` / ``EcorrNoise.validate`` /
+    ``ScaleDmError.validate``.  Without it, two ``EFAC -f 430_ASP`` lines
+    silently become ``EFAC1`` and ``EFAC2`` over *identical* masks and the
+    per-parameter fold in :func:`jaxpint.noise._white_common.apply_efac_equad`
+    applies both -- a wrong sigma rather than an error.
+
+    The leading sentence of the message is PINT's verbatim, so parity tests can
+    share a single ``match=`` pattern across both stacks.
+    """
+    for family in _MASK_DUP_FAMILIES:
+        seen: dict[tuple[str, str, Optional[str]], str] = {}
+        for name in sorted(mask_info):
+            if not name.startswith(family):
+                continue
+            info = mask_info[name]
+            if not info.key:
+                continue  # unset selector cannot collide
+            sel = _mask_selector(info)
+            if sel in seen:
+                extra = f" value2={info.key_value2!r}" if info.key_value2 else ""
+                raise ValueError(
+                    f"'{family}s' have duplicated keys and key values. "
+                    f"{seen[sel]}, {name} both select key={info.key!r} "
+                    f"value={info.key_value!r}{extra}"
+                )
+            seen[sel] = name
+
+
 def raw_params_to_result(
     raw: list[RawParam],
     component_set: set[Component],
@@ -243,6 +290,10 @@ def raw_params_to_result(
             "Check the par file for missing or unset parameters that "
             "synthesize aliases (e.g. PB from FB0=0, TNREDAMP from RNAMP=0)."
         )
+
+    # Runs after the MASK loop (so TNEQ->EQUAD synthesis in apply_aliases is
+    # already reflected), mirroring PINT's validate()-after-setup() ordering.
+    validate_mask_duplicates(mask_info)
 
     param_vector = ParameterVector(
         values=jnp.asarray(values, dtype=jnp.float64),

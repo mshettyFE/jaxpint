@@ -300,3 +300,176 @@ UNITS         TDB
             err_msg=f"JaxPINT chi2 ({jax_chi2}) != PINT chi2 ({pint_chi2})",
         )
 
+
+
+# ---------------------------------------------------------------------------
+# Multi-backend parity vs PINT (many backends, ECORR, TempoNest TNEQ)
+# ---------------------------------------------------------------------------
+
+
+_PAR_HEAD = """PSR           J0000+0000
+RAJ           00:00:00   1
+DECJ          00:00:00   1
+PEPOCH        55000
+F0            100        1
+F1            -1e-15     1
+DM            15         1
+"""
+_PAR_TAIL = """TZRMJD        55000
+TZRFRQ        1400
+TZRSITE       @
+EPHEM         DE421
+CLOCK         TT(BIPM2019)
+UNITS         TDB
+"""
+
+
+def _backend_toas(pint_model, backends, *, n_per=12, start=54000, end=56000):
+    """Build TOAs carrying a ``-f`` flag per backend, merged into one TOAs object.
+
+    ``make_fake_toas_uniform`` stamps flags uniformly across all its TOAs, so a
+    heterogeneous ``-f`` column requires one call per backend plus a merge.
+    """
+    import pint.toa as toa
+    from pint.simulation import make_fake_toas_uniform
+
+    chunks = []
+    for i, be in enumerate(backends):
+        t = make_fake_toas_uniform(
+            start, end, n_per, model=pint_model, obs="gbt",
+            freq=1000.0 + 100.0 * i, error=(1.0 + 0.1 * i) * u.us,
+        )
+        for k in range(t.ntoas):
+            t.table["flags"][k]["f"] = be
+        chunks.append(t)
+    return toa.merge_TOAs(chunks)
+
+
+def _jax_scaled_sigma(pint_model, toas):
+    from jaxpint.bridge import (
+        build_timing_model, pint_model_to_params, pint_toas_to_jax,
+    )
+
+    toa_data = pint_toas_to_jax(toas, model=pint_model)
+    params = pint_model_to_params(pint_model).params
+    _tm, noise_model = build_timing_model(pint_model)
+    assert noise_model is not None
+    return np.array(noise_model.scaled_sigma(toa_data, params))
+
+
+@pytest.mark.slow
+def test_twelve_backends_scaled_sigma_matches_pint():
+    """>=10 masked parameters: guards the lexicographic-ordering invariant.
+
+    ``names_with_prefix`` sorts as EFAC1, EFAC10, EFAC11, EFAC2, ... With 12
+    backends the sort genuinely interleaves, so this fails loudly if anything
+    ever starts depending on positional (rather than name-keyed) ordering.
+    """
+    import io
+    import pint.models as models
+
+    backends = [f"be{i:02d}" for i in range(12)]
+    lines = "".join(
+        f"EFAC -f {be} {1.0 + 0.05 * i}\nEQUAD -f {be} {0.1 + 0.02 * i}\n"
+        for i, be in enumerate(backends)
+    )
+    m = models.get_model(io.StringIO(_PAR_HEAD + lines + _PAR_TAIL))
+    assert len([p for p in m.params if p.startswith("EFAC")]) >= 12
+
+    toas = _backend_toas(m, backends, n_per=6)
+    np.testing.assert_allclose(
+        _jax_scaled_sigma(m, toas),
+        m.scaled_toa_uncertainty(toas).to(u.s).value,
+        rtol=1e-12,
+        err_msg="12-backend scaled sigma diverges from PINT",
+    )
+
+
+@pytest.mark.slow
+def test_tneq_multi_backend_scaled_sigma_matches_pint():
+    """TempoNest TNEQ (log10 s) must behave exactly like the equivalent EQUAD.
+
+    Regression: TNEQ was previously undeclared, so the line was dropped by the
+    parser and the EQUAD silently vanished from the noise model.
+    """
+    import io
+    import pint.models as models
+
+    backends = ["L-wide", "S-wide"]
+    lines = ("EFAC -f L-wide 1.3\nTNEQ -f L-wide -6.5\n"
+             "EFAC -f S-wide 1.1\nTNEQ -f S-wide -7.0\n")
+    m = models.get_model(io.StringIO(_PAR_HEAD + lines + _PAR_TAIL))
+
+    toas = _backend_toas(m, backends, n_per=20)
+    np.testing.assert_allclose(
+        _jax_scaled_sigma(m, toas),
+        m.scaled_toa_uncertainty(toas).to(u.s).value,
+        rtol=1e-12,
+        err_msg="TNEQ-derived EQUAD diverges from PINT",
+    )
+
+
+@pytest.mark.slow
+def test_multi_backend_ecorr_covariance_matches_pint():
+    """Per-backend ECORR: the low-rank basis must reproduce PINT's ECORR covariance.
+
+    ECORR is a basis term, not a masked diagonal -- each parameter owns a
+    disjoint block of quantization columns -- so a multi-backend split changes
+    the basis structure, which nothing previously covered.
+    """
+    import io
+    import pint.models as models
+    import pint.toa as toa
+    from pint.simulation import make_fake_toas_fromMJDs
+
+    backends = ["beA", "beB"]
+    lines = ("EFAC -f beA 1.0\nECORR -f beA 0.5\n"
+             "EFAC -f beB 1.0\nECORR -f beB 0.3\n")
+    m = models.get_model(io.StringIO(_PAR_HEAD + lines + _PAR_TAIL))
+
+    # Epoch-clustered MJDs: 3 TOAs ~0.3 s apart per epoch, so each epoch falls
+    # inside one dt=1 s quantization bucket and survives the nmin=2 cut *within
+    # each backend*. Uniform TOAs would quantize to an empty ECORR basis.
+    day = 1.0 / 86400.0
+    chunks = []
+    for i, be in enumerate(backends):
+        mjds = np.concatenate([
+            [54000.0 + 30.0 * e + i * 0.5 + k * 0.3 * day for k in range(3)]
+            for e in range(20)
+        ])
+        t = make_fake_toas_fromMJDs(mjds, model=m, obs="gbt",
+                                    freq=1000.0 + 100.0 * i, error=1.0 * u.us)
+        for k in range(t.ntoas):
+            t.table["flags"][k]["f"] = be
+        chunks.append(t)
+    toas = toa.merge_TOAs(chunks)
+
+    from jaxpint.bridge import (
+        build_timing_model, pint_model_to_params, pint_toas_to_jax,
+    )
+
+    toa_data = pint_toas_to_jax(toas, model=m)
+    params = pint_model_to_params(m).params
+    # ECORR is a *basis* term: EcorrNoise.build needs the TOAs to quantize
+    # epochs, so the model must be built with them (without, it is silently
+    # omitted -- "EcorrNoise found but no toa_data provided").
+    _tm, noise_model = build_timing_model(m, toas)
+    assert noise_model is not None
+    assert any(type(c).__name__ == "EcorrNoise" for c in noise_model.correlated), (
+        "EcorrNoise missing from the built noise model"
+    )
+
+    _ndiag, U, phi = noise_model.covariance(toa_data, params)
+    U = np.asarray(U)
+    jax_cov = U @ np.diag(np.asarray(phi)) @ U.T
+
+    # ecorr_cov_matrix returns a bare ndarray already in s^2 (its weights are
+    # ``ec.quantity.to(u.s).value ** 2``), so no unit conversion is needed.
+    ecorr = m.components["EcorrNoise"]
+    pint_cov = np.asarray(ecorr.ecorr_cov_matrix(toas))
+
+    assert U.shape[1] > 0, "multi-backend ECORR produced an empty basis"
+    np.testing.assert_allclose(
+        jax_cov, pint_cov, rtol=1e-10, atol=1e-25,
+        err_msg="multi-backend ECORR covariance diverges from PINT",
+    )
