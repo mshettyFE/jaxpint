@@ -132,6 +132,50 @@ def test_metadata_extra_merged():
 
 
 # ---------------------------------------------------------------------------
+# UNITS guard
+#
+# Without it a ``UNITS TCB`` par loads clean and is silently treated as TDB --
+# a wrong answer rather than an error, across every par file in IPTA DR1 and
+# EPTA DR2.
+# ---------------------------------------------------------------------------
+
+
+def _units_raw(value: str) -> list[RawParam]:
+    return [RawParam("UNITS", ParamKind.STR, str_value=value)]
+
+
+def test_units_tdb_accepted():
+    res = raw_params_to_result(_units_raw("TDB"), component_set=set())
+    assert res.metadata["UNITS"] == "TDB"
+
+
+def test_units_absent_accepted():
+    """No UNITS line means TDB -- TEMPO1 predates the distinction."""
+    res = raw_params_to_result([], component_set=set())
+    assert "UNITS" not in res.metadata
+
+
+@pytest.mark.parametrize("value", ["tdb", " TDB ", "TDB\t"])
+def test_units_tdb_tolerates_whitespace_and_case(value):
+    """Real par files use tabs and trailing spaces (e.g. PINT's slug.par)."""
+    raw_params_to_result(_units_raw(value), component_set=set())
+
+
+def test_units_tcb_rejected_with_actionable_message():
+    with pytest.raises(NotImplementedError, match="UNITS TCB") as exc:
+        raw_params_to_result(_units_raw("TCB"), component_set=set())
+    # The remedy matters as much as the rejection: TCB pars are the norm in
+    # IPTA/EPTA, so the error has to say what to do next.
+    assert "tcb2tdb" in str(exc.value)
+
+
+def test_units_unrecognized_rejected():
+    """A typo'd timescale is a corrupt par file, not a default."""
+    with pytest.raises(ValueError, match="unrecognized UNITS value"):
+        raw_params_to_result(_units_raw("NONSENSE"), component_set=set())
+
+
+# ---------------------------------------------------------------------------
 # Duplicate mask-selector validation (parity with PINT's *.validate())
 # ---------------------------------------------------------------------------
 

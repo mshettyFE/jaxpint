@@ -62,6 +62,72 @@ def test_include_bipm_toggle():
     assert abs(on - off) > 1e-6
 
 
+# --------------------------------------------------------------------- CLK/CLOCK
+#
+# The par's CLK line must select the clock realization, the way EPHEM selects
+# the ephemeris.  It was previously ignored in favour of a hardcoded
+# "BIPM2023" -- and no par file in the local corpus asks for BIPM2023, so every
+# file was silently overridden.  The TT(TAI) case is the costly one: those pars
+# opt out of the BIPM term entirely, and applying it anyway shifts TDB by
+# ~27 us with ~1 us of variation across the span.
+# Mirrors PINT's derivation in pint/toa.py:196-223.
+
+
+@pytest.mark.parametrize(
+    "clk,expected",
+    [
+        ("TT(TAI)", (False, None)),      # explicit opt-out of BIPM
+        ("UNCORR", (False, None)),       # uncorrected
+        ("TT(BIPM)", (True, None)),      # bare -> packaged default
+        ("TT(BIPM2019)", (True, "BIPM2019")),
+        ("TT(BIPM2015)", (True, "BIPM2015")),
+        (" TT(BIPM2019) ", (True, "BIPM2019")),  # real pars carry stray space
+        (None, (True, None)),            # no CLK line -> default
+    ],
+)
+def test_resolve_clock_config(clk, expected):
+    from jaxpint.clock.correction import resolve_clock_config
+
+    assert resolve_clock_config(clk) == expected
+
+
+def test_resolve_clock_config_unknown_warns_and_falls_back():
+    """UTC(NIST) and friends appear in real pars; warn, don't crash or go silent."""
+    from jaxpint.clock.correction import (
+        UnsupportedClockRealization,
+        resolve_clock_config,
+    )
+
+    with pytest.warns(UnsupportedClockRealization, match="UTC\\(NIST\\)"):
+        assert resolve_clock_config("UTC(NIST)") == (True, None)
+
+
+def test_resolve_clock_config_explicit_args_win():
+    """An explicit kwarg must still override the file (loader API contract)."""
+    from jaxpint.clock.correction import resolve_clock_config
+
+    assert resolve_clock_config("TT(TAI)", bipm_version="BIPM2019") == (
+        False,
+        "BIPM2019",
+    )
+    assert resolve_clock_config("TT(BIPM2015)", include_bipm=False) == (
+        False,
+        "BIPM2015",
+    )
+
+
+def test_clk_tt_tai_changes_correction():
+    """End-to-end: the derived config must actually reach ``correct``."""
+    from jaxpint.clock.correction import resolve_clock_config
+
+    inc_bipm, vers = resolve_clock_config("TT(BIPM2019)")
+    on = correct([_toa(58800.5, "gbt")], include_bipm=inc_bipm, bipm_version=vers)
+    inc_tai, vers_tai = resolve_clock_config("TT(TAI)")
+    off = correct([_toa(58800.5, "gbt")], include_bipm=inc_tai, bipm_version=vers_tai)
+    # ~27 us apart -- the whole BIPM term.
+    assert abs(on.clkcorr_seconds[0] - off.clkcorr_seconds[0]) > 1e-6
+
+
 # --------------------------------------------------------------------------- parity
 
 _CORPUS = [

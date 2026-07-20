@@ -84,6 +84,24 @@ def _coerce_float(value: float, unit_str: str) -> tuple[float, str]:
 # ``startswith`` is unambiguous: ``DMEFAC1`` does not start with ``EFAC``.
 _MASK_DUP_FAMILIES = ("EFAC", "EQUAD", "ECORR", "DMEFAC", "DMEQUAD")
 
+# Timescales JaxPINT's timing model actually implements.  A par file with no
+# UNITS line is TDB by convention (TEMPO1 predates the distinction), so absence
+# is accepted.
+_SUPPORTED_UNITS = frozenset({"TDB"})
+
+# Recognized-but-unimplemented timescales, mapped to the remedy we can offer.
+_KNOWN_UNSUPPORTED_UNITS = {
+    "TCB": (
+        "TCB differs from TDB by a rate factor of ~1.55e-8 (~0.5 s/yr in epoch, "
+        "with a proportional rescaling of F0/F1 and the Keplerian parameters), "
+        "so reading a TCB par as TDB silently produces wrong timing. "
+        "Convert it first -- PINT ships a `tcb2tdb` command-line tool -- or use "
+        "a TDB par if the release provides one (IPTA DR1/DR2 ship `.TDB.par` "
+        "siblings; EPTA DR2 does not). Note the conversion is not exact and a "
+        "refit is required for reliable results."
+    ),
+}
+
 
 def _mask_selector(info: MaskInfo) -> tuple[str, str, Optional[str]]:
     """Normalized selector identity used for duplicate detection.
@@ -125,6 +143,49 @@ def validate_mask_duplicates(mask_info: dict[str, MaskInfo]) -> None:
                     f"value={info.key_value!r}{extra}"
                 )
             seen[sel] = name
+
+
+def validate_units(metadata: dict[str, str]) -> None:
+    """Raise unless the par file's ``UNITS`` is a timescale JaxPINT implements.
+
+    ``UNITS`` is stored as metadata but nothing downstream acts on it, so
+    without this guard a ``UNITS TCB`` par loads clean and is then treated as
+    TDB -- a wrong answer rather than an error.  That is not a corner case:
+    every ``UNITS`` line in IPTA DR1 (145 par files) and EPTA DR2 (76) is TCB.
+
+    This **matches PINT's default behaviour**, it does not diverge from it.
+    ``TimingModel.validate`` (``timing_model.py:412-427``) raises on ``UNITS
+    TCB`` unless the caller passes ``allow_tcb=True``, and ``get_model``
+    defaults it to ``False``; the message points at PINT's ``tcb2tdb`` tool.
+    PINT converts only on explicit opt-in, warning that the conversion is
+    approximate and the model must be re-fit.  PINT likewise raises on a
+    ``UNITS`` value outside ``{None, TDB, TCB}``, which is why an unrecognized
+    value raises here too.
+
+    Implementing the conversion (see ``pint.models.tcb_conversion``) would let
+    this accept TCB behind a similar opt-in flag.
+
+    An absent ``UNITS`` is accepted as TDB (TEMPO1 predates the distinction).
+    Unrecognized values raise rather than being ignored -- a typo'd timescale
+    is a corrupt par file, not a default.
+    """
+    units = metadata.get("UNITS")
+    if units is None:
+        return
+    key = units.strip().upper()
+    if key in _SUPPORTED_UNITS:
+        return
+    if key in _KNOWN_UNSUPPORTED_UNITS:
+        raise NotImplementedError(
+            f"par file declares UNITS {units}, which JaxPINT does not support "
+            f"(only {'/'.join(sorted(_SUPPORTED_UNITS))}). "
+            f"{_KNOWN_UNSUPPORTED_UNITS[key]}"
+        )
+    raise ValueError(
+        f"par file declares an unrecognized UNITS value {units!r}; "
+        f"expected one of {sorted(_SUPPORTED_UNITS | set(_KNOWN_UNSUPPORTED_UNITS))} "
+        "or no UNITS line at all."
+    )
 
 
 def raw_params_to_result(
@@ -294,6 +355,9 @@ def raw_params_to_result(
     # Runs after the MASK loop (so TNEQ->EQUAD synthesis in apply_aliases is
     # already reflected), mirroring PINT's validate()-after-setup() ordering.
     validate_mask_duplicates(mask_info)
+
+    # After metadata_extra is merged, so an adapter-supplied UNITS is seen too.
+    validate_units(metadata)
 
     param_vector = ParameterVector(
         values=jnp.asarray(values, dtype=jnp.float64),

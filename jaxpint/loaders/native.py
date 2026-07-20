@@ -17,7 +17,7 @@ from typing import Optional
 
 import numpy as np
 
-from ..clock.correction import correct
+from ..clock.correction import correct, resolve_clock_config
 from ..clock.observatory import resolve_observatory
 from ..clock.posvels import compute_posvels
 from ..clock.timescale import to_tdb
@@ -192,10 +192,15 @@ def native_toas_to_jax(
         ephem = md.get("EPHEM", "DE440")
     if planets is None:
         planets = bool(bp.get("PLANET_SHAPIRO", False))
-    if include_bipm is None:
-        include_bipm = True
-    if bipm_version is None:
-        bipm_version = "BIPM2023"
+    # CLK/CLOCK selects the clock realization the same way EPHEM selects the
+    # ephemeris above; hardcoding it silently overrode every par file (no local
+    # corpus file asks for the old BIPM2023 default). A None version means
+    # "packaged default", resolved inside correct().
+    include_bipm, bipm_version = resolve_clock_config(
+        md.get("CLOCK", md.get("CLK")),
+        include_bipm=include_bipm,
+        bipm_version=bipm_version,
+    )
 
     core = topocentric_core(
         tim_path,
