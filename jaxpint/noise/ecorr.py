@@ -80,9 +80,8 @@ class EcorrNoise(NoiseComponent):
 
         par = ctx.par
         toa_data = ctx.toa_data
-        ecorr_names = tuple(
-            sorted(n for n in par.params.names if n.startswith("ECORR"))
-        )
+        # Same prefix-discovery idiom as ScaleToaError / ScaleDmError.
+        ecorr_names = par.params.names_with_prefix("ECORR")
         if toa_data is not None and len(ecorr_names) > 0:
             basis_s = basis_seconds(toa_data)
             # Missing mask -> all-False (this ECORR group selects no TOAs); the
@@ -93,6 +92,15 @@ class EcorrNoise(NoiseComponent):
             }
 
             U, eslices = build_quantization_matrix(basis_s, ecorr_masks)
+            # Slices are looked up BY NAME, never by position.  ``ecorr_names``
+            # is sorted lexicographically, so with >=10 parameters the column
+            # blocks of ``U`` run ECORR1, ECORR10, ECORR11, ECORR2, ...  That is
+            # harmless *here*: each parameter's weights land in its own named
+            # slice, and ``U @ diag(Phi) @ U.T`` is invariant to column
+            # permutation.  Do not "fix" the ordering -- correctness must not
+            # depend on it.
+            # TODO: Think of a consistent ordering in JaxPINT?
+
             ecorr_epoch_slices = tuple(eslices[n] for n in ecorr_names)
             return cls(
                 ecorr_names=ecorr_names,

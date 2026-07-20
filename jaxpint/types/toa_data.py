@@ -212,7 +212,15 @@ class TOAData(eqx.Module):
         if name in self.flag_masks:
             return self.flag_masks[name]
         if default is None:
-            raise KeyError(name)
+            known = ", ".join(sorted(self.flag_masks)) or "(none)"
+            raise KeyError(
+                f"no flag mask for masked parameter {name!r}; this TOAData "
+                f"carries masks for: {known}. Masks are resolved at conversion "
+                f"time from the par file's mask parameters -- build the TOAData "
+                f"with the model in hand, via "
+                f"pint_toas_to_jax(toas, model=<PINT model>) or "
+                f"native_toas_to_jax(tim, par_result)."
+            )
         return jnp.full(self.n_toas, default, dtype=jnp.bool_)
 
     # -- Single-TOA factory --

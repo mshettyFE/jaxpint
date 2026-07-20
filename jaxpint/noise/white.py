@@ -61,6 +61,18 @@ class ScaleToaError(NoiseComponent):
             aliases=("EQUAD", "T2EQUAD", "T2EQUAD1"),
             prefix_aliases=("T2EQUAD",),
         ),
+        # TempoNest's EQUAD, in log10(seconds).  Declared (rather than aliased
+        # onto EQUAD) purely so the line is *recognized*: an undeclared name is
+        # dropped by the parser with only a log.debug, which is how a TNEQ par
+        # silently lost its EQUAD.
+        ParamDecl(
+            "TNEQ1",
+            kind="mask",
+            unit="dex(s)",
+            prefix="TNEQ",
+            aliases=("TNEQ",),
+            prefix_aliases=(),
+        ),
     )
 
     efac_names: tuple[str, ...] = eqx.field(static=True)
