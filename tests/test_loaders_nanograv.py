@@ -587,3 +587,60 @@ def test_map_pulsars_clear_caches_flag(tmp_path):
                 )
             )
         assert cc.call_count == expected
+
+
+# --------------------------------------------------------------------- clock
+#
+# The loader used to force include_bipm=True / bipm_version="BIPM2019" onto
+# every pulsar, ignoring each par's CLK.  Benign for the 15yr primary release
+# (all TT(BIPM2019)) but a ~27 us error on its own narrowband/alternate/tempo2/
+# subset, which is TT(TAI).  Defaults now derive from the par.
+
+
+def test_load_nanograv_pta_derives_clock_from_par(tmp_path):
+    """The par's CLK selects the realization, and it is recorded on TOAData."""
+    par, tim = _example_par_tim()
+    d = tmp_path / "B1855+09"
+    d.mkdir()
+    txt = "\n".join(
+        ln for ln in par.read_text().splitlines() if not ln.startswith(("CLK", "CLOCK"))
+    )
+    (d / par.name).write_text(txt + "\nCLOCK TT(TAI)\n")
+    shutil.copy2(tim, d / tim.name)
+
+    psrs = load_nanograv_pta(tmp_path, planets=False)
+    assert psrs.toa_data_list[0].clock_realization == "TT(TAI)"
+
+
+def test_load_nanograv_pta_explicit_bipm_overrides_par(tmp_path):
+    """An explicit kwarg still forces uniformity across the array."""
+    par, tim = _example_par_tim()
+    d = tmp_path / "B1855+09"
+    d.mkdir()
+    txt = "\n".join(
+        ln for ln in par.read_text().splitlines() if not ln.startswith(("CLK", "CLOCK"))
+    )
+    (d / par.name).write_text(txt + "\nCLOCK TT(TAI)\n")
+    shutil.copy2(tim, d / tim.name)
+
+    psrs = load_nanograv_pta(tmp_path, planets=False, bipm_version="BIPM2019")
+    assert psrs.toa_data_list[0].clock_realization == "TT(BIPM2019)"
+
+
+def test_check_uniform_clock_warns_on_mixed_array():
+    """A PTA spanning two realizations carries a spurious common-mode offset."""
+    from types import SimpleNamespace
+
+    from jaxpint.loaders.nanograv import MixedClockRealization, _check_uniform_clock
+
+    def rec(name, clk):
+        return SimpleNamespace(
+            name=name, toa_data=SimpleNamespace(clock_realization=clk)
+        )
+
+    uniform = [rec("J0000+0000", "TT(BIPM2019)"), rec("J1111+1111", "TT(BIPM2019)")]
+    _check_uniform_clock(uniform)  # must not warn
+
+    mixed = [rec("J0000+0000", "TT(BIPM2019)"), rec("J1111+1111", "TT(TAI)")]
+    with pytest.warns(MixedClockRealization, match="different clock realizations"):
+        _check_uniform_clock(mixed)
