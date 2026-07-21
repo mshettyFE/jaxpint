@@ -44,18 +44,35 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[1]
-_PINT_DATA = _REPO.parent / "PINT" / "tests" / "datafile"
+# Inputs come from the vendored copy only -- no PINT source checkout, matching
+# the test suite. An earlier version fell back to a sibling ../PINT checkout,
+# which reintroduced exactly the dependency vendoring removed, and did so only
+# to serve two PAIRS entries that had never produced a golden. Both are gone.
+_VENDORED = _REPO / "tests" / "data" / "pint_inputs"
+
+
+def _input(name: str) -> Path:
+    return _VENDORED / name
+
+
 _OUT_DIR = _REPO / "tests" / "data" / "tempo2_goldens"
 
 # Pairs that load in BOTH JaxPINT and libstempo (surveyed 2026-07-21).
 # Pairs failing either side are excluded rather than silently skipped; see
 # --list output and the module docstring of tests/test_cross_implementation.py.
+# Two entries were removed after never once producing a golden -- each run
+# printed an `exit 1` that a maintainer learns to scroll past, which is where a
+# real failure would hide:
+#
+#   B1953+29_NANOGrav_dfg+12.par  -- the file does not exist, anywhere. The
+#     entry was simply wrong; the real one is the _TAI_FB90 variant, below.
+#   B1937+21.basic.par + CHIME tim -- loads with **zero** TOAs (tempo2 matches
+#     none of them), so `residuals()` raises. Not a pairing typo; the two files
+#     genuinely do not go together.
 PAIRS: list[tuple[str, str]] = [
     ("B1855+09_NANOGrav_12yv3.wb.gls.par", "B1855+09_NANOGrav_12yv3.wb.tim"),
     ("B1855+09_NANOGrav_9yv1.gls.par", "B1855+09_NANOGrav_9yv1.tim"),
     ("B1855+09_NANOGrav_dfg+12_DMX.par", "B1855+09_NANOGrav_dfg+12.tim"),
-    ("B1937+21.basic.par", "B1937+21.CHIME.CHIME.NG.N.tim"),
-    ("B1953+29_NANOGrav_dfg+12.par", "B1953+29_NANOGrav_dfg+12.tim"),
     ("B1953+29_NANOGrav_dfg+12_TAI_FB90.par", "B1953+29_NANOGrav_dfg+12.tim"),
     ("J0023+0923_NANOGrav_11yv0.gls.par", "J0023+0923_NANOGrav_11yv0.tim"),
     ("J0613-0200_NANOGrav_9yv1.gls.par", "J0613-0200_NANOGrav_9yv1.tim"),
@@ -80,6 +97,10 @@ PAIRS: list[tuple[str, str]] = [
     ("piecewise.par", "piecewise.tim"),
     ("slug.par", "slug.tim"),
     ("testtimes.par", "testtimes.tim"),
+    # --- Parkes (fixed-column) --------------------------------------------
+    # TEMPO's own 0437 test data, the only genuine 80-column Parkes file found
+    # in ~4,400 surveyed .tim files. Vendored from FileRepo/examples.
+    ("0437.par", "0437.tim"),
 ]
 
 # Runs libstempo out-of-process, writing "MJD residual" per TOA to argv[3].
@@ -141,8 +162,8 @@ def _generate(par: str, tim: str) -> str | None:
             [
                 sys.executable,
                 str(worker),
-                str(_PINT_DATA / par),
-                str(_PINT_DATA / tim),
+                str(_input(par)),
+                str(_input(tim)),
                 str(payload),
             ],
             capture_output=True,
