@@ -122,6 +122,9 @@ class TOAData(eqx.Module):
     # Which coordinate ``basis_seconds`` holds ("barycentric" | "tdb").
     basis_coord: Optional[BasisCoord] = eqx.field(static=True, default=None)
 
+    # Provenance of the clock corrections already baked into ``mjd_*``/``tdb_*``.
+    clock_realization: Optional[str] = eqx.field(static=True, default=None)
+
     def __check_init__(self):
         if (self.basis_seconds is None) != (self.basis_coord is None):
             raise ValueError(
@@ -318,6 +321,7 @@ class TOAData(eqx.Module):
         tzr_planet_positions=None,
         basis_seconds=None,
         basis_coord: Optional[BasisCoord] = None,
+        clock_realization: Optional[str] = None,
     ) -> "TOAData":
         """Build a TOAData from raw NumPy/JAX arrays, owning all dtype coercion.
 
@@ -373,4 +377,5 @@ class TOAData(eqx.Module):
             tzr_planet_positions=planets(tzr_planet_positions),
             basis_seconds=fopt(basis_seconds),
             basis_coord=basis_coord,
+            clock_realization=clock_realization,
         )
