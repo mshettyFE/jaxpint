@@ -268,6 +268,8 @@ def _parse_parkes_line(line: str) -> tuple:
     A nonzero phase offset raises, matching PINT: the column asks for a
     fractional-turn shift of the TOA that neither implementation applies, and
     silently ignoring it would move the TOA by a fraction of a pulse period.
+    The phase field is read across its full width, which PINT does not do; see
+    the comment at that slice.
     """
     if len(line) < 71:
         raise ValueError(f"malformed Parkes TOA line (too short): {line!r}")
@@ -280,7 +282,8 @@ def _parse_parkes_line(line: str) -> tuple:
         )
     mjd_int, mjd_frac = float(int(ii)), float(f"0.{ff}")
 
-    phase_offset = float(line[55:62])
+    # NOTE: Bug in PINT. Doesnt slice up to 63
+    phase_offset = float(line[55:63])
     if phase_offset != 0:
         raise NotImplementedError(
             f"Parkes phase offset {phase_offset} is not applied (column 56-63 "

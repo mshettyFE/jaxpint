@@ -1,5 +1,18 @@
 #!/usr/bin/env python
-"""Dev tool (NOT shipped): generate tempo2 reference residuals via libstempo.
+"""Dev tool (NOT shipped): generate tempo2 reference data via libstempo.
+
+Two goldens are written per par/tim pair, testing different layers:
+
+``<par>.tempo2_golden``
+    Residuals -- the end-to-end check. Exercises the reader, clock corrections,
+    ephemeris, and timing model together. Requires a par file that actually
+    phase-connects its .tim, which is not free (see ``_PARSE_WORKER``).
+
+``<par>.parse_golden``
+    Site arrival times, frequencies and errors straight out of tempo2's parser,
+    before any physics. Tests only whether the two readers agree on what the
+    file says. Works on pairs the residual check cannot use, and localizes a
+    failure to the reader instead of leaving it anywhere in the stack.
 
 Why generate-once rather than compare-live:
 
@@ -122,6 +135,44 @@ with open(sys.argv[3], "w") as fh:
         fh.write("%.15f %.17e\n" % (mjd, res))
 """
 
+# Runs libstempo out-of-process, writing what tempo2's *parser* produced.
+#
+# This is deliberately upstream of all physics. ``psr.stoas`` is ``obsn[].sat``,
+# the site arrival time exactly as tempo2 read it from the .tim file -- no clock
+# correction, no barycentring, no delay model. Comparing it to JaxPINT's parsed
+# MJD tests one thing only: did the two readers pull the same numbers out of the
+# same columns?
+#
+# Why that is worth a separate golden: residual comparisons need a par file that
+# phase-connects. 0437 does not -- tempo2's own residuals span 0.997 of a pulse
+# period (rms 1.55e-03 s vs the 0.87 us the par claims in TRES), so cycle
+# assignment near +-P/2 is arbitrary and the element-wise difference saturates at
+# one period. That made the only Parkes-format pair we have unusable as a
+# residual check. It is perfectly usable as a *parser* check, because a parser
+# does not care whether the ephemeris fits.
+#
+# ``stoas`` is a long double. Writing it as a single "%.15f" would round to
+# float64 and throw away ~4e-07 s -- above the microsecond precision this project
+# holds itself to elsewhere. So it is split into integer day + fractional day,
+# the same int/frac representation JaxPINT uses internally; that round-trips
+# exactly. ``format_float_positional`` is used because Python's ``%`` operator
+# demotes a long double to float on the way in.
+_PARSE_WORKER = r"""
+import sys, warnings
+warnings.simplefilter("ignore")
+import libstempo, numpy
+psr = libstempo.tempopulsar(parfile=sys.argv[1], timfile=sys.argv[2], maxobs=60000)
+sat = numpy.asarray(psr.stoas)                       # long double, as parsed
+day = numpy.floor(sat).astype(numpy.int64)
+frac = sat - day
+freq, err = numpy.asarray(psr.freqs), numpy.asarray(psr.toaerrs)
+with open(sys.argv[3], "w") as fh:
+    fh.write("%d\n" % psr.nobs)
+    for d, f, nu, e in zip(day, frac, freq, err):
+        fh.write("%d %s %.9f %.9f\n" % (
+            d, numpy.format_float_positional(f, precision=18, unique=False), nu, e))
+"""
+
 
 def _clock_fingerprint() -> str:
     """SHA-256 over $TEMPO2/clock -- the data a version string fails to pin."""
@@ -152,11 +203,24 @@ def _versions() -> dict[str, str]:
     return {"tempo2": t2v, "libstempo": ltv}
 
 
-def _generate(par: str, tim: str) -> str | None:
-    """Run libstempo on one pair; return the golden file text, or None on failure."""
+def _generate(
+    par: str,
+    tim: str,
+    *,
+    source: str = _WORKER,
+    ncols: int = 2,
+    title: str = "tempo2 reference residuals",
+    columns: str = "MJD residual_seconds",
+) -> str | None:
+    """Run libstempo on one pair; return the golden file text, or None on failure.
+
+    ``source``/``ncols``/``title``/``columns`` select which worker to run and how
+    to validate and label its output -- residuals (``_WORKER``, 2 columns) or
+    parsed TOA fields (``_PARSE_WORKER``, 4 columns).
+    """
     worker = _OUT_DIR / "_worker.py"
     payload = _OUT_DIR / "_payload.txt"
-    worker.write_text(_WORKER)
+    worker.write_text(source)
     try:
         proc = subprocess.run(
             [
@@ -192,7 +256,7 @@ def _generate(par: str, tim: str) -> str | None:
     if len(rows) != nobs:
         print(f"  {par}: got {len(rows)} rows, expected nobs={nobs}", file=sys.stderr)
         return None
-    bad = [r for r in rows if len(r.split()) != 2]
+    bad = [r for r in rows if len(r.split()) != ncols]
     if bad:
         print(
             f"  {par}: {len(bad)} malformed rows, e.g. {bad[0][:60]!r}", file=sys.stderr
@@ -209,9 +273,9 @@ def _generate(par: str, tim: str) -> str | None:
     }
     header = "\n".join(f"# {k}: {v}" for k, v in meta.items())
     return (
-        "# tempo2 reference residuals, generated -- DO NOT EDIT.\n"
+        f"# {title}, generated -- DO NOT EDIT.\n"
         f"{header}\n"
-        "# Columns: MJD residual_seconds\n" + "\n".join(rows) + "\n"
+        f"# Columns: {columns}\n" + "\n".join(rows) + "\n"
     )
 
 
@@ -223,28 +287,60 @@ def main(argv=None) -> int:
 
     if args.list:
         for par, tim in PAIRS:
-            exists = (_OUT_DIR / f"{par}.tempo2_golden").exists()
-            print(f"  [{'x' if exists else ' '}] {par}  +  {tim}")
+            res = (_OUT_DIR / f"{par}.tempo2_golden").exists()
+            prs = (_OUT_DIR / f"{par}.parse_golden").exists()
+            flags = f"{'r' if res else '-'}{'p' if prs else '-'}"
+            print(f"  [{flags}] {par}  +  {tim}")
+        print("\n  r = residual golden, p = parse golden")
         return 0
 
     if not os.environ.get("TEMPO2"):
         print("TEMPO2 is unset; tempo2 runtime data is required.", file=sys.stderr)
         return 2
 
+    # Two goldens per pair, from two independent tempo2 runs:
+    #   .tempo2_golden -- residuals, the end-to-end check (needs a par that fits)
+    #   .parse_golden  -- parsed TOA fields, the reader check (does not)
+    # (suffix, worker source, column count, title, column legend)
+    kinds: tuple[tuple[str, str, int, str, str], ...] = (
+        (
+            "tempo2_golden",
+            _WORKER,
+            2,
+            "tempo2 reference residuals",
+            "MJD residual_seconds",
+        ),
+        (
+            "parse_golden",
+            _PARSE_WORKER,
+            4,
+            "tempo2 parsed TOA fields (site arrival times)",
+            "mjd_int mjd_frac freq_mhz err_us",
+        ),
+    )
+
     _OUT_DIR.mkdir(parents=True, exist_ok=True)
     written = skipped = failed = 0
     for par, tim in PAIRS:
-        out = _OUT_DIR / f"{par}.tempo2_golden"
-        if out.exists() and not args.force:
-            skipped += 1
-            continue
-        text = _generate(par, tim)
-        if text is None:
-            failed += 1
-            continue
-        out.write_text(text)
-        written += 1
-        print(f"  wrote {out.name}")
+        for suffix, source, ncols, title, columns in kinds:
+            out = _OUT_DIR / f"{par}.{suffix}"
+            if out.exists() and not args.force:
+                skipped += 1
+                continue
+            text = _generate(
+                par,
+                tim,
+                source=source,
+                ncols=ncols,
+                title=title,
+                columns=columns,
+            )
+            if text is None:
+                failed += 1
+                continue
+            out.write_text(text)
+            written += 1
+            print(f"  wrote {out.name}")
 
     print(f"\nwritten={written} skipped={skipped} failed={failed}")
     (_OUT_DIR / "PROVENANCE.json").write_text(
