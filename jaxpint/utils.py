@@ -5,7 +5,8 @@ All functions are JIT-compatible and operate on raw float64 arrays (no units).
 
 from __future__ import annotations
 
-from typing import Callable, Optional, TYPE_CHECKING
+from collections.abc import Callable
+from typing import Optional, TYPE_CHECKING
 
 import equinox as eqx
 import numpy as np

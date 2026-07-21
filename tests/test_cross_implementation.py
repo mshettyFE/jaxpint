@@ -229,6 +229,9 @@ _GENERATED_TOL = {
     "J1853+1303_NANOGrav_11yv0.gls.par": 5e-8,
     "J1909-3744.NB.par": 1e-7,
     "ecorr_fit_test.par": 7e-6,
+    # Princeton-format .tim, readable since the Princeton parser landed. This
+    # is PINT's flagship tutorial dataset, previously unreadable by JaxPINT.
+    "NGC6440E.par": 5e-7,  # measured 1.43e-07
     "J0023+0923_NANOGrav_11yv0.gls.par": 5e-8,
     #   NGC6440E_PHASETEST -- excluded from this generic test and asserted
     #     precisely in test_phasetest_disagreement_is_exactly_the_phase_command.
@@ -238,13 +241,27 @@ _GENERATED_TOL = {
 # Handled by its own test; see below.
 _PHASETEST = "NGC6440E_PHASETEST.par"
 
+# Goldens whose .tim parses fine but whose .par cannot yet build a model, so
+# there is nothing to compare. Excluded explicitly rather than by a silent
+# "skip if no tolerance entry", which would also hide a genuinely forgotten one.
+#
+#   piecewise / slug -- IFUNC/piecewise-spindown pars raise in MJD handling
+#   testtimes        -- references components not present in the ParameterVector
+#
+# The Princeton *reader* is covered regardless: tests/test_native_tim.py checks
+# all four against PINT's read_toa_file. These are model-build gaps, not parser
+# gaps, and the goldens are kept so they become live the moment those land.
+_NO_MODEL_BUILD = {"piecewise.par", "slug.par", "testtimes.par"}
+
 
 def _generated_goldens():
     if not _GOLDEN_DIR.is_dir():
         return []
     return [
-        g for g in sorted(_GOLDEN_DIR.glob("*.tempo2_golden"))
+        g
+        for g in sorted(_GOLDEN_DIR.glob("*.tempo2_golden"))
         if not g.name.startswith(_PHASETEST)
+        and not any(g.name.startswith(n) for n in _NO_MODEL_BUILD)
     ]
 
 

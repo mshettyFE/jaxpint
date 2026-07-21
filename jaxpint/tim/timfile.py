@@ -7,9 +7,10 @@ EMIN/EMAX/FMIN/FMAX filtering, and the command flags (``TIME``/``PHASE``/
 ephemeris math -- exactly the surface of PINT's :func:`pint.toa.read_toa_file`
 (``toa.py:701``), which it is bit-for-bit diffable against.
 
-Only the **Tempo2** line format (``name freq MJD err obs -flag val ...``) is
-supported; the fixed-column legacy formats (Princeton/Parkes/ITOA) raise
-``NotImplementedError`` rather than be silently mis-parsed.
+The **Tempo2** line format (``name freq MJD err obs -flag val ...``) and the
+fixed-column **Princeton** format are supported. The remaining fixed-column
+formats (Parkes/ITOA) raise ``NotImplementedError`` rather than be silently
+mis-parsed.
 """
 
 from __future__ import annotations
@@ -194,12 +195,64 @@ def _parse_tempo2_line(line: str) -> tuple:
     return mjd_int, mjd_frac, freq_mhz, error_us, obs, line_flags
 
 
+def _parse_princeton_line(line: str) -> tuple:
+    """Parse one Princeton (TEMPO fixed-column) TOA line.
+
+    Mirrors PINT's ``toa.py:481-503``. Columns (1-indexed, per the TEMPO and
+    tempo2 manuals, which agree byte-for-byte)::
+
+        1      observatory code, one character ('@' = barycentre)
+        2      must be blank
+        16-24  observing frequency (MHz)
+        25-44  TOA (decimal point in column 30 or 31)
+        45-53  TOA uncertainty (microseconds)
+        69-78  DM correction (pc cm^-3), optional
+
+    Fixed-column, so fields are sliced rather than split -- a Princeton line's
+    name/label field may contain spaces, and the DM column is often absent
+    entirely.
+
+    The MJD is split on the literal ``.`` exactly as the Tempo2 parser does, so
+    the int/frac decomposition that carries this codebase's sub-ns precision is
+    identical across formats.
+    """
+    if len(line) < 53:
+        raise ValueError(f"malformed Princeton TOA line (too short): {line!r}")
+    obs = line[0]
+    freq_mhz = float(line[15:24])
+    error_us = float(line[44:53])
+
+    mjd_field = line[24:44]
+    if "." not in mjd_field:
+        raise ValueError(f"Princeton TOA has no decimal point: {mjd_field!r}")
+    ii, ff = mjd_field.split(".")
+    mjd_int = int(ii)
+    # Very old TOAs were recorded on a different day count; TEMPO applies this
+    # offset and PINT mirrors it (toa.py:497). It silently rewrites dates, so it
+    # only fires well below any plausible modern MJD.
+    # https://tempo.sourceforge.net/ref_man_sections/toa.txt
+    if mjd_int < 40000:
+        mjd_int += 39126
+
+    # Optional DM correction. PINT stores it as a flag and defaults to 0.0 when
+    # the column is absent or unparseable; do the same rather than failing, since
+    # most real Princeton files stop at column 53.
+    line_flags: dict[str, str] = {}
+    try:
+        line_flags["ddm"] = str(float(line[68:78]))
+    except (ValueError, IndexError):
+        line_flags["ddm"] = str(0.0)
+
+    return float(mjd_int), float(f"0.{ff}"), freq_mhz, error_us, obs, line_flags
+
+
 # Per-format TOA line parsers.  Each returns the shared 6-tuple
 # ``(mjd_int, mjd_frac, freq_mhz, error_us, obs, line_flags)``.  A classified
 # format absent from this table is unsupported (-> NotImplementedError); add an
 # entry (plus its parser and a LineFormat member) to support a new format.
 _PARSERS: dict[LineFormat, Callable[[str], tuple]] = {
     LineFormat.TEMPO2: _parse_tempo2_line,
+    LineFormat.PRINCETON: _parse_princeton_line,
 }
 
 
