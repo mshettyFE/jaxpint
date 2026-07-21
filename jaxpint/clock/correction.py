@@ -111,6 +111,13 @@ def resolve_clock_config(
     caller left as ``None``, so ``get_TOAs(..., bipm_version="BIPM2019")`` still
     overrides the file.
 
+    One **deliberate divergence from PINT**: naming a ``bipm_version`` while
+    leaving ``include_bipm`` unset implies you want that realization *applied*,
+    so it forces ``include_bipm=True`` even against a ``CLK TT(TAI)`` par.
+    PINT's ordering would derive ``include_bipm=False`` from the file and
+    silently ignore the version you asked for.  Pass ``include_bipm=False``
+    explicitly if you really want the term off.
+
     Why this matters: the BIPM realization is not cosmetic.  ``TT(BIPM2015)``
     against ``BIPM2023`` differs by up to ~39 ns (concentrated after the earlier
     file's publication date, i.e. in recent data), and honouring ``TT(TAI)``
@@ -138,9 +145,27 @@ def resolve_clock_config(
                 stacklevel=3,
             )
 
-    include = derived_include if include_bipm is None else include_bipm
+    if include_bipm is not None:
+        include = include_bipm
+    elif bipm_version is not None:
+        include = True  # naming a realization means "apply it"
+    else:
+        include = derived_include
     version = derived_version if bipm_version is None else bipm_version
     return include, version
+
+
+def clock_realization_label(include_bipm: bool, bipm_version: str | None) -> str:
+    """Canonical ``CLK``-style label for the corrections actually applied.
+
+    Resolves ``bipm_version=None`` to the packaged default, so the label names
+    the realization used rather than repeating the request.  Stamped onto
+    ``TOAData.clock_realization`` -- clock corrections are irreversible once
+    applied, so this is the only surviving record of which one was used.
+    """
+    if not include_bipm:
+        return "TT(TAI)"
+    return f"TT({bipm_version or read_metadata()['default_bipm']})"
 
 
 def correct(
