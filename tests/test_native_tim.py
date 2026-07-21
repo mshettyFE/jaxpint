@@ -10,6 +10,7 @@ Two suites:
 from __future__ import annotations
 
 import math
+import pathlib
 
 import pytest
 
@@ -283,9 +284,19 @@ def test_include_splices(tmp_path):
     assert mjds == [55000.0, 55005.0, 55001.0]
 
 
-def test_princeton_raises(tmp_path):
-    p = _write(tmp_path, "1  1949.609 53478.2858714192189 21.71\n")
-    with pytest.raises(NotImplementedError, match="Princeton"):
+def test_parkes_and_itoa_still_raise(tmp_path):
+    """Princeton is now supported; Parkes and ITOA are still not.
+
+    Was ``test_princeton_raises``. Kept (renamed) so the remaining unsupported
+    fixed-column formats stay pinned rather than silently mis-parsing the day
+    someone adds a parser without a dispatch entry.
+    """
+    parkes = (
+        " PUPPI_J2044+28_58852_652 432.3420  58852.7590686063892"
+        "    0.00  120.75        @"
+    )
+    p = _write(tmp_path, parkes + "\n")
+    with pytest.raises(NotImplementedError, match="Parkes"):
         read_tim(p)
 
 
@@ -376,3 +387,104 @@ def test_unrecognized_mode_warns_but_parses(tmp_path, caplog):
         parsed = read_tim(p)
     assert len(parsed.toas) == 1
     assert "Unrecognized MODE" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Princeton (TEMPO fixed-column) format
+#
+# Added with tempo2 goldens generated FIRST (tools/gen_tempo2_goldens.py), so
+# the reader has an independent reference rather than being checked only
+# against PINT -- the gap that let the missing FB2+ support survive.
+#
+# Columns (1-indexed; the TEMPO and tempo2 manuals agree byte-for-byte):
+#   1 obs code | 16-24 freq MHz | 25-44 TOA | 45-53 err us | 69-78 DM (optional)
+# ---------------------------------------------------------------------------
+
+# Real first line of NGC6440E.tim -- PINT's flagship tutorial dataset, which
+# JaxPINT could not read at all before this parser existed.
+_PRINCETON_LINE = (
+    "1               1949.609 53478.2858714192189    21.71         "
+)
+
+
+def test_parse_princeton_line_fields():
+    from jaxpint.tim.timfile import _parse_princeton_line
+
+    mjd_int, mjd_frac, freq, err, obs, flags = _parse_princeton_line(_PRINCETON_LINE)
+    assert (mjd_int, mjd_frac) == (53478.0, 0.2858714192189)
+    assert freq == 1949.609
+    assert err == 21.71                 # microseconds, as written
+    assert obs == "1"                   # single-char code; resolved downstream
+    assert flags["ddm"] == "0.0"        # DM column absent -> 0.0, as PINT does
+
+
+def test_princeton_legacy_epoch_offset():
+    """Integer MJD < 40000 gets +39126 (TEMPO's old day count; PINT mirrors it).
+
+    It silently rewrites dates, so the guard matters: a 1970s-era TOA must shift
+    while a modern one must not.
+    """
+    from jaxpint.tim.timfile import _parse_princeton_line
+
+    old = "1               1949.609   382.2858714192189    21.71"
+    mjd_int, _, _, _, _, _ = _parse_princeton_line(old)
+    assert mjd_int == 382 + 39126
+    # ...and a modern MJD is untouched
+    mjd_int, _, _, _, _, _ = _parse_princeton_line(_PRINCETON_LINE)
+    assert mjd_int == 53478.0
+
+
+def test_princeton_dm_column_is_read_when_present():
+    from jaxpint.tim.timfile import _parse_princeton_line
+
+    with_dm = _PRINCETON_LINE.ljust(68) + "  1.25e-03"  # cols 69-78, 10 wide
+    *_, flags = _parse_princeton_line(with_dm)
+    assert float(flags["ddm"]) == pytest.approx(1.25e-3)
+
+
+def test_princeton_short_line_rejected():
+    from jaxpint.tim.timfile import _parse_princeton_line
+
+    with pytest.raises(ValueError, match="too short"):
+        _parse_princeton_line("1  1949.609 53478.28")
+
+
+def test_read_tim_princeton_file(tmp_path):
+    """End-to-end through read_tim, including the classifier dispatch."""
+    p = _write(tmp_path, _PRINCETON_LINE + "\n" + _PRINCETON_LINE + "\n")
+    parsed = read_tim(p)
+    assert len(parsed.toas) == 2
+    t = parsed.toas[0]
+    assert t.obs == "1"
+    assert t.freq_mhz == 1949.609
+    assert t.error_s == pytest.approx(21.71e-6)   # us -> s
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("stem", ["NGC6440E", "piecewise", "slug", "testtimes"])
+def test_princeton_parity_vs_pint_read_toa_file(stem):
+    """Every Princeton file in the corpus parses identically to PINT.
+
+    Uses ``read_toa_file`` (the raw reader), not ``get_TOAs``: the latter
+    applies clock corrections -- ~28 us at GBT -- so comparing against it made
+    the site-'1' files look 2.8e-05 s wrong while the barycentre-'@' files
+    matched exactly. That asymmetry was the tell.
+    """
+    pytest.importorskip("pint")
+    import astropy.units as u
+    from pint.observatory import get_observatory
+    from pint.toa import read_toa_file
+
+    data = pathlib.Path(__file__).resolve().parent / "data" / "pint_inputs"
+    path = str(data / f"{stem}.tim")
+    pint_toas, _ = read_toa_file(path)
+    parsed = read_tim(path)
+    assert len(parsed.toas) == len(pint_toas)
+
+    for raw, pt in zip(parsed.toas, pint_toas):
+        pint_mjd = (pt.mjd.jd1 - 2400000.5) + pt.mjd.jd2
+        assert abs((raw.mjd_int + raw.mjd_frac) - pint_mjd) < 1e-8, stem
+        assert raw.error_s == pytest.approx(pt.error.to_value(u.s), rel=1e-12)
+        # JaxPINT keeps the raw single-char code; canonical resolution is a
+        # downstream concern (same convention as the Tempo2 parser).
+        assert get_observatory(raw.obs.upper()).name == pt.obs

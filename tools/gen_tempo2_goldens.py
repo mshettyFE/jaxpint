@@ -71,6 +71,15 @@ PAIRS: list[tuple[str, str]] = [
     ("J1909-3744.NB.par", "J1909-3744.NB.tim"),
     ("NGC6440E_PHASETEST.par", "NGC6440E_PHASETEST.tim"),
     ("ecorr_fit_test.par", "ecorr_fit_test.tim"),
+    # --- Princeton (fixed-column) .tim files -------------------------------
+    # tempo2 reads the Princeton format natively, so it can supply independent
+    # references for a reader JaxPINT does not have yet. Generating these FIRST
+    # means the parser lands with a cross-check instead of being validated only
+    # against PINT -- which is how the FB2+ gap survived.
+    ("NGC6440E.par", "NGC6440E.tim"),
+    ("piecewise.par", "piecewise.tim"),
+    ("slug.par", "slug.tim"),
+    ("testtimes.par", "testtimes.tim"),
 ]
 
 # Runs libstempo out-of-process, writing "MJD residual" per TOA to argv[3].
