@@ -106,10 +106,16 @@ def test_resolve_clock_config_explicit_args_win():
     """An explicit kwarg must still override the file (loader API contract)."""
     from jaxpint.clock.correction import resolve_clock_config
 
+    # Naming a version implies applying it, even against a TT(TAI) par --
+    # otherwise the version is silently accepted and then ignored.
     assert resolve_clock_config("TT(TAI)", bipm_version="BIPM2019") == (
-        False,
+        True,
         "BIPM2019",
     )
+    # ... but an explicit include_bipm=False still wins over that inference.
+    assert resolve_clock_config(
+        "TT(BIPM2019)", include_bipm=False, bipm_version="BIPM2019"
+    ) == (False, "BIPM2019")
     assert resolve_clock_config("TT(BIPM2015)", include_bipm=False) == (
         False,
         "BIPM2015",
