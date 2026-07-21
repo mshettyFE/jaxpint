@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import warnings
 from pathlib import Path
 from typing import Callable, Collection, Iterator, NamedTuple, Sequence, TypeVar
 
@@ -168,23 +169,67 @@ def _resolve_pairs(
     return [(n, *pairs[n]) for n in names]
 
 
+class MixedClockRealization(UserWarning):
+    """Pulsars in one PTA were built against different clock realizations."""
+
+
+def _check_uniform_clock(records: Sequence[PulsarRecord]) -> None:
+    """Warn if the array's pulsars disagree on the clock realization.
+
+    Clock errors are common-mode across pulsars, so they project onto the
+    monopole and leak into correlated-signal searches.  An array whose pulsars
+    sit on different realizations carries a spurious inter-pulsar offset that
+    looks exactly like the signal a GWB search measures -- ~27 us between
+    TT(TAI) and TT(BIPM), tens of ns between BIPM realizations.
+
+    This warns rather than raises: a mixed array is a red flag, not
+    categorically invalid, and forcing uniformity is one kwarg away.
+    """
+    seen: dict[str, list[str]] = {}
+    for r in records:
+        key = r.toa_data.clock_realization
+        if key is not None:
+            seen.setdefault(key, []).append(r.name)
+    if len(seen) > 1:
+        detail = "; ".join(
+            f"{clk}: {len(names)} pulsar(s) e.g. {', '.join(sorted(names)[:3])}"
+            for clk, names in sorted(seen.items())
+        )
+        warnings.warn(
+            "PTA pulsars were built against different clock realizations "
+            f"({detail}). Clock errors are common-mode and leak into "
+            "correlated-signal searches. Pass an explicit bipm_version=... "
+            "to force one realization across the array.",
+            MixedClockRealization,
+            stacklevel=3,
+        )
+
+
 def _load_one(
     name: str,
     par_path: Path,
     tim_path: Path,
     *,
-    ephem: str,
-    bipm_version: str,
+    ephem: str | None,
+    bipm_version: str | None,
     planets: bool,
 ) -> PulsarRecord:
-    """Parse + build one pulsar (the shared back half of both loaders)."""
+    """Parse + build one pulsar (the shared back half of both loaders).
+
+    ``ephem``/``bipm_version`` of ``None`` mean "derive from the par file";
+    passing a value forces it, overriding every par.  Previously the clock was
+    forced unconditionally (``include_bipm=True``, ``bipm_version="BIPM2019"``),
+    which silently overrode any pulsar whose ``CLK`` disagreed -- including the
+    68 ``TT(TAI)`` pars in NANOGrav 15yr's ``narrowband/alternate/tempo2/``,
+    where applying BIPM anyway is a ~27 us error.
+    """
     log.info("Loading %s from %s", name, par_path)
     par_result = parse_par(str(par_path))
     toa_data = native_toas_to_jax(
         str(tim_path),
         par_result,
         ephem=ephem,
-        include_bipm=True,
+        include_bipm=None,
         bipm_version=bipm_version,
         planets=planets,
     )
@@ -203,8 +248,8 @@ def load_nanograv_pta(
     *,
     pulsar_names: Sequence[str] | None = None,
     exclude: Collection[str] = (),
-    ephem: str = "DE440",
-    bipm_version: str = "BIPM2019",
+    ephem: str | None = None,
+    bipm_version: str | None = None,
     planets: bool = True,
 ) -> NanogravPTA:
     """Load a NANOGrav narrowband PTA dataset into JaxPINT.
@@ -223,11 +268,16 @@ def load_nanograv_pta(
         Pulsar names to drop after discovery / selection.
     ephem
         Solar System ephemeris passed to the native TOA loader
-        (:func:`jaxpint.native.get_TOAs`). Defaults to ``DE440`` to match the
-        15yr release's reference analysis.
+        (:func:`jaxpint.native.get_TOAs`). ``None`` (the default) takes it from
+        each par's ``EPHEM``; pass a value to force one ephemeris across the
+        array. The 15yr release's pars all specify ``DE440``, so the default
+        reproduces the reference analysis without overriding the files.
     bipm_version
-        BIPM clock realisation. The loader applies BIPM (``include_bipm=True``)
-        with this version.
+        BIPM clock realisation. ``None`` (the default) derives it from each
+        par's ``CLK`` line -- including ``TT(TAI)``/``UNCORR``, which disable
+        the BIPM term entirely. Pass a value to force one realization across the
+        array. A mixed array warns (:class:`MixedClockRealization`), since clock
+        errors are common-mode and leak into correlated-signal searches.
     planets
         Whether to compute SSB-to-planet position vectors. These are consumed by
         the ``PLANET_SHAPIRO`` delay component (Shapiro delay through the gas
@@ -252,6 +302,7 @@ def load_nanograv_pta(
         )
         for name, parp, timp in _resolve_pairs(data_dir, pulsar_names, exclude)
     ]
+    _check_uniform_clock(records)
     return NanogravPTA(
         pulsar_names=tuple(r.name for r in records),
         toa_data_list=tuple(r.toa_data for r in records),
@@ -266,8 +317,8 @@ def iter_nanograv_pta(
     *,
     pulsar_names: Sequence[str] | None = None,
     exclude: Collection[str] = (),
-    ephem: str = "DE440",
-    bipm_version: str = "BIPM2019",
+    ephem: str | None = None,
+    bipm_version: str | None = None,
     planets: bool = True,
 ) -> Iterator[PulsarRecord]:
     """Stream a NANOGrav PTA dataset one pulsar at a time, loading lazily.
@@ -314,8 +365,8 @@ def map_pulsars(
     clear_caches: bool = True,
     pulsar_names: Sequence[str] | None = None,
     exclude: Collection[str] = (),
-    ephem: str = "DE440",
-    bipm_version: str = "BIPM2019",
+    ephem: str | None = None,
+    bipm_version: str | None = None,
     planets: bool = True,
 ) -> Iterator[T]:
     """Apply ``fn`` to each pulsar with build → use → purge memory hygiene.

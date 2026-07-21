@@ -17,7 +17,7 @@ from typing import Optional
 
 import numpy as np
 
-from ..clock.correction import correct, resolve_clock_config
+from ..clock.correction import correct, clock_realization_label, resolve_clock_config
 from ..clock.observatory import resolve_observatory
 from ..clock.posvels import compute_posvels
 from ..clock.timescale import to_tdb
@@ -237,6 +237,7 @@ def native_toas_to_jax(
         flag_masks=flag_masks,
         tzr=tzr,
         tropo=tropo,
+        clock_realization=clock_realization_label(include_bipm, bipm_version),
     )
 
     if par_result is not None:
@@ -277,7 +278,16 @@ def _build_flag_masks(core, par_result: Optional[ParResult]) -> dict:
     }
 
 
-def _assemble(core, freq, *, planet_positions, flag_masks=None, tzr=None, tropo=None):
+def _assemble(
+    core,
+    freq,
+    *,
+    planet_positions,
+    flag_masks=None,
+    tzr=None,
+    tropo=None,
+    clock_realization=None,
+):
     """Map the native ``_Core`` (+ optional tzr/tropo dicts) onto TOAData.
 
     Field-name mapping only; all dtype coercion lives in
@@ -312,6 +322,7 @@ def _assemble(core, freq, *, planet_positions, flag_masks=None, tzr=None, tropo=
         tzr_ssb_obs_pos=None if tzr is None else tzr["tzr_ssb_obs_pos"],
         tzr_obs_sun_pos=None if tzr is None else tzr["tzr_obs_sun_pos"],
         tzr_planet_positions=None if tzr is None else tzr["tzr_planet_positions"],
+        clock_realization=clock_realization,
     )
 
 
