@@ -1072,7 +1072,7 @@ def pta_clogL_data(
     a sparsity prior, or a whitened ``N(0, \Phi_\mathrm{joint})``) rather than
     the Gaussian prior baked into :func:`pta_clogL`.  For the standard
     conjugate case use :func:`pta_clogL` (or, better, the exact-Gibbs
-    :func:`~jaxpint.bayes.samplers.run_clogL_gibbs`).
+    ``jaxpint.bayes.samplers.run_clogL_gibbs``).
 
     Parameters
     ----------

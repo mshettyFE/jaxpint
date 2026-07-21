@@ -71,7 +71,9 @@ def topocentric_core(
     *,
     ephem: str = "DE440",
     include_bipm: bool = True,
-    bipm_version: str = "BIPM2023",
+    # None -> the packaged default, resolved inside clock.correct(). Callers
+    # normally pass the value derived from the par's CLK line.
+    bipm_version: Optional[str] = None,
     planets: bool = False,
     limits: str = "warn",
 ) -> _Core:
@@ -332,7 +334,7 @@ def _extract_tzr_fields(
     *,
     ephem: str,
     include_bipm: bool,
-    bipm_version: str,
+    bipm_version: Optional[str],
     planets: bool,
 ) -> Optional[dict]:
     """Synthesize the TZR (time-zero reference) TOA and return its ``tzr_*`` data.

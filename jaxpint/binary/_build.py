@@ -65,8 +65,24 @@ def _dd_common_kwargs(par: ParResult) -> dict:
     )
 
 
+def _fb_higher_names(par: ParResult) -> tuple[str, ...]:
+    """FB2, FB3, ... present in the par, in ascending order.
+
+    FB0/FB1 are already folded into PB/PBDOT by jaxpint.par.aliases; anything
+    above that has no PB-space equivalent and is passed to the orbital-phase
+    series directly. Stops at the first gap, matching PINT's requirement that
+    FB indices run 0..k without holes (OrbitFBX.__init__).
+    """
+    names, k = [], 2
+    while f"FB{k}" in par.params.names:
+        names.append(f"FB{k}")
+        k += 1
+    return tuple(names)
+
+
 def _ell1_common_kwargs(par: ParResult) -> dict:
     return dict(
+        fb_higher_names=_fb_higher_names(par),
         pb_name="PB",
         tasc_name="TASC",
         a1_name="A1",

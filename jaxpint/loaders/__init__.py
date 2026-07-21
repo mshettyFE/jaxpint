@@ -1,6 +1,7 @@
 """Dataset loaders."""
 
 from jaxpint.loaders.nanograv import (
+    MixedClockRealization,
     NanogravPTA,
     PulsarRecord,
     iter_nanograv_pta,
@@ -10,6 +11,9 @@ from jaxpint.loaders.nanograv import (
 from jaxpint.loaders.native import native_toas_to_jax
 
 __all__ = [
+    # Public so callers can filter or escalate it:
+    #   warnings.filterwarnings("error", category=MixedClockRealization)
+    "MixedClockRealization",
     "NanogravPTA",
     "PulsarRecord",
     "iter_nanograv_pta",

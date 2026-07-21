@@ -43,6 +43,23 @@ skymap = ["healpy>=1.16.0", "matplotlib>=3.7"]
 # numpyro.distributions + NUTS, with arviz for posterior diagnostics. Opt-in —
 # the core likelihood / analytic-marginalization path does not need it.
 sampling = ["numpyro>=0.15", "arviz>=0.18"]
+# Reference implementations for cross-checking JaxPINT against something other
+# than PINT -- agreeing with PINT is necessary but not sufficient, since PINT is
+# sometimes the outlier. Opt-in, and deliberately kept out of `dev`:
+#
+# * libstempo ships **no PyPI wheels** (sdist only) and compiles against the
+#   tempo2 C library, so installing it needs tempo2 built, $TEMPO2 set and
+#   $LD_LIBRARY_PATH covering libtempo2/libsofa. In `dev` that made setup fail
+#   outright for anyone without tempo2 -- including for the tests it was added
+#   to support, which do not import it.
+# * enterprise: nothing in the repo imports it today (the
+#   tests/enterprise_checks/ sources are absent; only stale __pycache__
+#   remains). It ships the IPTA Mock Data Challenge and NANOGrav 9yr fixtures.
+#
+# Neither is needed to RUN the cross-checks: those read committed goldens from
+# tests/data. libstempo is needed only to REGENERATE them via
+# tools/gen_tempo2_goldens.py.
+reference = ["libstempo>=2.4.5", "enterprise-pulsar>=3.4"]
 docs = [
     "sphinx>=9.1.0",
     "sphinx-copybutton>=0.5.2",
@@ -53,6 +70,10 @@ dev = [
     "jaxpint[skymap]",
     "jaxpint[pint]",
     "jaxpint[sampling]",
+    # NB: the reference implementations (libstempo, enterprise) are deliberately
+    # NOT here -- see the `reference` extra. libstempo has no PyPI wheels and
+    # compiles against tempo2, so listing it in `dev` made the whole dev install
+    # fail on any machine without tempo2.
     "pytest>=7.0",
     "pytest-xdist>=3.8.0",
     "pytest-cov>=5.0",
