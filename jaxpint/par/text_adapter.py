@@ -301,16 +301,58 @@ def _emit(
             )
 
 
+# Parameters we drop on purpose, so the warning below stays signal.
+#
+#   * DMXEP_/DMXF1_/DMXF2_ -- per-DMX-bin epoch and frequency range. Descriptive
+#     only; PINT ignores the same three prefixes by name
+#     (models/timing_model.py:114 `ignore_prefix`). The DMX *values* (DMX_0001)
+#     and MJD ranges (DMXR1_/DMXR2_) are supported.
+#   * runtime/IO configuration, not model parameters.
+_IGNORED_PREFIXES = ("DMXEP_", "DMXF1_", "DMXF2_")
+_IGNORED_NAMES = frozenset(
+    {"NITS", "NPRNT", "IBOOT", "EPHVER", "MODE", "WEIGHT", "TRACK", "DMDATA"}
+)
+
+
+def _warn_unrecognized(name: str, seen: set[str]) -> None:
+    """Warn once per family that a ``.par`` parameter was dropped.
+
+    Dropping was previously logged at DEBUG, i.e. invisible by default. That is
+    the same silent-degradation shape as the TCB/CLK/FB2 bugs: a par carrying
+    e.g. ``TNREDFLOG`` loads clean while its GP basis quietly loses the
+    log-spaced low-frequency modes. A typo is the everyday case -- real pars in
+    this corpus contain ``DIALATEFREQ``, which was swallowed without a word.
+
+    Deduplicated by family (``DMX_0042`` -> ``DMX_``) so an indexed block warns
+    once rather than a hundred times.
+    """
+    upper = name.upper()
+    if upper in _IGNORED_NAMES or upper.startswith(_IGNORED_PREFIXES):
+        log.debug("Ignoring %r (known non-model parameter).", name)
+        return
+    family = re.sub(r"_?\d+$", "", upper) or upper
+    if family in seen:
+        return
+    seen.add(family)
+    log.warning(
+        "Unrecognized .par parameter %r -- dropped. If it affects the timing or "
+        "noise model, the resulting model is silently incomplete.",
+        name,
+    )
+
+
 def to_raw_params(parlines: list[ParLine]) -> ParsedPar:
     """Convert tokenized ``.par`` lines into the adapter-neutral parse result."""
     out = ParsedPar()
     counters: dict[str, int] = {}
     sini_derived_from_kin = False
 
+    warned_families: set[str] = set()
+
     for pl in parlines:
         resolved = _resolve(pl.name, counters)
         if resolved is None:
-            log.debug("Skipping unrecognized .par parameter %r", pl.name)
+            _warn_unrecognized(pl.name, warned_families)
             continue
         canonical, template, spec = resolved
         assert spec is not None  # a resolved param always carries a spec dict

@@ -598,3 +598,96 @@ def test_tcb_tables_are_up_to_date():
         text=True,
     )
     assert r.returncode == 0, r.stderr or r.stdout
+
+
+# ---------------------------------------------------------------------------
+# Declared-but-unconsumed invariant
+#
+# Every serious bug found while auditing the parser had one shape: a parameter
+# declared in the schema, parsed into the model, and then read by nothing.
+# `UNITS TCB` loaded as TDB; `CLK` was overridden by a hardcoded BIPM2023;
+# `FB2+` was dropped from the orbital phase. Each produced wrong numbers with no
+# error, and each was found by accident rather than by a check.
+#
+# The unrecognized-parameter warning in text_adapter does NOT cover this: these
+# names ARE recognized, so they resolve fine and never reach that path.
+#
+# This test makes the class visible. Adding a ParamDecl that nothing consumes
+# now fails until it is either implemented or explicitly classified below.
+# ---------------------------------------------------------------------------
+
+# Files that *name* parameters without acting on them -- declaration sites,
+# generated lookup tables, ignore-lists. Counting these as "consumed" would make
+# the test vacuous: _tcb_generated.py alone lists ~163 names as dict keys.
+_INERT_MODULES = {
+    "model.py",
+    "_tcb_generated.py",
+    "_tcb_tables.py",
+    "spec.py",
+    "registry_table.py",
+}
+
+# Metadata and fit-result bookkeeping. Ignoring these is correct, not a gap:
+# PINT writes most of them back out after a fit and consumes none of them in
+# the timing model (fitter.py update_model; timing_model.py:2839 groups them).
+_INFORMATIONAL = {
+    "PSR",     # pulsar name
+    "NTOA",    # fit outputs, written back by a fitter
+    "CHI2",
+    "CHI2R",
+    "TRES",
+    "DMRES",
+    "START",   # fit range; PINT force-freezes these and never filters TOAs by them
+    "FINISH",
+    "RM",      # rotation measure: affects polarization, not timing
+}
+
+# Recognized physics we do not implement. Tracked debt, NOT permission -- each
+# is a par file asking for something JaxPINT silently does not do.
+#   TIMEEPH   -- TT->TDB series. Both JaxPINT and PINT always compute FB90, so
+#                the numbers agree; only the notification differs (PINT warns).
+#   T2CMETHOD -- terrestrial->celestial method; PINT coerces to IAU2000B + warns.
+#   DILATEFREQ-- PINT warns it does not support 'DILATEFREQ Y'.
+_UNIMPLEMENTED = {"TIMEEPH", "T2CMETHOD", "DILATEFREQ"}
+
+
+def _declared_and_consumed():
+    import re
+
+    root = _REPO / "jaxpint"
+    declared = re.findall(
+        r'ParamDecl\("([A-Z0-9_]+)"', (root / "model.py").read_text()
+    )
+    body = "".join(
+        p.read_text() for p in root.rglob("*.py") if p.name not in _INERT_MODULES
+    )
+    unconsumed = {
+        d for d in declared if f'"{d}"' not in body and f"'{d}'" not in body
+    }
+    return set(declared), unconsumed
+
+
+def test_no_undeclared_silently_unconsumed_params():
+    """Every TimingModel param is consumed, informational, or tracked debt."""
+    _declared, unconsumed = _declared_and_consumed()
+    unclassified = unconsumed - _INFORMATIONAL - _UNIMPLEMENTED
+    assert not unclassified, (
+        f"parameter(s) parsed but read by nothing: {sorted(unclassified)}. "
+        "A par file setting these gets a silently incomplete model. Either "
+        "consume them, or add them to _INFORMATIONAL / _UNIMPLEMENTED with a "
+        "reason."
+    )
+
+
+def test_classification_lists_are_not_stale():
+    """A param that becomes consumed must leave the exemption lists.
+
+    Without this the lists rot into permanent excuses -- CLOCK sat in this
+    category until the CLK-derivation fix, and should not still be exempt.
+    """
+    declared, unconsumed = _declared_and_consumed()
+    stale = (_INFORMATIONAL | _UNIMPLEMENTED) - unconsumed
+    assert not stale, (
+        f"{sorted(stale)} are now consumed (or no longer declared); remove them "
+        "from _INFORMATIONAL / _UNIMPLEMENTED."
+    )
