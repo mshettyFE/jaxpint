@@ -176,6 +176,8 @@ def validate_units(metadata: dict[str, str]) -> None:
     if key in _SUPPORTED_UNITS:
         return
     if key in _KNOWN_UNSUPPORTED_UNITS:
+        # Reached only if a caller builds a ParResult directly from raw params;
+        # jaxpint.par.get_model converts TCB -> TDB before this runs.
         raise NotImplementedError(
             f"par file declares UNITS {units}, which JaxPINT does not support "
             f"(only {'/'.join(sorted(_SUPPORTED_UNITS))}). "

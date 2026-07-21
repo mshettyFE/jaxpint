@@ -486,3 +486,115 @@ def test_model_extras_belong_to_the_implementing_class():
         declared = {d.name for d in cls.PARAMS}
         stray = MODEL_EXTRA_PARAMS[model] - declared
         assert not stray, f"{model} extras not declared by {cls.__name__}: {stray}"
+
+
+# ---------------------------------------------------------------------------
+# TCB -> TDB conversion
+#
+# Verified bit-exact against PINT's convert_tcb_tdb on F0/F1/F2/DM/PX/PM*/PB/
+# A1/M2/ECC/OM/SINI/PEPOCH/T0. Refuses on TZRMJD (see below) and on any numeric
+# parameter with no known dimensionality.
+# ---------------------------------------------------------------------------
+
+_TCB_BASE = (
+    "PSRJ J1\nRAJ 12:34:56.0\nDECJ 56:12:00.0\n"
+    "F0 100.0\nF1 -1e-15\nPEPOCH 55000\nDM 10.0\n"
+)
+
+
+def _load_par(tmp_path, text, name="t.par"):
+    p = tmp_path / name
+    p.write_text(text)
+    return par.get_model(str(p))
+
+
+def test_tcb_scales_by_effective_dimensionality(tmp_path):
+    from jaxpint.par._tcb_tables import IFTE_K
+
+    r = _load_par(tmp_path, _TCB_BASE + "UNITS TCB\n")
+    i = {n: k for k, n in enumerate(r.params.names)}
+    v = np.asarray(r.params.values)
+    # F0 is s^-1 (n=-1) -> K^1 ; F1 is s^-2 (n=-2) -> K^2 ; DM (n=-1) -> K^1
+    assert np.isclose(v[i["F0"]], 100.0 * float(IFTE_K), rtol=0, atol=1e-12)
+    assert np.isclose(v[i["F1"]], -1e-15 * float(IFTE_K) ** 2, rtol=1e-15)
+    assert np.isclose(v[i["DM"]], 10.0 * float(IFTE_K), rtol=0, atol=1e-12)
+    # ...and the file is TDB afterwards, so nothing downstream re-converts it.
+    assert r.metadata["UNITS"] == "TDB"
+
+
+def test_tcb_transforms_epochs(tmp_path):
+    """~15.9 s at MJD 55000; must survive the int/frac split."""
+    r = _load_par(tmp_path, _TCB_BASE + "UNITS TCB\n")
+    i = {n: k for k, n in enumerate(r.params.names)}
+    mjd = r.params.epoch_int_values["PEPOCH"] + float(np.asarray(r.params.values)[i["PEPOCH"]])
+    assert np.isclose(mjd, 54999.99981617038, atol=1e-9)
+
+
+def test_tdb_par_is_untouched(tmp_path):
+    r = _load_par(tmp_path, _TCB_BASE + "UNITS TDB\n")
+    i = {n: k for k, n in enumerate(r.params.names)}
+    assert float(np.asarray(r.params.values)[i["F0"]]) == 100.0
+
+
+def test_tcb_refuses_tzrmjd(tmp_path):
+    """TZRMJD is the phase anchor and PINT cannot convert it; converting the
+    other epochs while it stays put corrupts absolute phase by ~2760 turns."""
+    with pytest.raises(NotImplementedError, match="TZRMJD"):
+        _load_par(tmp_path, _TCB_BASE + "UNITS TCB\nTZRMJD 55000\nTZRFRQ 1400\n")
+
+
+def test_tcb_refuses_unknown_dimensionality(tmp_path):
+    """Scaling by the wrong power of IFTE_K is worse than refusing."""
+    from jaxpint.par import _tcb_tables as T
+
+    saved = T.SCALE_DIMENSIONALITY.pop("PX", None)
+    try:
+        with pytest.raises(NotImplementedError, match="no TCB scaling is known"):
+            _load_par(tmp_path, _TCB_BASE + "PX 0.5\nUNITS TCB\n")
+    finally:
+        if saved is not None:
+            T.SCALE_DIMENSIONALITY["PX"] = saved
+
+
+def test_tcb_noise_params_pass_through(tmp_path):
+    """EFAC/EQUAD are left alone (PINT does too): dimensionless or ~8 fs."""
+    r = _load_par(
+        tmp_path, _TCB_BASE + "UNITS TCB\nEFAC -f L 1.2\nEQUAD -f L 0.5\n"
+    )
+    i = {n: k for k, n in enumerate(r.params.names)}
+    v = np.asarray(r.params.values)
+    assert float(v[i["EFAC1"]]) == 1.2
+    assert np.isclose(float(v[i["EQUAD1"]]), 0.5e-6, rtol=1e-12)  # us -> s only
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [("F0", -1), ("F1", -2), ("F2", -3), ("DM", -1), ("DM1", -2),
+     ("NE_SW", -2), ("NE_SW1", -3), ("DMX_0042", -1), ("JUMP3", 1),
+     ("PEPOCH", "mjd"), ("GLEP_2", "mjd"), ("TZRMJD", None), ("EQUAD1", None)],
+)
+def test_dimensionality_resolution(name, expected):
+    """Derivative families vary with index; instance families collapse."""
+    from jaxpint.par._tcb_tables import dimensionality_for
+
+    assert dimensionality_for(name) == expected
+
+
+def test_tcb_tables_are_up_to_date():
+    """The committed TCB tables must match a fresh extraction from PINT.
+
+    They encode physics (each parameter's effective dimensionality) that we
+    deliberately do not re-derive by hand, so the only guard against drift --
+    PINT gaining parameters, or JaxPINT declaring new ones -- is re-running the
+    extractor and comparing. See tools/regen_tcb_tables.py.
+    """
+    pytest.importorskip("pint")
+    import subprocess
+    import sys
+
+    r = subprocess.run(
+        [sys.executable, str(_REPO / "tools" / "regen_tcb_tables.py"), "--check"],
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr or r.stdout
