@@ -305,6 +305,7 @@ def to_raw_params(parlines: list[ParLine]) -> ParsedPar:
     """Convert tokenized ``.par`` lines into the adapter-neutral parse result."""
     out = ParsedPar()
     counters: dict[str, int] = {}
+    sini_derived_from_kin = False
 
     for pl in parlines:
         resolved = _resolve(pl.name, counters)
@@ -317,11 +318,32 @@ def to_raw_params(parlines: list[ParLine]) -> ParsedPar:
         if canonical == "BINARY" and pl.tokens:
             out.binary_value = pl.tokens[0]
 
+        # tempo2 idiom: a literal "SINI KIN" line means SINI is *derived* from
+        # the DDK inclination angle rather than fitted, so the value is a
+        # sentinel naming another parameter, not a number.  Real IPTA DR1/DR2
+        # pars ship this (e.g. J1713+0747).  PINT handles it by dropping SINI
+        # when KIN is present -- "If 'KIN' is a model parameter, Tempo2 doesn't
+        # really use SINI" (models/model_builder.py:986).  We do the same, but
+        # verify the pairing after the loop: SINI can precede KIN in the file
+        # (it does in J1713+0747: line 13 vs line 30), so it cannot be checked
+        # here.  Any *other* non-numeric SINI still raises -- a sentinel we do
+        # not recognize is a corrupt file, not a default.
+        if canonical == "SINI" and pl.tokens and pl.tokens[0].strip().upper() == "KIN":
+            sini_derived_from_kin = True
+            continue
+
         rp = _emit(canonical, spec, pl.tokens)
         if rp is None:
             log.debug("Skipping %r: could not parse tokens %r", pl.name, pl.tokens)
             continue
         out.raw_params.append(rp)
         out.templates.add(template)
+
+    if sini_derived_from_kin and not any(rp.name == "KIN" for rp in out.raw_params):
+        raise ValueError(
+            "par file has 'SINI KIN' (SINI derived from the DDK inclination "
+            "angle) but no KIN parameter to derive it from. Either supply KIN "
+            "or give SINI a numeric value."
+        )
 
     return out
