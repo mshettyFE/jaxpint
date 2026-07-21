@@ -501,12 +501,21 @@ def test_princeton_parity_vs_pint_read_toa_file(stem):
 #   1 blank | 2-25 name | 26-34 freq MHz | 35-55 TOA (decimal in col 42)
 #   56-63 phase offset (fraction of P0) | 64-71 err us | 80 obs code
 #
-# Note there is no PINT parse-parity test here, unlike Princeton: PINT cannot
-# read this file at all. It slices cols 2-25 into a "name" flag, and its own
-# FlagDict rejects the whitespace that field contains:
-#   ValueError: value 'c940121_173431.FF   0  0' for key name cannot contain whitespace
-# JaxPINT succeeds because it discards the name field, the same choice already
-# made in the Tempo2 parser. tempo2 is the reference instead.
+# Two Parkes files exist locally, and they need different references:
+#
+#   0437.tim     -- PINT cannot read it at all. It slices cols 2-25 into a
+#                   "name" flag, and its own FlagDict rejects the whitespace
+#                   that field contains:
+#                     ValueError: value 'c940121_173431.FF   0  0' for key name
+#                     cannot contain whitespace
+#                   JaxPINT succeeds because it discards the name field, the
+#                   same choice already made in the Tempo2 parser. tempo2 is the
+#                   reference instead (tests/test_cross_implementation.py).
+#   parkes.toa   -- labels carry no internal whitespace, so PINT reads it and a
+#                   direct parse-parity test is possible, as with Princeton.
+#
+# They are not redundant: 0437 is observatory code "7" with short labels,
+# parkes.toa is "@" (barycentre) with labels filling all of cols 2-25.
 # ---------------------------------------------------------------------------
 
 # Real first line of TEMPO's 0437 test data -- the only genuine 80-column Parkes
@@ -568,3 +577,235 @@ def test_read_tim_parkes_corpus_file():
     assert t.freq_mhz == 1522.369
     assert t.error_s == pytest.approx(0.2e-6)
     assert (t.mjd_int, t.mjd_frac) == (49373.0, 0.2743634850894)
+
+
+def test_read_tim_parkes_barycentre_file():
+    """parkes.toa: 8 TOAs at the barycentre, labels filling cols 2-25.
+
+    Complements 0437.tim, which is observatory "7" with short labels. This one
+    exercises the "@" barycentre code and a name field that runs the full width
+    of its columns -- the case where an off-by-one in the freq slice would show
+    up, since there is no padding between the label and the frequency.
+    """
+    data = pathlib.Path(__file__).resolve().parent / "data" / "pint_inputs"
+    parsed = read_tim(str(data / "parkes.toa"))
+    assert len(parsed.toas) == 8
+    assert {t.obs for t in parsed.toas} == {"@"}
+    t = parsed.toas[0]
+    assert t.freq_mhz == 432.3420
+    assert t.error_s == pytest.approx(120.75e-6)
+    assert (t.mjd_int, t.mjd_frac) == (58852.0, 0.7590686063892)
+
+
+def test_parkes_parity_vs_pint_read_toa_file():
+    """JaxPINT and PINT extract identical fields from parkes.toa.
+
+    ``read_toa_file`` is the raw reader: no clock corrections, no barycentring.
+    Comparing against ``get_TOAs`` instead would be comparing timescales rather
+    than parsers -- when that mistake was made for Princeton it produced a 28 us
+    GBT offset, with the "@"-site files matching exactly, which was the tell.
+
+    ``read_toa_file`` returns ``(toas, commands)``; only the first is wanted.
+    """
+    pint_toa = pytest.importorskip("pint.toa")
+
+    data = pathlib.Path(__file__).resolve().parent / "data" / "pint_inputs"
+    path = str(data / "parkes.toa")
+    ours = read_tim(path).toas
+    theirs, _commands = pint_toa.read_toa_file(path)
+
+    assert len(ours) == len(theirs) == 8
+    for a, b in zip(ours, theirs):
+        mjd_diff = abs(
+            float(b.mjd.jd1 - 2400000.5 - a.mjd_int) + float(b.mjd.jd2 - a.mjd_frac)
+        )
+        assert mjd_diff == 0.0
+        assert a.freq_mhz == float(b.freq.value)
+        assert a.error_s == float(b.error.to("s").value)
+        # PINT canonicalizes the site code; we keep the raw token, as for
+        # Princeton. Comparing a.obs to b.obs directly would fail on that alone.
+        assert (a.obs, b.obs) == ("@", "barycenter")
+
+
+# ---------------------------------------------------------------------------
+# Generated Parkes fixtures
+#
+# Only two Parkes files exist locally (0437.tim, parkes.toa) and both are
+# well-behaved: obs code present, phase offset "    0.00", full 80 columns. A
+# whole-filesystem sweep in 2026-07 found no others, and no in-the-wild PTA
+# release ships the format -- so the column edge cases cannot be covered by
+# vendoring more data, only by constructing it.
+#
+# Every fixture below is built by _parkes_line from named fields, so a test says
+# which column it is probing instead of hiding it in an 80-character literal.
+# ---------------------------------------------------------------------------
+
+
+def _parkes_line(
+    name="testTOA_0001",
+    freq="1440.000",
+    mjd_int="55000",
+    mjd_frac="5000000000000",
+    phase="    0.00",
+    error="    1.50",
+    obs="7",
+):
+    """Assemble one 80-column Parkes line from its fields.
+
+    Columns (1-indexed): 1 blank | 2-25 name | 26-34 freq | 35-41 MJD int |
+    42 "." | 43-55 MJD frac | 56-63 phase | 64-71 error | 72-79 blank | 80 obs.
+
+    Fields are placed by width, so passing an over-wide value shifts everything
+    after it -- which is what makes the misalignment fixtures below realistic
+    rather than hand-corrupted.
+    """
+    line = (
+        " "
+        + f"{name:<24}"[:24]
+        + f"{freq:>9}"[:9]
+        + f"{mjd_int:>7}"[:7]
+        + "."
+        + f"{mjd_frac:<13}"[:13]
+        + f"{phase:>8}"[:8]
+        + f"{error:>8}"[:8]
+        + " " * 8
+        + obs
+    )
+    assert len(line) == 80, f"fixture built {len(line)} columns, not 80"
+    return line
+
+
+def test_parkes_fixture_builder_matches_the_real_corpus():
+    """The builder reproduces a real 0437 line, so fixtures are not fiction.
+
+    Without this, every test below could be self-consistent against a layout
+    that no writer actually emits.
+    """
+    from jaxpint.tim.timfile import _parse_parkes_line
+
+    built = _parkes_line(
+        name="c940121_173431.FF   0  0",
+        freq="1522.369",
+        mjd_int="49373",
+        mjd_frac="2743634850894",
+        phase="    0.00",
+        error="     0.2",
+        obs="7",
+    )
+    assert built == _PARKES_LINE
+    assert _parse_parkes_line(built) == _parse_parkes_line(_PARKES_LINE)
+
+
+def test_parkes_phase_offset_read_across_full_width():
+    """A phase offset in column 63 is caught (PINT reads only 56-62 and misses it).
+
+    The regression this pins: "0.000001" right-justified in the 8-column phase
+    field reads as "0.00000" under PINT's line[55:62], parses to 0.0, and is
+    accepted -- silently shifting the TOA by a fraction of P0, which is exactly
+    what raising here is supposed to prevent.
+    """
+    from jaxpint.tim.timfile import _parse_parkes_line
+
+    line = _parkes_line(phase="0.000001")
+    assert line[62] == "1", "the probe digit must land in column 63"
+    with pytest.raises(NotImplementedError, match="phase offset"):
+        _parse_parkes_line(line)
+
+
+def test_parkes_phase_offset_zero_variants_accepted():
+    """Zero written any of the ways a writer might pad it."""
+    from jaxpint.tim.timfile import _parse_parkes_line
+
+    for phase in ("    0.00", "     0.0", "       0", "0.000000", "    0.00"):
+        assert _parse_parkes_line(_parkes_line(phase=phase))[0] == 55000.0
+
+
+def test_parkes_line_missing_observatory_column_defaults_to_barycentre():
+    """Writers that stop at column 71 leave no obs code; the parser assumes "@".
+
+    Documented behaviour rather than an accident -- the parser guards on
+    len(line) > 79. Pinned because silently defaulting a *site* to the
+    barycentre would move every TOA by up to the Roemer delay (~500 s), so if
+    this default is ever wrong it should fail loudly here first.
+    """
+    from jaxpint.tim.timfile import _parse_parkes_line
+
+    truncated = _parkes_line()[:71]
+    assert len(truncated) == 71
+    assert _parse_parkes_line(truncated)[4] == "@"
+
+
+def test_parkes_line_one_column_short_of_the_error_field_rejected():
+    """70 columns cannot hold the error field (64-71), so it must raise."""
+    from jaxpint.tim.timfile import _parse_parkes_line
+
+    with pytest.raises(ValueError, match="too short"):
+        _parse_parkes_line(_parkes_line()[:70])
+
+
+def test_parkes_column_slide_is_always_caught():
+    """A field overrunning its columns slides every later field, and must raise.
+
+    This is the realistic corruption mode for a fixed-column format: a writer
+    emits one character too many and everything to its right shifts. Nothing
+    about the line looks malformed -- it is still 80-ish printable columns -- so
+    the only defence is that some field stops parsing.
+
+    Two guards catch it depending on where the slide starts, and the test pins
+    both. A slide from the name field lands non-numeric text in the frequency
+    columns, so float() rejects it first; a slide starting after the frequency
+    reaches the decimal-column check instead. Asserting only the second would
+    have failed here, because the frequency guard fires earlier than expected.
+    """
+    from jaxpint.tim.timfile import _parse_parkes_line
+
+    good = _parkes_line()
+    assert good[41] == "."
+
+    # Inserting a character *overwrites nothing* -- it pushes columns right.
+    from_name = good[:25] + "x" + good[25:]
+    assert from_name[41] != "."
+    with pytest.raises(ValueError, match="could not convert string to float"):
+        _parse_parkes_line(from_name)
+
+    # Slide starting after the frequency field: freq still parses, so the
+    # decimal-column check is what stands between this and a wrong MJD.
+    from_mjd = good[:34] + "0" + good[34:]
+    assert from_mjd[25:34] == good[25:34] and from_mjd[41] != "."
+    with pytest.raises(ValueError, match="decimal point must be in column 42"):
+        _parse_parkes_line(from_mjd)
+
+
+def test_parkes_non_numeric_frequency_rejected():
+    """Column 26-34 must parse as a float; a blank or text field is not silently 0."""
+    from jaxpint.tim.timfile import _parse_parkes_line
+
+    with pytest.raises(ValueError):
+        _parse_parkes_line(_parkes_line(freq="   badval"))
+
+
+def test_parkes_generated_file_reads_end_to_end(tmp_path):
+    """A synthesized multi-TOA file routes through the classifier, not just the parser.
+
+    The parse-level tests above call _parse_parkes_line directly, which bypasses
+    dialect detection entirely -- so without this, a classifier change could stop
+    recognizing Parkes and every one of them would still pass.
+    """
+    lines = [
+        _parkes_line(
+            name=f"gen_{i:04d}",
+            freq=f"{1400.0 + i:.3f}",
+            mjd_int=f"{55000 + i}",
+            error=f"{1.0 + i:.2f}",
+            obs="7",
+        )
+        for i in range(5)
+    ]
+    p = _write(tmp_path, "\n".join(lines) + "\n", name="generated.tim")
+    parsed = read_tim(p)
+
+    assert len(parsed.toas) == 5
+    assert [t.mjd_int for t in parsed.toas] == [55000.0 + i for i in range(5)]
+    assert parsed.toas[0].freq_mhz == 1400.0
+    assert parsed.toas[4].error_s == pytest.approx(5.0e-6)
+    assert {t.obs for t in parsed.toas} == {"7"}
