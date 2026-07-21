@@ -64,6 +64,54 @@ def test_classify_line():
 
 
 # ---------------------------------------------------------------------------
+# FORMAT 1 is authoritative (deliberate divergence from PINT)
+#
+# PINT tests its fixed-column heuristics before the Tempo2 branch, so the state
+# set by FORMAT 1 cannot protect a line: any Tempo2 TOA starting with a space
+# and carrying a "." in column 42 is claimed by the Parkes branch and dies.
+# That makes 64 EPTA DR2 files + 1 IPTA DR1 file (5,857 TOA lines) unreadable.
+# ---------------------------------------------------------------------------
+
+# Real EPTA DR2 line: the ".cal" extension lands its dot on column 42.
+_EPTA_LINE = (
+    " 20120209/75624/J0613-0200-20120209-75624.cal 1396.00000000 "
+    "55966.87998535736019079 1.98200 leap -fe unknown -be asterix"
+)
+
+
+def test_format1_beats_parkes_column_heuristic():
+    """The bug: this is an ordinary tempo2 TOA, not Parkes."""
+    assert _EPTA_LINE[41] == "."  # the trigger, byte-exact
+    assert _classify_line(_EPTA_LINE, "Tempo2") == "Tempo2"
+
+
+def test_format1_file_with_col42_dot_reads(tmp_path):
+    """End-to-end: the file parses instead of raising NotImplementedError."""
+    p = _write(tmp_path, "FORMAT 1\nMODE 1\n" + _EPTA_LINE + "\n")
+    parsed = read_tim(p)
+    assert len(parsed.toas) == 1
+    assert parsed.toas[0].obs == "leap"
+    assert parsed.toas[0].freq_mhz == 1396.0
+
+
+def test_format1_lowercase_c_is_a_comment():
+    """PINT's Princeton regex claims 'c ' before the comment check (it has a
+    FIXME on that line), so a lowercase comment parses as a TOA there."""
+    assert _classify_line("c lowercase comment", "Tempo2") == "Comment"
+
+
+def test_legacy_dispatch_unchanged_without_format1():
+    """Files that never declare FORMAT 1 must classify exactly as before."""
+    parkes = (
+        " PUPPI_J2044+28_58852_652 432.3420  58852.7590686063892"
+        "    0.00  120.75        @"
+    )
+    assert _classify_line(parkes, "Unknown") == "Parkes"
+    assert _classify_line("1  1949.6 53478.28 21.7", "Unknown") == "Princeton"
+    assert _classify_line("@  0.000 54657.911 2788.48", "Unknown") == "Princeton"
+
+
+# ---------------------------------------------------------------------------
 # Command state machine 
 # ---------------------------------------------------------------------------
 

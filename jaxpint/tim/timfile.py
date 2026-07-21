@@ -109,11 +109,40 @@ def _new_cdict() -> dict:
 
 
 def _classify_line(line: str, fmt: LineFormat = LineFormat.UNKNOWN) -> LineFormat:
-    """Classify a ``.tim`` line, mirroring PINT's ``_toa_format`` (``toa.py:441``).
+    """Classify a ``.tim`` line.
 
     ``fmt`` is the running FORMAT state (``LineFormat.TEMPO2`` once a ``FORMAT 1``
     command has been seen).
+
+    **Deliberate divergence from PINT** (``toa.py:441``), which tests its
+    fixed-column heuristics *before* the Tempo2 branch, so the ``fmt`` state set
+    by ``FORMAT 1`` cannot protect a line.  Any Tempo2 TOA line that starts with
+    a space and happens to carry a ``.`` in column 42 is claimed by the Parkes
+    branch, which then slices bytes out of the middle of the filename.  That is
+    not hypothetical: it makes 64 EPTA DR2 files and 1 IPTA DR1 file (5,857 TOA
+    lines) unreadable, e.g. a TOA whose first field is
+    ``20120209/75624/J0613-0200-20120209-75624.cal`` -- the ``.cal`` extension
+    lands its dot on column 42.  Pure filename-length luck.
+
+    Here ``FORMAT 1`` is authoritative: once declared, the only special lines
+    are comments, commands and blanks, and everything else is a Tempo2 TOA.
+    Fixed-column dialects cannot appear in a file that declared itself Tempo2.
+    The legacy branch below (no ``FORMAT 1`` seen) keeps PINT's original order
+    byte-for-byte, so non-Tempo2 files classify exactly as they did.
+
     """
+    if fmt == LineFormat.TEMPO2:
+        if line.startswith(("C ", "c ", "#", "CC ")):
+            # Also fixes PINT's lowercase-'c' hazard: there, ``c `` matches the
+            # Princeton regex before the comment check (PINT carries a FIXME on
+            # that line), so a lowercase comment parses as a TOA.
+            return LineFormat.COMMENT
+        if line.upper().lstrip().startswith(TOA_COMMANDS):
+            return LineFormat.COMMAND
+        if re.match(r"^\s*$", line):
+            return LineFormat.BLANK
+        return LineFormat.TEMPO2
+
     if re.match(r"[0-9a-z@] ", line):
         return LineFormat.PRINCETON
     elif line.startswith(("C ", "c ", "#", "CC ")):
@@ -124,7 +153,7 @@ def _classify_line(line: str, fmt: LineFormat = LineFormat.UNKNOWN) -> LineForma
         return LineFormat.BLANK
     elif re.match(r"^ ", line) and len(line) > 41 and line[41] == ".":
         return LineFormat.PARKES
-    elif len(line) > 80 or fmt == LineFormat.TEMPO2:
+    elif len(line) > 80:
         return LineFormat.TEMPO2
     elif re.match(r"\S\S", line) and len(line) > 14 and line[14] == ".":
         return LineFormat.ITOA
