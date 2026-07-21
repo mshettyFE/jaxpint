@@ -325,3 +325,48 @@ def test_bool_and_str():
     assert _parse_one("PLANET_SHAPIRO Y").bool_value is True
     assert _parse_one("PLANET_SHAPIRO N").bool_value is False
     assert _parse_one("UNITS TDB").str_value == "TDB"
+
+
+# ---------------------------------------------------------------------------
+# tempo2's "SINI KIN" idiom
+#
+# A literal ``SINI KIN`` line means SINI is *derived* from the DDK inclination
+# angle, so the value is a sentinel naming another parameter rather than a
+# number.  Real IPTA DR1/DR2 pars ship it (J1713+0747 line 13), and parsing it
+# as a float raised ``could not convert string to float: 'KIN'``.  PINT drops
+# SINI when KIN is present (models/model_builder.py:986).
+# ---------------------------------------------------------------------------
+
+
+def test_sini_kin_sentinel_drops_sini():
+    parsed = to_raw_params(tokenize_lines(["SINI KIN", "KIN 71.9"]))
+    names = [rp.name for rp in parsed.raw_params]
+    assert "KIN" in names
+    assert "SINI" not in names  # derived, not fitted
+
+
+def test_sini_kin_sentinel_is_case_insensitive():
+    parsed = to_raw_params(tokenize_lines(["SINI kin", "KIN 71.9"]))
+    assert "SINI" not in [rp.name for rp in parsed.raw_params]
+
+
+def test_sini_kin_without_kin_raises():
+    """The sentinel is only meaningful with something to derive from.
+
+    SINI can precede KIN in the file (it does in J1713+0747: line 13 vs 30),
+    so this is checked after the parse loop, not inline.
+    """
+    with pytest.raises(ValueError, match="no KIN parameter"):
+        to_raw_params(tokenize_lines(["SINI KIN"]))
+
+
+def test_numeric_sini_still_parsed():
+    parsed = to_raw_params(tokenize_lines(["SINI 0.9656", "KIN 71.9"]))
+    rp = next(rp for rp in parsed.raw_params if rp.name == "SINI")
+    assert np.isclose(rp.value, 0.9656)
+
+
+def test_unrecognized_sini_sentinel_still_raises():
+    """Only 'KIN' is a known sentinel; anything else is a corrupt file."""
+    with pytest.raises(ValueError, match="could not convert string to float"):
+        to_raw_params(tokenize_lines(["SINI GARBAGE", "KIN 71.9"]))
