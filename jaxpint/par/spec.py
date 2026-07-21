@@ -40,6 +40,7 @@ __all__ = [
     "KNOWN_PARAMS",
     "TRIGGER_MAP",
     "BINARY_PARAMS",
+    "BINARY_MODEL_PARAMS",
     "BINARY_PRIORITY",
     "spec_for",
 ]
@@ -77,6 +78,47 @@ BINARY_PRIORITY: tuple[str, ...] = (
     "DDS",
     "DDH",
 )
+
+
+def _binary_model_params() -> dict[str, frozenset[str]]:
+    """Full parameter set each binary model accepts (core + its own extras).
+
+    Derived from ``jaxpint.binary._param_decls``, where the per-model split is
+    declared next to the models themselves -- it cannot be read off the classes
+    because ten models share six classes (see that module).  Imported inside the
+    function, like the rest of this module's component access, so the
+    ``jaxpint.par`` import cascade never pulls in a component module.
+    """
+    from jaxpint.binary._param_decls import BINARY_CORE_NAMES, MODEL_EXTRA_PARAMS
+
+    return {
+        name: BINARY_CORE_NAMES | extra for name, extra in MODEL_EXTRA_PARAMS.items()
+    }
+
+
+def guess_binary_model(present: set[str]) -> Optional[str]:
+    """Best-guess binary model name for the binary params actually present.
+
+    Mirrors PINT's ``guess_binary_model`` (``models/model_builder.py:969``):
+    take the binary parameters in the file, keep every model whose parameter
+    set is a **superset** of them, and return the first in ``BINARY_PRIORITY``
+    -- i.e. the *simplest* model that can hold everything the file specifies.
+
+    Used for tempo2's ``BINARY T2``, a generic model with no PINT/JaxPINT
+    equivalent: it is a superset parameterisation that tempo2 resolves at
+    runtime from which parameters are set, so the concrete model has to be
+    recovered the same way.  Also used for the (rare) no-``BINARY``-line case.
+
+    Returns ``None`` when no model can hold every present parameter, which
+    means the file mixes incompatible parameterisations (e.g. ``T0`` and
+    ``TASC``) -- a corrupt par rather than an exotic model.
+    """
+    model_params = _binary_model_params()
+    binary_present = present & _tables()["BINARY_PARAMS"]
+    for name in BINARY_PRIORITY:
+        if not (binary_present - model_params.get(name, frozenset())):
+            return name
+    return None
 
 
 def _spec_of(decl: ParamDecl) -> ParamSpec:
@@ -151,6 +193,7 @@ def _tables() -> dict:
         "KNOWN_PARAMS": frozenset(known),
         "TRIGGER_MAP": trigger_map,
         "BINARY_PARAMS": frozenset(binary_params),
+        "BINARY_MODEL_PARAMS": _binary_model_params(),
     }
 
 
