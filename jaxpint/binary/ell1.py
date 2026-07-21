@@ -135,6 +135,10 @@ class BinaryELL1(BinaryDelayComponent):
     eps1dot_name: Optional[str] = eqx.field(static=True, default=None)
     eps2dot_name: Optional[str] = eqx.field(static=True, default=None)
     xpbdot_name: Optional[str] = eqx.field(static=True, default=None)
+    # Orbital-frequency Taylor terms beyond FB0/FB1, which the FB->PB/PBDOT
+    # synthesis in jaxpint.par.aliases cannot express. Names in ascending order
+    # ("FB2", "FB3", ...); see compute_orbital_phase's ``fb_higher``.
+    fb_higher_names: tuple[str, ...] = eqx.field(static=True, default=())
 
     # Shapiro delay parameters
     shapiro_mode: str = eqx.field(static=True, default="standard")
@@ -238,6 +242,7 @@ class BinaryELL1(BinaryDelayComponent):
             pb_d,
             pbdot,
             delay=delay,
+            fb_higher=tuple(params.param_value(n) for n in self.fb_higher_names),
         )
 
         # --- ELL1 Roemer delay (O(e^3) expansion) ---

@@ -138,11 +138,31 @@ def main(argv=None) -> int:
     )
     args = ap.parse_args(argv)
 
-    text = _render(*_extract())
+    scale, mjd, noconv = _extract()
 
     if args.check:
-        current = _OUT.read_text() if _OUT.exists() else ""
-        if current != text:
+        # Compare the *tables*, not the file text: the committed module is
+        # formatted by ruff (repr() emits single quotes, the formatter rewrites
+        # them to double), so a byte comparison reports every formatter run as
+        # staleness. Only a real change in the extracted physics should fail.
+        try:
+            from jaxpint.par import _tcb_generated as committed
+        except ImportError:
+            print(
+                f"{_OUT.name} missing; run tools/regen_tcb_tables.py", file=sys.stderr
+            )
+            return 1
+        drift = {
+            "SCALE_DIMENSIONALITY": (
+                set(scale.items()) ^ set(committed.SCALE_DIMENSIONALITY.items())
+            ),
+            "MJD_PARAMS": mjd ^ set(committed.MJD_PARAMS),
+            "NOT_CONVERTIBLE": noconv ^ set(committed.NOT_CONVERTIBLE),
+        }
+        drift = {k: v for k, v in drift.items() if v}
+        if drift:
+            for table, diff in drift.items():
+                print(f"{table}: {sorted(diff)[:8]}", file=sys.stderr)
             print(
                 f"{_OUT.name} is stale; re-run tools/regen_tcb_tables.py",
                 file=sys.stderr,
@@ -151,8 +171,9 @@ def main(argv=None) -> int:
         print(f"{_OUT.name} is up to date")
         return 0
 
+    text = _render(scale, mjd, noconv)
+
     _OUT.write_text(text)
-    scale, mjd, noconv = _extract()
     print(f"wrote {_OUT}")
     print(f"  scale={len(scale)} mjd={len(mjd)} not_convertible={len(noconv)}")
     return 0

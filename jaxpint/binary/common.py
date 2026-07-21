@@ -21,6 +21,7 @@ from jaxpint.binary.kepler import solve_kepler
 from jaxpint.constants import SECS_PER_DAY, TSUN
 from jaxpint.types.dual_float import DualFloat
 from jaxpint.types import ParameterVector
+from jaxpint.utils import taylor_horner
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +117,7 @@ def compute_orbital_phase(
     pbdot: ArrayLike = 0.0,
     xpbdot: ArrayLike = 0.0,
     delay: Optional[Float[Array, " n_toas"]] = None,
+    fb_higher: tuple[ArrayLike, ...] = (),
 ) -> Float[Array, " n_toas"]:
     """Orbital phase in [0, 2*pi) using DualFloat precision.
 
@@ -140,6 +142,19 @@ def compute_orbital_phase(
     delay : array, optional
         Accumulated delay from prior components (seconds).  Subtracted
         from TDB to form the barycentric time, matching PINT.
+    fb_higher : tuple of float, optional
+        Orbital-frequency derivatives ``(FB2, FB3, ...)`` in Hz/s^k, i.e. the
+        terms *beyond* those already carried by ``pb_d``/``pbdot``.
+
+        tempo2 lets an orbit be given as a frequency Taylor series
+        ``orbits(t) = sum_k FB_k * t^(k+1) / (k+1)!`` instead of PB/PBDOT
+        (PINT: ``OrbitFBX.orbits``).  The first two terms are the same thing
+        written twice -- ``PB = 1/FB0`` and ``PBDOT = -FB1/FB0**2`` make the
+        ``k=0`` and ``k=1`` terms identical to the ``rem_days/pb_d`` and
+        ``-0.5*PBDOT*ratio**2`` terms below -- so only ``k>=2`` needs adding.
+        Passing them here keeps the precision-preserving integer/fraction
+        split for the dominant term and treats the rest as the small
+        corrections they are.
 
     Returns
     -------
@@ -176,7 +191,15 @@ def compute_orbital_phase(
     ratio = tt0_s / pb_s
     pbdot_corr = -0.5 * (pbdot + xpbdot) * ratio**2
 
-    frac_total = frac_orbit + pbdot_corr
+    # Higher-order FB terms: sum_{k>=2} FB_k * tt0^(k+1) / (k+1)!
+    fb_corr = 0.0
+    if fb_higher:
+        coeffs = jnp.concatenate(
+            [jnp.zeros(3), jnp.stack([jnp.asarray(fb) for fb in fb_higher])]
+        )
+        fb_corr = taylor_horner(tt0_s, coeffs)
+
+    frac_total = frac_orbit + pbdot_corr + fb_corr
     frac_total = frac_total - jnp.floor(frac_total)
 
     return 2.0 * jnp.pi * frac_total

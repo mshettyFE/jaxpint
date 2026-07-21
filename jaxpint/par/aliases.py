@@ -95,6 +95,14 @@ def synthesize_equad_from_tneq(raw: list[RawParam]) -> None:
     }
 
     for tneq in tneqs:
+        if tneq.value is None:
+            # A TNEQ line with no value cannot be converted (the synthesis is
+            # 10**value). Skip it rather than crashing in the exponentiation
+            # below, matching the other `continue` branches in this loop; a
+            # component that actually needs the EQUAD will fail loudly later in
+            # validate_referenced_params.
+            log.warning("%s has no value; cannot synthesize an EQUAD.", tneq.name)
+            continue
         sel = _mask_selector_key(tneq)
         if sel in existing:
             # PINT's setup() prefers the explicit EQUAD when both describe the
@@ -211,10 +219,14 @@ def synthesize_pb_from_fb(raw: list[RawParam]) -> None:
         PB [days]    = 1 / (FB0 [Hz] * 86400)
         PBDOT [s/s]  = -FB1 / FB0**2
 
-    Higher-order terms ``FB2..FBn`` are intentionally dropped -- the PB/PBDOT
-    parameterization can't express them.  For the four affected pulsars these
-    are tiny secular corrections; the proper fix for a future use case is native
-    FB support in the binary components, not an extension of this synthesis.
+    Higher-order terms ``FB2..FBn`` are deliberately *not* folded in here --
+    the PB/PBDOT parameterization cannot express them.  They are instead
+    consumed natively by the ELL1 component.
+    They are not negligible: dropping them
+    cost 7.7e-06 s against tempo2 on J0023+0923 (FB0..FB3), 14x worse than
+    PINT on the same file; consuming them brings it to 1.3e-08 s.  Nor are
+    they rare -- 11 of the 318 NANOGrav 15-yr pars use FB2+, with indices up
+    to FB5, mostly black widows and redbacks whose orbits vary.
     """
     fb0 = _find(raw, "FB0")
     if fb0 is None or fb0.value is None:
