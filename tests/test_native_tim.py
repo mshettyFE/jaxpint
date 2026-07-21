@@ -341,3 +341,38 @@ def test_parity_vs_pint_read_toa_file(timname):
             k: v for k, v in dict(pt.flags).items() if k not in ("name", "format")
         }
         assert raw.flags == pint_flags, (timname, raw.flags, pint_flags)
+
+
+# ---------------------------------------------------------------------------
+# MODE (fit weighting)
+#
+# MODE 1 = weight by TOA uncertainty, MODE 0 = unweighted (OLS). JaxPINT always
+# weights, so MODE 1 is a no-op; it used to warn on every MODE line, which is
+# noise (632 of 635 MODE lines in the local corpus are MODE 1). MODE 0 asks for
+# the opposite of what we do, so ignoring it silently honours the inverse of
+# the request. PINT only warns there -- deliberate divergence, and cheap: no
+# file in the local corpus uses MODE 0.
+# ---------------------------------------------------------------------------
+
+
+def test_mode_1_is_silent(tmp_path, caplog):
+    p = _write(tmp_path, "FORMAT 1\nMODE 1\nJ1 1400.0 55000.5 1.0 gbt\n")
+    with caplog.at_level("WARNING", logger="jaxpint.tim.timfile"):
+        parsed = read_tim(p)
+    assert len(parsed.toas) == 1
+    assert "MODE" not in caplog.text
+
+
+def test_mode_0_raises(tmp_path):
+    p = _write(tmp_path, "FORMAT 1\nMODE 0\nJ1 1400.0 55000.5 1.0 gbt\n")
+    with pytest.raises(NotImplementedError, match="MODE 0"):
+        read_tim(p)
+
+
+def test_unrecognized_mode_warns_but_parses(tmp_path, caplog):
+    """An odd MODE value is not worth failing over -- weighting is unchanged."""
+    p = _write(tmp_path, "FORMAT 1\nMODE 2\nJ1 1400.0 55000.5 1.0 gbt\n")
+    with caplog.at_level("WARNING", logger="jaxpint.tim.timfile"):
+        parsed = read_tim(p)
+    assert len(parsed.toas) == 1
+    assert "Unrecognized MODE" in caplog.text
