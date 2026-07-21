@@ -8,9 +8,9 @@ ephemeris math -- exactly the surface of PINT's :func:`pint.toa.read_toa_file`
 (``toa.py:701``), which it is bit-for-bit diffable against.
 
 The **Tempo2** line format (``name freq MJD err obs -flag val ...``) and the
-fixed-column **Princeton** format are supported. The remaining fixed-column
-formats (Parkes/ITOA) raise ``NotImplementedError`` rather than be silently
-mis-parsed.
+fixed-column **Princeton** and **Parkes** formats are supported. **ITOA** still
+raises ``NotImplementedError`` rather than be silently mis-parsed -- PINT has no
+implementation to port, and one file in ~4,400 surveyed uses it.
 """
 
 from __future__ import annotations
@@ -246,6 +246,54 @@ def _parse_princeton_line(line: str) -> tuple:
     return float(mjd_int), float(f"0.{ff}"), freq_mhz, error_us, obs, line_flags
 
 
+def _parse_parkes_line(line: str) -> tuple:
+    """Parse one Parkes (fixed-column) TOA line.
+
+    Mirrors PINT's ``toa.py:535-556``. Columns (1-indexed, per the TEMPO and
+    tempo2 manuals)::
+
+        1      must be blank
+        2-25   name / label
+        26-34  observing frequency (MHz)
+        35-55  TOA (decimal point in column 42)
+        56-63  phase offset, fraction of P0, ADDED to the TOA
+        64-71  TOA uncertainty (microseconds)
+        80     observatory code, one character
+
+    The MJD is split *around* the fixed decimal column rather than on the
+    literal ``.`` -- ``line[34:41]`` and ``line[42:55]`` -- because the column
+    position is what the format guarantees. Same int/frac decomposition the
+    other parsers produce, so sub-ns precision carries across formats.
+
+    A nonzero phase offset raises, matching PINT: the column asks for a
+    fractional-turn shift of the TOA that neither implementation applies, and
+    silently ignoring it would move the TOA by a fraction of a pulse period.
+    """
+    if len(line) < 71:
+        raise ValueError(f"malformed Parkes TOA line (too short): {line!r}")
+    freq_mhz = float(line[25:34])
+
+    ii, ff = line[34:41], line[42:55]
+    if line[41] != ".":
+        raise ValueError(
+            f"Parkes TOA decimal point must be in column 42, found {line[41]!r}"
+        )
+    mjd_int, mjd_frac = float(int(ii)), float(f"0.{ff}")
+
+    phase_offset = float(line[55:62])
+    if phase_offset != 0:
+        raise NotImplementedError(
+            f"Parkes phase offset {phase_offset} is not applied (column 56-63 "
+            "shifts the TOA by a fraction of P0). PINT raises here too; "
+            "ignoring it would silently move the TOA."
+        )
+
+    error_us = float(line[63:71])
+    # Column 80 is the observatory; some writers stop short of it.
+    obs = line[79] if len(line) > 79 else "@"
+    return mjd_int, mjd_frac, freq_mhz, error_us, obs, {}
+
+
 # Per-format TOA line parsers.  Each returns the shared 6-tuple
 # ``(mjd_int, mjd_frac, freq_mhz, error_us, obs, line_flags)``.  A classified
 # format absent from this table is unsupported (-> NotImplementedError); add an
@@ -253,6 +301,7 @@ def _parse_princeton_line(line: str) -> tuple:
 _PARSERS: dict[LineFormat, Callable[[str], tuple]] = {
     LineFormat.TEMPO2: _parse_tempo2_line,
     LineFormat.PRINCETON: _parse_princeton_line,
+    LineFormat.PARKES: _parse_parkes_line,
 }
 
 

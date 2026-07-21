@@ -284,19 +284,23 @@ def test_include_splices(tmp_path):
     assert mjds == [55000.0, 55005.0, 55001.0]
 
 
-def test_parkes_and_itoa_still_raise(tmp_path):
-    """Princeton is now supported; Parkes and ITOA are still not.
+def test_itoa_still_raises(tmp_path):
+    """Princeton and Parkes are supported now; ITOA is not.
 
-    Was ``test_princeton_raises``. Kept (renamed) so the remaining unsupported
-    fixed-column formats stay pinned rather than silently mis-parsing the day
+    Successor to ``test_princeton_raises`` (then ``test_parkes_and_itoa_still_
+    raise``), narrowed each time a format landed. Kept so the last unsupported
+    fixed-column dialect stays pinned rather than silently mis-parsing the day
     someone adds a parser without a dispatch entry.
+
+    ITOA is deliberately last: PINT has no implementation to port (it raises
+    ``RuntimeError('not implemented yet')``), and exactly one file in ~4,400
+    surveyed .tim files uses it.
     """
-    parkes = (
-        " PUPPI_J2044+28_58852_652 432.3420  58852.7590686063892"
-        "    0.00  120.75        @"
-    )
-    p = _write(tmp_path, parkes + "\n")
-    with pytest.raises(NotImplementedError, match="Parkes"):
+    # Real line from NGC6440E.itoa: name cols 1-2, TOA 10-28 (decimal in col
+    # 15), error 29-34, freq 35-45, obs 58-59.
+    itoa = "1748-202153478.2858714192289 21.71  1949.6090  0.000000  GB"
+    p = _write(tmp_path, itoa + "\n")
+    with pytest.raises(NotImplementedError, match="ITOA"):
         read_tim(p)
 
 
@@ -488,3 +492,79 @@ def test_princeton_parity_vs_pint_read_toa_file(stem):
         # JaxPINT keeps the raw single-char code; canonical resolution is a
         # downstream concern (same convention as the Tempo2 parser).
         assert get_observatory(raw.obs.upper()).name == pt.obs
+
+
+# ---------------------------------------------------------------------------
+# Parkes (fixed-column) format
+#
+# Columns (1-indexed; TEMPO and tempo2 manuals agree):
+#   1 blank | 2-25 name | 26-34 freq MHz | 35-55 TOA (decimal in col 42)
+#   56-63 phase offset (fraction of P0) | 64-71 err us | 80 obs code
+#
+# Note there is no PINT parse-parity test here, unlike Princeton: PINT cannot
+# read this file at all. It slices cols 2-25 into a "name" flag, and its own
+# FlagDict rejects the whitespace that field contains:
+#   ValueError: value 'c940121_173431.FF   0  0' for key name cannot contain whitespace
+# JaxPINT succeeds because it discards the name field, the same choice already
+# made in the Tempo2 parser. tempo2 is the reference instead.
+# ---------------------------------------------------------------------------
+
+# Real first line of TEMPO's 0437 test data -- the only genuine 80-column Parkes
+# file found in ~4,400 surveyed .tim files.
+_PARKES_LINE = (
+    " c940121_173431.FF   0  0 1522.369  49373.2743634850894"
+    "    0.00     0.2        7"
+)
+
+
+def test_parse_parkes_line_fields():
+    from jaxpint.tim.timfile import _parse_parkes_line
+
+    assert _PARKES_LINE[41] == "."          # decimal must be in column 42
+    assert len(_PARKES_LINE) == 80          # obs code lives in column 80
+
+    mjd_int, mjd_frac, freq, err, obs, flags = _parse_parkes_line(_PARKES_LINE)
+    assert (mjd_int, mjd_frac) == (49373.0, 0.2743634850894)
+    assert freq == 1522.369
+    assert err == 0.2                       # microseconds, as written
+    assert obs == "7"                       # parkes; resolved downstream
+    assert flags == {}                      # Parkes carries no flags
+
+
+def test_parkes_nonzero_phase_offset_raises():
+    """Columns 56-63 shift the TOA by a fraction of P0; neither we nor PINT
+    apply it, so honouring the column silently is not an option."""
+    from jaxpint.tim.timfile import _parse_parkes_line
+
+    shifted = _PARKES_LINE[:55] + "    0.25" + _PARKES_LINE[63:]
+    with pytest.raises(NotImplementedError, match="phase offset"):
+        _parse_parkes_line(shifted)
+
+
+def test_parkes_decimal_column_enforced():
+    """The format guarantees the decimal position; a shifted one is corrupt."""
+    from jaxpint.tim.timfile import _parse_parkes_line
+
+    bad = _PARKES_LINE[:41] + "X" + _PARKES_LINE[42:]
+    with pytest.raises(ValueError, match="column 42"):
+        _parse_parkes_line(bad)
+
+
+def test_parkes_short_line_rejected():
+    from jaxpint.tim.timfile import _parse_parkes_line
+
+    with pytest.raises(ValueError, match="too short"):
+        _parse_parkes_line(" c940121  1522.369  49373.27")
+
+
+@pytest.mark.slow
+def test_read_tim_parkes_corpus_file():
+    """The full 0437 file: 5163 TOAs, read end-to-end through the classifier."""
+    data = pathlib.Path(__file__).resolve().parent / "data" / "pint_inputs"
+    parsed = read_tim(str(data / "0437.tim"))
+    assert len(parsed.toas) == 5163          # matches tempo2's own count
+    t = parsed.toas[0]
+    assert t.obs == "7"
+    assert t.freq_mhz == 1522.369
+    assert t.error_s == pytest.approx(0.2e-6)
+    assert (t.mjd_int, t.mjd_frac) == (49373.0, 0.2743634850894)
