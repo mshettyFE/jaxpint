@@ -279,7 +279,29 @@ def _read_tim(
                     commands.extend(sub.commands)
                     ntoas += len(sub.toas)
                 case "MODE":
-                    log.warning("MODE command is not supported; ignoring: %r", line)
+                    # MODE selects the fit's weighting: 1 = weight by TOA
+                    # uncertainty, 0 = unweighted (ordinary least squares).
+                    # JaxPINT always weights, so MODE 1 is a no-op and stays
+                    # silent -- it is near-universal (632 of 635 MODE lines in
+                    # the local corpus) and warning on it was pure noise.
+                    #
+                    # MODE 0 asks for the *opposite* of what we do. Ignoring it
+                    # silently honours the inverse of the request, so it raises.
+                    # PINT only warns here; this is a deliberate divergence, and
+                    # a cheap one -- no file in the local corpus uses MODE 0.
+                    mode = tokens[1] if len(tokens) > 1 else None
+                    if mode == "0":
+                        raise NotImplementedError(
+                            "MODE 0 (unweighted / ordinary least squares) is not "
+                            "supported: JaxPINT always weights by TOA "
+                            "uncertainty. Remove the MODE 0 line to accept "
+                            "weighted fitting, which is what would happen "
+                            "anyway."
+                        )
+                    if mode != "1":
+                        log.warning(
+                            "Unrecognized MODE value %r; ignoring: %r", mode, line
+                        )
                 case _:
                     log.warning("Unknown/unsupported .tim command: %r", line)
             continue
