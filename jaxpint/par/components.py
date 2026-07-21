@@ -51,8 +51,21 @@ def _detect_binary(
     if name is None:
         if not (templates & S.BINARY_PARAMS):
             return None, None
-        name = S.BINARY_PRIORITY[0]  # priority-ordered fallback (rare; no BINARY line)
+        name = S.guess_binary_model(templates) or S.BINARY_PRIORITY[0]
         log.warning("No BINARY line but binary params present; guessing %r", name)
+    elif name.upper() == "T2":
+        guess = S.guess_binary_model(templates)
+        if guess is None:
+            raise ValueError(
+                "BINARY T2 could not be resolved: the binary parameters "
+                f"{sorted(templates & S.BINARY_PARAMS)} do not all fit any "
+                "supported model. This usually means the par mixes "
+                "incompatible parameterisations (e.g. both T0 and TASC)."
+            )
+        log.warning(
+            "Resolving tempo2 'BINARY T2' to %r from the parameters present", guess
+        )
+        name = guess
 
     binary_model, comp = binary_component_for(name)
     if binary_model is None:

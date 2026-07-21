@@ -26,6 +26,25 @@ if TYPE_CHECKING:
     from jaxpint._build_context import BuildContext
 
 
+# Which class implements each model.  Ten models, six classes: DD/DDS/DDH all
+# build ``BinaryDD`` (differing only in ``shapiro_mode``), ELL1/ELL1H/ELL1k all
+# build ``BinaryELL1``.  Stated declaratively here because the ``match`` below
+# encodes it only as control flow, and the per-model parameter split in
+# ``_param_decls.MODEL_EXTRA_PARAMS`` is checked against it.
+_MODEL_CLASSES = {
+    BinaryModel.BT.value: BinaryBT,
+    BinaryModel.BT_PIECEWISE.value: BinaryBTPiecewise,
+    BinaryModel.DD.value: BinaryDD,
+    BinaryModel.DDS.value: BinaryDD,
+    BinaryModel.DDH.value: BinaryDD,
+    BinaryModel.DDK.value: BinaryDDK,
+    BinaryModel.DDGR.value: BinaryDDGR,
+    BinaryModel.ELL1.value: BinaryELL1,
+    BinaryModel.ELL1H.value: BinaryELL1,
+    BinaryModel.ELL1k.value: BinaryELL1,
+}
+
+
 def _dd_common_kwargs(par: ParResult) -> dict:
     return dict(
         pb_name="PB",

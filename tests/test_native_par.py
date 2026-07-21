@@ -370,3 +370,119 @@ def test_unrecognized_sini_sentinel_still_raises():
     """Only 'KIN' is a known sentinel; anything else is a corrupt file."""
     with pytest.raises(ValueError, match="could not convert string to float"):
         to_raw_params(tokenize_lines(["SINI GARBAGE", "KIN 71.9"]))
+
+
+# ---------------------------------------------------------------------------
+# tempo2 "BINARY T2" resolution
+#
+# T2 is a generic superset parameterisation with no PINT/JaxPINT equivalent --
+# tempo2 resolves it at runtime from which parameters are set. IPTA DR1 (93
+# pars) and EPTA DR2 (53) ship it, so it has to be recovered the same way:
+# the simplest model whose parameter set covers everything the file specifies.
+# Mirrors PINT's guess_binary_model (models/model_builder.py:969); verified
+# to agree with PINT on the cases below.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "present,expected",
+    [
+        # Real IPTA DR1 J1713+0747 -- KIN/KOM force DDK (PINT suggests DDK too).
+        ({"PB", "T0", "A1", "OM", "ECC", "M2", "KOM", "KIN"}, "DDK"),
+        # Real EPTA DR2 J1909-3744 -- TASC/EPS1/EPS2 put it in the ELL1 family.
+        (
+            {"PB", "A1", "PBDOT", "A1DOT", "TASC", "EPS1", "EPS2", "M2", "SINI"},
+            "ELL1",
+        ),
+        ({"PB", "A1", "T0", "OM", "ECC"}, "BT"),  # simplest that fits
+        ({"PB", "A1", "T0", "OM", "ECC", "M2", "SINI"}, "DD"),
+        ({"PB", "A1", "TASC", "EPS1", "EPS2"}, "ELL1"),
+        ({"PB", "A1", "TASC", "EPS1", "EPS2", "H3", "H4"}, "ELL1H"),
+        ({"PB", "A1", "T0", "OM", "ECC", "SHAPMAX"}, "DDS"),
+        ({"PB", "A1", "T0", "OM", "ECC", "MTOT"}, "DDGR"),
+    ],
+)
+def test_guess_binary_model(present, expected):
+    from jaxpint.par import spec as S
+
+    assert S.guess_binary_model(present) == expected
+
+
+def test_guess_binary_model_incompatible_returns_none():
+    """T0 and TASC are different parameterisations; no model holds both."""
+    from jaxpint.par import spec as S
+
+    assert S.guess_binary_model({"PB", "A1", "T0", "TASC", "EPS1"}) is None
+
+
+def test_binary_t2_resolves_to_concrete_model():
+    from jaxpint.par.components import detect_components
+    from jaxpint.par.registry import BinaryModel
+
+    _, model = detect_components(
+        {"PB", "A1", "TASC", "EPS1", "EPS2", "M2", "SINI"}, "T2"
+    )
+    assert model is BinaryModel.ELL1
+
+
+def test_binary_t2_incompatible_params_raise():
+    from jaxpint.par.components import detect_components
+
+    with pytest.raises(ValueError, match="BINARY T2 could not be resolved"):
+        detect_components({"PB", "A1", "T0", "TASC", "EPS1"}, "T2")
+
+
+# -- drift guards for the hand-maintained table ------------------------------
+
+
+def test_binary_model_params_are_known():
+    """Every name in BINARY_MODEL_PARAMS must be a real declared parameter."""
+    from jaxpint.par import spec as S
+
+    known = S.KNOWN_PARAMS
+    unknown = {
+        name
+        for names in S.BINARY_MODEL_PARAMS.values()
+        for name in names
+        if name not in known
+    }
+    assert not unknown, f"BINARY_MODEL_PARAMS names not declared anywhere: {unknown}"
+
+
+def test_binary_core_names_match():
+    """BINARY_CORE_NAMES must stay in step with BINARY_CORE itself."""
+    from jaxpint.binary._param_decls import BINARY_CORE, BINARY_CORE_NAMES
+
+    assert BINARY_CORE_NAMES == {d.name for d in BINARY_CORE}
+
+
+def test_binary_priority_covers_every_model():
+    """A model missing from the priority list can never be guessed."""
+    from jaxpint.par import spec as S
+
+    assert set(S.BINARY_MODEL_PARAMS) == set(S.BINARY_PRIORITY)
+
+
+def test_model_params_cover_every_binary_model():
+    """The per-model table is keyed by BinaryModel *values*; pin them."""
+    from jaxpint.binary._param_decls import MODEL_EXTRA_PARAMS
+    from jaxpint.par.registry import BinaryModel
+
+    assert set(MODEL_EXTRA_PARAMS) == {m.value for m in BinaryModel}
+
+
+def test_model_extras_belong_to_the_implementing_class():
+    """Each model's extras must actually be declared by the class that builds it.
+
+    Ten models share six classes, so a class's PARAMS is the union over its
+    variants and cannot separate DDS's SHAPMAX from DDH's H3.  It *can* catch a
+    parameter filed under the wrong family entirely -- e.g. KIN (DDK) placed
+    under ELL1H -- which the name/priority guards do not.
+    """
+    from jaxpint.binary._build import _MODEL_CLASSES
+    from jaxpint.binary._param_decls import MODEL_EXTRA_PARAMS
+
+    for model, cls in _MODEL_CLASSES.items():
+        declared = {d.name for d in cls.PARAMS}
+        stray = MODEL_EXTRA_PARAMS[model] - declared
+        assert not stray, f"{model} extras not declared by {cls.__name__}: {stray}"
