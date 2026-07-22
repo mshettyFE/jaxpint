@@ -101,11 +101,24 @@ def resolve_clock_config(
     ================== ============================================
     ``TT(TAI)``        ``(False, None)`` -- no BIPM term at all
     ``UNCORR``         ``(False, None)`` -- uncorrected
+    ``UTC(NIST)`` etc. ``(False, None)`` -- UTC realization; see below
     ``TT(BIPM)``       ``(True, default_bipm)``
     ``TT(BIPM2019)``   ``(True, "BIPM2019")``
     unrecognized       warn, fall back to ``(True, default_bipm)``
     absent             ``(True, default_bipm)``
     ================== ============================================
+
+    ``UTC(<lab>)`` is the TEMPO1-era convention (NGC6440E, 0437, and other
+    1990s pars): site clocks referenced to a laboratory's UTC realization,
+    with no TT(BIPM) steering applied when the model was made. Adding a BIPM
+    term to such a model would insert a ~27 us correction its parameters were
+    never fitted against, so the mapping is ``include_bipm=False`` -- the
+    clock chain still runs (obs -> UTC), it just stops at UTC. This follows
+    tempo2, which reads the value as ``TT(UTC(NIST))`` and applies no BIPM
+    term; it is a **deliberate divergence from PINT**, which warns and applies
+    its default ``TT(BIPM)`` anyway. (The lab suffix is not consulted:
+    inter-laboratory UTC realization differences are ~ns, far below the ~us
+    the BIPM decision moves.)
 
     Explicitly-passed arguments always win -- this only *derives* the values the
     caller left as ``None``, so ``get_TOAs(..., bipm_version="BIPM2019")`` still
@@ -133,6 +146,9 @@ def resolve_clock_config(
         value = clk.strip()
         upper = value.upper()
         if upper in ("TT(TAI)", "UNCORR"):
+            derived_include = False
+        elif upper == "UTC" or (upper.startswith("UTC(") and upper.endswith(")")):
+            # TEMPO1-era UTC realization -- no BIPM steering; see the docstring.
             derived_include = False
         elif upper.startswith("TT(BIPM") and upper.endswith(")"):
             inner = value[3:-1]  # strip "TT(" and ")"

@@ -621,3 +621,85 @@ def _barycentric_freq(toa_data: TOAData, par: ParResult):
         posepoch_name=_posepoch(par),
         obliquity_arcsec=_obliquity(par),
     )
+
+
+# ---------------------------------------------------------------------------
+# TOAData -> RawTOA (the loader stage, inverted)
+# ---------------------------------------------------------------------------
+#
+# Lives here rather than with the .tim writer because un-applying clock
+# corrections is loader-stage physics: it runs the same clock chain
+# (clock.correction.correct) the forward load runs, just as a fixed point.
+# jaxpint.tim stays a pure text layer (see
+# test_clock_subsystem_only_used_by_loaders).
+
+
+def _clock_config_from_label(label: Optional[str]) -> tuple[bool, Optional[str]]:
+    """Invert :func:`~jaxpint.clock.correction.clock_realization_label`.
+
+    ``"TT(TAI)"`` -> ``(False, None)``; ``"TT(BIPMxxxx)"`` -> ``(True,
+    "BIPMxxxx")``. ``None`` (an old TOAData that predates the stamp) falls back
+    to the packaged default, which is what the loader would have used.
+    """
+    if label is None:
+        return True, None
+    inner = label.removeprefix("TT(").removesuffix(")")
+    if inner == "TAI":
+        return False, None
+    return True, inner
+
+
+def toa_data_to_raw(toa_data, *, flags: Optional[dict] = None) -> list[RawTOA]:
+    """Reconstruct :class:`RawTOA` records from a :class:`TOAData`.
+
+    Un-applies the clock corrections baked into ``toa_data.mjd_*`` so that
+    reading the written file through the native loader (or PINT) reproduces
+    the corrected times this TOAData carries. Solved by fixed-point iteration:
+    ``raw = corrected - clk(raw)``, seeded at the corrected time; the
+    correction is ~us and drifts ~us/day, so two iterations land at float64.
+
+    ``flags`` (optional) is applied verbatim to every record -- per-TOA flag
+    reconstruction is not attempted (the loader keeps flag *masks*, not the
+    flags themselves).
+    """
+    include_bipm, bipm_version = _clock_config_from_label(toa_data.clock_realization)
+
+    mjd_int = np.asarray(toa_data.mjd_int, dtype=np.float64)
+    mjd_frac = np.asarray(toa_data.mjd_frac, dtype=np.float64)
+    error_s = np.asarray(toa_data.error, dtype=np.float64)
+    freq = np.asarray(toa_data.freq, dtype=np.float64)
+    dpn = np.asarray(toa_data.delta_pulse_number, dtype=np.float64)
+    obs_idx = np.asarray(toa_data.obs_indices)
+    obs_names = toa_data.obs_names
+
+    def _records(ri: np.ndarray, rf: np.ndarray) -> list[RawTOA]:
+        return [
+            RawTOA(
+                mjd_int=float(ri[k]),
+                mjd_frac=float(rf[k]),
+                error_s=float(error_s[k]),
+                freq_mhz=float(freq[k]),
+                obs=obs_names[int(obs_idx[k])],
+                flags=dict(flags) if flags else {},
+                delta_pulse_number=float(dpn[k]),
+            )
+            for k in range(len(ri))
+        ]
+
+    # Fixed point: raw such that raw + clk(raw) == corrected.
+    raw_int, raw_frac = mjd_int.copy(), mjd_frac.copy()
+    for _ in range(2):
+        c = correct(
+            _records(raw_int, raw_frac),
+            include_bipm=include_bipm,
+            bipm_version=bipm_version,
+        )
+        # corrected(guess) - guess = the correction evaluated at the guess.
+        applied_days = (c.mjd_int - raw_int) + (c.mjd_frac - raw_frac)
+        raw_frac = mjd_frac - applied_days
+        raw_int = mjd_int.copy()
+        carry = np.floor(raw_frac)
+        raw_int += carry
+        raw_frac -= carry
+
+    return _records(raw_int, raw_frac)

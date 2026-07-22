@@ -1,23 +1,18 @@
 """``.tim`` writing: RawTOA records / TOAData -> Tempo2 ``FORMAT 1`` text.
 
-Two layers, matching the two things a caller can hold:
+:func:`write_tim` is the exact inverse of the parser: it takes
+:class:`RawTOA` records (or a :class:`ParsedTim`) and emits ``FORMAT 1`` lines
+carrying the same MJD digits, frequencies, errors, sites, and flags.
+Round-trips bit-for-bit through :func:`~jaxpint.tim.read_tim` because nothing
+is recomputed.
 
-:func:`write_tim`
-    The exact inverse of the parser: takes :class:`RawTOA` records (or a
-    :class:`ParsedTim`) and emits ``FORMAT 1`` lines carrying the same MJD
-    digits, frequencies, errors, sites, and flags. Round-trips bit-for-bit
-    through :func:`~jaxpint.tim.read_tim` because nothing is recomputed.
-
-:func:`toa_data_to_raw`
-    The lossy-but-honest bridge from a :class:`~jaxpint.types.TOAData` back to
-    :class:`RawTOA` records, for writing *simulated* TOAs. A TOAData's MJDs are
-    clock-**corrected** (the corrections were applied at load and the raw times
-    dropped), so writing them verbatim would double-apply the corrections on
-    re-read. This function un-applies them by fixed-point iteration instead --
-    the corrections vary by ~us/day, so two iterations reach float64 -- using
-    the realization recorded in ``TOAData.clock_realization``. What cannot be
-    recovered is per-TOA flags and TIM commands (TIME/PHASE offsets are folded
-    into the corrected times); simulated TOAs have neither.
+This module is pure text -- it never touches the clock subsystem. Writing a
+*TOAData* back out (whose MJDs are clock-corrected) first requires un-applying
+the corrections, which is loader-stage physics:
+:func:`jaxpint.loaders.native.toa_data_to_raw` does that and feeds its records
+here. (It lives with the loaders deliberately -- the
+test_clock_subsystem_only_used_by_loaders invariant keeps parser-layer modules
+clock-independent.)
 
 Output is always Tempo2 ``FORMAT 1``. The fixed-column dialects (Princeton,
 Parkes) are read-side compatibility only -- every modern consumer reads
@@ -28,13 +23,13 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Optional, Sequence, Union
+from typing import Sequence, Union
 
 import numpy as np
 
 from .raw_toa import ParsedTim, RawTOA
 
-__all__ = ["format_toa_line", "write_tim", "toa_data_to_raw"]
+__all__ = ["format_toa_line", "write_tim"]
 
 
 def _shortest(x: float) -> str:
@@ -138,76 +133,3 @@ def write_tim(
     for i, t in enumerate(records):
         lines.append(format_toa_line(t, name=name_fmt.format(i=i)))
     Path(path).write_text("\n".join(lines) + "\n")
-
-
-def _clock_config_from_label(label: Optional[str]) -> tuple[bool, Optional[str]]:
-    """Invert :func:`~jaxpint.clock.correction.clock_realization_label`.
-
-    ``"TT(TAI)"`` -> ``(False, None)``; ``"TT(BIPMxxxx)"`` -> ``(True,
-    "BIPMxxxx")``. ``None`` (an old TOAData that predates the stamp) falls back
-    to the packaged default, which is what the loader would have used.
-    """
-    if label is None:
-        return True, None
-    inner = label.removeprefix("TT(").removesuffix(")")
-    if inner == "TAI":
-        return False, None
-    return True, inner
-
-
-def toa_data_to_raw(toa_data, *, flags: Optional[dict] = None) -> list[RawTOA]:
-    """Reconstruct :class:`RawTOA` records from a :class:`TOAData`.
-
-    Un-applies the clock corrections baked into ``toa_data.mjd_*`` so that
-    reading the written file through the native loader (or PINT) reproduces
-    the corrected times this TOAData carries. Solved by fixed-point iteration:
-    ``raw = corrected - clk(raw)``, seeded at the corrected time; the
-    correction is ~us and drifts ~us/day, so two iterations land at float64.
-
-    ``flags`` (optional) is applied verbatim to every record -- per-TOA flag
-    reconstruction is not attempted (the loader keeps flag *masks*, not the
-    flags themselves).
-    """
-    from ..clock.correction import correct
-
-    include_bipm, bipm_version = _clock_config_from_label(toa_data.clock_realization)
-
-    mjd_int = np.asarray(toa_data.mjd_int, dtype=np.float64)
-    mjd_frac = np.asarray(toa_data.mjd_frac, dtype=np.float64)
-    error_s = np.asarray(toa_data.error, dtype=np.float64)
-    freq = np.asarray(toa_data.freq, dtype=np.float64)
-    dpn = np.asarray(toa_data.delta_pulse_number, dtype=np.float64)
-    obs_idx = np.asarray(toa_data.obs_indices)
-    obs_names = toa_data.obs_names
-
-    def _records(ri: np.ndarray, rf: np.ndarray) -> list[RawTOA]:
-        return [
-            RawTOA(
-                mjd_int=float(ri[k]),
-                mjd_frac=float(rf[k]),
-                error_s=float(error_s[k]),
-                freq_mhz=float(freq[k]),
-                obs=obs_names[int(obs_idx[k])],
-                flags=dict(flags) if flags else {},
-                delta_pulse_number=float(dpn[k]),
-            )
-            for k in range(len(ri))
-        ]
-
-    # Fixed point: raw such that raw + clk(raw) == corrected.
-    raw_int, raw_frac = mjd_int.copy(), mjd_frac.copy()
-    for _ in range(2):
-        c = correct(
-            _records(raw_int, raw_frac),
-            include_bipm=include_bipm,
-            bipm_version=bipm_version,
-        )
-        # corrected(guess) - guess = the correction evaluated at the guess.
-        applied_days = (c.mjd_int - raw_int) + (c.mjd_frac - raw_frac)
-        raw_frac = mjd_frac - applied_days
-        raw_int = mjd_int.copy()
-        carry = np.floor(raw_frac)
-        raw_int += carry
-        raw_frac -= carry
-
-    return _records(raw_int, raw_frac)
