@@ -22,12 +22,15 @@ from jaxpint.par.text_adapter import to_raw_params
 log = logging.getLogger(__name__)
 
 
-def get_model(par_path: str | Path) -> ParResult:
+def get_model(par_path: str | Path | object) -> ParResult:
     """Parse a ``.par`` file into a JaxPINT :class:`~jaxpint.par.result.ParResult`, without PINT.
 
     Mirror of ``pint.models.get_model`` + ``pint_model_to_params``: tokenize the
     file, adapt each line into a ``RawParam``, detect the active components and
     binary model, then assemble via the shared core.
+
+    *par_path* is a filesystem path, or -- matching PINT's ``get_model`` -- an
+    open file-like object (``io.StringIO``), for par text held in memory.
 
     The SolarWindDispersionX ``theta0`` metadata is deferred to the ephemeris
     phase (the model builder falls back to ``theta0=0.0``); everything else is
