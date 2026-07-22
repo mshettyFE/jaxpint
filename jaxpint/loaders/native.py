@@ -79,10 +79,29 @@ def topocentric_core(
 ) -> _Core:
     """Build the parameter-independent time/geometry core from a ``.tim`` file.
 
-    This is exactly the content of PINT's ``TOAs`` table (topocentric freq +
-    TDB + barycentric posvels), so it is diffable against PINT with no model.
+    Routing through:func:`core_from_raw_toas` so that synthesized TOAs
+    (simulation grids) run through the identical pipeline.
     """
-    toas = read_tim(tim_path).toas
+    return core_from_raw_toas(
+        read_tim(tim_path).toas,
+        ephem=ephem,
+        include_bipm=include_bipm,
+        bipm_version=bipm_version,
+        planets=planets,
+        limits=limits,
+    )
+
+
+def core_from_raw_toas(
+    toas,
+    *,
+    ephem: str = "DE440",
+    include_bipm: bool = True,
+    bipm_version: Optional[str] = None,
+    planets: bool = False,
+    limits: str = "warn",
+) -> _Core:
+    """Build the time/geometry core from in-memory :class:`RawTOA` records."""
     n = len(toas)
 
     # 1. clock corrections -> TT(BIPM) MJD
@@ -104,7 +123,36 @@ def topocentric_core(
     )
 
     # 3. TT(BIPM) -> TDB
-    tdb_int, tdb_frac = to_tdb(corrected.mjd_int, corrected.mjd_frac, xyz_rows)
+    #
+    # Partitioned by the observatory's declared timescale, because TDB-native
+    # sites (the barycentre, obs code "@") record TDB directly: there is no
+    # UTC->TDB conversion to apply
+    # PINT's ``BarycenterObs`` does the same: ``timescale == "tdb"``, no conversion.
+    # The clock stage above is already consistent with this -- ``correct()``
+    # gates BIPM off for tdb-timescale sites, so ``corrected`` carries only the
+    # .tim TIME offsets, which are data corrections and do apply.
+    is_tdb = np.array([cfgs[tok].timescale == "tdb" for tok in obs_tokens])
+    tdb_int = np.array(corrected.mjd_int, dtype=np.float64, copy=True)
+    tdb_frac = np.array(corrected.mjd_frac, dtype=np.float64, copy=True)
+    utc_idx = np.flatnonzero(~is_tdb)
+    if utc_idx.size:
+        for tok in {obs_tokens[i] for i in utc_idx}:
+            # The discriminator is the timescale, NOT ``itrf_xyz is None``: stl_geo (the
+            # T2 spacecraft placeholder) has no coordinates either but records UTC, so
+            # treating "no coordinates" as "barycentre" would silently misconvert it.
+            # It is rejected explicitly instead.
+            if cfgs[tok].itrf_xyz is None:
+                raise ValueError(
+                    f"observatory {tok!r} records {cfgs[tok].timescale!r} time "
+                    "but has no ITRF coordinates, so its TOAs cannot be "
+                    "converted to TDB (spacecraft sites need per-TOA positions, "
+                    "which the native path does not support)"
+                )
+        ti, tf = to_tdb(
+            corrected.mjd_int[utc_idx], corrected.mjd_frac[utc_idx], xyz_rows[utc_idx]
+        )
+        tdb_int[utc_idx] = ti
+        tdb_frac[utc_idx] = tf
 
     # 4. posvels, per observatory group (each group shares one xyz / barycenter)
     ssb_obs_pos = np.zeros((n, 3))
@@ -187,6 +235,35 @@ def native_toas_to_jax(
     par-file parameter values.  Without a par there is no delay chain to
     evaluate, so the field stays unset and any GP-component build raises.
     """
+    return toa_data_from_raw_toas(
+        read_tim(tim_path).toas,
+        par_result,
+        ephem=ephem,
+        include_bipm=include_bipm,
+        bipm_version=bipm_version,
+        planets=planets,
+        limits=limits,
+    )
+
+
+def toa_data_from_raw_toas(
+    raw_toas,
+    par_result: Optional[ParResult] = None,
+    *,
+    ephem: Optional[str] = None,
+    include_bipm: Optional[bool] = None,
+    bipm_version: Optional[str] = None,
+    planets: Optional[bool] = None,
+    limits: str = "warn",
+) -> TOAData:
+    """Build a :class:`TOAData` from in-memory :class:`RawTOA` records.
+
+    Everything :func:`native_toas_to_jax` does after parsing -- clock chain,
+    TDB, posvels, flag masks, TZR, tropo, basis stamping -- with the records
+    supplied directly instead of read from a ``.tim``. This is the entry point
+    the fake-TOA generators in :mod:`jaxpint.simulation` use, so simulated and
+    file-read TOAs are products of the identical pipeline.
+    """
     # Config: explicit args first, else from .par, else PINT-like defaults.
     md = par_result.metadata if par_result else {}
     bp = par_result.bool_params if par_result else {}
@@ -204,8 +281,8 @@ def native_toas_to_jax(
         bipm_version=bipm_version,
     )
 
-    core = topocentric_core(
-        tim_path,
+    core = core_from_raw_toas(
+        raw_toas,
         ephem=ephem,
         include_bipm=include_bipm,
         bipm_version=bipm_version,
