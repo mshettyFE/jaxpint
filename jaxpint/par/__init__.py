@@ -6,6 +6,7 @@ native ``.par`` parser (:mod:`jaxpint.par.parser`) and the PINT bridge
 
 from jaxpint.par.core import raw_params_to_result
 from jaxpint.par.parser import get_model
+from jaxpint.par.writer import as_parfile, write_parfile
 from jaxpint.par.raw_params import ParamKind, RawParam
 from jaxpint.par.registry import BinaryModel, Component
 from jaxpint.par.result import MaskInfo, ParResult
@@ -18,5 +19,7 @@ __all__ = [
     "ParamKind",
     "RawParam",
     "get_model",
+    "as_parfile",
+    "write_parfile",
     "raw_params_to_result",
 ]

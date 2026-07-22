@@ -20,9 +20,13 @@ from .raw_toa import (
 )
 from .masks import select_toa_mask
 from .timfile import read_tim
+from .writer import format_toa_line, toa_data_to_raw, write_tim
 
 __all__ = [
     "read_tim",
+    "write_tim",
+    "format_toa_line",
+    "toa_data_to_raw",
     "select_toa_mask",
     "RawTOA",
     "ParsedTim",

@@ -81,7 +81,9 @@ def test_parresult_parity_vs_pint(parname):
         # prefix-family units are index-dependent (F0=Hz, F1=Hz/s, ...) while
         # the native parser carries the template unit.  Values + the built
         # model are what must agree.
-        assert nat.params.frozen_mask[ni[name]] == ref.params.frozen_mask[ri[name]], name
+        assert nat.params.frozen_mask[ni[name]] == ref.params.frozen_mask[ri[name]], (
+            name
+        )
         rv = float(ref.params.values[ri[name]])
         nv = float(nat.params.values[ni[name]])
         if name in epochs:
@@ -96,10 +98,13 @@ def test_parresult_parity_vs_pint(parname):
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("parname,timname", [
-    ("NGC6440E.par", "NGC6440E.tim"),
-    ("B1855+09_NANOGrav_9yv1.gls.par", "B1855+09_NANOGrav_9yv1.tim"),
-])
+@pytest.mark.parametrize(
+    "parname,timname",
+    [
+        ("NGC6440E.par", "NGC6440E.tim"),
+        ("B1855+09_NANOGrav_9yv1.gls.par", "B1855+09_NANOGrav_9yv1.tim"),
+    ],
+)
 def test_residual_parity_vs_pint(parname, timname):
     """End-to-end: native-par and PINT-par build models with identical residuals.
 
@@ -125,7 +130,9 @@ def test_residual_parity_vs_pint(parname, timname):
 
     r_ref = np.asarray(compute_time_residuals(tm_ref, toa_data, ref.params))
     r_nat = np.asarray(compute_time_residuals(tm_nat, toa_data, nat.params))
-    assert np.allclose(r_ref, r_nat, atol=1e-9, rtol=0.0), float(np.max(np.abs(r_ref - r_nat)))
+    assert np.allclose(r_ref, r_nat, atol=1e-9, rtol=0.0), float(
+        np.max(np.abs(r_ref - r_nat))
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +169,7 @@ def test_params_is_required_on_components(monkeypatch):
     class _Bare(DelayComponent):
         def __call__(self, toa_data, params, delay):  # pragma: no cover
             return delay
+
     assert _Bare.PARAMS == ()
 
     # a component reaching the aggregator without PARAMS is a hard, named error
@@ -175,7 +183,7 @@ def test_params_is_required_on_components(monkeypatch):
         with pytest.raises(TypeError, match="_Bare declares no PARAMS"):
             S._tables()
     finally:
-        S._tables.cache_clear()   # restore the real tables for other tests
+        S._tables.cache_clear()  # restore the real tables for other tests
 
 
 def _parse_one(line: str):
@@ -190,10 +198,10 @@ def test_tokenizer_skips_comments_and_blanks():
 
 
 def test_fit_flag_vs_uncertainty():
-    assert _parse_one("F0 100 1").frozen is False     # fit flag 1 -> free
-    assert _parse_one("F0 100 0").frozen is True       # fit flag 0 -> frozen
-    assert _parse_one("F0 100").frozen is True         # no flag -> frozen
-    assert _parse_one("F0 100 5e-9").frozen is True    # uncertainty, no flag
+    assert _parse_one("F0 100 1").frozen is False  # fit flag 1 -> free
+    assert _parse_one("F0 100 0").frozen is True  # fit flag 0 -> frozen
+    assert _parse_one("F0 100").frozen is True  # no flag -> frozen
+    assert _parse_one("F0 100 5e-9").frozen is True  # uncertainty, no flag
 
 
 def test_uncertainty_extraction():
@@ -219,13 +227,14 @@ def test_uncertainty_extraction():
 
 def test_param_uncertainty_accessor(tmp_path):
     import astropy.units as u
+
     par_text = (
         "PSR J0000+0000\n"
-        "RAJ 12:00:00 1 0.001\n"     # HMS angle: sigma in sec-of-time -> rad
-        "DECJ -30:00:00\n"           # value only -> NaN
-        "F0 100 1 5e-9\n"            # fitted float with sigma
-        "PX 0.5 1 0.12\n"           # fitted float with sigma
-        "DM 15 0\n"                  # frozen, no sigma -> NaN
+        "RAJ 12:00:00 1 0.001\n"  # HMS angle: sigma in sec-of-time -> rad
+        "DECJ -30:00:00\n"  # value only -> NaN
+        "F0 100 1 5e-9\n"  # fitted float with sigma
+        "PX 0.5 1 0.12\n"  # fitted float with sigma
+        "DM 15 0\n"  # frozen, no sigma -> NaN
     )
     p = tmp_path / "u.par"
     p.write_text(par_text)
@@ -233,23 +242,31 @@ def test_param_uncertainty_accessor(tmp_path):
     assert np.isclose(pv.param_uncertainty("F0"), 5e-9)
     assert np.isclose(pv.param_uncertainty("PX"), 0.12)
     # RAJ sigma 0.001 sec-of-time converted to radians
-    assert np.isclose(pv.param_uncertainty("RAJ"),
-                      float((0.001 * u.hourangle / 3600).to(u.rad).value))
-    assert np.isnan(pv.param_uncertainty("DM"))      # frozen / no sigma
-    assert np.isnan(pv.param_uncertainty("DECJ"))    # value only
+    assert np.isclose(
+        pv.param_uncertainty("RAJ"), float((0.001 * u.hourangle / 3600).to(u.rad).value)
+    )
+    assert np.isnan(pv.param_uncertainty("DM"))  # frozen / no sigma
+    assert np.isnan(pv.param_uncertainty("DECJ"))  # value only
     # aligned with values, JIT-traceable (static metadata)
     assert len(pv.uncertainties) == pv.values.shape[0]
 
 
 def test_uncertainty_all_kinds():
     import astropy.units as u
+
     # ANGLE: HMS RA -> sec-of-time; DMS DEC -> arcsec; decimal -> deg
-    assert np.isclose(_parse_one("RAJ 17:48:52.75 1 0.05").uncertainty,
-                      float((0.05 * u.hourangle / 3600).to(u.rad).value))
-    assert np.isclose(_parse_one("DECJ -20:21:29.0 1 0.4").uncertainty,
-                      float((0.4 * u.arcsec).to(u.rad).value))
-    assert np.isclose(_parse_one("ELONG 286.8634 1 8.4e-9").uncertainty,
-                      float((8.4e-9 * u.deg).to(u.rad).value))
+    assert np.isclose(
+        _parse_one("RAJ 17:48:52.75 1 0.05").uncertainty,
+        float((0.05 * u.hourangle / 3600).to(u.rad).value),
+    )
+    assert np.isclose(
+        _parse_one("DECJ -20:21:29.0 1 0.4").uncertainty,
+        float((0.4 * u.arcsec).to(u.rad).value),
+    )
+    assert np.isclose(
+        _parse_one("ELONG 286.8634 1 8.4e-9").uncertainty,
+        float((8.4e-9 * u.deg).to(u.rad).value),
+    )
     # MJD: sigma in days, stored as-is
     t0 = _parse_one("T0 53113.95509 1 0.00266858")
     assert t0.kind is ParamKind.MJD and np.isclose(t0.uncertainty, 0.00266858)
@@ -266,7 +283,7 @@ def test_fortran_float():
 
 
 def test_sexagesimal_angles():
-    raj = _parse_one("RAJ 12:00:00")    # 12h = 180 deg = pi rad
+    raj = _parse_one("RAJ 12:00:00")  # 12h = 180 deg = pi rad
     dec = _parse_one("DECJ -30:00:00")  # -30 deg
     assert raj.kind is ParamKind.ANGLE and np.isclose(raj.value, np.pi)
     assert np.isclose(dec.value, np.deg2rad(-30.0))
@@ -291,10 +308,14 @@ def test_mask_range_key():
 
 
 def test_repeatable_mask_indexing():
-    parsed = to_raw_params(tokenize_lines([
-        "EQUAD -fe 430 0.1",
-        "EQUAD -fe 820 0.2",
-    ]))
+    parsed = to_raw_params(
+        tokenize_lines(
+            [
+                "EQUAD -fe 430 0.1",
+                "EQUAD -fe 820 0.2",
+            ]
+        )
+    )
     names = [rp.name for rp in parsed.raw_params]
     assert names == ["EQUAD1", "EQUAD2"]
 
@@ -310,7 +331,7 @@ def test_mjd_split():
 
 
 def test_unit_scale_pbdot():
-    rp = _parse_one("PBDOT 1.59")     # PINT scales values above threshold
+    rp = _parse_one("PBDOT 1.59")  # PINT scales values above threshold
     assert np.isclose(rp.value, 1.59e-12)
     rp2 = _parse_one("PBDOT 1.59e-12")  # already small -> unchanged
     assert np.isclose(rp2.value, 1.59e-12)
@@ -526,7 +547,9 @@ def test_tcb_transforms_epochs(tmp_path):
     """~15.9 s at MJD 55000; must survive the int/frac split."""
     r = _load_par(tmp_path, _TCB_BASE + "UNITS TCB\n")
     i = {n: k for k, n in enumerate(r.params.names)}
-    mjd = r.params.epoch_int_values["PEPOCH"] + float(np.asarray(r.params.values)[i["PEPOCH"]])
+    mjd = r.params.epoch_int_values["PEPOCH"] + float(
+        np.asarray(r.params.values)[i["PEPOCH"]]
+    )
     assert np.isclose(mjd, 54999.99981617038, atol=1e-9)
 
 
@@ -558,9 +581,7 @@ def test_tcb_refuses_unknown_dimensionality(tmp_path):
 
 def test_tcb_noise_params_pass_through(tmp_path):
     """EFAC/EQUAD are left alone (PINT does too): dimensionless or ~8 fs."""
-    r = _load_par(
-        tmp_path, _TCB_BASE + "UNITS TCB\nEFAC -f L 1.2\nEQUAD -f L 0.5\n"
-    )
+    r = _load_par(tmp_path, _TCB_BASE + "UNITS TCB\nEFAC -f L 1.2\nEQUAD -f L 0.5\n")
     i = {n: k for k, n in enumerate(r.params.names)}
     v = np.asarray(r.params.values)
     assert float(v[i["EFAC1"]]) == 1.2
@@ -569,9 +590,21 @@ def test_tcb_noise_params_pass_through(tmp_path):
 
 @pytest.mark.parametrize(
     "name,expected",
-    [("F0", -1), ("F1", -2), ("F2", -3), ("DM", -1), ("DM1", -2),
-     ("NE_SW", -2), ("NE_SW1", -3), ("DMX_0042", -1), ("JUMP3", 1),
-     ("PEPOCH", "mjd"), ("GLEP_2", "mjd"), ("TZRMJD", None), ("EQUAD1", None)],
+    [
+        ("F0", -1),
+        ("F1", -2),
+        ("F2", -3),
+        ("DM", -1),
+        ("DM1", -2),
+        ("NE_SW", -2),
+        ("NE_SW1", -3),
+        ("DMX_0042", -1),
+        ("JUMP3", 1),
+        ("PEPOCH", "mjd"),
+        ("GLEP_2", "mjd"),
+        ("TZRMJD", None),
+        ("EQUAD1", None),
+    ],
 )
 def test_dimensionality_resolution(name, expected):
     """Derivative families vary with index; instance families collapse."""
@@ -625,19 +658,20 @@ _INERT_MODULES = {
     "_tcb_tables.py",
     "spec.py",
     "registry_table.py",
+    "writer.py",
 }
 
 # Metadata and fit-result bookkeeping. Ignoring these is correct, not a gap:
 # PINT writes most of them back out after a fit and consumes none of them in
 # the timing model (fitter.py update_model; timing_model.py:2839 groups them).
 _INFORMATIONAL = {
-    "PSR",     # pulsar name
-    "NTOA",    # fit outputs, written back by a fitter
+    "PSR",  # pulsar name
+    "NTOA",  # fit outputs, written back by a fitter
     "CHI2",
     "CHI2R",
     "TRES",
     "DMRES",
-    "RM",      # rotation measure: affects polarization, not timing
+    "RM",  # rotation measure: affects polarization, not timing
 }
 
 # Recognized physics we do not implement. Tracked debt, NOT permission -- each
@@ -653,15 +687,11 @@ def _declared_and_consumed():
     import re
 
     root = _REPO / "jaxpint"
-    declared = re.findall(
-        r'ParamDecl\("([A-Z0-9_]+)"', (root / "model.py").read_text()
-    )
+    declared = re.findall(r'ParamDecl\("([A-Z0-9_]+)"', (root / "model.py").read_text())
     body = "".join(
         p.read_text() for p in root.rglob("*.py") if p.name not in _INERT_MODULES
     )
-    unconsumed = {
-        d for d in declared if f'"{d}"' not in body and f"'{d}'" not in body
-    }
+    unconsumed = {d for d in declared if f'"{d}"' not in body and f"'{d}'" not in body}
     return set(declared), unconsumed
 
 
@@ -692,7 +722,7 @@ def test_classification_lists_are_not_stale():
 
 
 def test_start_finish_fit_flags_are_ignored():
-    """"START 53000 1" must not make START a free parameter.
+    """ "START 53000 1" must not make START a free parameter.
 
     PINT warns "START cannot be unfrozen..." and forces frozen in
     TimingModel.validate; the native parse mirrors it. Before this, the flag
