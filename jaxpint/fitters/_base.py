@@ -50,6 +50,15 @@ _STEP_SIGMA_TOL = 1e-3
 # robustness on a cold start without charging converged fits for it.
 _DEFAULT_MAXITER = 10
 
+# Downhill line-search constants, mirroring PINT's DownhillFitter._fit_toas
+# (fitter.py:937): a proposed Gauss-Newton step is accepted only if chi2 does
+# not rise by more than _MAX_CHI2_INCREASE; otherwise the step is shrunk by
+# _LAMBDA_FACTOR and retried, giving up once lambda drops below _MIN_LAMBDA
+# (PINT's values: 1e-2, 1.5, 1e-4 -- note 1e-4, not the 1e-3 sometimes quoted).
+_MAX_CHI2_INCREASE = 1e-2
+_LAMBDA_FACTOR = 1.5
+_MIN_LAMBDA = 1e-4
+
 
 class BaseFitResult(eqx.Module):
     """Common fields shared by all fit results."""
@@ -266,6 +275,34 @@ class BaseFitter(ABC):
             z = z - zo * ((o @ z) / (o @ zo))
         return M_star.T @ z
 
+    def _fit_chi2(
+        self,
+        params: ParameterVector,
+        external_delay: Optional[Float[Array, " n_toas"]],
+    ) -> Float[Array, ""]:
+        """chi2 of the fit residuals at *params*, offset direction projected out.
+
+        ``r^T C^{-1} r - (o^T C^{-1} r)^2 / (o^T C^{-1} o)`` -- algebraically
+        identical to subtracting the ``C``-weighted mean and then computing
+        ``r^T C^{-1} r``, which is what each fitter's ``fit_toas`` reports
+        (``compute_chi2`` after ``_subtract_weighted_mean`` for WLS,
+        ``compute_chi2_cov`` after ``_subtract_cov_weighted_mean`` for GLS). It
+        is built from the ``_fit_cinv``/``_offset_vector`` hooks, so one
+        definition serves all three fitters; the line search in
+        :meth:`fit_params` compares exactly the quantity the result reports.
+
+        Costs one residual evaluation plus ``C^{-1}`` applications -- no design
+        matrix -- which is what makes a per-trial line search affordable next to
+        ``_core_step``'s ``jacfwd``.
+        """
+        r = self._fit_residuals(params, external_delay)
+        z = self._fit_cinv(params, r)
+        o = self._offset_vector()
+        if o is None:
+            return r @ z
+        zo = self._fit_cinv(params, o)
+        return r @ z - (o @ z) ** 2 / (o @ zo)
+
     def _solve_gn_normal(
         self,
         params: ParameterVector,
@@ -345,38 +382,71 @@ class BaseFitter(ABC):
         tol = _STEP_SIGMA_TOL if step_tol is None else step_tol
 
         def _iterate(values, ext):
-            # Iterate to a fixed point, stopping as soon as the Gauss-Newton
-            # step is negligible against the parameter's own uncertainty.
+            # Damped Gauss-Newton. Each iteration proposes a full GN step, then a
+            # line search accepts the longest fraction lambda of it whose chi2
+            # does not rise by more than _MAX_CHI2_INCREASE, shrinking by
+            # _LAMBDA_FACTOR down to _MIN_LAMBDA before declaring the step
+            # unusable.
             #
-            # Measuring the step in units of sigma is what makes one threshold
-            # work across parameters spanning ~30 orders of magnitude (F0 ~ 1e2,
-            # F1 ~ 1e-15). A relative-to-value test would be meaningless for any
-            # parameter passing through zero, and an absolute one would need
-            # per-parameter tuning. It is also the criterion :meth:`fit_gap`
-            # already documents for deciding when implicit gradients are
-            # trustworthy, so the stopping rule and the diagnostic agree.
+            # The convergence exit measures the *undamped* proposal against
+            # sigma, not the damped movement: a microscopic accepted step with
+            # a large outstanding proposal is crawling, not converged, and must
+            # keep iterating.
+            chi2_0 = self._fit_chi2(skeleton.with_values(values), ext)
+
             def cond(state):
-                _values, it, step_sigma = state
-                return jnp.logical_and(it < n_iter, step_sigma > tol)
+                _v, _c, it, gap, stalled = state
+                return (it < n_iter) & (gap > tol) & ~stalled
 
             def body(state):
-                values, it, _ = state
+                values, chi2, it, _, _ = state
                 new_values, cov, _nr = self._core_step(
                     skeleton.with_values(values), ext, thr, **core_opts
                 )
-                step = new_values[free_idx] - values[free_idx]
+                step = new_values - values  # frozen entries: zero by _core_step
+
+                # -- line search over lambda -------------------------------
+                def ls_cond(s):
+                    lam, _c, accepted = s
+                    return ~accepted & (lam >= _MIN_LAMBDA)
+
+                def ls_body(s):
+                    lam, _c, _a = s
+                    trial_chi2 = self._fit_chi2(
+                        skeleton.with_values(values + lam * step), ext
+                    )
+                    ok = (trial_chi2 <= chi2 + _MAX_CHI2_INCREASE) | (
+                        # A NaN chi2 at the *current* point can veto every
+                        # finite trial (NaN <= x is False); escaping NaN is
+                        # always an improvement, so accept any finite trial.
+                        jnp.isnan(chi2) & ~jnp.isnan(trial_chi2)
+                    )
+                    return jnp.where(ok, lam, lam / _LAMBDA_FACTOR), trial_chi2, ok
+
+                lam, trial_chi2, accepted = jax.lax.while_loop(
+                    ls_cond, ls_body, (1.0, jnp.asarray(jnp.inf), False)
+                )
+
+                values_next = jnp.where(accepted, values + lam * step, values)
+                chi2_next = jnp.where(accepted, trial_chi2, chi2)
+
                 sigma = jnp.sqrt(jnp.abs(jnp.diag(cov)))
                 # A zero/degenerate sigma means the SVD truncated that
                 # direction; it carries no information, so it must not veto
                 # convergence. Scoring it 0 excludes it from the max.
                 scaled = jnp.where(
-                    sigma > 0, jnp.abs(step) / jnp.where(sigma > 0, sigma, 1.0), 0.0
+                    sigma > 0,
+                    jnp.abs(step[free_idx]) / jnp.where(sigma > 0, sigma, 1.0),
+                    0.0,
                 )
-                return new_values, it + 1, jnp.max(scaled)
+                return (values_next, chi2_next, it + 1, jnp.max(scaled), ~accepted)
 
             # Seeded above tol so the loop always takes at least one step.
-            values, _n_used, _gap = jax.lax.while_loop(
-                cond, body, (values, 0, jnp.asarray(jnp.inf))
+            #
+            # Deliberate divergence from PINT here: PINT returns its best-chi2
+            # state, this returns the *last* accepted one. Chi2-keyed
+            values, _c, _n, _gap, _stalled = jax.lax.while_loop(
+                cond, body, (values, chi2_0, 0, jnp.asarray(jnp.inf), False)
             )
             return values
 
