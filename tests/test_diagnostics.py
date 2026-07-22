@@ -483,3 +483,138 @@ class TestWidebandWhitening:
         # tests above pin the machinery against dense algebra at 1e-10.
         diff = np.max(np.abs(ours - np.asarray(w_pint)))
         assert diff < 0.05, f"max whitened-residual diff {diff:.3e} (dimensionless)"
+
+
+# ---------------------------------------------------------------------------
+# Residuals options + epoch averaging
+# ---------------------------------------------------------------------------
+
+
+class TestComputeResiduals:
+    @pytest.fixture(scope="class")
+    def ngc(self):
+        import pathlib
+
+        import jaxpint.par as jpar
+        from jaxpint import build_model, native
+
+        d = pathlib.Path(__file__).resolve().parent / "data" / "pint_inputs"
+        parsed = jpar.get_model(str(d / "NGC6440E.par"))
+        td = native.get_TOAs(str(d / "NGC6440E.tim"), parsed)
+        tm, nm = build_model(parsed, td)
+        return parsed, td, tm
+
+    def test_subtract_mean_false_is_the_raw_primitive(self, ngc):
+        from jaxpint.fitters import compute_residuals, compute_time_residuals
+
+        parsed, td, tm = ngc
+        raw = compute_time_residuals(tm, td, parsed.params)
+        opt = compute_residuals(tm, td, parsed.params, subtract_mean=False)
+        npt.assert_array_equal(np.asarray(opt), np.asarray(raw))
+
+    def test_weighted_mean_is_removed(self, ngc):
+        from jaxpint.fitters import compute_residuals
+
+        parsed, td, tm = ngc
+        r = np.asarray(compute_residuals(tm, td, parsed.params))
+        w = 1.0 / np.asarray(td.error) ** 2
+        assert abs(np.sum(w * r) / np.sum(w)) < 1e-15  # weighted mean gone
+        r_uw = np.asarray(
+            compute_residuals(tm, td, parsed.params, use_weighted_mean=False)
+        )
+        assert abs(r_uw.mean()) < 1e-15  # plain mean gone
+        # and the two demeanings genuinely differ (errors are heterogeneous)
+        assert np.abs(r - r_uw).max() > 0
+
+
+class TestEcorrAverage:
+    def test_toy_matches_hand_computation(self):
+        """3 epochs of 8 TOAs (the shared _setup): every output checked
+        against the formula computed longhand."""
+        from jaxpint.fitters import ecorr_average
+
+        toa_data, params, nm = _setup()
+        rng = np.random.default_rng(0)
+        r = rng.normal(0, 2e-6, 24)
+
+        avg = ecorr_average(r, toa_data, params, nm)
+        err = np.asarray(nm.scaled_sigma(toa_data, params))
+        w = 1.0 / err**2
+        ecorr2 = 1.5e-6**2
+        for e in range(3):
+            sl = slice(8 * e, 8 * (e + 1))
+            npt.assert_allclose(
+                avg.time_resids[e], np.sum(w[sl] * r[sl]) / np.sum(w[sl]), rtol=1e-12
+            )
+            npt.assert_allclose(
+                avg.errors[e], np.sqrt(1.0 / np.sum(w[sl]) + ecorr2), rtol=1e-12
+            )
+            npt.assert_array_equal(avg.indices[e], np.arange(24)[sl])
+
+    def test_raw_error_mode_drops_ecorr_term(self):
+        from jaxpint.fitters import ecorr_average
+
+        toa_data, params, nm = _setup()
+        r = np.zeros(24)
+        avg = ecorr_average(r, toa_data, params, nm, use_noise_model=False)
+        w = 1.0 / np.asarray(toa_data.error) ** 2
+        npt.assert_allclose(
+            avg.errors[0], np.sqrt(1.0 / np.sum(w[:8])), rtol=1e-12
+        )
+
+    def test_requires_ecorr(self):
+        from jaxpint.fitters import ecorr_average
+        from jaxpint.noise import NoiseModel, ScaleToaError
+
+        toa_data, params, _ = _setup()
+        nm = NoiseModel(
+            white_noise=ScaleToaError(efac_names=("EFAC1",), equad_names=("EQUAD1",)),
+            correlated=(),
+        )
+        with pytest.raises(ValueError, match="EcorrNoise"):
+            ecorr_average(np.zeros(24), toa_data, params, nm)
+
+    @pytest.mark.slow
+    def test_parity_vs_pint_ecorr_average(self):
+        """Element-wise vs PINT's Residuals.ecorr_average on B1855 real data."""
+        pytest.importorskip("pint")
+        import pint.models
+        import pint.residuals
+        import pint.toa
+        from pint.config import examplefile
+
+        from jaxpint.bridge import (
+            build_timing_model,
+            pint_model_to_params,
+            pint_toas_to_jax,
+        )
+        from jaxpint.fitters import compute_residuals, ecorr_average
+
+        m = pint.models.get_model(examplefile("B1855+09_NANOGrav_9yv1.gls.par"))
+        toas = pint.toa.get_TOAs(examplefile("B1855+09_NANOGrav_9yv1.tim"), model=m)
+        pres = pint.residuals.Residuals(toas, m)
+        pavg = pres.ecorr_average()
+
+        td = pint_toas_to_jax(toas, model=m)
+        params = pint_model_to_params(m).params
+        tm, nm = build_timing_model(m, toas)
+        # PINT demeans with scaled uncertainties; match, or the removed
+        # constant differs by ~1 us and every averaged residual shifts.
+        r = compute_residuals(
+            tm, td, params, errors=nm.scaled_sigma(td, params)
+        )
+        avg = ecorr_average(np.asarray(r), td, params, nm)
+
+        assert avg.time_resids.shape == pavg["time_resids"].shape
+        # Averaged MJDs and errors: pure bookkeeping, must agree tightly.
+        npt.assert_allclose(
+            avg.mjds, pavg["mjds"].value, rtol=0, atol=1e-7
+        )
+        npt.assert_allclose(
+            avg.errors, pavg["errors"].to("s").value, rtol=1e-6
+        )
+        # Averaged residuals: carries the known ~1e-8 s residual-level
+        # implementation difference, so a matched tolerance.
+        npt.assert_allclose(
+            avg.time_resids, pavg["time_resids"].to("s").value, atol=5e-8
+        )
