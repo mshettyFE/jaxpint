@@ -10,6 +10,19 @@ from jaxpint.types.dual_float import DualFloat
 from jaxpint.types.named_vector import NamedVector
 
 
+# Shared NaN singleton for "no reported sigma" entries in the static
+# ``uncertainties`` tuple.  NaN != NaN, so tuples holding *fresh*
+# ``float('nan')`` objects make two structurally identical ParameterVectors
+# compare unequal as pytree aux data — which silently defeats the jit cache
+# (every freshly constructed vector, e.g. from re-parsing a par file or a
+# per-pulsar PTA loop, would retrace every jitted function).  Tuple equality
+# short-circuits on element *identity* (CPython's PyObject_RichCompareBool),
+# and ``hash(nan)`` is id-based on Python >= 3.10, so interning every NaN
+# entry to this one object restores both aux-data equality and consistent
+# hashing.  ``__check_init__`` normalizes all NaN entries to this object.
+_NAN: float = float("nan")
+
+
 class ParameterVector(NamedVector):
     """Timing model parameters as a flat JAX array with metadata.
 
@@ -128,10 +141,20 @@ class ParameterVector(NamedVector):
 
         # Default uncertainties to all-NaN (no reported sigma) if not provided.
         if len(self.uncertainties) == 0 and n > 0:
-            object.__setattr__(self, "uncertainties", (float("nan"),) * n)
+            object.__setattr__(self, "uncertainties", (_NAN,) * n)
         elif len(self.uncertainties) != n:
             raise ValueError(
                 f"len(uncertainties) = {len(self.uncertainties)}, expected {n}"
+            )
+        elif any(x is not _NAN and x != x for x in self.uncertainties):
+            # Intern caller-supplied NaN entries (e.g. math.nan per missing
+            # sigma from the par reader) to the shared _NAN singleton so that
+            # equal-content vectors compare equal as pytree aux data — see
+            # the _NAN comment above.
+            object.__setattr__(
+                self,
+                "uncertainties",
+                tuple(_NAN if x != x else float(x) for x in self.uncertainties),
             )
 
         # Build _name_to_index from names

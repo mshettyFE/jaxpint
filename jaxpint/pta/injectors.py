@@ -14,7 +14,7 @@ contract without either side depending on the other.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import ClassVar, Optional
 
 from jaxtyping import Array, Float
 
@@ -43,6 +43,16 @@ class SignalInjector(ABC):
 
     :func:`pta_logL` is agnostic to the signal type.
     """
+
+    # Set True by injectors whose ``covariance`` block is genuinely collinear
+    # (e.g. the analytic-marginalization block: the timing design matrix at
+    # Φ = 1e40).  When any injector in a config declares this, the PTA
+    # likelihood's inner tier switches from the Cholesky-of-the-Gram Woodbury
+    # to the square-root (QR) form, which avoids squaring the conditioning of
+    # ``N^{-1/2}U`` — the Cholesky form loses ~4 digits (an O(1) absolute
+    # logL error at n_toas ~ 1e4) on such blocks.  Class-level metadata read
+    # at trace time, so it never triggers recompilation.
+    needs_qr: ClassVar[bool] = False
 
     @abstractmethod
     def register_params(self, global_params: GlobalParams) -> GlobalParams:

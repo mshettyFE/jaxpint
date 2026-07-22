@@ -114,9 +114,11 @@ def _check_linearity(
 
     Notes
     -----
-    This is the most expensive step in marginalization setup (~O(n_params) more
-    expensive than the Jacobian alone).  It is skipped when the user sets
-    ``validate_linearity=False`` on :func:`marginalize_single_pulsar` /
+    Costs one second-order directional derivative (a jvp-of-jvp forward pass)
+    per marginalized parameter — the same O(n_marg) scaling and O(n_toas)
+    peak memory as the design-matrix build in ``_marg_woodbury_block``; the
+    full residual Hessian is never materialized.  It is skipped when the user
+    sets ``validate_linearity=False`` on :func:`marginalize_single_pulsar` /
     :func:`marginalize_pta`.
     """
 
@@ -133,13 +135,22 @@ def _check_linearity(
         p = fiducial_params.with_values(values)
         return compute_time_residuals(timing_model, toa_data, p)
 
-    # Hessian is shape (n_toas, n_params, n_params).  We only need the
-    # diagonal block at the marg'd indices
-    H_full = jax.jacfwd(jax.jacrev(time_resid_fn))(fiducial_params.values)
+    # Only the diagonal entries H[:, i, i] at the marg'd indices are needed,
+    # so compute each as a second-order directional derivative — jvp of a jvp
+    # along the one-hot tangent e_i, i.e. eᵢᵀ H eᵢ per TOA.
+    values_fid = fiducial_params.values
+
+    def _hessian_diag_column(idx: int) -> Float[Array, " n_toas"]:
+        tangent = jnp.zeros_like(values_fid).at[idx].set(1.0)
+
+        def _directional_grad(values):
+            return jax.jvp(time_resid_fn, (values,), (tangent,))[1]
+
+        return jax.jvp(_directional_grad, (values_fid,), (tangent,))[1]
 
     flagged: list[tuple[str, float]] = []
     for k, idx in enumerate(over_indices):
-        H_ii = H_full[:, idx, idx]
+        H_ii = _hessian_diag_column(idx)
         M_col = M_full_cols[:, k]
         denom = jnp.max(jnp.abs(M_col))
         # Guard against an all-zero design column (param does not affect
@@ -471,6 +482,13 @@ class _MarginalizationInjector(SignalInjector):
     :class:`~jaxpint.pta.signals.gwb.CURNInjector` and
     :class:`~jaxpint.pta.signals.correlated_gwb.HDCorrelatedGWBInjector`.
     """
+
+    # The cached block is the timing design matrix M at Φ = 1e40 — genuinely
+    # collinear for multi-parameter MSPs.  Declaring needs_qr switches the PTA
+    # inner tier to the square-root (QR) Woodbury, matching the single-pulsar
+    # path's ``use_qr=True``: the Gram-Cholesky form loses ~4 digits on this
+    # block (relerr ~3e-4 in rᵀC⁻¹r → an O(1) absolute logL error per pulsar).
+    needs_qr = True
 
     def __init__(
         self,

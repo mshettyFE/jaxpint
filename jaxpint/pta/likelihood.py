@@ -54,7 +54,13 @@ from jaxpint.utils import WoodburyFactor
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
-from jaxpint.utils import concat_woodbury_blocks, woodbury_dot, woodbury_solve
+from jaxpint.utils import (
+    apply_qr_woodbury_solve,
+    concat_woodbury_blocks,
+    qr_woodbury_half_factor,
+    woodbury_dot,
+    woodbury_solve,
+)
 
 from jaxpint.types import GlobalParams
 
@@ -150,6 +156,18 @@ class PTAConfig(eqx.Module):
 # ---------------------------------------------------------------------------
 
 
+def _config_needs_qr(config: PTAConfig) -> bool:
+    """True when any injector's covariance block requires the QR Woodbury form.
+
+    Reads the class-level :attr:`SignalInjector.needs_qr` metadata (set by
+    e.g. the analytic-marginalization injector, whose block is the collinear
+    timing design matrix at Φ = 1e40).  ``config.signal_injectors`` is a
+    static field, so this is a plain Python bool at trace time — switching
+    solver forms never retraces on data.
+    """
+    return any(getattr(inj, "needs_qr", False) for inj in config.signal_injectors)
+
+
 def _collect_injector_ext_delay(
     p: int,
     toa_data_p: TOAData,
@@ -229,6 +247,7 @@ def _per_pulsar_intermediates(
     external_cov: Optional[
         tuple[Float[Array, "n_toas n_ext"], Float[Array, " n_ext"]]
     ] = None,
+    use_qr: bool = False,
 ) -> tuple[
     Float[Array, ""],
     Float[Array, ""],
@@ -261,6 +280,13 @@ def _per_pulsar_intermediates(
         Deterministic signal delay (e.g. CW).
     external_cov : (U_ext, Phi_ext) tuple, optional
         Per-pulsar stochastic covariance from SignalInjectors (e.g. CURN).
+    use_qr : bool
+        If True, evaluate the inner-tier Woodbury via the square-root (QR)
+        form instead of the Cholesky of the Gram.  Required when the
+        stacked ``(U, Phi)`` contains a genuinely collinear block (the
+        analytic-marginalization design matrix at Φ = 1e40); see
+        :func:`~jaxpint.utils.woodbury_dot_qr`.  One factorization is
+        shared between the quadratic form and the solve.
 
     Returns
     -------
@@ -285,13 +311,23 @@ def _per_pulsar_intermediates(
         toa_data, timing_model, noise_model, params, external_delay, external_cov
     )
 
-    # 3. Inner tier: per-pulsar Woodbury
-    rCr_p, logdetC_p = woodbury_dot(Ndiag, U, Phi, r, r)
-
-    # 4. C_p^{-1} r_p and C_p^{-1} F_corr via Woodbury solve
-    #    Combine into one solve: B = [r[:, None], F_corr]
+    # 3-4. Inner tier: quadratic form + solve against C_p, combined into one
+    #      solve over B = [r[:, None], F_corr].
     B = jnp.concatenate([r[:, None], F_corr], axis=1)  # (n_toas, 1 + n_basis)
-    Cinv_B = woodbury_solve(Ndiag, U, Phi, B)
+    if use_qr:
+        # Square-root form (collinear marg block present): one shared
+        # factorization for both the quadratic form and the solve.
+        Ninv_half, Q1, R = qr_woodbury_half_factor(Ndiag, U, Phi)
+        u = Ninv_half * r
+        p_vec = Q1.T @ u
+        rCr_p = u @ u - p_vec @ p_vec
+        logdetC_p = jnp.sum(jnp.log(Ndiag)) + 2.0 * jnp.sum(
+            jnp.log(jnp.abs(jnp.diag(R)))
+        )
+        Cinv_B = apply_qr_woodbury_solve(Ninv_half, Q1, B)
+    else:
+        rCr_p, logdetC_p = woodbury_dot(Ndiag, U, Phi, r, r)
+        Cinv_B = woodbury_solve(Ndiag, U, Phi, B)
     Cinv_r = Cinv_B[:, 0]  # (n_toas,)
     Cinv_F = Cinv_B[:, 1:]  # (n_toas, n_basis)
 
@@ -604,6 +640,7 @@ def joint_correlated_blocks(
     n_basis_per_k = n_basis_per_injector(
         config.correlated_injectors, config.toa_data_list[0]
     )
+    use_qr = _config_needs_qr(config)
 
     sum_rCr = jnp.float64(0.0)
     sum_logdetC = jnp.float64(0.0)
@@ -635,6 +672,7 @@ def joint_correlated_blocks(
             F_stack_p,
             external_delay=ext_delay,
             external_cov=ext_cov,
+            use_qr=use_qr,
         )
         sum_rCr = sum_rCr + rCr_p
         sum_logdetC = sum_logdetC + logdetC_p
@@ -851,6 +889,10 @@ def single_pulsar_pta_logL(
         pulsar_params_p,
         external_delay=ext_delay,
         external_cov=ext_cov,
+        # QR (square-root) Woodbury when any injector contributes a
+        # collinear block (e.g. the analytic-marginalization design matrix
+        # at Φ = 1e40) — the Gram-Cholesky form loses ~4 digits there.
+        use_qr=_config_needs_qr(config),
     )
 
 
@@ -1239,6 +1281,7 @@ def per_pulsar_gw_blocks(
             F_p,
             external_delay=ext_delay,
             external_cov=ext_cov,
+            use_qr=_config_needs_qr(config),
         )
         kv_list.append(basis_proj_residual_p)
         # km = FᵀC⁻¹F is a Gram matrix (symmetric in exact arithmetic); the
