@@ -8,7 +8,6 @@ import io
 import warnings
 from unittest.mock import patch
 
-import astropy.units as u
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -16,18 +15,16 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-pytest.importorskip("pint")  # optional dependency; skip module if absent
-import pint.models as models
-from pint.simulation import make_fake_toas_uniform
-
+import jaxpint.par as jpar
+from jaxpint import build_model
 from jaxpint.bayes import (
     marginalize_pta,
     marginalize_single_pulsar,
 )
-from jaxpint.bridge import build_timing_model, pint_model_to_params, pint_toas_to_jax
 from jaxpint.fitters import compute_time_residuals
 from jaxpint.likelihood import single_pulsar_logL
 from jaxpint.pta.likelihood import PTAConfig, pta_logL
+from jaxpint.simulation import make_fake_toas_uniform
 from jaxpint.types import GlobalParams
 from jaxpint.pta.signals.correlated_gwb import HDCorrelatedGWBInjector
 
@@ -58,21 +55,20 @@ TZRSITE       @
 @pytest.fixture(scope="module")
 def synth_objects():
     """Timing model, noise model, TOA data, and params from a synthetic pulsar."""
-    np.random.seed(42)
-    m_true = models.get_model(io.StringIO(_SYNTH_PAR))
-    toas = make_fake_toas_uniform(
-        53000,
-        55000,
+    par = jpar.get_model(io.StringIO(_SYNTH_PAR))
+    toa_data = make_fake_toas_uniform(
+        53000.0,
+        55000.0,
         30,
-        m_true,
-        error=10 * u.us,
+        par,
+        obs="gbt",
+        freq_mhz=1400.0,
+        error_us=10.0,
         add_noise=True,
-        freq=1400 * u.MHz,
+        key=jax.random.PRNGKey(42),
     )
-    toa_data = pint_toas_to_jax(toas, model=m_true)
-    params = pint_model_to_params(m_true).params
-    jax_model, noise_model = build_timing_model(m_true)
-    return jax_model, noise_model, toa_data, params
+    jax_model, noise_model = build_model(par, toa_data)
+    return jax_model, noise_model, toa_data, par.params
 
 
 # A second fixture that adds F2 to the free-parameter set. Used
@@ -99,21 +95,20 @@ TZRSITE       @
 @pytest.fixture(scope="module")
 def synth_objects_with_F2():
     """Synthetic pulsar with F2 added as a free param (in addition to F0/F1/DM)."""
-    np.random.seed(42)
-    m_true = models.get_model(io.StringIO(_SYNTH_PAR_F2))
-    toas = make_fake_toas_uniform(
-        53000,
-        55000,
+    par = jpar.get_model(io.StringIO(_SYNTH_PAR_F2))
+    toa_data = make_fake_toas_uniform(
+        53000.0,
+        55000.0,
         30,
-        m_true,
-        error=10 * u.us,
+        par,
+        obs="gbt",
+        freq_mhz=1400.0,
+        error_us=10.0,
         add_noise=True,
-        freq=1400 * u.MHz,
+        key=jax.random.PRNGKey(42),
     )
-    toa_data = pint_toas_to_jax(toas, model=m_true)
-    params = pint_model_to_params(m_true).params
-    jax_model, noise_model = build_timing_model(m_true)
-    return jax_model, noise_model, toa_data, params
+    jax_model, noise_model = build_model(par, toa_data)
+    return jax_model, noise_model, toa_data, par.params
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +134,8 @@ class TestAnalyticCorrectness:
         jax_model, noise_model, toa_data, params = synth_objects
 
         likelihood_marg, _, skel = marginalize_single_pulsar(
-            over={"F1"},            toa_data=toa_data,
+            over={"F1"},
+            toa_data=toa_data,
             timing_model=jax_model,
             noise_model=noise_model,
             fiducial_params=params,
@@ -222,7 +218,8 @@ class TestAnalyticCorrectness:
         over = {"F1", "F2"}
 
         likelihood_marg, _, skel = marginalize_single_pulsar(
-            over=over,            toa_data=toa_data,
+            over=over,
+            toa_data=toa_data,
             timing_model=jax_model,
             noise_model=noise_model,
             fiducial_params=params,
@@ -314,7 +311,8 @@ class TestEmptyMargSet:
         jax_model, noise_model, toa_data, params = synth_objects
 
         likelihood_marg, marginalized, skel = marginalize_single_pulsar(
-            over=set(),            toa_data=toa_data,
+            over=set(),
+            toa_data=toa_data,
             timing_model=jax_model,
             noise_model=noise_model,
             fiducial_params=params,
@@ -338,7 +336,8 @@ class TestReducedSkeleton:
         jax_model, noise_model, toa_data, params = synth_objects
 
         likelihood_marg, marginalized, skel = marginalize_single_pulsar(
-            over={"F0", "F1"},            toa_data=toa_data,
+            over={"F0", "F1"},
+            toa_data=toa_data,
             timing_model=jax_model,
             noise_model=noise_model,
             fiducial_params=params,
@@ -361,7 +360,8 @@ class TestReducedSkeleton:
         jax_model, noise_model, toa_data, params = synth_objects
 
         _, _, skel = marginalize_single_pulsar(
-            over={"F0", "DM"},            toa_data=toa_data,
+            over={"F0", "DM"},
+            toa_data=toa_data,
             timing_model=jax_model,
             noise_model=noise_model,
             fiducial_params=params,
@@ -382,7 +382,8 @@ class TestJITAndGrad:
         jax_model, noise_model, toa_data, params = synth_objects
 
         likelihood_marg, _, skel = marginalize_single_pulsar(
-            over={"F0"},            toa_data=toa_data,
+            over={"F0"},
+            toa_data=toa_data,
             timing_model=jax_model,
             noise_model=noise_model,
             fiducial_params=params,
@@ -396,7 +397,8 @@ class TestJITAndGrad:
         jax_model, noise_model, toa_data, params = synth_objects
 
         likelihood_marg, _, skel = marginalize_single_pulsar(
-            over={"F0"},            toa_data=toa_data,
+            over={"F0"},
+            toa_data=toa_data,
             timing_model=jax_model,
             noise_model=noise_model,
             fiducial_params=params,
@@ -425,7 +427,8 @@ class TestLinearityCheck:
         with warnings.catch_warnings():
             warnings.simplefilter("error")  # any warning becomes a test failure
             likelihood_marg, _, skel = marginalize_single_pulsar(
-                over=set(params.free_names()),                toa_data=toa_data,
+                over=set(params.free_names()),
+                toa_data=toa_data,
                 timing_model=jax_model,
                 noise_model=noise_model,
                 fiducial_params=params,
@@ -448,7 +451,8 @@ class TestLinearityCheck:
 
         jax_model, noise_model, toa_data, params = synth_objects
         kwargs = dict(
-            over={"F0"},            toa_data=toa_data,
+            over={"F0"},
+            toa_data=toa_data,
             timing_model=jax_model,
             noise_model=noise_model,
             fiducial_params=params,
@@ -526,7 +530,8 @@ class TestDesignMatrixMethod:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             g, _, skel = marginalize_single_pulsar(
-                over=over,                toa_data=toa_data,
+                over=over,
+                toa_data=toa_data,
                 timing_model=jax_model,
                 noise_model=noise_model,
                 fiducial_params=params,
@@ -543,12 +548,18 @@ class TestDesignMatrixMethod:
             + [float(g(skel, external_delay=d)) for d in probes]
             + [float(g(skel_f1))]
         )
+        # Goldens are tied to the fixture's exact noise realization. Original
+        # values (2026-07-03) came from PINT generation under np.random.seed(42);
+        # regenerated 2026-07-22 when the fixture switched to native generation
+        # (jax PRNGKey(42) draws a different realization -- values shifted ~1%,
+        # the chi2-scale effect of a different noise draw, while the analytic
+        # marginalization-vs-quadrature tests on the same fixture stayed green).
         golden = [
-            218.76800384964884,
-            218.05316049036963,
-            218.5561334201963,
-            219.05721063363552,
-            218.76456881174522,
+            217.3119246308644,
+            217.2193776555854,
+            216.9450719593469,
+            216.6581420612505,
+            217.24567338435136,
         ]
         npt.assert_allclose(vals, golden, rtol=1e-8)
 
@@ -560,7 +571,8 @@ class TestSinglePulsarValidation:
         # NOT_A_PARAM is not a real parameter, so the name-validation branch fires.
         with pytest.raises(ValueError, match="not present in the fiducial"):
             marginalize_single_pulsar(
-                over={"NOT_A_PARAM"},                toa_data=toa_data,
+                over={"NOT_A_PARAM"},
+                toa_data=toa_data,
                 timing_model=jax_model,
                 noise_model=noise_model,
                 fiducial_params=params,
@@ -634,7 +646,8 @@ def _per_pulsar_marg_logL(
     marg log-likelihoods.
     """
     g, _, skel = marginalize_single_pulsar(
-        over=set(bare_names),        toa_data=toa_data,
+        over=set(bare_names),
+        toa_data=toa_data,
         timing_model=timing_model,
         noise_model=noise_model,
         fiducial_params=params,
@@ -803,7 +816,8 @@ class TestPTAMarg:
         over = {f"{pn}_F0" for pn in pulsar_names} | {f"{pn}_F1" for pn in pulsar_names}
 
         g, marginalized, reduced_skeletons = marginalize_pta(
-            over=over,            config=config,
+            over=over,
+            config=config,
             pulsar_names=pulsar_names,
             fiducial_pulsar_params=pulsar_params,
             fiducial_global_params=global_params,
@@ -858,7 +872,8 @@ class TestPTAMarg:
         over = {f"{pn}_F0" for pn in pulsar_names} | {f"{pn}_F1" for pn in pulsar_names}
 
         g, _, reduced_skeletons = marginalize_pta(
-            over=over,            config=config,
+            over=over,
+            config=config,
             pulsar_names=pulsar_names,
             fiducial_pulsar_params=pulsar_params,
             fiducial_global_params=global_params,
@@ -900,7 +915,8 @@ class TestPTAMarg:
         global_params = GlobalParams.empty()
 
         g, marginalized, reduced_skeletons = marginalize_pta(
-            over=set(),            config=config,
+            over=set(),
+            config=config,
             pulsar_names=pulsar_names,
             fiducial_pulsar_params=pulsar_params,
             fiducial_global_params=global_params,
@@ -945,7 +961,8 @@ class TestPTAMarg:
 
         with pytest.raises(NotImplementedError, match="global-parameter"):
             marginalize_pta(
-                over={"gwb_log10_A"},                config=config,
+                over={"gwb_log10_A"},
+                config=config,
                 pulsar_names=pulsar_names,
                 fiducial_pulsar_params=pulsar_params,
                 fiducial_global_params=global_params,
@@ -972,7 +989,8 @@ class TestPTAMarg:
 
         with pytest.raises(ValueError, match="matches no pulsar"):
             marginalize_pta(
-                over={"nonsense_param"},                config=config,
+                over={"nonsense_param"},
+                config=config,
                 pulsar_names=pulsar_names,
                 fiducial_pulsar_params=pulsar_params,
                 fiducial_global_params=global_params,
@@ -1003,7 +1021,8 @@ class TestPTAMarg:
         # starts with "J1234_" too, but the bare name "extra_F0" is NOT in
         # pulsar 0's params; so the resolver must pick pulsar 1.
         g, _, reduced_skeletons = marginalize_pta(
-            over={"J1234_extra_F0"},            config=config,
+            over={"J1234_extra_F0"},
+            config=config,
             pulsar_names=pulsar_names,
             fiducial_pulsar_params=pulsar_params,
             fiducial_global_params=global_params,
@@ -1034,7 +1053,8 @@ class TestPTAMarg:
         over = {f"{pn}_F0" for pn in pulsar_names} | {f"{pulsar_names[1]}_F1"}
 
         _, marginalized, reduced_skeletons = marginalize_pta(
-            over=over,            config=config,
+            over=over,
+            config=config,
             pulsar_names=pulsar_names,
             fiducial_pulsar_params=pulsar_params,
             fiducial_global_params=global_params,
@@ -1083,7 +1103,8 @@ class TestPTAMarg:
         over = {f"{pn}_F0" for pn in pulsar_names}
 
         g, _, reduced_skeletons = marginalize_pta(
-            over=over,            config=config,
+            over=over,
+            config=config,
             pulsar_names=pulsar_names,
             fiducial_pulsar_params=pulsar_params,
             fiducial_global_params=global_params,
@@ -1125,7 +1146,8 @@ class TestPTAMarg:
         over = {f"{pn}_F0" for pn in pulsar_names}
 
         g, marginalized, reduced_skeletons = marginalize_pta(
-            over=over,            config=config,
+            over=over,
+            config=config,
             pulsar_names=pulsar_names,
             fiducial_pulsar_params=pulsar_params,
             fiducial_global_params=global_params,

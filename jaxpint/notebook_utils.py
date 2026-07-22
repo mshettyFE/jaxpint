@@ -8,11 +8,9 @@ NANOGrav-dataset load/marginalize/HEALPix boilerplate shared by the
 across the examples.  It is deliberately kept out of ``jaxpint.__init__``
 so that the top-level namespace reflects the library, not the demos.
 
-Typical usage in a notebook::
+Typical usage in a notebook -- fully PINT-free::
 
-    from io import StringIO
     import numpy as np
-    import pint.models as pm
 
     from jaxpint.notebook_utils import (
         generate_random_par,
@@ -26,15 +24,14 @@ Typical usage in a notebook::
     rng = np.random.default_rng(127)
     par_strings = [generate_random_par(i, rng, start_mjd=57000.0) for i in range(10)]
 
-    # TOA generation and model building run natively -- par strings go in
-    # directly. (PINT model objects are still accepted for older notebooks;
-    # only `build_cw_injectors` below still wants them, for sky positions.)
+    # Par strings go in directly: TOA generation, model building, and sky
+    # positions all run natively. (Parsed PINT model objects are also still
+    # accepted everywhere par strings are, for older notebooks.)
     synthetic = setup_synthetic_pta(
         par_strings, start_mjd=57000.0, end_mjd=60000.0,
         n_toas=200, toa_error_s=1e-8, freq_mhz=1400.0,
     )
-    pint_models = [pm.get_model(StringIO(p)) for p in par_strings]
-    injectors, _ = build_cw_injectors(pint_models, n_sources=1, rng=rng)
+    injectors, _ = build_cw_injectors(par_strings, n_sources=1, rng=rng)
     gp, cfg = inject_and_build_config(synthetic, injectors)
     # ... now define an `eval_fn` and call `sweep_1d_logL(eval_fn, grid)`.
 """
@@ -43,7 +40,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, NamedTuple, Optional
 
-import astropy.units as u
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -365,12 +361,30 @@ def setup_synthetic_pta(
 # ---------------------------------------------------------------------------
 
 
-def pulsar_positions_from_models(pint_models: list) -> Float[Array, "n_psr 3"]:
-    """Compute ICRS unit vectors from each PINT model's ``RAJ``/``DECJ``."""
+def pulsar_positions_from_models(models: list) -> Float[Array, "n_psr 3"]:
+    """ICRS unit vectors from each model's ``RAJ``/``DECJ``, computed natively.
+
+    *models* entries can be anything :func:`_as_par_result` accepts (par text,
+    a ``ParResult``, a path, or a PINT model -- the last kept for older
+    notebooks). ``RAJ``/``DECJ`` are read from the native ``ParameterVector``,
+    where angles are stored in radians, so no astropy units are involved.
+
+    Static positions only (no proper-motion evolution) -- these seed the CW
+    injectors' antenna patterns, matching what the PINT-attribute version of
+    this function computed.
+    """
     positions = []
-    for model in pint_models:
-        ra_rad = model.RAJ.quantity.to(u.rad).value
-        dec_rad = model.DECJ.quantity.to(u.rad).value
+    for model in models:
+        params = _as_par_result(model).params
+        names = list(params.names)
+        if "RAJ" not in names or "DECJ" not in names:
+            raise ValueError(
+                "pulsar_positions_from_models needs equatorial astrometry "
+                f"(RAJ/DECJ); this model carries {sorted(n for n in names if n in ('ELONG', 'ELAT'))} "
+                "-- ecliptic support would need the obliquity rotation"
+            )
+        ra_rad = float(params.param_value("RAJ"))
+        dec_rad = float(params.param_value("DECJ"))
         positions.append(
             np.array(
                 [
@@ -384,7 +398,7 @@ def pulsar_positions_from_models(pint_models: list) -> Float[Array, "n_psr 3"]:
 
 
 def build_cw_injectors(
-    pint_models: list,
+    models: list,
     n_sources: int,
     *,
     rng: np.random.Generator,
@@ -395,8 +409,10 @@ def build_cw_injectors(
 
     Parameters
     ----------
-    pint_models : list
-        PINT models, used only to compute pulsar unit vectors.
+    models : list
+        Pulsar models in any form :func:`_as_par_result` accepts (par text,
+        ``ParResult``, path, or PINT model); used only to compute pulsar unit
+        vectors via :func:`pulsar_positions_from_models`.
     n_sources : int
         Number of CW sources to build.
     rng : numpy.random.Generator
@@ -414,7 +430,7 @@ def build_cw_injectors(
         Returned so callers can reuse the positions (e.g. to build another
         injector with a different prefix) without recomputing them.
     """
-    positions = pulsar_positions_from_models(pint_models)
+    positions = pulsar_positions_from_models(models)
 
     injectors = tuple(
         CWInjector(

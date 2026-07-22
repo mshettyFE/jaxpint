@@ -1,23 +1,20 @@
-"""Tests for single_pulsar_logL."""
+"""Tests for single_pulsar_logL.
+"""
 
 from __future__ import annotations
 
 import io
 
-import astropy.units as u
 import jax
 import jax.numpy as jnp
-import numpy as np
 import numpy.testing as npt
 import pytest
 
-pytest.importorskip("pint")  # optional dependency; skip module if absent
-import pint.models as models
-from pint.simulation import make_fake_toas_uniform
-
-from jaxpint.bridge import build_timing_model, pint_model_to_params, pint_toas_to_jax
+import jaxpint.par as jpar
+from jaxpint import build_model
 from jaxpint.fitters import compute_time_residuals
 from jaxpint.likelihood import single_pulsar_logL
+from jaxpint.simulation import make_fake_toas_uniform
 from jaxpint.utils import woodbury_dot
 
 
@@ -45,16 +42,14 @@ TZRSITE       @
 @pytest.fixture(scope="module")
 def synth_objects():
     """Timing model, noise model, TOA data, and params from a synthetic pulsar."""
-    np.random.seed(42)
-    m_true = models.get_model(io.StringIO(_SYNTH_PAR))
-    toas = make_fake_toas_uniform(
-        53000, 55000, 30, m_true,
-        error=10 * u.us, add_noise=True, freq=1400 * u.MHz,
+    par = jpar.get_model(io.StringIO(_SYNTH_PAR))
+    toa_data = make_fake_toas_uniform(
+        53000.0, 55000.0, 30, par,
+        obs="gbt", freq_mhz=1400.0, error_us=10.0,
+        add_noise=True, key=jax.random.PRNGKey(42),
     )
-    toa_data = pint_toas_to_jax(toas, model=m_true)
-    params = pint_model_to_params(m_true).params
-    jax_model, noise_model = build_timing_model(m_true)
-    return jax_model, noise_model, toa_data, params
+    jax_model, noise_model = build_model(par, toa_data)
+    return jax_model, noise_model, toa_data, par.params
 
 
 # ---------------------------------------------------------------------------
@@ -84,16 +79,14 @@ TNREDC        5
 @pytest.fixture(scope="module")
 def synth_objects_rn():
     """Synthetic pulsar with power-law red noise."""
-    np.random.seed(42)
-    m_true = models.get_model(io.StringIO(_SYNTH_PAR_RN))
-    toas = make_fake_toas_uniform(
-        53000, 55000, 60, m_true,
-        error=10 * u.us, add_noise=True, freq=1400 * u.MHz,
+    par = jpar.get_model(io.StringIO(_SYNTH_PAR_RN))
+    toa_data = make_fake_toas_uniform(
+        53000.0, 55000.0, 60, par,
+        obs="gbt", freq_mhz=1400.0, error_us=10.0,
+        add_noise=True, key=jax.random.PRNGKey(42),
     )
-    toa_data = pint_toas_to_jax(toas, model=m_true)
-    params = pint_model_to_params(m_true).params
-    jax_model, noise_model = build_timing_model(m_true)
-    return jax_model, noise_model, toa_data, params
+    jax_model, noise_model = build_model(par, toa_data)
+    return jax_model, noise_model, toa_data, par.params
 
 
 # ---------------------------------------------------------------------------

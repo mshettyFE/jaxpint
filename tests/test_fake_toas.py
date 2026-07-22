@@ -334,3 +334,64 @@ def test_get_model_reads_file_like(ngc6440e):
         np.asarray(from_text.params.values), np.asarray(ngc6440e.params.values)
     )
     assert from_text.params.names == ngc6440e.params.names
+
+
+# ---------------------------------------------------------------------------
+# pulsar_positions_from_models / build_cw_injectors: native sky positions
+# ---------------------------------------------------------------------------
+
+
+def test_pulsar_positions_native_inputs():
+    """Par strings in, unit vectors out -- no PINT objects anywhere."""
+    from jaxpint.notebook_utils import pulsar_positions_from_models
+
+    pars = _random_par_strings(4)
+    pos = np.asarray(pulsar_positions_from_models(pars))
+    assert pos.shape == (4, 3)
+    np.testing.assert_allclose(np.linalg.norm(pos, axis=1), 1.0, rtol=1e-12)
+
+
+def test_pulsar_positions_match_pint_model_input():
+    """The same par through a PINT model gives the same vectors to 1e-12.
+
+    This is the parity claim for the native rewrite: RAJ/DECJ read from the
+    ParameterVector (radians) must equal PINT's quantity conversion. The
+    tolerance absorbs the as_parfile round-trip's decimal formatting.
+    """
+    pytest.importorskip("pint")
+    from io import StringIO
+
+    import pint.models as pm
+
+    from jaxpint.notebook_utils import pulsar_positions_from_models
+
+    pars = _random_par_strings(3)
+    native = np.asarray(pulsar_positions_from_models(pars))
+    via_pint = np.asarray(
+        pulsar_positions_from_models([pm.get_model(StringIO(p)) for p in pars])
+    )
+    np.testing.assert_allclose(native, via_pint, atol=1e-12)
+
+
+def test_build_cw_injectors_native():
+    """The injector builder accepts par strings end to end."""
+    from jaxpint.notebook_utils import build_cw_injectors
+
+    rng = np.random.default_rng(5)
+    injectors, positions = build_cw_injectors(
+        _random_par_strings(3), n_sources=2, rng=rng
+    )
+    assert len(injectors) == 2
+    assert np.asarray(positions).shape == (3, 3)
+
+
+def test_pulsar_positions_rejects_ecliptic():
+    """Ecliptic-only astrometry raises instead of returning garbage."""
+    from jaxpint.notebook_utils import pulsar_positions_from_models
+
+    par = (
+        "PSR J0000+0000\nPEPOCH 54000\nF0 100.0 1\nDM 15.0\n"
+        "ELONG 120.0\nELAT 30.0\n"
+    )
+    with pytest.raises(ValueError, match="RAJ/DECJ"):
+        pulsar_positions_from_models([par])

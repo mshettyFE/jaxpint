@@ -1,25 +1,23 @@
-"""Tests for jaxpint.simulation (zero_residuals and apply_delay_to_toas)."""
+"""Tests for jaxpint.simulation (zero_residuals and apply_delay_to_toas).
+"""
 
 from __future__ import annotations
 
 import io
 
-import astropy.units as u
 import jax.numpy as jnp
 import numpy as np
 import pytest
 
-pytest.importorskip("pint")  # optional dependency; skip module if absent
-import pint.models as models
-from pint.simulation import make_fake_toas_uniform
-
-from jaxpint.bridge import (
-    build_timing_model,
-    pint_model_to_params,
-    pint_toas_to_jax,
-)
+import jaxpint.par as jpar
+from jaxpint import build_model
 from jaxpint.fitters import compute_time_residuals
-from jaxpint.simulation import apply_delay_to_toas, zero_residuals
+from jaxpint.simulation import (
+    apply_delay_to_toas,
+    make_fake_toas_uniform,
+    make_uniform_toa_data,
+    zero_residuals,
+)
 from tests.helpers import make_toa_data
 
 
@@ -45,54 +43,39 @@ TZRSITE       @
 
 
 @pytest.fixture(scope="module")
-def pint_model():
-    return models.get_model(io.StringIO(_SYNTH_PAR))
+def par_result():
+    return jpar.get_model(io.StringIO(_SYNTH_PAR))
 
 
 @pytest.fixture(scope="module")
-def pint_toas_zeroed(pint_model):
-    """Create fake TOAs with PINT (no noise, residuals zeroed by PINT)."""
-    toas_lo = make_fake_toas_uniform(
-        53000, 55000, 30, pint_model,
-        error=10 * u.us, add_noise=False, freq=1400 * u.MHz,
+def jax_objects_zeroed(par_result):
+    """Model + TOAs whose residuals were already zeroed by the generator.
+
+    Two interleaved frequencies (the old version merged separate 1400 and
+    2000 MHz sets; cycling covers the same multi-frequency ground).
+    """
+    toa_data = make_fake_toas_uniform(
+        53000.0, 55000.0, 60, par_result,
+        obs="gbt", freq_mhz=[1400.0, 2000.0], error_us=10.0,
     )
-    toas_hi = make_fake_toas_uniform(
-        53000, 55000, 30, pint_model,
-        error=10 * u.us, add_noise=False, freq=2000 * u.MHz,
+    model, _noise = build_model(par_result, toa_data)
+    return model, toa_data, par_result.params
+
+
+@pytest.fixture(scope="module")
+def jax_objects_raw(par_result):
+    """Model + raw grid TOAs (NOT zeroed), for testing zero_residuals itself.
+
+    make_uniform_toa_data is the scaffolding-only builder: real GBT clock
+    corrections and posvels, but timestamps that do not realize any model --
+    so the fixture's residuals start out large, which test_converges_from_raw
+    asserts before zeroing.
+    """
+    toa_data = make_uniform_toa_data(
+        53000.0, 55000.0, 30, par_result, obs="gbt", freq_mhz=1400.0, error_us=10.0
     )
-    toas_lo.merge(toas_hi)
-    return toas_lo
-
-
-@pytest.fixture(scope="module")
-def pint_toas_raw(pint_model):
-    """Create raw TOAs (NOT zeroed) for testing zero_residuals from scratch."""
-    import pint.toa
-
-    times = np.linspace(53000, 55000, 30, dtype=np.longdouble) * u.d
-    ts = pint.toa.get_TOAs_array(
-        times, obs="GBT", freqs=1400 * u.MHz, errors=10 * u.us,
-        ephem="DE421", include_bipm=True, bipm_version="BIPM2019",
-    )
-    return ts
-
-
-@pytest.fixture(scope="module")
-def jax_objects_zeroed(pint_model, pint_toas_zeroed):
-    """Convert PINT-zeroed TOAs to JaxPINT objects."""
-    toa_data = pint_toas_to_jax(pint_toas_zeroed, model=pint_model)
-    params = pint_model_to_params(pint_model).params
-    jax_model, _noise = build_timing_model(pint_model)
-    return jax_model, toa_data, params
-
-
-@pytest.fixture(scope="module")
-def jax_objects_raw(pint_model, pint_toas_raw):
-    """Convert raw (unzeroed) PINT TOAs to JaxPINT objects."""
-    toa_data = pint_toas_to_jax(pint_toas_raw, model=pint_model)
-    params = pint_model_to_params(pint_model).params
-    jax_model, _noise = build_timing_model(pint_model)
-    return jax_model, toa_data, params
+    model, _noise = build_model(par_result, toa_data)
+    return model, toa_data, par_result.params
 
 
 # ---------------------------------------------------------------------------
@@ -222,8 +205,12 @@ class TestZeroResiduals:
         np.testing.assert_array_equal(zeroed.tdb_int, zeroed_again.tdb_int)
 
     @pytest.mark.slow
-    def test_vs_pint(self, jax_objects_raw):
-        """JaxPINT zero_residuals should produce sub-nanosecond residuals."""
+    def test_zeroed_to_sub_ns(self, jax_objects_raw):
+        """zero_residuals drives a raw grid below 1 ns.
+
+        (Previously named test_vs_pint, but no PINT quantity was ever
+        compared -- the assertion has always been JaxPINT-side only.)
+        """
         model, toa_data, params = jax_objects_raw
         tol = 1e-9
 

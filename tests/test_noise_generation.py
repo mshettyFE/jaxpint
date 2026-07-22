@@ -287,50 +287,43 @@ class TestGLSWhitening:
 
     @pytest.fixture(scope="class")
     def gls_fit_result(self):
-        """Generate fake TOAs with noise, fit with GLS, return whitened residuals."""
-        import pint.models as pm
-        from pint.simulation import make_fake_toas_uniform
+        """Generate fake TOAs with noise, fit with GLS, return whitened residuals.
+        """
+        from io import StringIO
 
-        from jaxpint.bridge import (
-            build_timing_model,
-            pint_model_to_params,
-            pint_toas_to_jax,
-        )
+        import jaxpint.par as jpar
+        from jaxpint import build_model
         from jaxpint.fitters import GLSFitter
+        from jaxpint.simulation import make_uniform_toa_data
 
-        # Use PINT's B1855+09 example data (has EFAC, EQUAD, ECORR)
-        pint_data = Path(pm.__file__).parent.parent / "data" / "examples"
-        par_file = pint_data / "B1855+09_NANOGrav_9yv1.gls.par"
-
-        if not par_file.exists():
-            pytest.skip("PINT example data not found")
-
-        pint_model = pm.get_model(str(par_file))
-
-        # Remove components that need flags not present on uniform fake TOAs
-        pint_model.remove_component("DispersionDMX")
-        pint_model.remove_component("PhaseJump")
-        pint_model.remove_component("FD")
-        pint_model.PLANET_SHAPIRO.value = False
-
-        # Create fake TOAs with PINT (no noise yet — we add it via JaxPINT)
-        import astropy.units as u
-
-        pint_toas = make_fake_toas_uniform(
-            pint_model.START.value,
-            pint_model.FINISH.value,
-            500,
-            pint_model,
-            error=1 * u.us,
-            add_noise=False,
+        par_file = (
+            Path(__file__).resolve().parent
+            / "data"
+            / "pint_inputs"
+            / "B1855+09_NANOGrav_9yv1.gls.par"
         )
-
-        # Convert to JaxPINT
-        toa_data = pint_toas_to_jax(pint_toas, model=pint_model)
-        params = pint_model_to_params(pint_model).params
-        jax_model, noise_model = build_timing_model(
-            pint_model, pint_toas
+        drop = ("DMX", "JUMP", "FD", "PLANET_SHAPIRO")
+        par_text = "\n".join(
+            line
+            for line in par_file.read_text().splitlines()
+            if line.strip() and not line.split()[0].startswith(drop)
         )
+        par_result = jpar.get_model(StringIO(par_text))
+        # START/FINISH are epoch-type parameters: the integer MJD day lives in
+        # epoch_int_values (static) and param_value returns only the
+        # fractional day, so the two halves must be recombined.
+        p = par_result.params
+        start = p.epoch_int_values["START"] + float(p.param_value("START"))
+        finish = p.epoch_int_values["FINISH"] + float(p.param_value("FINISH"))
+
+        # Bare epochs only -- make_fake_toas below does its own zeroing, so
+        # the model-realizing generator would zero residuals twice for nothing.
+        toa_data = make_uniform_toa_data(
+            start, finish, 500, par_result,
+            obs="ao", freq_mhz=1400.0, error_us=1.0,
+        )
+        params = par_result.params
+        jax_model, noise_model = build_model(par_result, toa_data)
 
         # Build noise components list for simulation
         noise_components = []
