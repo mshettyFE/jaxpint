@@ -345,16 +345,19 @@ class TestGLSWhitening:
             noise_model=noise_model,
         )
         result = fitter.fit_toas(maxiter=3)
-        sigma = noise_model.scaled_sigma(fake_toa_data, result.params)
 
-        # Whiten: subtract correlated noise, divide by scaled sigma
-        if noise_model.has_correlated and result.noise_realizations is not None:
-            _, U, _ = noise_model.covariance(fake_toa_data, result.params)
-            rc = U @ result.noise_realizations
-            whitened = (result.residuals - rc) / sigma
-        else:
-            whitened = result.residuals / sigma
+        # Whitening via the public API (jaxpint.fitters.whiten_residuals);
+        # this fixture's earlier hand-rolled version is what that API was
+        # extracted from, so it now doubles as the API's end-to-end consumer.
+        from jaxpint.fitters import whiten_residuals
 
+        whitened = whiten_residuals(
+            result.residuals,
+            fake_toa_data,
+            result.params,
+            noise_model,
+            noise_realizations=result.noise_realizations,
+        )
         return whitened, result
 
     @pytest.mark.slow
