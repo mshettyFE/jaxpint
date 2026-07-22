@@ -91,15 +91,34 @@ def test_resolve_clock_config(clk, expected):
     assert resolve_clock_config(clk) == expected
 
 
+def test_resolve_clock_config_utc_realizations_disable_bipm():
+    """UTC(NIST) and friends (TEMPO1-era pars) mean "no BIPM steering".
+
+    tempo2 reads these as TT(UTC(<lab>)) and applies no BIPM term; PINT warns
+    and applies its default TT(BIPM) anyway -- a documented divergence, because
+    adding a ~27 us term the model was never fitted against is the wrong kind
+    of helpful. Recognized values must resolve *silently*: this fired a warning
+    on PINT's own tutorial dataset (NGC6440E) for months.
+    """
+    import warnings as _w
+
+    from jaxpint.clock.correction import resolve_clock_config
+
+    for clk in ("UTC(NIST)", "UTC(BIPM)", "utc(nist)", "UTC"):
+        with _w.catch_warnings():
+            _w.simplefilter("error")  # any warning -> test failure
+            assert resolve_clock_config(clk) == (False, None), clk
+
+
 def test_resolve_clock_config_unknown_warns_and_falls_back():
-    """UTC(NIST) and friends appear in real pars; warn, don't crash or go silent."""
+    """A genuinely unrecognized CLK still warns and falls back to the default."""
     from jaxpint.clock.correction import (
         UnsupportedClockRealization,
         resolve_clock_config,
     )
 
-    with pytest.warns(UnsupportedClockRealization, match="UTC\\(NIST\\)"):
-        assert resolve_clock_config("UTC(NIST)") == (True, None)
+    with pytest.warns(UnsupportedClockRealization, match="TDB\\(WEIRD\\)"):
+        assert resolve_clock_config("TDB(WEIRD)") == (True, None)
 
 
 def test_resolve_clock_config_explicit_args_win():

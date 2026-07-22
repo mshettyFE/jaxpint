@@ -12,7 +12,8 @@ Three fidelity levels, each pinned separately:
 
 Known, deliberate tolerances:
 
-* ``toa_data_to_raw`` un-applies clock corrections from the realization
+* ``toa_data_to_raw`` (jaxpint.loaders.native -- loader-stage physics, kept
+  out of the text-layer tim package) un-applies clock corrections from the realization
   stamped on the TOAData; PINT re-applies its own clock *data*, whose vintage
   differs from the vendored IPTA set at the ~0.3 us level.
 * At finite frequency PINT dedisperses these files at the topocentric
@@ -31,7 +32,8 @@ import pytest
 
 import jaxpint.par as jpar
 from jaxpint.par.writer import as_parfile
-from jaxpint.tim import read_tim, toa_data_to_raw, write_tim
+from jaxpint.loaders.native import toa_data_to_raw
+from jaxpint.tim import read_tim, write_tim
 from jaxpint.tim.writer import format_toa_line
 
 _DATA = pathlib.Path(__file__).resolve().parent / "data" / "pint_inputs"

@@ -13,11 +13,11 @@ from __future__ import annotations
 from typing import Optional, Union
 
 from .model_builder import build_model
-from .loaders.native import native_toas_to_jax
+from .loaders.native import native_toas_to_jax, toa_data_to_raw
 from .par import get_model as _parse_par
 from .par.result import ParResult
 
-__all__ = ["get_model", "get_TOAs", "get_model_and_toas"]
+__all__ = ["get_model", "get_TOAs", "get_model_and_toas", "toa_data_to_raw"]
 
 
 def get_model(par_path):
