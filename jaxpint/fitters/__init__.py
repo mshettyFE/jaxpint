@@ -12,7 +12,10 @@ from ._base import (
     compute_time_residuals,
 )
 from .diagnostics import (
+    EpochAverage,
     FTestResult,
+    compute_residuals,
+    ecorr_average,
     NormalityReport,
     ftest,
     ftest_results,
@@ -36,6 +39,9 @@ from .wideband import (
 __all__ = [
     "whiten_residuals",
     "whiten_wideband_residuals",
+    "compute_residuals",
+    "ecorr_average",
+    "EpochAverage",
     "normality_tests",
     "NormalityReport",
     "ftest",

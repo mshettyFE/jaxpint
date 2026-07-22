@@ -5,7 +5,13 @@ numpy/scipy-side -- they are human-facing diagnostics with no gradient or
 tracing story, and scipy is a guaranteed dependency (jax itself requires
 ``scipy>=1.13``).
 
-Wideband whitening (the stacked ``[time; dm]`` layout) is NOT covered yet: the
+``use_abs_phase`` (PINT's toggle for TZR-anchored vs unanchored phase) is NOT
+implemented: it would thread a flag through ``TimingModel.compute_phase`` for a
+quantity that is a pure constant under the mean subtraction every reported
+residual applies. Deferred until a concrete use case (absolute-phase
+publication tables) exists.
+
+Wideband whitening (the stacked ``[time; dm]`` layout) IS covered: the
 stacking lives inside ``WidebandGLSFitter``'s private hooks, and pulling it
 through this interface deserves its own design rather than a bolt-on.
 """
@@ -21,8 +27,12 @@ import numpy as np
 from jaxtyping import Array, Float
 
 from jaxpint.utils import woodbury_solve
+from ._base import compute_time_residuals
 
 __all__ = [
+    "compute_residuals",
+    "ecorr_average",
+    "EpochAverage",
     "whiten_residuals",
     "whiten_wideband_residuals",
     "normality_tests",
@@ -223,4 +233,116 @@ def ftest_results(simple, complex) -> FTestResult:
     """:func:`ftest` on two fit results (``.chi2`` / ``.dof``)."""
     return ftest(
         float(simple.chi2), int(simple.dof), float(complex.chi2), int(complex.dof)
+    )
+
+
+def compute_residuals(
+    model,
+    toa_data,
+    params,
+    *,
+    subtract_mean: bool = True,
+    use_weighted_mean: bool = True,
+    errors=None,
+    track_mode=None,
+) -> Float[Array, " n_toas"]:
+    """User-facing time residuals with PINT's ``Residuals`` options.
+
+    The raw primitive (:func:`~jaxpint.fitters.compute_time_residuals`)
+    deliberately applies no mean subtraction -- fitters own their demeaning.
+    This wrapper is the analysis-facing form: *subtract_mean* (default True,
+    PINT's default) removes the phase-reference constant, weighted by
+    ``1/error^2`` when *use_weighted_mean* (also PINT's default).
+
+    Mirroring PINT: a model carrying an explicit ``PhaseOffset`` disables the
+    implicit subtraction -- the offset is a fitted parameter there, and
+    demeaning on top would double-count it.
+
+    *errors* selects the uncertainties the weighted mean uses; default is the
+    raw TOA errors. PINT's ``Residuals`` weights by the *scaled* (EFAC/EQUAD)
+    uncertainties when a noise model is attached, so pass
+    ``noise_model.scaled_sigma(toa_data, params)`` for element-wise parity --
+    the choice moves the removed constant (~us on B1855), never the shape.
+    """
+    r = compute_time_residuals(model, toa_data, params, track_mode)
+    if not subtract_mean or model.phoff_name is not None:
+        return r
+    if use_weighted_mean:
+        e = toa_data.error if errors is None else jnp.asarray(errors)
+        w = 1.0 / e**2
+        return r - jnp.sum(w * r) / jnp.sum(w)
+    return r - jnp.mean(r)
+
+
+class EpochAverage(NamedTuple):
+    """Epoch-averaged residuals (:func:`ecorr_average`), PINT's dict as a tuple.
+
+    ``indices`` maps each epoch to the original TOA indices it averages
+    (a tuple of index arrays); TOAs in no ECORR epoch (singletons) appear in
+    no entry, exactly as in PINT.
+    """
+
+    mjds: np.ndarray
+    freqs: np.ndarray
+    time_resids: np.ndarray
+    errors: np.ndarray
+    indices: tuple
+
+
+def ecorr_average(
+    residuals,
+    toa_data,
+    params,
+    noise_model,
+    *,
+    use_noise_model: bool = True,
+) -> EpochAverage:
+    """Epoch-averaged residuals using the ECORR time binning.
+
+    PINT's ``Residuals.ecorr_average``: within each ECORR epoch (a column of
+    the quantization matrix), the residuals are averaged with ``1/sigma^2``
+    weights, and the averaged uncertainty is ``sqrt(1/sum(w) + ECORR^2)`` --
+    the fully correlated ECORR variance does not average down, which is the
+    whole reason this binning is the right one for publication plots.
+
+    *use_noise_model* selects scaled (EFAC/EQUAD) uncertainties and includes
+    the ECORR term; ``False`` uses raw errors and drops it (PINT semantics).
+    Requires an :class:`~jaxpint.noise.EcorrNoise` component; raises
+    ``ValueError`` otherwise. NumPy-side: a plotting/reporting verb, not
+    traced code.
+    """
+    from jaxpint.noise import EcorrNoise
+
+    ecorr = next(
+        (
+            c
+            for c in getattr(noise_model, "correlated", ())
+            if isinstance(c, EcorrNoise)
+        ),
+        None,
+    )
+    if ecorr is None:
+        raise ValueError("ecorr_average requires an EcorrNoise component")
+
+    U = np.asarray(ecorr.quantization_matrix, dtype=np.float64)
+    ecorr_err2 = np.asarray(ecorr.ecorr_weights(params), dtype=np.float64)  # s^2
+    if use_noise_model:
+        err = np.asarray(noise_model.scaled_sigma(toa_data, params))
+    else:
+        err = np.asarray(toa_data.error)
+        ecorr_err2 = np.zeros_like(ecorr_err2)
+
+    w = 1.0 / err**2
+    a_norm = U.T @ w
+
+    def wtsum(x):
+        return (U.T @ (w * np.asarray(x))) / a_norm
+
+    mjd = np.asarray(toa_data.mjd_int) + np.asarray(toa_data.mjd_frac)
+    return EpochAverage(
+        mjds=wtsum(mjd),
+        freqs=wtsum(toa_data.freq),
+        time_resids=wtsum(residuals),
+        errors=np.sqrt(1.0 / a_norm + ecorr_err2),
+        indices=tuple(np.flatnonzero(U[:, i]) for i in range(U.shape[1])),
     )
