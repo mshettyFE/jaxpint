@@ -216,6 +216,62 @@ def _wideband_iteration_core(
 
 
 # ---------------------------------------------------------------------------
+# Stacked wideband noise (module-level: one authority for the convention)
+# ---------------------------------------------------------------------------
+
+
+def stack_wideband_noise(
+    noise_model,
+    toa_data: TOAData,
+    params: ParameterVector,
+) -> tuple[
+    Float[Array, " n_toas"],  # sigma_toa
+    Float[Array, " n2_toas"],  # Ndiag (2N)
+    Float[Array, "n2_toas n_basis"],  # U (2N, K)
+    Float[Array, " n_basis"],  # Phidiag
+    Float[Array, " n_toas"],  # sigma_dm
+]:
+    """Assemble the stacked ``[time; dm]`` noise decomposition.
+
+    Module-level (not a fitter method) so the whitening diagnostics and the
+    fitter consume the *same* stacking convention -- two copies of "how the
+    2N system is laid out" would drift silently.
+
+    The correlated basis ``U`` carries **zero DM-block rows**:
+    ``wideband_covariance`` models the DM measurements as white-only
+    (``Ndiag_dm``), with no GP support in DM space. PINT's wideband noise
+    design matrix *does* give DM-noise components DM-row support, so for a
+    par with a DM GP the two implementations genuinely differ here -- a
+    noise-model gap, tracked separately, not a stacking choice made in this
+    function.
+
+    *noise_model* may be ``None``: raw TOA/DM errors, no correlated basis.
+    """
+    n = toa_data.n_toas
+
+    if noise_model is not None:
+        sigma_toa = noise_model.scaled_sigma(toa_data, params)
+        Ndiag_toa, U_toa, Phi_toa, Ndiag_dm = noise_model.wideband_covariance(
+            toa_data, params
+        )
+        sigma_dm = noise_model.scaled_dm_sigma(toa_data, params)
+    else:
+        sigma_toa = toa_data.error
+        Ndiag_toa = sigma_toa**2
+        U_toa = jnp.zeros((n, 0))
+        Phi_toa = jnp.zeros(0)
+        assert toa_data.dm_errors is not None  # wideband data always carries DM
+        Ndiag_dm = toa_data.dm_errors**2
+        sigma_dm = toa_data.dm_errors
+
+    # Stack into (2N,) diagonal and (2N, K) basis
+    Ndiag = jnp.concatenate([Ndiag_toa, Ndiag_dm])
+    U = jnp.concatenate([U_toa, jnp.zeros((n, U_toa.shape[1]))], axis=0)
+
+    return sigma_toa, Ndiag, U, Phi_toa, sigma_dm
+
+
+# ---------------------------------------------------------------------------
 # Wideband GLS result container
 # ---------------------------------------------------------------------------
 
@@ -251,31 +307,8 @@ class WidebandGLSFitter(BaseFitter):
         Float[Array, " n_basis"],  # Phidiag
         Float[Array, " n_toas"],  # sigma_dm
     ]:
-        """Return wideband noise quantities."""
-        n = self.toa_data.n_toas
-
-        if self.noise_model is not None:
-            sigma_toa = self.noise_model.scaled_sigma(self.toa_data, params)
-            Ndiag_toa, U_toa, Phi_toa, Ndiag_dm = self.noise_model.wideband_covariance(
-                self.toa_data, params
-            )
-            sigma_dm = self.noise_model.scaled_dm_sigma(self.toa_data, params)
-        else:
-            sigma_toa = self.toa_data.error
-            Ndiag_toa = sigma_toa**2
-            U_toa = jnp.zeros((n, 0))
-            Phi_toa = jnp.zeros(0)
-            assert (
-                self.toa_data.dm_errors is not None
-            )  # wideband data always carries DM
-            Ndiag_dm = self.toa_data.dm_errors**2
-            sigma_dm = self.toa_data.dm_errors
-
-        # Stack into (2N,) diagonal and (2N, K) basis
-        Ndiag = jnp.concatenate([Ndiag_toa, Ndiag_dm])
-        U = jnp.concatenate([U_toa, jnp.zeros((n, U_toa.shape[1]))], axis=0)
-
-        return sigma_toa, Ndiag, U, Phi_toa, sigma_dm
+        """Return wideband noise quantities (see :func:`stack_wideband_noise`)."""
+        return stack_wideband_noise(self.noise_model, self.toa_data, params)
 
     # -- Differentiable-solve hooks ------------------------------------------
 

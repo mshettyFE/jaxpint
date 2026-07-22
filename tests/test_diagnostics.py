@@ -319,3 +319,167 @@ def test_ftest_on_nested_real_fits():
     res_det = ftest_results(off, full)
     assert float(off.chi2) > float(full.chi2) + 100.0
     assert res_det.p < 1e-6
+
+
+# ---------------------------------------------------------------------------
+# Wideband whitening
+# ---------------------------------------------------------------------------
+
+
+def _wb_setup(n_toas=24, n_epochs=3):
+    """Wideband toy: the narrowband _setup plus DM values/errors."""
+    toa_data, params, nm = _setup(n_toas, n_epochs)
+    import equinox as eqx
+
+    toa_data = eqx.tree_at(
+        lambda t: (t.dm_values, t.dm_errors),
+        toa_data,
+        (jnp.full(n_toas, 15.0), jnp.full(n_toas, 1e-4)),
+        is_leaf=lambda x: x is None,
+    )
+    return toa_data, params, nm
+
+
+class TestWidebandWhitening:
+    def test_matches_dense_linear_algebra(self):
+        """Validate the stacked system against explicit dense inverses."""
+        from jaxpint.fitters import whiten_wideband_residuals
+        from jaxpint.fitters.wideband import stack_wideband_noise
+
+        toa_data, params, nm = _wb_setup()
+        key = jax.random.PRNGKey(5)
+        rt = np.asarray(jax.random.normal(key, (24,))) * 2e-6
+        rd = np.asarray(jax.random.normal(jax.random.PRNGKey(6), (24,))) * 2e-4
+
+        wt, wd = whiten_wideband_residuals(
+            jnp.asarray(rt), jnp.asarray(rd), toa_data, params, nm
+        )
+
+        sigma_toa, Ndiag, U, Phi, sigma_dm = (
+            np.asarray(x) for x in stack_wideband_noise(nm, toa_data, params)
+        )
+        r = np.concatenate([rt, rd])
+        C = np.diag(Ndiag) + U @ np.diag(Phi) @ U.T
+        b = np.diag(Phi) @ U.T @ np.linalg.solve(C, r)
+        w_ref = (r - U @ b) / np.concatenate([sigma_toa, sigma_dm])
+        npt.assert_allclose(np.asarray(wt), w_ref[:24], rtol=1e-10)
+        npt.assert_allclose(np.asarray(wd), w_ref[24:], rtol=1e-10)
+
+    def test_dm_block_is_white_only(self):
+        """DM whitening is division by scaled_dm_sigma -- pinned deliberately.
+
+        The stacked U has zero DM-block rows (wideband_covariance models DM
+        as white-only). If this test ever fails because DM rows gained GP
+        support, that is the tracked noise-model gap closing: update this to
+        the dense reference, don't delete it.
+        """
+        from jaxpint.fitters import whiten_wideband_residuals
+
+        toa_data, params, nm = _wb_setup()
+        rt = jnp.zeros(24)
+        rd = jnp.asarray(np.linspace(-3e-4, 3e-4, 24))
+        _, wd = whiten_wideband_residuals(rt, rd, toa_data, params, nm)
+        sigma_dm = nm.scaled_dm_sigma(toa_data, params)
+        npt.assert_allclose(np.asarray(wd), np.asarray(rd / sigma_dm), rtol=1e-12)
+
+    def test_none_noise_model_uses_raw_errors(self):
+        """noise_model=None mirrors the fitter: raw TOA/DM errors, no basis."""
+        from jaxpint.fitters import whiten_wideband_residuals
+
+        toa_data, params, _ = _wb_setup()
+        rt = jnp.full(24, 2e-6)
+        rd = jnp.full(24, 2e-4)
+        wt, wd = whiten_wideband_residuals(rt, rd, toa_data, params, None)
+        npt.assert_allclose(np.asarray(wt), np.asarray(rt / toa_data.error), rtol=1e-12)
+        npt.assert_allclose(
+            np.asarray(wd), np.asarray(rd / toa_data.dm_errors), rtol=1e-12
+        )
+
+    @pytest.mark.slow
+    def test_wideband_fit_whitens_to_standard_normal(self):
+        """End-to-end on the vendored J1614 wideband pair, native path.
+
+        Both blocks must come out ~N(0,1); the fit's own noise_realizations
+        feed the whitening, exactly as a user would do it.
+        """
+        import pathlib
+
+        import jaxpint.par as jpar
+        from jaxpint import build_model, native
+        from jaxpint.fitters import (
+            WidebandGLSFitter,
+            whiten_wideband_residuals,
+        )
+
+        d = pathlib.Path(__file__).resolve().parent / "data" / "pint_inputs"
+        parsed = jpar.get_model(str(d / "J1614-2230_NANOGrav_12yv3.wb.gls.par"))
+        toa_data = native.get_TOAs(str(d / "J1614-2230_NANOGrav_12yv3.wb.tim"), parsed)
+        model, nm = build_model(parsed, toa_data)
+        fit = WidebandGLSFitter(model, toa_data, parsed.params, noise_model=nm).fit_toas(
+            maxiter=3
+        )
+        wt, wd = whiten_wideband_residuals(
+            fit.time_residuals,
+            fit.dm_residuals,
+            toa_data,
+            fit.params,
+            nm,
+            noise_realizations=fit.noise_realizations,
+        )
+        # Real data, real (already-published) noise model: the whitened blocks
+        # should be near-standard-normal. Bounds are loose-ish because this is
+        # observed data, not a simulation drawn from the model itself.
+        assert abs(float(jnp.std(wt)) - 1.0) < 0.25
+        assert abs(float(jnp.std(wd)) - 1.0) < 0.25
+        rep_t = normality_tests(wt)
+        assert rep_t.ks_p > 1e-4
+
+    @pytest.mark.slow
+    def test_parity_vs_pint_wideband_whitening(self):
+        """Element-wise vs PINT's calc_wideband_whitened_resids, same params.
+
+        Both sides evaluate at the PAR values (no fit on either side), so the
+        comparison isolates the whitening machinery from fit-state
+        differences. J1614's noise is DMX + white + ECORR -- no DM GP -- so
+        the documented DM-block divergence cannot enter here.
+        """
+        pytest.importorskip("pint")
+        import pint.models
+        import pint.residuals
+        import pint.toa
+        from pint.config import examplefile
+
+        from jaxpint.bridge import (
+            build_timing_model,
+            pint_model_to_params,
+            pint_toas_to_jax,
+        )
+        from jaxpint.fitters import whiten_wideband_residuals
+        from jaxpint.fitters.wideband import compute_wideband_residuals
+
+        par = examplefile("J1614-2230_NANOGrav_12yv3.wb.gls.par")
+        tim = examplefile("J1614-2230_NANOGrav_12yv3.wb.tim")
+        m = pint.models.get_model(par)
+        toas = pint.toa.get_TOAs(tim, model=m)
+
+        pres = pint.residuals.WidebandTOAResiduals(toas, m)
+        w_pint = pres.calc_wideband_whitened_resids()
+
+        toa_data = pint_toas_to_jax(toas, model=m)
+        params = pint_model_to_params(m).params
+        model, nm = build_timing_model(m, toas)
+        r = compute_wideband_residuals(model, toa_data, params)
+        n = toa_data.n_toas
+        # PINT's wideband residuals are mean-subtracted on the time block;
+        # match that before whitening (see the narrowband demeaning note).
+        rt = r[:n] - jnp.mean(r[:n])
+        rd = r[n:]
+        wt, wd = whiten_wideband_residuals(rt, rd, toa_data, params, nm)
+        ours = np.concatenate([np.asarray(wt), np.asarray(wd)])
+        # Measured: max 2.0e-02, median 5.8e-04 (dimensionless). The max is
+        # the known residual-level implementation difference (~1e-8 s, per the
+        # cross-implementation tolerances) expressed in whitened units
+        # (~0.5 us sigma -> 2e-2), not a whitening-machinery error -- the toy
+        # tests above pin the machinery against dense algebra at 1e-10.
+        diff = np.max(np.abs(ours - np.asarray(w_pint)))
+        assert diff < 0.05, f"max whitened-residual diff {diff:.3e} (dimensionless)"
