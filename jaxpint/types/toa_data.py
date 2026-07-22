@@ -125,6 +125,16 @@ class TOAData(eqx.Module):
     # Provenance of the clock corrections already baked into ``mjd_*``/``tdb_*``.
     clock_realization: Optional[str] = eqx.field(static=True, default=None)
 
+    # Absolute pulse numbers: the integer rotation count each TOA is assigned
+    # to, or None (the common case -- residuals then use nearest-pulse
+    # tracking). Stored as float64: rotation counts reach ~1e11-1e12, far
+    # inside float64's exact-integer range (2**53). Sources: ``-pn`` flags in
+    # the .tim, PINT's ``pulse_number`` column via the bridge, or
+    # ``compute_pulse_numbers`` from a trusted model. NaN entries are not
+    # allowed -- the loaders enforce all-or-nothing (PINT likewise refuses
+    # partial coverage), because a NaN would silently poison the residuals.
+    pulse_number: Optional[Float[Array, " n_toas"]] = eqx.field(default=None)
+
     def __check_init__(self):
         if (self.basis_seconds is None) != (self.basis_coord is None):
             raise ValueError(
@@ -179,6 +189,137 @@ class TOAData(eqx.Module):
             basis_seconds=jnp.asarray(basis_seconds, dtype=jnp.float64),
             basis_coord=coord,
         )
+
+    def with_pulse_numbers(self, pulse_number) -> "TOAData":
+        """Return a copy carrying absolute pulse numbers.
+
+        Validated eagerly (NumPy, not traced): the array must be finite and
+        integer-valued, because a stray NaN or fractional entry would corrupt
+        tracked residuals silently rather than fail here.
+        """
+        arr = np.asarray(pulse_number, dtype=np.float64)
+        if arr.shape != (self.n_toas,):
+            raise ValueError(
+                f"pulse_number must have shape ({self.n_toas},), got {arr.shape}"
+            )
+        if not np.all(np.isfinite(arr)):
+            raise ValueError("pulse_number must be finite for every TOA")
+        if not np.all(arr == np.round(arr)):
+            raise ValueError("pulse_number must be integer-valued")
+        return dataclasses.replace(
+            self, pulse_number=jnp.asarray(arr, dtype=jnp.float64)
+        )
+
+    def with_computed_pulse_numbers(self, model, params) -> "TOAData":
+        """Freeze pulse numbers from a trusted model, in one call.
+
+        The one-line form of ``compute_pulse_numbers(model, self, params)`` +
+        :meth:`with_pulse_numbers`: evaluates the model phase at *params*,
+        rounds each TOA to its nearest rotation, and returns a copy carrying
+        those assignments -- after which every fit against it tracks
+        absolutely (presence-based ``track_mode``).
+
+        *params* should be a solution you trust (typically the par values a
+        phase-connected model was published with): the assignments are only
+        as good as the model that made them. Note the fixed point at a good
+        solution: recomputing at converged fitted params reproduces the same
+        numbers whenever every tracked residual is under half a turn, so
+        "refreezing" after a successful fit is a no-op by construction.
+        """
+        phase = model.compute_phase(self, params)
+        return self.with_pulse_numbers(phase.int + jnp.round(phase.frac))
+
+    # -- Phase-connection editing verbs --------------------------------------
+    #
+    # Interactive affordances for the manual phase-connection workflow (the
+    # pintk-style "insert a turn after this gap" moves). Eagerly validated
+    # NumPy operations returning new TOAData -- editing verbs, not traced
+    # code; do not call them inside jit.
+    #
+    # Sign conventions (see compute_phase_residuals):
+    #     residual = phase + delta_pulse_number - pulse_number
+    # so +1 phase turn RAISES the residual by one cycle, while +1 to the
+    # pulse-number assignment LOWERS it by one; applying both to the same
+    # TOAs cancels exactly.
+
+    def _selection(self, after_mjd, mask) -> np.ndarray:
+        """Boolean selection from exactly one of *after_mjd* / *mask*."""
+        if (after_mjd is None) == (mask is None):
+            raise ValueError(
+                "select TOAs with exactly one of after_mjd=<MJD> or mask=<bool array>"
+            )
+        if after_mjd is not None:
+            mjd = np.asarray(self.mjd_int) + np.asarray(self.mjd_frac)
+            return mjd > float(after_mjd)
+        m = np.asarray(mask)
+        if m.shape != (self.n_toas,) or m.dtype != np.bool_:
+            raise ValueError(
+                f"mask must be a bool array of shape ({self.n_toas},), got "
+                f"{m.dtype} {m.shape}"
+            )
+        return m
+
+    def with_delta_pulse_number(self, delta) -> "TOAData":
+        """Replace ``delta_pulse_number`` wholesale (finite values required)."""
+        arr = np.asarray(delta, dtype=np.float64)
+        if arr.shape != (self.n_toas,):
+            raise ValueError(
+                f"delta_pulse_number must have shape ({self.n_toas},), got {arr.shape}"
+            )
+        if not np.all(np.isfinite(arr)):
+            raise ValueError("delta_pulse_number must be finite for every TOA")
+        return dataclasses.replace(
+            self, delta_pulse_number=jnp.asarray(arr, dtype=jnp.float64)
+        )
+
+    def add_phase_turns(self, turns, *, after_mjd=None, mask=None) -> "TOAData":
+        """Add *turns* to ``delta_pulse_number`` for the selected TOAs.
+
+        The programmatic form of a mid-file ``PHASE`` command (integer turns)
+        or a ``-padd`` flag (fractional allowed): asserts that the selected
+        TOAs' phases are *turns* rotations beyond what the bare model
+        predicts. Positive turns raise those residuals by ``+turns`` cycles
+        (in nearest mode only the fractional part is observable, exactly as
+        for PHASE commands). Serializes through ``write_tim`` as ``-padd``.
+        """
+        turns = float(turns)
+        if not np.isfinite(turns):
+            raise ValueError("turns must be finite")
+        sel = self._selection(after_mjd, mask)
+        dpn = np.asarray(self.delta_pulse_number, dtype=np.float64).copy()
+        dpn[sel] += turns
+        return dataclasses.replace(
+            self, delta_pulse_number=jnp.asarray(dpn, dtype=jnp.float64)
+        )
+
+    def shift_pulse_numbers(self, turns, *, after_mjd=None, mask=None) -> "TOAData":
+        """Shift the absolute pulse-number assignments of the selected TOAs.
+
+        The manual connection move: "everything after the gap is actually
+        *turns* rotations later than assigned". Requires pulse numbers to be
+        present and *turns* to be a whole number (assignments are rotation
+        counts). Positive turns LOWER the selected tracked residuals by
+        ``turns`` cycles -- the opposite sign to :meth:`add_phase_turns`, per
+        the residual convention above.
+        """
+        turns = float(turns)
+        if turns != round(turns):
+            raise ValueError(
+                f"pulse-number shifts must be whole rotations, got {turns!r}"
+            )
+        if self.pulse_number is None:
+            raise ValueError(
+                "no pulse numbers to shift; assign them first "
+                "(with_computed_pulse_numbers / with_pulse_numbers)"
+            )
+        sel = self._selection(after_mjd, mask)
+        pn = np.asarray(self.pulse_number, dtype=np.float64).copy()
+        pn[sel] += turns
+        return self.with_pulse_numbers(pn)
+
+    def without_pulse_numbers(self) -> "TOAData":
+        """Drop the pulse-number assignments (fits revert to nearest mode)."""
+        return dataclasses.replace(self, pulse_number=None)
 
     def require_basis_seconds(self) -> Float[Array, " n_toas"]:
         """``basis_seconds``, raising a diagnosable error when unset.
@@ -322,6 +463,7 @@ class TOAData(eqx.Module):
         basis_seconds=None,
         basis_coord: Optional[BasisCoord] = None,
         clock_realization: Optional[str] = None,
+        pulse_number=None,
     ) -> "TOAData":
         """Build a TOAData from raw NumPy/JAX arrays, owning all dtype coercion.
 
@@ -378,4 +520,5 @@ class TOAData(eqx.Module):
             basis_seconds=fopt(basis_seconds),
             basis_coord=basis_coord,
             clock_realization=clock_realization,
+            pulse_number=fopt(pulse_number),
         )

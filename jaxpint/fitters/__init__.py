@@ -7,6 +7,8 @@ from ._base import (
     compute_chi2_cov,
     compute_design_matrix,
     compute_phase_residuals,
+    TrackMode,
+    compute_pulse_numbers,
     compute_time_residuals,
 )
 from .diagnostics import (
@@ -52,6 +54,8 @@ __all__ = [
     "compute_design_matrix",
     "compute_dm_residuals",
     "compute_phase_residuals",
+    "TrackMode",
+    "compute_pulse_numbers",
     "compute_time_residuals",
     "compute_wideband_design_matrix",
     "compute_wideband_residuals",

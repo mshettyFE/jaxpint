@@ -258,6 +258,17 @@ def pint_toas_to_jax(
     # -- Delta pulse number ----------------------------------------------
     delta_pulse_number = np.asarray(tbl["delta_pulse_number"], dtype=np.float64)
 
+    # -- Absolute pulse numbers (PINT: -pn flags or compute_pulse_numbers) --
+    # All-or-nothing, matching the native loader: PINT's column can carry NaN
+    # for TOAs without -pn flags, and partial coverage would poison tracked
+    # residuals, so it is dropped (silently here -- PINT already warned when
+    # it built the column).
+    pulse_number = None
+    if "pulse_number" in tbl.colnames:
+        pn = np.asarray(tbl["pulse_number"], dtype=np.float64)
+        if np.isfinite(pn).all():
+            pulse_number = pn
+
     # -- Observatory indices ---------------------------------------------
     obs_array = np.asarray(toas.get_obss(), dtype=str)
     obs_names = tuple(str(s) for s in sorted(set(obs_array)))
@@ -355,6 +366,7 @@ def pint_toas_to_jax(
         error=error_s,
         freq=freq_mhz,
         delta_pulse_number=delta_pulse_number,
+        pulse_number=pulse_number,
         ssb_obs_pos=ssb_obs_pos,
         ssb_obs_vel=ssb_obs_vel,
         obs_sun_pos=obs_sun_pos,
