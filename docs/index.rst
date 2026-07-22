@@ -46,7 +46,7 @@ Fit a real ``.par`` / ``.tim`` pair — no PINT required:
    import jaxpint.par as par
    from jaxpint import native, build_model, WLSFitter
 
-   # Parse and build entirely in JaxPINT (the .tim must be TEMPO2 format)
+   # Parse and build entirely in JaxPINT (Tempo2, Princeton or Parkes .tim)
    parsed = par.get_model("pulsar.par")               # ParResult: parameters + components
    toa_data = native.get_TOAs("pulsar.tim", parsed)   # TOAData (clock-corrected, barycentered)
    timing_model, noise_model = build_model(parsed, toa_data)  # TimingModel + NoiseModel

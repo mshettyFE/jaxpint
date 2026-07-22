@@ -38,6 +38,19 @@ from jaxpint.utils import normalize_designmatrix, woodbury_dot, woodbury_solve
 # ---------------------------------------------------------------------------
 
 
+# Convergence threshold on the Gauss-Newton step, in units of each parameter's
+# 1-sigma uncertainty. 1e-3 sigma is far below any statistically meaningful
+# parameter shift while staying comfortably above float64 solve noise.
+_STEP_SIGMA_TOL = 1e-3
+
+# Iteration cap. PINT's *plain* WLSFitter/GLSFitter default to 1 (a single
+# Gauss-Newton step, no convergence test); its Downhill fitters default to 10.
+# We follow the downhill default because the step below is early-exiting -- a
+# fit already at its solution costs one step and stops, so the higher cap buys
+# robustness on a cold start without charging converged fits for it.
+_DEFAULT_MAXITER = 10
+
+
 class BaseFitResult(eqx.Module):
     """Common fields shared by all fit results."""
 
@@ -45,6 +58,36 @@ class BaseFitResult(eqx.Module):
     covariance_matrix: Float[Array, "n_free n_free"]
     chi2: Float[Array, ""]
     dof: int = eqx.field(static=True)
+    # Largest remaining Gauss-Newton step, in units of sigma, measured *after*
+    # the fit returned. NaN when the fitter did not report it.
+    #
+    # kw_only: subclasses declare their own non-default fields (residuals, etc.),
+    # and a defaulted base field would otherwise force those to take defaults too
+    # ("non-default argument follows default argument").
+    step_sigma: Float[Array, ""] = eqx.field(
+        default_factory=lambda: jnp.asarray(jnp.nan), kw_only=True
+    )
+
+    @property
+    def converged(self) -> Float[Array, ""]:
+        """Whether one more Gauss-Newton step would move nothing meaningful.
+
+        True when the remaining step is under ``_STEP_SIGMA_TOL`` sigma. This is
+        the condition the implicit gradients of :meth:`BaseFitter.fit_params`
+        assume; a fit that stopped on ``maxiter`` instead can report a plausible
+        chi2 while sitting away from the stationary point, so this is worth
+        checking before trusting either the uncertainties or the gradients.
+
+        .. warning::
+
+           Convergence is not correctness. Gauss-Newton finds *a* stationary
+           point, and with nearest-pulse phase tracking a cold start can settle
+           into a cycle-slipped solution: perturbing F0 by 1e-6 Hz on NGC6440E
+           converges cleanly to chi2 ~ 2e6 against 59.6 for the true solution.
+           Always check ``reduced_chi2`` as well -- this flag only says the
+           fitter stopped moving, not that it stopped somewhere sensible.
+        """
+        return self.step_sigma <= _STEP_SIGMA_TOL
 
     @property
     def parameter_uncertainties(self) -> Float[Array, " n_free"]:
@@ -99,7 +142,7 @@ class BaseFitter(ABC):
         self.noise_model = noise_model
 
     @abstractmethod
-    def fit_toas(self, maxiter: int = 1, **kwargs) -> BaseFitResult:
+    def fit_toas(self, maxiter: int = _DEFAULT_MAXITER, **kwargs) -> BaseFitResult:
         """Run the fit and return a result container.
 
         Subclasses narrow the return type to their specific result class
@@ -108,7 +151,8 @@ class BaseFitter(ABC):
         Parameters
         ----------
         maxiter : int, optional
-            Maximum number of Gauss-Newton iterations. Default is 1.
+            Maximum number of Gauss-Newton iterations; the fit stops earlier
+            once converged. Default is 10.
         **kwargs
             Subclass-specific options (e.g. ``threshold``, ``full_cov``).
         """
@@ -259,8 +303,9 @@ class BaseFitter(ABC):
         params: Optional[ParameterVector] = None,
         external_delay: Optional[Float[Array, " n_toas"]] = None,
         *,
-        maxiter: int = 1,
+        maxiter: int = _DEFAULT_MAXITER,
         threshold: Optional[float] = None,
+        step_tol: Optional[float] = None,
         **core_opts,
     ) -> ParameterVector:
         """Differentiable Gauss-Newton fit returning only the fitted parameters.
@@ -268,9 +313,11 @@ class BaseFitter(ABC):
         Equivalent to ``fit_toas(...).params`` but skips result
         construction — the lean entry point for eager gradient/vmap loops.
 
-        The implicit gradients assume a *converged* fit — verify with
-        :meth:`fit_gap` when starting far from the solution or using a
-        small ``maxiter``.
+        Iterates until the Gauss-Newton step falls below ``step_tol`` in units
+        of each parameter's uncertainty, or ``maxiter`` steps have been taken.
+        The implicit gradients assume a *converged* fit; ``maxiter`` alone does
+        not guarantee one, so check :attr:`BaseFitResult.converged` (or call
+        :meth:`fit_gap`) when starting far from the solution.
 
         Parameters
         ----------
@@ -283,6 +330,9 @@ class BaseFitter(ABC):
             residuals before fitting, e.g. an injected CW signal.
         maxiter, threshold
             As for :meth:`fit_toas`.
+        step_tol : float, optional
+            Convergence threshold on the Gauss-Newton step, in units of the
+            parameter uncertainty. Defaults to ``_STEP_SIGMA_TOL``.
         **core_opts
             Fitter-specific solve options (e.g. ``full_cov`` for GLS).
         """
@@ -292,12 +342,42 @@ class BaseFitter(ABC):
         thr = self._default_threshold(**core_opts) if threshold is None else threshold
         free_idx = skeleton.free_indices_array()
         n_iter = max(1, maxiter)
+        tol = _STEP_SIGMA_TOL if step_tol is None else step_tol
 
         def _iterate(values, ext):
-            for _ in range(n_iter):
-                values, _cov, _nr = self._core_step(
+            # Iterate to a fixed point, stopping as soon as the Gauss-Newton
+            # step is negligible against the parameter's own uncertainty.
+            #
+            # Measuring the step in units of sigma is what makes one threshold
+            # work across parameters spanning ~30 orders of magnitude (F0 ~ 1e2,
+            # F1 ~ 1e-15). A relative-to-value test would be meaningless for any
+            # parameter passing through zero, and an absolute one would need
+            # per-parameter tuning. It is also the criterion :meth:`fit_gap`
+            # already documents for deciding when implicit gradients are
+            # trustworthy, so the stopping rule and the diagnostic agree.
+            def cond(state):
+                _values, it, step_sigma = state
+                return jnp.logical_and(it < n_iter, step_sigma > tol)
+
+            def body(state):
+                values, it, _ = state
+                new_values, cov, _nr = self._core_step(
                     skeleton.with_values(values), ext, thr, **core_opts
                 )
+                step = new_values[free_idx] - values[free_idx]
+                sigma = jnp.sqrt(jnp.abs(jnp.diag(cov)))
+                # A zero/degenerate sigma means the SVD truncated that
+                # direction; it carries no information, so it must not veto
+                # convergence. Scoring it 0 excludes it from the max.
+                scaled = jnp.where(
+                    sigma > 0, jnp.abs(step) / jnp.where(sigma > 0, sigma, 1.0), 0.0
+                )
+                return new_values, it + 1, jnp.max(scaled)
+
+            # Seeded above tol so the loop always takes at least one step.
+            values, _n_used, _gap = jax.lax.while_loop(
+                cond, body, (values, 0, jnp.asarray(jnp.inf))
+            )
             return values
 
         @jax.custom_vjp
@@ -330,6 +410,32 @@ class BaseFitter(ABC):
         _fixed_point.defvjp(_fp_fwd, _fp_bwd)
 
         return skeleton.with_values(_fixed_point(skeleton.values, external_delay))
+
+    def step_sigma(
+        self,
+        params: ParameterVector,
+        external_delay: Optional[Float[Array, " n_toas"]] = None,
+        threshold: Optional[float] = None,
+        **core_opts,
+    ) -> Float[Array, ""]:
+        """Largest further Gauss-Newton step, in units of parameter sigma.
+
+        The scalar form of :meth:`fit_gap`, and the quantity
+        :attr:`BaseFitResult.converged` thresholds. Costs one extra core step,
+        which is why it is computed once at the end of a fit rather than being
+        threaded out of the iteration.
+        """
+        thr = self._default_threshold(**core_opts) if threshold is None else threshold
+        new_values, cov, _nr = self._core_step(params, external_delay, thr, **core_opts)
+        idx = params.free_indices_array()
+        step = new_values[idx] - params.values[idx]
+        sigma = jnp.sqrt(jnp.abs(jnp.diag(cov)))
+        # Degenerate directions were truncated by the SVD and carry no
+        # information; they must not be able to report non-convergence.
+        scaled = jnp.where(
+            sigma > 0, jnp.abs(step) / jnp.where(sigma > 0, sigma, 1.0), 0.0
+        )
+        return jnp.max(scaled)
 
     def fit_gap(
         self,

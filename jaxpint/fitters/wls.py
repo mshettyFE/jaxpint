@@ -14,6 +14,7 @@ from jaxpint.noise import NoiseModel
 from jaxpint.types import TOAData, ParameterVector
 
 from ._base import (
+    _DEFAULT_MAXITER,
     BaseFitter,
     BaseFitResult,
     compute_time_residuals,
@@ -151,7 +152,7 @@ class WLSFitter(BaseFitter):
 
     def fit_toas(
         self,
-        maxiter: int = 1,
+        maxiter: int = _DEFAULT_MAXITER,
         threshold: Optional[float] = None,
         params: Optional[ParameterVector] = None,
         external_delay: Optional[Float[Array, " n_toas"]] = None,
@@ -202,4 +203,5 @@ class WLSFitter(BaseFitter):
             chi2=chi2_val,
             dof=self._dof(fitted, self.toa_data.n_toas),
             residuals=final_resid,
+            step_sigma=self.step_sigma(fitted, external_delay, threshold),
         )
