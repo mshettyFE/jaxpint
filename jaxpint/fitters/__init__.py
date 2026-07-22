@@ -9,6 +9,14 @@ from ._base import (
     compute_phase_residuals,
     compute_time_residuals,
 )
+from .diagnostics import (
+    FTestResult,
+    NormalityReport,
+    ftest,
+    ftest_results,
+    normality_tests,
+    whiten_residuals,
+)
 from .wls import WLSFitResult, WLSFitter
 from .gls import (
     GLSFitResult,
@@ -23,6 +31,12 @@ from .wideband import (
 )
 
 __all__ = [
+    "whiten_residuals",
+    "normality_tests",
+    "NormalityReport",
+    "ftest",
+    "ftest_results",
+    "FTestResult",
     "BaseFitter",
     "BaseFitResult",
     "WLSFitResult",
