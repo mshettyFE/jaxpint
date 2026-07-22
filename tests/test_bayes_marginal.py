@@ -480,6 +480,38 @@ class TestLinearityCheck:
             rtol=1e-12,
         )
 
+    def test_directional_hessian_diag_equals_full_hessian(self, synth_objects):
+        """The jvp-of-jvp directional second derivative used by
+        ``_check_linearity`` must equal the corresponding diagonal entries of
+        the full ``jacfwd(jacrev)`` residual Hessian.  The directional form
+        exists because the full ``(n_toas, n_params, n_params)`` tensor OOMs
+        DMX-heavy high-cadence pulsars; this pins the two computations as
+        interchangeable on a small model (non-contiguous indices, so an
+        index-mapping bug is caught)."""
+        jax_model, _, toa_data, params = synth_objects
+
+        def resid_fn(values):
+            return compute_time_residuals(
+                jax_model, toa_data, params.with_values(values)
+            )
+
+        H_full = jax.jacfwd(jax.jacrev(resid_fn))(params.values)
+
+        check_indices = (params.param_index("F0"), params.param_index("DM"))
+        for idx in check_indices:
+            tangent = jnp.zeros_like(params.values).at[idx].set(1.0)
+
+            def directional_grad(values):
+                return jax.jvp(resid_fn, (values,), (tangent,))[1]
+
+            H_ii = jax.jvp(directional_grad, (params.values,), (tangent,))[1]
+            npt.assert_allclose(
+                np.asarray(H_ii),
+                np.asarray(H_full[:, idx, idx]),
+                rtol=1e-12,
+                atol=1e-30,
+            )
+
 
 class TestDesignMatrixMethod:
     """Guards for how the marginalization design matrix is built.
@@ -839,6 +871,42 @@ class TestPTAMarg:
 
         npt.assert_allclose(logL_pta, logL_sum_per_pulsar, rtol=1e-10)
         assert marginalized == over
+
+    def test_marg_injector_switches_pta_inner_tier_to_qr(self):
+        """The marginalization injector must declare ``needs_qr`` so the PTA
+        inner tier evaluates its collinear Φ=1e40 design block through the
+        square-root (QR) Woodbury — the same form the single-pulsar path uses
+        via ``use_qr=True``.  The Gram-Cholesky form loses ~4 digits on that
+        block (an O(1) absolute logL error per pulsar), so this wiring is a
+        correctness contract, not an optimization."""
+        from jaxpint.bayes.marginal import _MarginalizationInjector
+        from jaxpint.pta.likelihood import _config_needs_qr
+
+        assert _MarginalizationInjector.needs_qr is True
+
+        (
+            pulsar_names,
+            toa_data_list,
+            timing_models,
+            noise_models,
+            pulsar_params,
+            _,
+        ) = _build_pta_setup(n_pulsars=2)
+        config = PTAConfig(
+            toa_data_list=toa_data_list,
+            timing_models=timing_models,
+            noise_models=noise_models,
+            signal_injectors=(),
+        )
+        assert _config_needs_qr(config) is False
+
+        injector = _MarginalizationInjector((None, None))
+        import dataclasses
+
+        marg_config = dataclasses.replace(
+            config, signal_injectors=config.signal_injectors + (injector,)
+        )
+        assert _config_needs_qr(marg_config) is True
 
     def test_pta_marg_with_hd_correlated(self):
         """Marg + HD GWB: matches dense brute-force reference."""

@@ -19,6 +19,10 @@ from jaxpint.utils import (
     sherman_morrison_dot,
     woodbury_dot,
     woodbury_dot_qr,
+    woodbury_solve,
+    woodbury_solve_qr,
+    qr_woodbury_half_factor,
+    apply_qr_woodbury_solve,
     pulsar_unit_vector,
     compute_pulsar_direction,
     compute_pulsar_direction_ecl,
@@ -494,6 +498,90 @@ class TestWoodburyDotQR:
         r, ld = jax.jit(woodbury_dot_qr)(Ndiag, U, Phidiag, x, x)
         assert jnp.isfinite(r) and jnp.isfinite(ld)
         g = jax.grad(lambda r_: woodbury_dot_qr(Ndiag, U, Phidiag, r_, r_)[0])(x)
+        assert jnp.all(jnp.isfinite(g))
+
+
+class TestWoodburySolveQR:
+    """Square-root (QR) Woodbury solve: parity on well-conditioned input, an
+    accuracy win on the collinear marginalization-style block, and consistency
+    of the shared half-factorization used by the PTA inner tier."""
+
+    def _well_conditioned(self):
+        key = jax.random.PRNGKey(0)
+        k1, k2, k3, k4 = jax.random.split(key, 4)
+        n, k, m = 8, 3, 2
+        Ndiag = jnp.abs(jax.random.normal(k1, (n,))) + 1.0
+        U = jax.random.normal(k2, (n, k))
+        Phidiag = jnp.abs(jax.random.normal(k3, (k,))) + 0.1
+        B = jax.random.normal(k4, (n, m))
+        return Ndiag, U, Phidiag, B
+
+    def test_matches_cholesky_well_conditioned(self):
+        """On a benign problem the QR form agrees with woodbury_solve."""
+        Ndiag, U, Phidiag, B = self._well_conditioned()
+        s0 = woodbury_solve(Ndiag, U, Phidiag, B)
+        s1 = woodbury_solve_qr(Ndiag, U, Phidiag, B)
+        npt_scale = jnp.max(jnp.abs(s0))
+        assert jnp.max(jnp.abs(s0 - s1)) / npt_scale < 1e-12
+
+    def test_beats_cholesky_on_collinear_marginalization(self):
+        """Same regime as TestWoodburyDotQR: cond(U) = 1e6 at Φ=1e40, where
+        the Gram squares the conditioning to ~1e12.  Validate C⁻¹y through
+        the exact quadratic form x^T (C⁻¹ y) against the rational reference."""
+        n, k = 40, 6
+        rng = np.random.default_rng(0)
+        Q, _ = np.linalg.qr(rng.standard_normal((n, k)))
+        V, _ = np.linalg.qr(rng.standard_normal((k, k)))
+        U = Q @ (np.geomspace(1.0, 1e-6, k)[:, None] * V)
+        Ndiag = np.ones(n)
+        Phidiag = np.full(k, 1e40)
+        x = rng.standard_normal(n)
+        y = rng.standard_normal(n)
+
+        truth = _exact_woodbury_dot(Ndiag, U, Phidiag, x, y)
+        args = (
+            jnp.asarray(Ndiag), jnp.asarray(U), jnp.asarray(Phidiag),
+            jnp.asarray(y)[:, None],
+        )
+        qr_dot = float(jnp.asarray(x) @ woodbury_solve_qr(*args)[:, 0])
+        chol_dot = float(jnp.asarray(x) @ woodbury_solve(*args)[:, 0])
+        qr_err = abs(qr_dot - truth) / abs(truth)
+        chol_err = abs(chol_dot - truth) / abs(truth)
+        assert qr_err < 1e-8, f"qr relerr {qr_err:.2e} not below 1e-8"
+        assert qr_err < chol_err / 100, (
+            f"qr relerr {qr_err:.2e} should be >100x tighter than "
+            f"cholesky relerr {chol_err:.2e}"
+        )
+
+    def test_shared_half_factor_consistency(self):
+        """qr_woodbury_half_factor + apply == one-shot woodbury_solve_qr, and
+        the dot built from Q1 matches woodbury_dot_qr — the contract the PTA
+        inner tier relies on when sharing one factorization for both."""
+        Ndiag, U, Phidiag, B = self._well_conditioned()
+        Ninv_half, Q1, R = qr_woodbury_half_factor(Ndiag, U, Phidiag)
+
+        s_apply = apply_qr_woodbury_solve(Ninv_half, Q1, B)
+        s_oneshot = woodbury_solve_qr(Ndiag, U, Phidiag, B)
+        assert jnp.array_equal(s_apply, s_oneshot)
+
+        x = B[:, 0]
+        u = Ninv_half * x
+        p = Q1.T @ u
+        rCr_factor = u @ u - p @ p
+        logdet_factor = jnp.sum(jnp.log(Ndiag)) + 2.0 * jnp.sum(
+            jnp.log(jnp.abs(jnp.diag(R)))
+        )
+        rCr, logdet = woodbury_dot_qr(Ndiag, U, Phidiag, x, x)
+        assert jnp.isclose(rCr_factor, rCr, rtol=1e-14)
+        assert jnp.isclose(logdet_factor, logdet, rtol=1e-14)
+
+    def test_jit_and_grad(self):
+        Ndiag, U, Phidiag, B = self._well_conditioned()
+        s = jax.jit(woodbury_solve_qr)(Ndiag, U, Phidiag, B)
+        assert jnp.all(jnp.isfinite(s))
+        g = jax.grad(
+            lambda Nd: jnp.sum(woodbury_solve_qr(Nd, U, Phidiag, B) ** 2)
+        )(Ndiag)
         assert jnp.all(jnp.isfinite(g))
 
 

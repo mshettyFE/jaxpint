@@ -486,6 +486,42 @@ def woodbury_dot(
     return x_Cinv_y, logdet_C
 
 
+def qr_woodbury_half_factor(
+    Ndiag: Float[Array, " n"],
+    U: Float[Array, "n k"],
+    Phidiag: Float[Array, " k"],
+) -> tuple[Float[Array, " n"], Float[Array, "n k"], Float[Array, "k k"]]:
+    r"""Shared square-root factorization behind the QR-form Woodbury paths.
+
+    Computes the whitened basis :math:`A = N^{-1/2} U \Phi^{1/2}` and the
+    reduced QR of the stacked :math:`S = [A; I_k] = Q R`, so that
+    :math:`R^T R = I_k + A^T A` — the square-root counterpart of the Gram
+    matrix :math:`\Sigma` (see :func:`woodbury_dot_qr` for why this keeps
+    ~twice the digits when ``U`` columns are collinear).  The ``I`` block
+    guarantees ``S`` has full column rank, so ``R`` is always invertible.
+
+    Returns ``(Ninv_half, Q1, R)`` where ``Q1 = Q[:n]`` is the top block of
+    the orthonormal factor.  Since ``Q1 = A R^{-1}``, the key identity is
+
+    .. math::
+        (I + A A^T)^{-1} = I - A (R^T R)^{-1} A^T = I - Q_1 Q_1^T,
+
+    so every downstream application is a plain product with the
+    orthogonally-computed ``Q1`` — no ``AᵀB`` Gram-like products and no
+    triangular solves, which would silently reintroduce the conditioning
+    the QR exists to avoid.  Consumers that need both the quadratic form
+    *and* a solve against the same ``C`` (e.g. the PTA inner tier) should
+    call this once and reuse the factor rather than paying two QRs through
+    :func:`woodbury_dot_qr` + :func:`woodbury_solve_qr`.
+    """
+    n, k = U.shape
+    Ninv_half = 1.0 / jnp.sqrt(Ndiag)
+    A = (Ninv_half[:, None] * U) * jnp.sqrt(Phidiag)[None, :]  # (n, k)
+    S = jnp.concatenate([A, jnp.eye(k)], axis=0)  # (n + k, k)
+    Q, R = jnp.linalg.qr(S, mode="reduced")  # (n + k, k), (k, k)
+    return Ninv_half, Q[:n], R
+
+
 def woodbury_dot_qr(
     Ndiag: Float[Array, " n"],
     U: Float[Array, "n k"],
@@ -505,11 +541,17 @@ def woodbury_dot_qr(
         S = \begin{bmatrix} A \\ I_k \end{bmatrix}, \qquad
         S = Q R \;\Rightarrow\; R^T R = I_k + A^T A .
 
-    Then with :math:`u = N^{-1/2}x`, :math:`v = N^{-1/2}y`,
+    Then with :math:`u = N^{-1/2}x`, :math:`v = N^{-1/2}y`, and
+    :math:`Q_1 = Q[:n] = A R^{-1}` (so :math:`(I + AA^T)^{-1} = I - Q_1 Q_1^T`),
 
     .. math::
-        x^T C^{-1} y = u^T v - (R^{-T} A^T u)^T (R^{-T} A^T v), \qquad
+        x^T C^{-1} y = u^T v - (Q_1^T u)^T (Q_1^T v), \qquad
         \log\det C = \log\det N + 2\sum_i \log|R_{ii}| .
+
+    The projections go through the orthogonally-computed :math:`Q_1` rather
+    than the algebraically equivalent :math:`R^{-T} A^T u` — forming
+    :math:`A^T u` is a Gram-like product that would silently reintroduce
+    the squared conditioning this path exists to avoid.
 
     Why prefer this over :func:`woodbury_dot`
     -----------------------------------------
@@ -546,22 +588,11 @@ def woodbury_dot_qr(
     (result, logdet_C)
         The inner product and the log-determinant of *C*.
     """
-    k = U.shape[1]
-    Ninv_half = 1.0 / jnp.sqrt(Ndiag)
-    A = (Ninv_half[:, None] * U) * jnp.sqrt(Phidiag)[None, :]  # (n, k)
-
-    # R from QR of [A; I_k]: upper-triangular with R^T R = I + A^T A. The I
-    # block guarantees full column rank, so R is always invertible.
-    S = jnp.concatenate([A, jnp.eye(k)], axis=0)  # (n + k, k)
-    R = jnp.linalg.qr(S, mode="r")  # (k, k)
+    Ninv_half, Q1, R = qr_woodbury_half_factor(Ndiag, U, Phidiag)
 
     u = Ninv_half * x
     v = Ninv_half * y
-    # R^{-T} (A^T u): solve the lower-triangular system R^T p = A^T u.
-    p = jax.scipy.linalg.solve_triangular(R, A.T @ u, trans="T", lower=False)
-    q = jax.scipy.linalg.solve_triangular(R, A.T @ v, trans="T", lower=False)
-
-    x_Cinv_y = u @ v - p @ q
+    x_Cinv_y = u @ v - (Q1.T @ u) @ (Q1.T @ v)
     logdet_C = jnp.sum(jnp.log(Ndiag)) + 2.0 * jnp.sum(jnp.log(jnp.abs(jnp.diag(R))))
     return x_Cinv_y, logdet_C
 
@@ -608,6 +639,66 @@ def woodbury_solve(
     Sigma_inv_UtNinvB = jax.scipy.linalg.cho_solve(Sigma_cf, UtNinvB)  # (k, m)
 
     return Ninv_B - Ninv_U @ Sigma_inv_UtNinvB
+
+
+def woodbury_solve_qr(
+    Ndiag: Float[Array, " n"],
+    U: Float[Array, "n k"],
+    Phidiag: Float[Array, " k"],
+    B: Float[Array, "n m"],
+) -> Float[Array, "n m"]:
+    r"""Square-root (QR) form of :func:`woodbury_solve`: same result, more stable.
+
+    Computes :math:`C^{-1} B` for
+    :math:`C = \mathrm{diag}(N) + U\,\mathrm{diag}(\Phi)\,U^T` without ever
+    forming the Gram matrix :math:`U^T N^{-1} U`.  With
+    :math:`A = N^{-1/2} U \Phi^{1/2}` and :math:`Q_1 = A R^{-1}` from
+    :func:`qr_woodbury_half_factor`,
+
+    .. math::
+        C^{-1} = N^{-1/2}\big(I - Q_1 Q_1^T\big) N^{-1/2},
+
+    applied as two plain products with the orthonormal-block factor
+    :math:`Q_1`.  Same stability rationale as :func:`woodbury_dot_qr`: the
+    Cholesky form squares the conditioning of ``N^{-1/2}U``, which costs ~4
+    digits when ``U`` contains the collinear timing-design marginalization
+    block at ``Φ = 1e40``; this form works at the square root of that
+    conditioning, and never touches ``A`` again after the QR.
+
+    Parameters
+    ----------
+    Ndiag : 1-D array, shape (n,)
+        Diagonal of *N* (positive).
+    U : 2-D array, shape (n, k)
+        Low-rank update basis.
+    Phidiag : 1-D array, shape (k,)
+        Diagonal of :math:`\Phi` (positive).
+    B : 2-D array, shape (n, m)
+        Right-hand side matrix.
+
+    Returns
+    -------
+    Cinv_B : array, shape (n, m)
+        The product :math:`C^{-1} B`.
+    """
+    Ninv_half, Q1, _R = qr_woodbury_half_factor(Ndiag, U, Phidiag)
+    return apply_qr_woodbury_solve(Ninv_half, Q1, B)
+
+
+def apply_qr_woodbury_solve(
+    Ninv_half: Float[Array, " n"],
+    Q1: Float[Array, "n k"],
+    B: Float[Array, "n m"],
+) -> Float[Array, "n m"]:
+    r"""Apply :math:`C^{-1} B` from a precomputed :func:`qr_woodbury_half_factor`.
+
+    The application half of :func:`woodbury_solve_qr` —
+    :math:`N^{-1/2}(I - Q_1 Q_1^T)N^{-1/2} B`; callers that also need the
+    quadratic form (see :func:`woodbury_dot_qr`) can reuse one
+    factorization for both.
+    """
+    Bw = Ninv_half[:, None] * B  # N^{-1/2} B
+    return Ninv_half[:, None] * (Bw - Q1 @ (Q1.T @ Bw))
 
 
 def concat_woodbury_blocks(

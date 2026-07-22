@@ -1,5 +1,7 @@
 """Tests for jaxpint.types: DualFloat, TOAData, ParameterVector."""
 
+import math
+
 import jax
 import jax.numpy as jnp
 import pytest
@@ -199,6 +201,48 @@ class TestParameterVector:
         pv = _make_param_vector()
         assert pv.n_params == 6
         assert pv.n_free == 5
+
+    def test_fresh_identical_vectors_share_pytree_structure(self):
+        """Two independently constructed, identical ParameterVectors must be
+        equal as pytree aux data — otherwise every fresh construction (e.g.
+        re-parsing a par file, per-pulsar PTA loops) silently retraces every
+        jitted function.  The default all-NaN ``uncertainties`` regressed
+        this: NaN != NaN, so fresh ``float('nan')`` objects broke tuple
+        equality until they were interned to a shared singleton."""
+        pv1, pv2 = _make_param_vector(), _make_param_vector()
+        assert jax.tree_util.tree_structure(pv1) == jax.tree_util.tree_structure(pv2)
+
+        # Explicit per-call float('nan') entries (the par-reader path) must
+        # intern the same way.
+        def with_explicit_nan():
+            return ParameterVector(
+                values=jnp.array([200.0, 15.0]),
+                frozen_mask=(False, False),
+                names=("F0", "DM"),
+                units=("Hz", "pc cm^-3"),
+                epoch_int_values={},
+                uncertainties=(float("nan"), 0.5),
+            )
+
+        u1, u2 = with_explicit_nan(), with_explicit_nan()
+        assert jax.tree_util.tree_structure(u1) == jax.tree_util.tree_structure(u2)
+        # Interning must not disturb the accessor contract.
+        assert math.isnan(u1.param_uncertainty("F0"))
+        assert u1.param_uncertainty("DM") == 0.5
+
+    def test_fresh_identical_vectors_hit_jit_cache(self):
+        """End-to-end: a jitted function called with two fresh identical
+        vectors traces exactly once."""
+        traces = []
+
+        @jax.jit
+        def f(p):
+            traces.append(1)
+            return jnp.sum(p.values)
+
+        f(_make_param_vector())
+        f(_make_param_vector())
+        assert len(traces) == 1
 
     def test_grad_through_param_value(self):
         """jax.grad should flow through param_value()."""
