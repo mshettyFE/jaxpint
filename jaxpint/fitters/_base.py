@@ -543,7 +543,7 @@ class BaseFitter(ABC):
 class TrackMode(StrEnum):
     """How TOAs are assigned to pulse numbers when computing residuals.
 
-    A ``StrEnum`` (like :class:`jaxpint.tim.timfile.LineFormat`): members
+    A ``StrEnum`` (like ``jaxpint.tim.timfile.LineFormat``): members
     compare equal to their strings, so the historical ``"nearest"`` /
     ``"use_pulse_numbers"`` literals keep working everywhere while typed
     callers get the finite, typo-checked set.
@@ -631,7 +631,7 @@ def compute_phase_residuals(
 
     ``track_mode=None`` (default) selects ``"use_pulse_numbers"`` exactly when
     the TOAData carries pulse numbers, else ``"nearest"`` -- see
-    :func:`_resolve_track_mode`.
+    ``_resolve_track_mode``.
 
     ``delta_pulse_number`` offsets apply in both modes (PINT adds them to the
     phase before either wrapping or subtracting the pulse-number column).

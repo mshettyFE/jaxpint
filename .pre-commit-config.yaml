@@ -10,10 +10,11 @@
 # --force-exclude here too (it errors: "cannot be used multiple times").
 #
 # Pre-push stage: the slower, full-environment checks that previously only ran
-# in CI -- pyright, and an "import without dev extras" guard that catches a
-# dev-only dependency leaking into library source (the failure mode that only
-# surfaces in the docs build, which installs no dev extras). A full docs build
-# is too slow for a hook; run `tools/check.sh` for that before pushing.
+# in CI -- pyright, an "import without dev extras" guard that catches a
+# dev-only dependency leaking into library source, and the full Sphinx docs
+# build (-W). The docs build is the slowest gate but also the most common cause
+# of red CI, so it runs on push; `tools/check.sh` still runs the same gates
+# on demand.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.19  # keep roughly in sync with the `ruff` pin in pyproject [dev]
@@ -38,6 +39,16 @@ repos:
       - id: import-without-dev
         name: import jaxpint without dev extras
         entry: uv run --extra cpu --extra pint python -c "import jaxpint"
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+      # Full docs build, same command as the CI docs workflow (shared script;
+      # see tools/build_docs.sh). -W turns broken cross-refs / malformed RST /
+      # autodoc import errors into failures before they turn CI red.
+      - id: docs-build
+        name: sphinx docs build (-W, matches CI)
+        entry: tools/build_docs.sh
         language: system
         pass_filenames: false
         always_run: true
