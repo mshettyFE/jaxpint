@@ -197,27 +197,27 @@ def make_toa_data_from_mjds(
     :class:`~jaxpint.tim.RawTOA` records and runs them through the *identical*
     native pipeline a ``.tim`` file takes (clock chain, UTC->TDB, barycentric
     posvels, TZR, basis stamping) via
-    :func:`jaxpint.loaders.native.toa_data_from_raw_toas`. The timestamps are
+    ``jaxpint.loaders.native.toa_data_from_raw_toas``. The timestamps are
     raw grid points; they do not realize any timing model until
     :func:`make_fake_toas` / :func:`zero_residuals` adjusts them.
 
     Parameters
     ----------
-    mjds : array_like
+    mjds : array-like
         Observation epochs, MJD (UTC at *obs*; TDB when *obs* is the
         barycentre ``"@"``, whose sites record TDB directly).
-    par_result : ParResult, optional
+    par_result : ~jaxpint.par.result.ParResult, optional
         Parsed ``.par``; supplies EPHEM/CLK/PLANET_SHAPIRO defaults, TZR and
         the GP basis coordinate, exactly as in :func:`jaxpint.native.get_TOAs`.
     obs : str
         Observatory token, as it would appear in a ``.tim`` (``"gbt"``,
         ``"ao"``, ``"@"`` ...).
-    freq_mhz : float or array_like
+    freq_mhz : float or array-like
         Observing frequency. A scalar applies to every TOA; an array is
         cycled across the grid (PINT's multi-frequency convention). ``0`` or
         ``inf`` mean infinite frequency (dispersion-free), matching the
         ``.tim`` parser's 0 -> inf rule.
-    error_us : float or array_like
+    error_us : float or array-like
         TOA uncertainty in microseconds, scalar or cycled like *freq_mhz*.
     ephem, include_bipm, bipm_version, planets
         Overrides forwarded to the native pipeline; ``None`` defers to the

@@ -40,17 +40,11 @@ step() {  # step <label> <cmd...>
   fi
 }
 
-docs_build() {
-  rm -rf docs/api/generated docs/_build
-  JAX_PLATFORMS=cpu uv run --extra cpu --extra docs --extra pint \
-    sphinx-build -W --keep-going -b html docs docs/_build/html
-}
-
 step "ruff (lint)"         uv run --extra cpu --extra dev ruff check
 step "ruff (format)"       uv run --extra cpu --extra dev ruff format --check
 step "pyright"             uv run --extra cpu --extra dev pyright
 step "import without dev"  uv run --extra cpu --extra pint python -c "import jaxpint"
-step "docs (-W)"           docs_build
+step "docs (-W)"           tools/build_docs.sh
 if [[ $run_tests == 1 ]]; then
   # Cap xdist workers by *available RAM* (~2 GiB/worker), not just core count:
   # a high-core / RAM-light box OOMs under bare `-n auto`. JAXPINT_TEST_CLEAR_CACHES

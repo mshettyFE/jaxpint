@@ -103,7 +103,7 @@ def whiten_wideband_residuals(
 
     The wideband counterpart of :func:`whiten_residuals`, over the stacked
     ``[time; dm]`` system assembled by
-    :func:`jaxpint.fitters.wideband.stack_wideband_noise` -- the same stacking
+    ``jaxpint.fitters.wideband.stack_wideband_noise`` -- the same stacking
     the wideband GLS fit uses, so a ``WidebandGLSFitResult``'s
     ``noise_realizations`` drops straight in. The return matches the result's
     ``time_residuals``/``dm_residuals`` split (PINT's stacked
