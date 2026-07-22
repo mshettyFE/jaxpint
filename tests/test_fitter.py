@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import io
+import pathlib
 
 import astropy.units as u
 import jax.numpy as jnp
@@ -64,12 +65,22 @@ def synthetic_data():
     m_true = models.get_model(io.StringIO(_SYNTH_PAR))
     # Two frequency bands so DM is well-determined
     toas_lo = make_fake_toas_uniform(
-        53000, 55000, 30, m_true,
-        error=10 * u.us, add_noise=True, freq=1400 * u.MHz,
+        53000,
+        55000,
+        30,
+        m_true,
+        error=10 * u.us,
+        add_noise=True,
+        freq=1400 * u.MHz,
     )
     toas_hi = make_fake_toas_uniform(
-        53000, 55000, 30, m_true,
-        error=10 * u.us, add_noise=True, freq=2000 * u.MHz,
+        53000,
+        55000,
+        30,
+        m_true,
+        error=10 * u.us,
+        add_noise=True,
+        freq=2000 * u.MHz,
     )
     toas_lo.merge(toas_hi)
     return m_true, toas_lo
@@ -181,16 +192,12 @@ class TestSyntheticFit:
     @pytest.mark.slow
     def test_covariance_symmetric(self, jax_fit):
         cov = jax_fit.covariance_matrix
-        np.testing.assert_allclose(
-            np.array(cov), np.array(cov.T), atol=1e-20
-        )
+        np.testing.assert_allclose(np.array(cov), np.array(cov.T), atol=1e-20)
 
     @pytest.mark.slow
     def test_correlation_diagonal_ones(self, jax_fit):
         corr = jax_fit.correlation_matrix
-        np.testing.assert_allclose(
-            np.diag(np.array(corr)), 1.0, atol=1e-12
-        )
+        np.testing.assert_allclose(np.diag(np.array(corr)), 1.0, atol=1e-12)
 
     @pytest.mark.slow
     def test_dof(self, synthetic_data, jax_fit):
@@ -318,3 +325,96 @@ class TestNGC6440EAstrometry:
         assert "DECJ" in result.params.free_names()
         assert result.parameter_uncertainties is not None
         assert jnp.all(result.parameter_uncertainties > 0)
+
+
+# ---------------------------------------------------------------------------
+# Convergence detection and the maxiter default
+#
+# PINT's plain WLSFitter/GLSFitter run exactly `maxiter` Gauss-Newton steps with
+# no convergence test and default maxiter=1; only its Downhill fitters iterate
+# to convergence. JaxPINT's fitters early-exit once the step is negligible
+# against the parameter uncertainty, so the default cap is the downhill one (10)
+# -- an already-converged fit costs one step and stops, so the higher cap only
+# ever charges cold starts.
+# ---------------------------------------------------------------------------
+
+_DATA = pathlib.Path(__file__).resolve().parent / "data" / "pint_inputs"
+
+
+def _ngc6440e_fitter():
+    import jaxpint.par as jpar
+    from jaxpint import build_model, native
+    from jaxpint.fitters import WLSFitter as JaxWLSFitter
+
+    parsed = jpar.get_model(str(_DATA / "NGC6440E.par"))
+    toa_data = native.get_TOAs(str(_DATA / "NGC6440E.tim"), parsed)
+    tm, nm = build_model(parsed, toa_data)
+    return JaxWLSFitter(tm, toa_data, parsed.params, noise_model=nm), parsed
+
+
+def test_default_maxiter_is_the_downhill_default():
+    """The default is 10 (PINT's Downhill value), not 1 (its plain-WLS value)."""
+    from jaxpint.fitters._base import _DEFAULT_MAXITER
+
+    assert _DEFAULT_MAXITER == 10
+
+
+def test_fit_converges_and_reports_it():
+    fitter, _parsed = _ngc6440e_fitter()
+    res = fitter.fit_toas()
+    assert bool(res.converged)
+    assert float(res.step_sigma) < 1e-3
+    assert float(res.reduced_chi2) == pytest.approx(1.0638, abs=1e-3)
+
+
+def test_converged_flag_is_false_on_a_cold_start():
+    """The flag must be able to say False, or it certifies nothing.
+
+    A converged fit reporting True proves little on its own -- NGC6440E is
+    close enough to its solution that even a single step lands within
+    tolerance. Perturbing F0 by 1e-6 Hz is far enough out that one step
+    cannot recover, so this pins the discriminating case.
+    """
+    fitter, parsed = _ngc6440e_fitter()
+    names = list(parsed.params.names)
+    values = np.asarray(parsed.params.values).copy()
+    values[names.index("F0")] += 1e-6
+    cold = parsed.params.with_values(jnp.asarray(values))
+
+    one = fitter.fit_toas(maxiter=1, params=cold)
+    assert not bool(one.converged)
+    assert float(one.step_sigma) > 1.0
+
+
+def test_convergence_does_not_imply_correctness():
+    """A converged fit can still be the wrong solution -- documented, so pinned.
+
+    With nearest-pulse phase tracking, a cold start can settle into a
+    cycle-slipped stationary point. It converges cleanly and reports a wildly
+    bad chi2. If this ever starts recovering the true solution, the warning on
+    ``BaseFitResult.converged`` is stale and should be removed.
+    """
+    fitter, parsed = _ngc6440e_fitter()
+    names = list(parsed.params.names)
+    values = np.asarray(parsed.params.values).copy()
+    values[names.index("F0")] += 1e-6
+    cold = parsed.params.with_values(jnp.asarray(values))
+
+    res = fitter.fit_toas(maxiter=10, params=cold)
+    assert bool(res.converged)  # stopped moving...
+    assert float(res.reduced_chi2) > 100.0  # ...somewhere wrong
+
+
+def test_early_exit_matches_a_longer_run():
+    """Raising maxiter past convergence changes nothing -- the loop exits early.
+
+    This is what makes the higher default free: if the loop ran the full count
+    regardless, the default change would multiply every fit's cost by 10.
+    """
+    fitter, _parsed = _ngc6440e_fitter()
+    short = fitter.fit_toas(maxiter=10)
+    long = fitter.fit_toas(maxiter=200)
+    assert float(short.chi2) == pytest.approx(float(long.chi2), rel=1e-12)
+    np.testing.assert_allclose(
+        np.asarray(short.params.values), np.asarray(long.params.values), rtol=1e-12
+    )

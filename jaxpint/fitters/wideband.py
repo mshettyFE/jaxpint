@@ -15,6 +15,7 @@ from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import woodbury_solve
 
 from ._base import (
+    _DEFAULT_MAXITER,
     BaseFitter,
     BaseFitResult,
     compute_time_residuals,
@@ -346,7 +347,7 @@ class WidebandGLSFitter(BaseFitter):
 
     def fit_toas(
         self,
-        maxiter: int = 1,
+        maxiter: int = _DEFAULT_MAXITER,
         threshold: Optional[float] = None,
         full_cov: bool = False,
         params: Optional[ParameterVector] = None,
@@ -424,4 +425,7 @@ class WidebandGLSFitter(BaseFitter):
             time_residuals=time_resid,
             dm_residuals=dm_resid,
             noise_realizations=noise_realizations,
+            step_sigma=self.step_sigma(
+                fitted, external_delay, threshold, full_cov=full_cov
+            ),
         )

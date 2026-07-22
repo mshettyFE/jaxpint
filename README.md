@@ -19,7 +19,7 @@ JaxPINT began as a JAX layer on top of PINT, but the `.par`/`.tim` loading path 
 
 | | PINT | JaxPINT |
 |---|---|---|
-| **I/O** | Reads `.par`/`.tim` files, handles units via Astropy | Native `.par`/`.tim` parser (TEMPO2 format); optional PINT bridge for other formats |
+| **I/O** | Reads `.par`/`.tim` files, handles units via Astropy | Native `.par`/`.tim` parser (Tempo2, Princeton, Parkes; ITOA not yet); optional PINT bridge |
 | **Ephemeris & clock** | Bundles observatory + clock data, computes barycentric corrections | Native clock corrections, TT→TDB, and barycentric positions (Astropy/ERFA + JPL kernels), with auto-updating IPTA clock data |
 | **Timing model** | Object-oriented, mutable state, Astropy units throughout | Pure functional, immutable Equinox modules, plain float64 arrays |
 | **Derivatives** | Hand-coded analytical partial derivatives | Automatic via `jax.jacobian` |
@@ -45,7 +45,7 @@ The native `.par`/`.tim` path needs none of PINT. Add `--extra pint` (or `pip in
 
 ## Quick Start
 
-No PINT required — JaxPINT parses the files natively (the `.tim` must be TEMPO2 format):
+No PINT required — JaxPINT parses the files natively (Tempo2, Princeton or Parkes `.tim`):
 
 ```python
 import jaxpint.par as par
@@ -69,7 +69,7 @@ print(f"Reduced chi-squared: {result.reduced_chi2:.4f}")
 
 `native.get_model_and_toas("pulsar.par", "pulsar.tim")` collapses the three parsing lines into one call (mirroring PINT's `get_model_and_toas`), returning `(model, noise, toa_data)`.
 
-> **Don't have data handy?** PINT's bundled example files work as test data. Install the extra (`pip install jaxpint[pint]`) and locate a TEMPO2-format pair via `from pint.config import examplefile` — e.g. `examplefile("B1855+09_NANOGrav_dfg+12.tim")` and `examplefile("B1855+09_NANOGrav_dfg+12_TAI.par")`. The files are read by JaxPINT's *native* parser; PINT is used only to find them on disk. (Note: `NGC6440E.tim` is the older Princeton format, which the native parser does not read.)
+> **Don't have data handy?** PINT's bundled example files work as test data. Install the extra (`pip install jaxpint[pint]`) and locate a pair via `from pint.config import examplefile` — e.g. `examplefile("NGC6440E.tim")` and `examplefile("NGC6440E.par")`, PINT's tutorial dataset. The files are read by JaxPINT's *native* parser; PINT is used only to find them on disk.
 
 If you want more involved usages, see the `examples/` directory. To load via PINT instead (legacy formats, or an in-memory PINT model), see the [loading-data guide](docs/guides/loading_data.rst).
 
