@@ -20,8 +20,10 @@ This module is PINT-free.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
+import warnings
 from typing import Optional
 
 import astropy.units as u
@@ -215,6 +217,21 @@ def raw_params_to_result(
     """
     raw = list(raw)
     apply_aliases(raw)
+
+    # START/FINISH are fit-range bookkeeping and are never fittable. PINT
+    # enforces this in TimingModel.validate ("START cannot be unfrozen...
+    # Setting START.frozen to True"); mirrored here so a par declaring
+    # "START 53000 1" cannot inject inert free parameters into the fitter's
+    # free set -- where their all-zero design columns reach the marginalizer.
+    for i, rp in enumerate(raw):
+        if rp.name in ("START", "FINISH") and not rp.frozen:
+            warnings.warn(
+                f"{rp.name} cannot be unfrozen... treating {rp.name} as frozen "
+                "(fit-range bookkeeping, not a fittable parameter; PINT does "
+                "the same)",
+                stacklevel=2,
+            )
+            raw[i] = dataclasses.replace(rp, frozen=True)
 
     names: list[str] = []
     values: list[float] = []

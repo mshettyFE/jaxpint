@@ -285,13 +285,17 @@ class TestGLSSteps:
 
 
 class TestGLSReducesToWLS:
-    """GLS fitter with no ECORR should match WLS fitter."""
+    """GLS fitter with no ECORR should match WLS fitter.
+    """
 
     @pytest.fixture(scope="class")
     def synthetic_data(self):
         """Create a simple pulsar for testing."""
-        import pint.models as pm
-        from pint.simulation import make_fake_toas_uniform
+        import jax
+
+        import jaxpint.par as jpar
+        from jaxpint import build_model
+        from jaxpint.simulation import make_fake_toas_uniform
 
         par = """
             PSR           J0000+0000
@@ -307,24 +311,21 @@ class TestGLSReducesToWLS:
             TZRFRQ        1400
             TZRSITE       gbt
         """
-        m = pm.get_model(io.StringIO(par))
-        toas = make_fake_toas_uniform(54990, 55010, 40, m, add_noise=True)
-        return m, toas
+        par_result = jpar.get_model(io.StringIO(par))
+        toa_data = make_fake_toas_uniform(
+            54990.0, 55010.0, 40, par_result,
+            obs="gbt", freq_mhz=1400.0, error_us=1.0,
+            add_noise=True, key=jax.random.PRNGKey(3),
+        )
+        jax_model, noise_model = build_model(par_result, toa_data)
+        return jax_model, noise_model, toa_data, par_result.params
 
     @pytest.mark.slow
     def test_gls_matches_wls(self, synthetic_data):
         """GLSFitter with no ECORR gives same chi2 as WLSFitter."""
-        from jaxpint.bridge import (
-            build_timing_model,
-            pint_model_to_params,
-            pint_toas_to_jax,
-        )
         from jaxpint.fitters import GLSFitter, WLSFitter
 
-        pint_model, toas = synthetic_data
-        toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model).params
-        jax_model, noise_model = build_timing_model(pint_model)
+        jax_model, noise_model, toa_data, params = synthetic_data
 
         # WLS
         params_wls = copy.deepcopy(params)

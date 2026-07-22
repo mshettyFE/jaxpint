@@ -637,8 +637,6 @@ _INFORMATIONAL = {
     "CHI2R",
     "TRES",
     "DMRES",
-    "START",   # fit range; PINT force-freezes these and never filters TOAs by them
-    "FINISH",
     "RM",      # rotation measure: affects polarization, not timing
 }
 
@@ -691,3 +689,36 @@ def test_classification_lists_are_not_stale():
         f"{sorted(stale)} are now consumed (or no longer declared); remove them "
         "from _INFORMATIONAL / _UNIMPLEMENTED."
     )
+
+
+def test_start_finish_fit_flags_are_ignored():
+    """"START 53000 1" must not make START a free parameter.
+
+    PINT warns "START cannot be unfrozen..." and forces frozen in
+    TimingModel.validate; the native parse mirrors it. Before this, the flag
+    was honoured, and the inert free parameters (residuals do not depend on
+    the fit range) reached the marginalizer as all-zero design columns --
+    caught by test_bayes_marginal failing after its fixtures went native.
+    """
+    import io
+    import warnings as _warnings
+
+    from jaxpint.par import get_model
+
+    par = (
+        "PSR J0000+0000\nPEPOCH 54000\nF0 100.0 1\nDM 15.0 1\n"
+        "START 53000 1\nFINISH 55000 1\n"
+    )
+    with _warnings.catch_warnings(record=True) as w:
+        _warnings.simplefilter("always")
+        pr = get_model(io.StringIO(par))
+    msgs = [str(x.message) for x in w]
+    assert any("START cannot be unfrozen" in m for m in msgs)
+    assert any("FINISH cannot be unfrozen" in m for m in msgs)
+
+    names = list(pr.params.names)
+    frozen = pr.params.frozen_mask
+    for name in ("START", "FINISH"):
+        assert frozen[names.index(name)], f"{name} must be frozen"
+    # The genuinely fittable params are untouched.
+    assert not frozen[names.index("F0")]
