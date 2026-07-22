@@ -221,3 +221,116 @@ def test_grid_builders_accept_no_par_but_the_realizer_does_not():
     assert td.clock_realization == "TT(BIPM2023)"  # packaged default
     with pytest.raises(ValueError, match="needs a ParResult"):
         make_fake_toas_uniform(53000.0, 53100.0, 5, None)
+
+
+# ---------------------------------------------------------------------------
+# setup_synthetic_pta: the notebook cascade point, now native
+# ---------------------------------------------------------------------------
+
+
+def _random_par_strings(n):
+    from jaxpint.notebook_utils import generate_random_par
+
+    rng = np.random.default_rng(1234)
+    return [generate_random_par(i, rng, start_mjd=57000.0) for i in range(n)]
+
+
+def test_setup_synthetic_pta_is_pint_free():
+    """Par strings in, fully-built native PTA out -- no PINT anywhere.
+
+    This is the function all 16 example notebooks route through; it used to
+    generate via pint.simulation and the bridge. The assertion that matters is
+    the last one: every pulsar's TOAs realize its own timing model to < 1 ns,
+    which is the property the notebooks rely on when they inject signals on
+    top of "quiet" TOAs.
+    """
+    from jaxpint.notebook_utils import setup_synthetic_pta
+
+    pars = _random_par_strings(3)
+    synth = setup_synthetic_pta(
+        pars, start_mjd=57000.0, end_mjd=58000.0, n_toas=40,
+        toa_error_s=1e-7, freq_mhz=1400.0,
+    )
+    assert len(synth.toa_data_list) == len(synth.timing_models) == 3
+    for td, tm, params in zip(
+        synth.toa_data_list, synth.timing_models, synth.pulsar_params_list
+    ):
+        assert td.n_toas == 40
+        np.testing.assert_allclose(np.asarray(td.error), 1e-7, rtol=1e-12)
+        r = np.asarray(compute_time_residuals(tm, td, params))
+        assert np.abs(r).max() < 1e-9
+
+
+def test_setup_synthetic_pta_custom_mjds():
+    """mjds_per_pulsar mode: each pulsar gets exactly its own epochs."""
+    from jaxpint.notebook_utils import setup_synthetic_pta
+
+    pars = _random_par_strings(2)
+    grids = [np.linspace(57000, 57500, 10), np.linspace(57100, 57900, 17)]
+    synth = setup_synthetic_pta(
+        pars, mjds_per_pulsar=grids, toa_error_s=1e-7, freq_mhz=1400.0
+    )
+    for td, grid in zip(synth.toa_data_list, grids):
+        assert td.n_toas == len(grid)
+        mjd = np.asarray(td.mjd_int) + np.asarray(td.mjd_frac)
+        # Zeroing shifts timestamps by (sub-second) residuals, not by epochs.
+        np.testing.assert_allclose(mjd, grid, atol=1.0)
+
+
+def test_setup_synthetic_pta_rejects_mismatched_mjds():
+    from jaxpint.notebook_utils import setup_synthetic_pta
+
+    with pytest.raises(ValueError, match="mjds_per_pulsar"):
+        setup_synthetic_pta(
+            _random_par_strings(2),
+            mjds_per_pulsar=[np.linspace(57000, 57500, 5)],
+            toa_error_s=1e-7,
+            freq_mhz=1400.0,
+        )
+    with pytest.raises(ValueError, match="Uniform mode"):
+        setup_synthetic_pta(_random_par_strings(1), toa_error_s=1e-7, freq_mhz=1400.0)
+
+
+def test_setup_synthetic_pta_accepts_pint_models():
+    """Backward compatibility: the notebooks pass parsed PINT models.
+
+    Round-trips through the PINT model's own as_parfile() into the native
+    parser, so generation stays native while old callers keep working. The
+    residual check is the proof the round-trip preserved the model.
+    """
+    pytest.importorskip("pint")
+    from io import StringIO
+
+    import pint.models as pm
+
+    from jaxpint.notebook_utils import setup_synthetic_pta
+
+    par = _random_par_strings(1)[0]
+    model = pm.get_model(StringIO(par))
+    synth = setup_synthetic_pta(
+        [model], start_mjd=57000.0, end_mjd=57500.0, n_toas=20,
+        toa_error_s=1e-7, freq_mhz=1400.0,
+    )
+    td, tm, params = (
+        synth.toa_data_list[0], synth.timing_models[0], synth.pulsar_params_list[0]
+    )
+    r = np.asarray(compute_time_residuals(tm, td, params))
+    assert np.abs(r).max() < 1e-9
+
+
+def test_as_par_result_rejects_junk():
+    from jaxpint.notebook_utils import _as_par_result
+
+    with pytest.raises(TypeError, match="cannot interpret"):
+        _as_par_result(42)
+
+
+def test_get_model_reads_file_like(ngc6440e):
+    """get_model(StringIO(text)) == get_model(path), PINT's convention."""
+    from io import StringIO
+
+    from_text = jpar.get_model(StringIO((_DATA / "NGC6440E.par").read_text()))
+    np.testing.assert_array_equal(
+        np.asarray(from_text.params.values), np.asarray(ngc6440e.params.values)
+    )
+    assert from_text.params.names == ngc6440e.params.names

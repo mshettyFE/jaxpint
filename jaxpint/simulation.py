@@ -309,7 +309,36 @@ def make_fake_toas_uniform(
             "with no model, use make_uniform_toa_data instead."
         )
     toa_data = make_uniform_toa_data(start_mjd, end_mjd, n_toas, par_result, **kwargs)
+    return _realize(toa_data, par_result, key, add_noise, noise_components)
 
+
+def make_fake_toas_from_mjds(
+    mjds,
+    par_result,
+    *,
+    key: jax.Array | None = None,
+    add_noise: bool = False,
+    noise_components: Sequence[NoiseComponent] = (),
+    **kwargs,
+):
+    """Fake TOAs at the given epochs -- PINT's ``make_fake_toas_fromMJDs``.
+
+    Identical to :func:`make_fake_toas_uniform` except the epochs are supplied
+    instead of gridded; see there for the semantics of *add_noise* /
+    *noise_components* and the remaining keyword arguments.
+    """
+    if par_result is None:
+        raise ValueError(
+            "make_fake_toas_from_mjds needs a ParResult: zeroing residuals "
+            "requires building the timing model. To synthesize bare epochs "
+            "with no model, use make_toa_data_from_mjds instead."
+        )
+    toa_data = make_toa_data_from_mjds(mjds, par_result, **kwargs)
+    return _realize(toa_data, par_result, key, add_noise, noise_components)
+
+
+def _realize(toa_data, par_result, key, add_noise, noise_components):
+    """Zero residuals against the par's model, then layer noise on top."""
     from jaxpint.model_builder import build_model
 
     model, _noise = build_model(par_result, toa_data)

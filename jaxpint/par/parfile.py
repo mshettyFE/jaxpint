@@ -53,7 +53,15 @@ def tokenize_lines(lines: list[str]) -> list[ParLine]:
     return out
 
 
-def tokenize(par_path: str | Path) -> list[ParLine]:
-    """Read and tokenize a ``.par`` file from disk."""
-    text = Path(par_path).read_text()
+def tokenize(par_source) -> list[ParLine]:
+    """Read and tokenize a ``.par`` from a path or an open file-like object.
+
+    A file-like object (anything with ``.read()``, e.g. ``io.StringIO``) is
+    consumed directly -- the same convention PINT's ``get_model`` uses, so par
+    text held in memory (simulation setups, notebooks) needs no tempfile.
+    """
+    if hasattr(par_source, "read"):
+        text = par_source.read()
+    else:
+        text = Path(par_source).read_text()
     return tokenize_lines(text.splitlines())

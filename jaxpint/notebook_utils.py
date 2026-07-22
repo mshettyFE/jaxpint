@@ -25,12 +25,15 @@ Typical usage in a notebook::
 
     rng = np.random.default_rng(127)
     par_strings = [generate_random_par(i, rng, start_mjd=57000.0) for i in range(10)]
-    pint_models = [pm.get_model(StringIO(p)) for p in par_strings]
 
+    # TOA generation and model building run natively -- par strings go in
+    # directly. (PINT model objects are still accepted for older notebooks;
+    # only `build_cw_injectors` below still wants them, for sky positions.)
     synthetic = setup_synthetic_pta(
-        pint_models, start_mjd=57000.0, end_mjd=60000.0,
+        par_strings, start_mjd=57000.0, end_mjd=60000.0,
         n_toas=200, toa_error_s=1e-8, freq_mhz=1400.0,
     )
+    pint_models = [pm.get_model(StringIO(p)) for p in par_strings]
     injectors, _ = build_cw_injectors(pint_models, n_sources=1, rng=rng)
     gp, cfg = inject_and_build_config(synthetic, injectors)
     # ... now define an `eval_fn` and call `sweep_1d_logL(eval_fn, grid)`.
@@ -208,8 +211,44 @@ class SyntheticPTA(NamedTuple):
     noise_models: tuple[NoiseModel, ...]
 
 
+def _as_par_result(model):
+    """Normalize one pulsar-model input to a :class:`~jaxpint.par.result.ParResult`.
+
+    Accepted forms, in the order tested:
+
+    * ``ParResult`` -- passed through;
+    * an open file-like object -- parsed natively;
+    * ``str`` -- par *text* if it contains a newline, else a filesystem path;
+    * a PINT ``TimingModel`` -- serialized via its own ``as_parfile()`` and
+      re-parsed natively. This is what keeps the existing notebooks working
+      unchanged: they build PINT models, but generation and model-build still
+      run through the native pipeline (and no PINT import happens here -- the
+      object came in already constructed).
+    """
+    from io import StringIO
+    from pathlib import Path
+
+    from jaxpint.par import get_model
+    from jaxpint.par.result import ParResult
+
+    if isinstance(model, ParResult):
+        return model
+    if hasattr(model, "read"):
+        return get_model(model)
+    if isinstance(model, (str, Path)):
+        if isinstance(model, str) and "\n" in model:
+            return get_model(StringIO(model))
+        return get_model(model)
+    if hasattr(model, "as_parfile"):  # PINT TimingModel, duck-typed
+        return get_model(StringIO(model.as_parfile()))
+    raise TypeError(
+        f"cannot interpret {type(model).__name__} as a pulsar model; expected "
+        "a ParResult, par text, a par path, an open file, or a PINT TimingModel"
+    )
+
+
 def setup_synthetic_pta(
-    pint_models: list,
+    models: list,
     *,
     start_mjd: Optional[float] = None,
     end_mjd: Optional[float] = None,
@@ -219,11 +258,15 @@ def setup_synthetic_pta(
     obs: str = "GBT",
     mjds_per_pulsar: Optional[list[np.ndarray]] = None,
 ) -> SyntheticPTA:
-    """Generate fake TOAs for a list of PINT models and convert to JaxPINT.
+    """Generate fake TOAs for a list of pulsar models, natively (no PINT).
 
-    Wraps the ``make_fake_toas_uniform`` / ``make_fake_toas_fromMJDs`` →
-    ``pint_toas_to_jax`` → ``pint_model_to_params`` → ``build_timing_model``
-    pipeline that appears verbatim in most example notebooks.
+    Wraps :func:`jaxpint.simulation.make_fake_toas_uniform` /
+    :func:`~jaxpint.simulation.make_fake_toas_from_mjds` →
+    ``build_model``, the pipeline that appears verbatim in most example
+    notebooks. Earlier versions generated through ``pint.simulation`` and the
+    bridge; the whole path is now JaxPINT's own, and PINT model objects are
+    accepted for backward compatibility only (see :func:`_as_par_result` --
+    they are serialized to par text and re-parsed natively).
 
     Two modes are supported:
 
@@ -235,8 +278,10 @@ def setup_synthetic_pta(
 
     Parameters
     ----------
-    pint_models : list
-        Parsed PINT timing models (one per pulsar).
+    models : list
+        One entry per pulsar, in any form :func:`_as_par_result` accepts:
+        ``ParResult``, par text, a par path, an open file, or a parsed PINT
+        model.
     start_mjd, end_mjd : float, optional
         Uniform-cadence TOA span. Required unless ``mjds_per_pulsar`` is given.
     n_toas : int, optional
@@ -246,11 +291,11 @@ def setup_synthetic_pta(
     freq_mhz : float
         Observing frequency in MHz.
     obs : str
-        PINT observatory code (default ``"GBT"``).
+        Observatory code (default ``"GBT"``; case-insensitive, resolved by
+        the native observatory registry).
     mjds_per_pulsar : list of arrays, optional
-        If given, each element is the MJDs for that pulsar; routed through
-        ``pint.simulation.make_fake_toas_fromMJDs``. Length must match
-        ``len(pint_models)``.
+        If given, each element is the MJDs for that pulsar. Length must match
+        ``len(models)``.
 
     Returns
     -------
@@ -258,16 +303,14 @@ def setup_synthetic_pta(
         Named tuple of per-pulsar tuples ready to feed into
         :func:`inject_and_build_config`.
     """
-    import pint.simulation as psim
-
-    from jaxpint.bridge import build_timing_model, pint_toas_to_jax
-    from jaxpint.bridge.model_conversion import pint_model_to_params
+    from jaxpint.model_builder import build_model
+    from jaxpint.simulation import make_fake_toas_from_mjds, make_fake_toas_uniform
 
     if mjds_per_pulsar is not None:
-        if len(mjds_per_pulsar) != len(pint_models):
+        if len(mjds_per_pulsar) != len(models):
             raise ValueError(
                 f"mjds_per_pulsar has length {len(mjds_per_pulsar)}, "
-                f"expected {len(pint_models)} (one per pulsar)."
+                f"expected {len(models)} (one per pulsar)."
             )
     else:
         if start_mjd is None or end_mjd is None or n_toas is None:
@@ -281,29 +324,28 @@ def setup_synthetic_pta(
     timing_models: list[TimingModel] = []
     noise_models: list[NoiseModel] = []
 
-    for p, model in enumerate(pint_models):
+    for p, model in enumerate(models):
+        par_result = _as_par_result(model)
         if mjds_per_pulsar is not None:
-            toas = psim.make_fake_toas_fromMJDs(
+            toa_data = make_fake_toas_from_mjds(
                 mjds_per_pulsar[p],
-                model,
+                par_result,
                 obs=obs,
-                error=toa_error_s * u.s,
-                freq=freq_mhz * u.MHz,
+                error_us=toa_error_s * 1e6,
+                freq_mhz=freq_mhz,
             )
         else:
             assert start_mjd is not None and end_mjd is not None and n_toas is not None
-            toas = psim.make_fake_toas_uniform(
+            toa_data = make_fake_toas_uniform(
                 start_mjd,
                 end_mjd,
                 n_toas,
-                model,
+                par_result,
                 obs=obs,
-                error=toa_error_s * u.s,
-                freq=freq_mhz * u.MHz,
+                error_us=toa_error_s * 1e6,
+                freq_mhz=freq_mhz,
             )
-        toa_data = pint_toas_to_jax(toas, model)
-        par_result = pint_model_to_params(model)
-        tm, nm = build_timing_model(model, toas)
+        tm, nm = build_model(par_result, toa_data)
 
         toa_data_list.append(toa_data)
         pulsar_params_list.append(par_result.params)
