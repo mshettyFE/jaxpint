@@ -16,6 +16,7 @@ from .diagnostics import (
     ftest_results,
     normality_tests,
     whiten_residuals,
+    whiten_wideband_residuals,
 )
 from .wls import WLSFitResult, WLSFitter
 from .gls import (
@@ -32,6 +33,7 @@ from .wideband import (
 
 __all__ = [
     "whiten_residuals",
+    "whiten_wideband_residuals",
     "normality_tests",
     "NormalityReport",
     "ftest",

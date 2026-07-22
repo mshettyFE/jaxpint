@@ -24,6 +24,7 @@ from jaxpint.utils import woodbury_solve
 
 __all__ = [
     "whiten_residuals",
+    "whiten_wideband_residuals",
     "normality_tests",
     "NormalityReport",
     "ftest",
@@ -62,12 +63,58 @@ def whiten_residuals(
     r = jnp.asarray(residuals)
     sigma = noise_model.scaled_sigma(toa_data, params)
     Ndiag, U, Phidiag = noise_model.covariance(toa_data, params)
+    return _whiten(r, sigma, Ndiag, U, Phidiag, noise_realizations)
+
+
+def _whiten(r, sigma, Ndiag, U, Phidiag, noise_realizations):
+    """Core whitening on an explicit decomposition: ``(r - U b) / sigma``.
+
+    Shared by the narrowband and wideband entry points so the formula (and
+    its conditional-mean computation) exists exactly once.
+    """
     if U.shape[1] == 0:
         return r / sigma
     if noise_realizations is None:
         cinv_r = woodbury_solve(Ndiag, U, Phidiag, r[:, None])[:, 0]
         noise_realizations = Phidiag * (U.T @ cinv_r)
     return (r - U @ jnp.asarray(noise_realizations)) / sigma
+
+
+def whiten_wideband_residuals(
+    time_residuals: Float[Array, " n_toas"],
+    dm_residuals: Float[Array, " n_toas"],
+    toa_data,
+    params,
+    noise_model,
+    *,
+    noise_realizations: Optional[Float[Array, " n_basis"]] = None,
+) -> tuple[Float[Array, " n_toas"], Float[Array, " n_toas"]]:
+    """Whiten wideband residuals; returns ``(whitened_time, whitened_dm)``.
+
+    The wideband counterpart of :func:`whiten_residuals`, over the stacked
+    ``[time; dm]`` system assembled by
+    :func:`jaxpint.fitters.wideband.stack_wideband_noise` -- the same stacking
+    the wideband GLS fit uses, so a ``WidebandGLSFitResult``'s
+    ``noise_realizations`` drops straight in. The return matches the result's
+    ``time_residuals``/``dm_residuals`` split (PINT's stacked
+    ``calc_wideband_whitened_resids`` is the concatenation of the two).
+
+    Note the DM caveat documented on ``stack_wideband_noise``: the correlated
+    basis has no DM-block rows (DM measurements are white-only in this noise
+    model), so DM whitening divides by ``scaled_dm_sigma`` and nothing else.
+    *noise_model* may be ``None`` for raw-error whitening, mirroring the
+    fitter.
+    """
+    from .wideband import stack_wideband_noise
+
+    r = jnp.concatenate([jnp.asarray(time_residuals), jnp.asarray(dm_residuals)])
+    sigma_toa, Ndiag, U, Phidiag, sigma_dm = stack_wideband_noise(
+        noise_model, toa_data, params
+    )
+    sigma = jnp.concatenate([sigma_toa, sigma_dm])
+    w = _whiten(r, sigma, Ndiag, U, Phidiag, noise_realizations)
+    n = time_residuals.shape[0]
+    return w[:n], w[n:]
 
 
 class NormalityReport(NamedTuple):
