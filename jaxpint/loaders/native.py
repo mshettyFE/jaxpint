@@ -12,6 +12,7 @@ parameter-independent comparison target (see :func:`topocentric_core`).
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Optional
 
@@ -309,6 +310,50 @@ def toa_data_from_raw_toas(
         )
     )
     tropo = None if par_result is None else _build_tropo_fields(core, par_result)
+
+    # Absolute pulse numbers from -pn flags. All-or-nothing, as in PINT: a
+    # partially covered set is dropped with a warning (tracked residuals with
+    # NaN rows would be silently poisoned), and non-integer values are a
+    # corrupt file, not a convention.
+    pulse_number = _flag_floats(core.raw_toas, "pn")
+    # The par's TRACK parameter is honoured here, at construction, because
+    # downstream tracking is presence-based (residuals track iff the TOAData
+    # carries pulse numbers): "TRACK 0" forbids tracking, so any -pn flags are
+    # stripped; "TRACK -2" demands it, so absent/unusable flags earn a warning
+    # rather than a silent fallback to nearest. Matches PINT's Residuals
+    # track_mode=None derivation, relocated to the data layer.
+    track = (md.get("TRACK") or "").strip()
+    if track == "0" and pulse_number is not None:
+        warnings.warn(
+            "TRACK 0 forbids pulse-number tracking; ignoring the .tim's -pn flags.",
+            stacklevel=2,
+        )
+        pulse_number = None
+    elif track == "-2" and pulse_number is None:
+        warnings.warn(
+            "TRACK -2 requests pulse-number tracking, but no usable -pn flags "
+            "were found; falling back to nearest-pulse residuals. Compute "
+            "numbers from a model instead: compute_pulse_numbers + "
+            "TOAData.with_pulse_numbers.",
+            stacklevel=2,
+        )
+    if pulse_number is not None:
+        if np.isnan(pulse_number).any():
+            n_missing = int(np.isnan(pulse_number).sum())
+            warnings.warn(
+                f"-pn flags cover only {core.n_toas - n_missing}/{core.n_toas} "
+                "TOAs; dropping pulse numbers (tracking needs every TOA "
+                "assigned). Compute them from a model instead: "
+                "compute_pulse_numbers + TOAData.with_pulse_numbers.",
+                stacklevel=2,
+            )
+            pulse_number = None
+        elif (pulse_number != np.round(pulse_number)).any():
+            raise ValueError(
+                "-pn flags must be integers (absolute rotation counts); "
+                "found fractional values"
+            )
+
     toa_data = _assemble(
         core,
         freq,
@@ -317,6 +362,7 @@ def toa_data_from_raw_toas(
         tzr=tzr,
         tropo=tropo,
         clock_realization=clock_realization_label(include_bipm, bipm_version),
+        pulse_number=pulse_number,
     )
 
     if par_result is not None:
@@ -366,6 +412,7 @@ def _assemble(
     tzr=None,
     tropo=None,
     clock_realization=None,
+    pulse_number=None,
 ):
     """Map the native ``_Core`` (+ optional tzr/tropo dicts) onto TOAData.
 
@@ -402,6 +449,7 @@ def _assemble(
         tzr_obs_sun_pos=None if tzr is None else tzr["tzr_obs_sun_pos"],
         tzr_planet_positions=None if tzr is None else tzr["tzr_planet_positions"],
         clock_realization=clock_realization,
+        pulse_number=pulse_number,
     )
 
 
@@ -672,6 +720,20 @@ def toa_data_to_raw(toa_data, *, flags: Optional[dict] = None) -> list[RawTOA]:
     obs_idx = np.asarray(toa_data.obs_indices)
     obs_names = toa_data.obs_names
 
+    pn = (
+        None
+        if toa_data.pulse_number is None
+        else np.asarray(toa_data.pulse_number, dtype=np.float64)
+    )
+
+    def _flags_for(k: int) -> dict:
+        out = dict(flags) if flags else {}
+        if pn is not None:
+            # Round-trips through the reader's -pn extraction; written as an
+            # integer literal, the convention PINT reads and writes.
+            out["pn"] = str(int(pn[k]))
+        return out
+
     def _records(ri: np.ndarray, rf: np.ndarray) -> list[RawTOA]:
         return [
             RawTOA(
@@ -680,7 +742,7 @@ def toa_data_to_raw(toa_data, *, flags: Optional[dict] = None) -> list[RawTOA]:
                 error_s=float(error_s[k]),
                 freq_mhz=float(freq[k]),
                 obs=obs_names[int(obs_idx[k])],
-                flags=dict(flags) if flags else {},
+                flags=_flags_for(k),
                 delta_pulse_number=float(dpn[k]),
             )
             for k in range(len(ri))

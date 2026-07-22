@@ -309,8 +309,9 @@ def _emit(
 #     and MJD ranges (DMXR1_/DMXR2_) are supported.
 #   * runtime/IO configuration, not model parameters.
 _IGNORED_PREFIXES = ("DMXEP_", "DMXF1_", "DMXF2_")
+
 _IGNORED_NAMES = frozenset(
-    {"NITS", "NPRNT", "IBOOT", "EPHVER", "MODE", "WEIGHT", "TRACK", "DMDATA"}
+    {"NITS", "NPRNT", "IBOOT", "EPHVER", "MODE", "WEIGHT", "DMDATA"}
 )
 
 

@@ -390,7 +390,9 @@ def test_convergence_does_not_imply_correctness():
     """A converged fit can still be the wrong solution -- documented, so pinned.
 
     With nearest-pulse phase tracking, a cold start can settle into a
-    cycle-slipped stationary point. It converges cleanly and reports a wildly
+    cycle-slipped stationary point (the cure -- absolute pulse-number
+    tracking -- is demonstrated on this exact start in
+    tests/test_pulse_numbers.py). It converges cleanly and reports a wildly
     bad chi2. If this ever starts recovering the true solution, the warning on
     ``BaseFitResult.converged`` is stale and should be removed.
     """

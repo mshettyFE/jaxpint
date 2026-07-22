@@ -14,7 +14,8 @@ derivation, the code-to-math mapping, and the convergence caveat
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from enum import StrEnum
+from typing import Optional, Union
 
 import equinox as eqx
 import jax
@@ -95,6 +96,10 @@ class BaseFitResult(eqx.Module):
            converges cleanly to chi2 ~ 2e6 against 59.6 for the true solution.
            Always check ``reduced_chi2`` as well -- this flag only says the
            fitter stopped moving, not that it stopped somewhere sensible.
+           The structural cure is absolute pulse-number tracking: freeze pulse
+           numbers from a trusted model (one call:
+           ``TOAData.with_computed_pulse_numbers``) and the same cold start recovers
+           the true solution (tests/test_pulse_numbers.py).
         """
         return self.step_sigma <= _STEP_SIGMA_TOL
 
@@ -535,32 +540,113 @@ class BaseFitter(ABC):
 # ---------------------------------------------------------------------------
 
 
-def compute_phase_residuals(
+class TrackMode(StrEnum):
+    """How TOAs are assigned to pulse numbers when computing residuals.
+
+    A ``StrEnum`` (like :class:`jaxpint.tim.timfile.LineFormat`): members
+    compare equal to their strings, so the historical ``"nearest"`` /
+    ``"use_pulse_numbers"`` literals keep working everywhere while typed
+    callers get the finite, typo-checked set.
+    """
+
+    NEAREST = "nearest"
+    USE_PULSE_NUMBERS = "use_pulse_numbers"
+
+
+def _resolve_track_mode(
+    toa_data: TOAData, track_mode: Union[TrackMode, str, None]
+) -> TrackMode:
+    """``None`` -> ``USE_PULSE_NUMBERS`` iff the TOAData carries pulse numbers.
+
+    Mirrors PINT's presence-based default. PINT's ``TRACK`` par parameter is
+    honoured upstream, at TOAData construction (``toa_data_from_raw_toas``:
+    ``TRACK 0`` strips pulse numbers, ``TRACK -2`` warns when none are
+    usable), so by the time residuals are computed, presence *is* the policy.
+    Pass ``track_mode`` explicitly to override per call. The resolution is
+    static pytree structure (None-ness), decided at trace time and jit-safe.
+    """
+    if track_mode is None:
+        return (
+            TrackMode.USE_PULSE_NUMBERS
+            if toa_data.pulse_number is not None
+            else TrackMode.NEAREST
+        )
+    try:
+        mode = TrackMode(track_mode)
+    except ValueError:
+        valid = ", ".join(repr(m.value) for m in TrackMode)
+        raise ValueError(
+            f"track_mode must be one of {valid} (or a TrackMode), got {track_mode!r}"
+        ) from None
+    if mode is TrackMode.USE_PULSE_NUMBERS and toa_data.pulse_number is None:
+        raise ValueError(
+            "track_mode='use_pulse_numbers' but this TOAData carries no pulse "
+            "numbers. Sources: -pn flags in the .tim, PINT's pulse_number "
+            "column via the bridge, or compute_pulse_numbers() from a trusted "
+            "model + toa_data.with_pulse_numbers(...)."
+        )
+    return mode
+
+
+def compute_pulse_numbers(
     model: TimingModel,
     toa_data: TOAData,
     params: ParameterVector,
 ) -> Float[Array, " n_toas"]:
-    """Compute phase residuals using nearest-pulse tracking.
+    """Assign each TOA to its nearest predicted pulse, as absolute numbers.
 
-    Returns the fractional part of the model phase (in cycles), after
-    adjusting for ``delta_pulse_number`` offsets stored in the TOA data.
-
-    Parameters
-    ----------
-    model : TimingModel
-        JaxPINT timing model used to compute pulse phase.
-    toa_data : TOAData
-        Pre-extracted TOA data containing observation times and
-        ``delta_pulse_number`` corrections.
-    params : ParameterVector
-        Current parameter values for the timing model.
-
-    Returns
-    -------
-    residuals : jax.Array, shape (n_toas,)
-        Phase residuals in cycles (fractional part of adjusted phase).
+    The trusted-model source of pulse numbers (PINT's
+    ``TOAs.compute_pulse_numbers``): evaluate the phase at *params* and round
+    to the nearest rotation. Freeze the result via
+    ``toa_data.with_pulse_numbers(...)`` and later fits track those rotations
+    absolutely -- which is what makes a cold start unable to cycle-slip.
     """
     phase = model.compute_phase(toa_data, params)
+    return phase.int + jnp.round(phase.frac)
+
+
+def compute_phase_residuals(
+    model: TimingModel,
+    toa_data: TOAData,
+    params: ParameterVector,
+    # NOTE: This can be tightened to a subset
+    track_mode: Optional[str] = None,
+) -> Float[Array, " n_toas"]:
+    """Compute phase residuals in cycles.
+
+    Two tracking modes decide which rotation each TOA belongs to:
+
+    ``"nearest"``
+        The fractional part of the model phase -- each TOA matched to
+        whichever predicted pulse is closest, *re-decided at the current
+        parameters on every evaluation*. Correct near a good solution; far
+        from one, TOAs silently migrate between pulses (the cycle-slip trap
+        documented on :attr:`BaseFitResult.converged`).
+
+    ``"use_pulse_numbers"``
+        ``phase - toa_data.pulse_number``: residuals against fixed absolute
+        rotation counts, unbounded rather than wrapped. A bad model then
+        produces a residual of +3.7 cycles instead of re-wrapping to -0.3, so
+        fits are pulled toward the true solution.
+
+    ``track_mode=None`` (default) selects ``"use_pulse_numbers"`` exactly when
+    the TOAData carries pulse numbers, else ``"nearest"`` -- see
+    :func:`_resolve_track_mode`.
+
+    ``delta_pulse_number`` offsets apply in both modes (PINT adds them to the
+    phase before either wrapping or subtracting the pulse-number column).
+    """
+    mode = _resolve_track_mode(toa_data, track_mode)
+    phase = model.compute_phase(toa_data, params)
+
+    if mode is TrackMode.USE_PULSE_NUMBERS:
+        # (phase.int - N) is exact: both are integer-valued float64 well inside
+        # 2**53, and their difference is small near any reasonable model. Add
+        # the small parts afterwards so nothing large meets anything small.
+        pn = toa_data.pulse_number
+        assert pn is not None  # guaranteed by _resolve_track_mode
+        dpn = toa_data.delta_pulse_number
+        return (phase.int - pn) + phase.frac + dpn
     # Only the *fractional* part of delta_pulse_number affects a nearest-pulse
     # residual: an integer offset (a PHASE command) shifts which pulse is
     # "nearest" but not the residual to it (frac(phi + N) == frac(phi)), while a
@@ -579,27 +665,16 @@ def compute_time_residuals(
     model: TimingModel,
     toa_data: TOAData,
     params: ParameterVector,
+    track_mode: Union[TrackMode, str, None] = None,
 ) -> Float[Array, " n_toas"]:
     """Compute time residuals in seconds.
 
     Converts phase residuals (cycles) to time by dividing by the spin
-    frequency F0 (Hz).
-
-    Parameters
-    ----------
-    model : TimingModel
-        JaxPINT timing model.
-    toa_data : TOAData
-        Pre-extracted TOA data.
-    params : ParameterVector
-        Current parameter values (must include ``F0``).
-
-    Returns
-    -------
-    residuals : jax.Array, shape (n_toas,)
-        Time residuals in seconds.
+    frequency F0 (Hz). *track_mode* selects the pulse-assignment mode and is
+    forwarded to :func:`compute_phase_residuals` (None = auto by presence of
+    pulse numbers).
     """
-    phase_resid = compute_phase_residuals(model, toa_data, params)
+    phase_resid = compute_phase_residuals(model, toa_data, params, track_mode)
     f0 = params.param_value("F0")
     return phase_resid / f0
 
