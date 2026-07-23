@@ -44,8 +44,13 @@ class TestWhiteNoiseGenerate:
         noise = ScaleToaError(efac_names=("EFAC1",), equad_names=("EQUAD1",))
         return toa_data, params, noise
 
-    def test_whitened_std(self, white_noise_setup):
-        """Noise divided by scaled_sigma should have std ~ 1."""
+    def test_whitened_moments(self, white_noise_setup):
+        """Noise divided by scaled_sigma is ~N(0, 1): both moments of ONE
+        realization .
+
+        At n=5000: SE(std) ~ 1/sqrt(2n) ~ 0.01 and SE(mean) ~ 1/sqrt(n)
+        ~ 0.014, so atol=0.05 sits at ~4-5 sigma.
+        """
         toa_data, params, noise = white_noise_setup
         key = jax.random.PRNGKey(42)
 
@@ -54,16 +59,6 @@ class TestWhiteNoiseGenerate:
         whitened = draws / sigma
 
         assert np.isclose(np.std(whitened), 1.0, atol=0.05)
-
-    def test_whitened_mean(self, white_noise_setup):
-        """Whitened noise should have mean ~ 0."""
-        toa_data, params, noise = white_noise_setup
-        key = jax.random.PRNGKey(42)
-
-        draws = noise.generate(toa_data, params, key)
-        sigma = noise.scaled_sigma(toa_data, params)
-        whitened = draws / sigma
-
         assert np.isclose(np.mean(whitened), 0.0, atol=0.05)
 
     def test_covariance_consistent_with_generate(self):
@@ -84,7 +79,10 @@ class TestWhiteNoiseGenerate:
         assert U.shape == (n_toas, 0)
         assert Phidiag.shape == (0,)
 
-        n_draws = 5000
+        # Variance-estimator relative error is sqrt(2/n) ~ 3.2% at 2000
+        # draws; rtol=0.15 is ~4.7 sigma per element across 200
+        # independent (white) elements.
+        n_draws = 2000
         keys = jax.random.split(jax.random.PRNGKey(0), n_draws)
         draws = jax.vmap(lambda k: noise.generate(toa_data, params, k))(keys)
         empirical_var = jnp.var(draws, axis=0)
@@ -221,7 +219,9 @@ class TestSimulateNoise:
         C = jnp.diag(Ndiag_w + Ndiag_e) + U_e @ jnp.diag(Phi_e) @ U_e.T
         L = jnp.linalg.cholesky(C)
 
-        n_draws = 2000
+        # 1000 draws x 40 elements = 40k whitened samples: SE(std) ~
+        # 0.0035 and SE(mean) ~ 0.005, so the atols sit at ~10-28 sigma.
+        n_draws = 1000
         keys = jax.random.split(jax.random.PRNGKey(123), n_draws)
         def _whiten(k):
             delays = simulate_noise(toa_data, params, k, [white, ecorr])
