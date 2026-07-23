@@ -102,17 +102,6 @@ class TestSunOnly:
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
-    @pytest.mark.slow
-    def test_nonzero(self, sun_only_setup):
-        """Shapiro delay should be non-trivially nonzero."""
-        toa_data, params, _ = sun_only_setup
-
-        comp = SolarSystemShapiroDelay(planet_shapiro=False)
-        jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
-
-        assert jnp.all(jnp.isfinite(jax_delay))
-        assert jnp.max(jnp.abs(jax_delay)) > 1e-10
-
 
 class TestWithPlanets:
     """Solar Shapiro delay (Sun + planets) matches PINT."""

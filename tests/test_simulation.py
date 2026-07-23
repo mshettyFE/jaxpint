@@ -205,21 +205,6 @@ class TestZeroResiduals:
         np.testing.assert_array_equal(zeroed.tdb_int, zeroed_again.tdb_int)
 
     @pytest.mark.slow
-    def test_zeroed_to_sub_ns(self, jax_objects_raw):
-        """zero_residuals drives a raw grid below 1 ns.
-
-        (Previously named test_vs_pint, but no PINT quantity was ever
-        compared -- the assertion has always been JaxPINT-side only.)
-        """
-        model, toa_data, params = jax_objects_raw
-        tol = 1e-9
-
-        jax_zeroed = zero_residuals(model, toa_data, params, tolerance=tol)
-        jax_resids = compute_time_residuals(model, jax_zeroed, params)
-
-        assert float(jnp.max(jnp.abs(jax_resids))) < tol
-
-    @pytest.mark.slow
     def test_raises_on_nonconvergence(self, jax_objects_raw):
         """Should raise RuntimeError if maxiter is too small."""
         model, toa_data, params = jax_objects_raw

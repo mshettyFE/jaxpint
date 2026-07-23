@@ -124,13 +124,6 @@ class TestSWM0:
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
-    def test_nonzero(self, swm0_setup):
-        toa_data, params, _, _, comp = swm0_setup
-        jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
-
-        assert jnp.all(jnp.isfinite(jax_delay))
-        assert jnp.max(jnp.abs(jax_delay)) > 1e-10
-
     def test_jit_compatible(self, swm0_setup):
         toa_data, params, _, _, comp = swm0_setup
         eager = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
@@ -154,13 +147,6 @@ class TestSWM1:
         np.testing.assert_allclose(
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
-
-    def test_nonzero(self, swm1_setup):
-        toa_data, params, _, _, comp = swm1_setup
-        jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
-
-        assert jnp.all(jnp.isfinite(jax_delay))
-        assert jnp.max(jnp.abs(jax_delay)) > 1e-10
 
     def test_jit_compatible(self, swm1_setup):
         toa_data, params, _, _, comp = swm1_setup

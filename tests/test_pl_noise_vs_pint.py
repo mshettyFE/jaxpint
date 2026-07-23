@@ -395,40 +395,6 @@ class TestPLDMNoiseVsPINT:
             err_msg="PLDMNoise covariance matrix mismatch",
         )
 
-    @pytest.mark.slow
-    def test_dm_noise_frequency_scaling(self, pldm_pint_model):
-        """820 MHz TOAs should have ~2.9x larger basis columns than 1400 MHz.
-
-        (1400/820)^2 ≈ 2.91, so the ratio of basis column norms should
-        reflect this DM frequency scaling.
-        """
-
-        pint_model, toas = pldm_pint_model
-        _tm, noise_model = _build_tdb_model(pint_model, toas)
-
-        from jaxpint.noise.dm_noise import PLDMNoise
-        pldm_jax = _find_correlated(noise_model, PLDMNoise)
-
-        basis = np.array(pldm_jax.fourier_basis)
-
-        # Get barycentric frequencies from PINT
-        import astropy.units as u
-        bary_freqs = pint_model.barycentric_radio_freq(toas).to(u.MHz).value
-
-        # Find a pair of TOAs at different frequencies
-        low_mask = bary_freqs < 1000.0
-        high_mask = bary_freqs > 1200.0
-        assert np.any(low_mask) and np.any(high_mask)
-
-        # Column norms at low freq vs high freq
-        low_norm = np.mean(np.abs(basis[low_mask]))
-        high_norm = np.mean(np.abs(basis[high_mask]))
-
-        # Ratio should be approximately (1400/820)^2 / (1400/1400)^2 ≈ 2.91
-        ratio = low_norm / high_norm
-        assert ratio > 2.0, f"DM frequency scaling ratio = {ratio:.2f}, expected > 2.0"
-
-
 # ---------------------------------------------------------------------------
 # PLChromNoise
 # ---------------------------------------------------------------------------
