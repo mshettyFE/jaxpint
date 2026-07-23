@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import copy
-from pathlib import Path
-
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -12,7 +9,7 @@ import numpy.testing as npt
 import pytest
 
 from jaxpint.noise import EcorrNoise, ScaleToaError
-from jaxpint.simulation import make_fake_toas, simulate_noise
+from jaxpint.simulation import simulate_noise
 from tests.helpers import make_params, make_toa_data
 
 
@@ -278,102 +275,14 @@ class TestSimulateNoise:
 
 
 # ---------------------------------------------------------------------------
-# Integration: GLS fitter whitening
-# ---------------------------------------------------------------------------
-
-
-class TestGLSWhitening:
-    """End-to-end test: generate noise, fit with GLS, whiten residuals."""
-
-    @pytest.fixture(scope="class")
-    def gls_fit_result(self):
-        """Generate fake TOAs with noise, fit with GLS, return whitened residuals.
-        """
-        from io import StringIO
-
-        import jaxpint.par as jpar
-        from jaxpint import build_model
-        from jaxpint.fitters import GLSFitter
-        from jaxpint.simulation import make_uniform_toa_data
-
-        par_file = (
-            Path(__file__).resolve().parent
-            / "data"
-            / "pint_inputs"
-            / "B1855+09_NANOGrav_9yv1.gls.par"
-        )
-        drop = ("DMX", "JUMP", "FD", "PLANET_SHAPIRO")
-        par_text = "\n".join(
-            line
-            for line in par_file.read_text().splitlines()
-            if line.strip() and not line.split()[0].startswith(drop)
-        )
-        par_result = jpar.get_model(StringIO(par_text))
-        # START/FINISH are epoch-type parameters: the integer MJD day lives in
-        # epoch_int_values (static) and param_value returns only the
-        # fractional day, so the two halves must be recombined.
-        p = par_result.params
-        start = p.epoch_int_values["START"] + float(p.param_value("START"))
-        finish = p.epoch_int_values["FINISH"] + float(p.param_value("FINISH"))
-
-        # Bare epochs only -- make_fake_toas below does its own zeroing, so
-        # the model-realizing generator would zero residuals twice for nothing.
-        toa_data = make_uniform_toa_data(
-            start, finish, 500, par_result,
-            obs="ao", freq_mhz=1400.0, error_us=1.0,
-        )
-        params = par_result.params
-        jax_model, noise_model = build_model(par_result, toa_data)
-
-        # Build noise components list for simulation
-        noise_components = []
-        if noise_model.white_noise is not None:
-            noise_components.append(noise_model.white_noise)
-        noise_components.extend(noise_model.correlated)
-
-        # Generate fake TOAs with JaxPINT noise
-        key = jax.random.PRNGKey(2024)
-        fake_toa_data = make_fake_toas(
-            jax_model, toa_data, params, key,
-            noise_components=noise_components,
-        )
-
-        # Fit with GLS (augmented mode to get noise_realizations)
-        fit_params = copy.deepcopy(params)
-        fitter = GLSFitter(
-            jax_model, fake_toa_data, fit_params,
-            noise_model=noise_model,
-        )
-        result = fitter.fit_toas(maxiter=3)
-
-        # Whitening via the public API (jaxpint.fitters.whiten_residuals);
-        # this fixture's earlier hand-rolled version is what that API was
-        # extracted from, so it now doubles as the API's end-to-end consumer.
-        from jaxpint.fitters import whiten_residuals
-
-        whitened = whiten_residuals(
-            result.residuals,
-            fake_toa_data,
-            result.params,
-            noise_model,
-            noise_realizations=result.noise_realizations,
-        )
-        return whitened, result
-
-    @pytest.mark.slow
-    def test_whitened_std(self, gls_fit_result):
-        """Whitened residuals should have std ~ 1."""
-        whitened, _ = gls_fit_result
-        assert np.isclose(np.std(whitened), 1.0, atol=0.2)
-
-    @pytest.mark.slow
-    def test_whitened_mean(self, gls_fit_result):
-        """Whitened residuals should have mean ~ 0."""
-        whitened, _ = gls_fit_result
-        assert np.isclose(np.mean(whitened), 0.0, atol=0.05)
-
-    @pytest.mark.slow
-    def test_reduced_chi2_near_one(self, gls_fit_result):
-        """Reduced chi-squared should be near 1 for correctly generated noise."""
-        _, result = gls_fit_result
-        assert np.isclose(result.reduced_chi2, 1.0, atol=0.3)
+# NOTE (2026-07-23 dedup): the TestGLSWhitening end-to-end class was removed.
+# Its original purpose — hand-rolled whitening as an independent cross-check
+# — evaporated when that code was extracted into the public
+# jaxpint.fitters.whiten_residuals API, leaving it the same B1855
+# simulate -> GLS-fit -> whiten pipeline as
+# tests/test_diagnostics.py::test_whitened_gls_fit_is_standard_normal,
+# which is strictly stronger (unmodified par with DMX/JUMP/FD in play,
+# tighter std bound, and KS/AD normality tests rather than moment checks).
+# The whitening ALGEBRA has its dense-linear-algebra oracle in
+# test_diagnostics.py::TestWhitenResiduals, and per-component GLS whitening
+# end-to-ends live in the red/dm/chrom/sw noise files.

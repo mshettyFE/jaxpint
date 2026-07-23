@@ -211,9 +211,6 @@ class TestFtest:
 @pytest.mark.slow
 def test_whitened_gls_fit_is_standard_normal():
     """Simulate noise from a real model, fit GLS, whiten via the new API.
-
-    The statistical assertions mirror what test_noise_generation checks with
-    its hand-rolled whitening; here the API under test does the work.
     """
     import pathlib
 
