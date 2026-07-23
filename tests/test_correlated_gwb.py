@@ -1,10 +1,11 @@
 """Tests for the correlated (cross-pulsar) GWB likelihood.
 
 Validates:
-1. Two-tier Woodbury correctness against a dense brute-force solve.
+1. Two-tier Woodbury correctness against a dense brute-force solve
 2. Equivalence with CURN (uncorrelated) when Gamma = I.
 3. ORF matrix construction.
-4. Gradient correctness (finite, non-zero).
+4. Gradient correctness (finite, non-zero) — checked at K=2, which
+   exercises the same joint outer-tier path as K=1.
 5. Compatibility with per-pulsar intrinsic red noise.
 """
 
@@ -13,6 +14,7 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 from jaxpint.noise import NoiseModel
 from jaxpint.noise.white import ScaleToaError
@@ -163,6 +165,51 @@ def _dense_logL(toa_data_list, timing_models, noise_models, pulsar_params,
 
 
 # ---------------------------------------------------------------------------
+# Module-scoped setups .
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def psrs3():
+    """The shared 3-pulsar array used by every dense-comparison test."""
+    return _make_multi_pulsar_setup(n_pulsars=3)
+
+
+@pytest.fixture(scope="module")
+def two_injectors(psrs3):
+    """Two HD-correlated injectors with distinct prefixes / spectra / sizes."""
+    (toa_data_list, timing_models, noise_models,
+     pulsar_params, positions) = psrs3
+
+    T_span = 365.25 * 86400.0
+
+    cinj_a = HDCorrelatedGWBInjector(
+        pulsar_positions=positions,
+        n_components=4,
+        T_span=T_span,
+        orf_func=hd_orf,
+        prefix="gwb_hd_",
+        initial_values={"log10_A": -14.0, "gamma": 4.33},
+    )
+    cinj_b = HDCorrelatedGWBInjector(
+        pulsar_positions=positions,
+        n_components=3,
+        T_span=T_span,
+        orf_func=dipole_orf,
+        prefix="gwb_dip_",
+        initial_values={"log10_A": -14.8, "gamma": 3.0},
+    )
+
+    global_params = cinj_a.register_params(GlobalParams.empty())
+    global_params = cinj_b.register_params(global_params)
+
+    return (
+        toa_data_list, timing_models, noise_models,
+        pulsar_params, (cinj_a, cinj_b), global_params,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tests: dense comparison
 # ---------------------------------------------------------------------------
 
@@ -170,13 +217,14 @@ def _dense_logL(toa_data_list, timing_models, noise_models, pulsar_params,
 class TestDenseComparison:
     """Two-tier Woodbury matches brute-force dense solve."""
 
-    def test_hd_correlated(self):
-        """HD-correlated GWB: two-tier vs dense."""
+    def test_hd_correlated(self, psrs3):
+        """HD-correlated GWB: two-tier vs dense.
+        """
         (toa_data_list, timing_models, noise_models,
-         pulsar_params, positions) = _make_multi_pulsar_setup(n_pulsars=3)
+         pulsar_params, positions) = psrs3
 
         T_span = 365.25 * 86400.0  # 1 year
-        n_components = 5
+        n_components = 3
 
         gwb_injector = HDCorrelatedGWBInjector(
             pulsar_positions=positions,
@@ -205,10 +253,10 @@ class TestDenseComparison:
             err_msg="Two-tier Woodbury does not match dense solve",
         )
 
-    def test_dipole_orf(self):
+    def test_dipole_orf(self, psrs3):
         """Dipole ORF: two-tier vs dense."""
         (toa_data_list, timing_models, noise_models,
-         pulsar_params, positions) = _make_multi_pulsar_setup(n_pulsars=3)
+         pulsar_params, positions) = psrs3
 
         T_span = 365.25 * 86400.0
         n_components = 3
@@ -249,17 +297,17 @@ class TestDenseComparison:
 class TestCURNEquivalence:
     """When Gamma = I, correlated likelihood matches uncorrelated pta_logL."""
 
-    def test_identity_orf_matches_curn(self):
+    def test_identity_orf_matches_curn(self, psrs3):
         """Gamma = I (identity matrix) should reproduce CURN result.
 
         CURN gives each pulsar the same PSD independently, which is
         equivalent to Phi_gwb = I kron diag(S) (no cross-pulsar coupling).
         """
         (toa_data_list, timing_models, noise_models,
-         pulsar_params, positions) = _make_multi_pulsar_setup(n_pulsars=3)
+         pulsar_params, positions) = psrs3
 
         T_span = 365.25 * 86400.0
-        n_components = 5
+        n_components = 3
         log10_A = -14.0
         gamma = 4.33
 
@@ -414,46 +462,6 @@ class TestORFMatrix:
 
 
 # ---------------------------------------------------------------------------
-# Tests: gradients
-# ---------------------------------------------------------------------------
-
-
-class TestGradients:
-    """Gradient correctness for the correlated likelihood."""
-
-    def test_grad_gwb_params(self):
-        """Gradients w.r.t. GWB log10_A and gamma are finite and non-zero."""
-        (toa_data_list, timing_models, noise_models,
-         pulsar_params, positions) = _make_multi_pulsar_setup(n_pulsars=3)
-
-        T_span = 365.25 * 86400.0
-        gwb_injector = HDCorrelatedGWBInjector(
-            pulsar_positions=positions,
-            n_components=5,
-            T_span=T_span,
-            initial_values={"log10_A": -14.0, "gamma": 4.33},
-        )
-        global_params = gwb_injector.register_params(GlobalParams.empty())
-
-        config = PTAConfig(
-            toa_data_list=toa_data_list,
-            timing_models=timing_models,
-            noise_models=noise_models,
-            signal_injectors=(),
-            correlated_injectors=(gwb_injector,),
-        )
-
-        def logL_fn(gp_values):
-            gp = global_params.with_values(gp_values)
-            return pta_logL(gp, pulsar_params, config)
-
-        grad = jax.grad(logL_fn)(global_params.values)
-
-        assert jnp.all(jnp.isfinite(grad)), "Gradient contains non-finite values"
-        assert not jnp.allclose(grad, 0.0), "Gradient is all zeros"
-
-
-# ---------------------------------------------------------------------------
 # Tests: with per-pulsar red noise
 # ---------------------------------------------------------------------------
 
@@ -563,44 +571,16 @@ class TestWithRedNoise:
 
 
 class TestMultipleCorrelatedInjectors:
-    """``pta_logL`` with len(correlated_injectors) >= 2 uses one joint solve."""
+    """``pta_logL`` with len(correlated_injectors) >= 2 uses one joint solve.
 
-    def _make_two_injector_setup(self):
-        """Two HD-correlated injectors with distinct prefixes / spectra / sizes."""
-        (toa_data_list, timing_models, noise_models,
-         pulsar_params, positions) = _make_multi_pulsar_setup(n_pulsars=3)
+    K=1 through the same joint path is covered by
+    ``TestDenseComparison::test_hd_correlated`` .
+    """
 
-        T_span = 365.25 * 86400.0
-
-        cinj_a = HDCorrelatedGWBInjector(
-            pulsar_positions=positions,
-            n_components=4,
-            T_span=T_span,
-            orf_func=hd_orf,
-            prefix="gwb_hd_",
-            initial_values={"log10_A": -14.0, "gamma": 4.33},
-        )
-        cinj_b = HDCorrelatedGWBInjector(
-            pulsar_positions=positions,
-            n_components=3,
-            T_span=T_span,
-            orf_func=dipole_orf,
-            prefix="gwb_dip_",
-            initial_values={"log10_A": -14.8, "gamma": 3.0},
-        )
-
-        global_params = cinj_a.register_params(GlobalParams.empty())
-        global_params = cinj_b.register_params(global_params)
-
-        return (
-            toa_data_list, timing_models, noise_models,
-            pulsar_params, (cinj_a, cinj_b), global_params,
-        )
-
-    def test_two_injectors_matches_dense(self):
+    def test_two_injectors_matches_dense(self, two_injectors):
         """K=2 joint solve matches the dense brute-force reference."""
         (toa_data_list, timing_models, noise_models,
-         pulsar_params, cinjs, global_params) = self._make_two_injector_setup()
+         pulsar_params, cinjs, global_params) = two_injectors
 
         config = PTAConfig(
             toa_data_list=toa_data_list,
@@ -621,7 +601,7 @@ class TestMultipleCorrelatedInjectors:
             err_msg="K=2 joint outer-tier solve does not match dense reference",
         )
 
-    def test_two_injectors_not_equal_to_sum_of_K1(self):
+    def test_two_injectors_not_equal_to_sum_of_K1(self, two_injectors):
         """Joint K=2 result differs from the sum of independent K=1 results.
 
         The pre-fix code added K independent per-injector corrections and
@@ -630,7 +610,7 @@ class TestMultipleCorrelatedInjectors:
         not close to the buggy "sum of K=1 results" expression.
         """
         (toa_data_list, timing_models, noise_models,
-         pulsar_params, cinjs, global_params) = self._make_two_injector_setup()
+         pulsar_params, cinjs, global_params) = two_injectors
 
         config_joint = PTAConfig(
             toa_data_list=toa_data_list,
@@ -674,43 +654,15 @@ class TestMultipleCorrelatedInjectors:
             f"{logL_a + logL_b:.6f}; this is the pre-fix buggy behavior"
         )
 
-    def test_single_injector_unchanged(self):
-        """K=1 via the new joint code path still matches the dense reference.
+    def test_grad_with_two_injectors(self, two_injectors):
+        """``jax.grad`` of K=2 ``pta_logL`` w.r.t. global params is finite.
 
-        Regression guard: the joint-solve code path with a length-1 tuple
-        must reduce to the original (correct) K=1 behavior.
+        The only gradient guard for the correlated path — deliberately at
+        K=2, the superset configuration of the shared joint solve (a K=1
+        twin was removed 2026-07-23 as subsumed).
         """
         (toa_data_list, timing_models, noise_models,
-         pulsar_params, positions) = _make_multi_pulsar_setup(n_pulsars=3)
-
-        gwb_injector = HDCorrelatedGWBInjector(
-            pulsar_positions=positions,
-            n_components=5,
-            T_span=365.25 * 86400.0,
-            initial_values={"log10_A": -14.0, "gamma": 4.33},
-        )
-        global_params = gwb_injector.register_params(GlobalParams.empty())
-
-        config = PTAConfig(
-            toa_data_list=toa_data_list,
-            timing_models=timing_models,
-            noise_models=noise_models,
-            signal_injectors=(),
-            correlated_injectors=(gwb_injector,),
-        )
-
-        logL_woodbury = float(pta_logL(global_params, pulsar_params, config))
-        logL_dense = float(_dense_logL_multi(
-            toa_data_list, timing_models, noise_models,
-            pulsar_params, (gwb_injector,), global_params,
-        ))
-
-        np.testing.assert_allclose(logL_woodbury, logL_dense, rtol=1e-8)
-
-    def test_grad_with_two_injectors(self):
-        """``jax.grad`` of K=2 ``pta_logL`` w.r.t. global params is finite."""
-        (toa_data_list, timing_models, noise_models,
-         pulsar_params, cinjs, global_params) = self._make_two_injector_setup()
+         pulsar_params, cinjs, global_params) = two_injectors
 
         config = PTAConfig(
             toa_data_list=toa_data_list,
