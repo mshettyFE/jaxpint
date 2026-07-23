@@ -70,15 +70,20 @@ def _geometric_delay(
     # Also follows from Smart, 1977, chapter 9.
     if px_name is not None:
         px_mas = params.param_value(px_name)
-        # Distance in km: 1/PX_mas gives kpc (1 mas parallax = 1 kpc distance)
-        L_km = (1.0 / px_mas) * KPC_TO_KM
+        # The parallax term is LINEAR in PX (re_sqr / L = re_sqr * PX / kpc),
+        # so multiply by the inverse distance directly instead of forming
+        # L = (1/PX) * kpc. Keeps reverse JVP sane at PX=0
+        inv_L_per_km = px_mas / KPC_TO_KM  # 1/km
         re_sqr = jnp.sum(toa_data.ssb_obs_pos**2, axis=1)  # km^2
         # Guard against 0/0 for barycentric TOAs (ssb_obs_pos == 0) like TZR.
         # Using 1.0 as safe denominator is fine: re_sqr==0 implies re_dot_L==0,
-        # so the numerator (re_sqr / L_km) is also 0 and the term vanishes.
+        # so the numerator (re_sqr * inv_L) is also 0 and the term vanishes.
         re_sqr_safe = jnp.where(re_sqr == 0.0, 1.0, re_sqr)
         result += (
-            0.5 * (re_sqr_safe / L_km) * (1.0 - re_dot_L**2 / re_sqr_safe) / C_KM_PER_S
+            0.5
+            * (re_sqr_safe * inv_L_per_km)
+            * (1.0 - re_dot_L**2 / re_sqr_safe)
+            / C_KM_PER_S
         )
 
     return result

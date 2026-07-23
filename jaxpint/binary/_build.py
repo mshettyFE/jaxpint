@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from jaxpint._build_context import opt_name, param_is_set
+from jaxpint._build_context import opt_name, param_is_set, value
 from jaxpint.binary.bt import BinaryBT
 from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
 from jaxpint.binary.dd import BinaryDD
@@ -183,6 +183,16 @@ def build_binary(ctx: "BuildContext") -> object:
             )
 
         case BinaryModel.DDK:
+            # PINT parity (BinaryDDK.validate): the Kopeikin parallax
+            # corrections divide by the PX distance, so DDK requires a
+            # positive PX.  Failing here at build matches PINT's
+            # TimingModelError
+            if "PX" not in par.params:
+                raise ValueError("DDK model requires PX (parallax) from astrometry.")
+            if value(par, "PX") <= 0.0:
+                raise ValueError(
+                    f"DDK model requires a positive PX value; got {value(par, 'PX')}."
+                )
             k96 = par.bool_params.get("K96", False)
             return BinaryDDK(
                 **_dd_common_kwargs(par),

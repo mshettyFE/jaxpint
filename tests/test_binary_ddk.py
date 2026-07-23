@@ -207,3 +207,58 @@ class TestBinaryDDKvsPINT:
         d_dd = np.array(dd(toa_data, dd_p, jnp.zeros(n)))
 
         npt.assert_allclose(d_ddk, d_dd, atol=1e-12, rtol=1e-12)
+
+
+class TestDDKRequiresPX:
+    """PINT parity (BinaryDDK.validate): the Kopeikin corrections divide by
+    the parallax distance, so building a DDK model without a positive PX
+    must raise at build time (PINT raises TimingModelError) rather than
+    producing inf delays and nan gradients at runtime."""
+
+    _PAR_TEMPLATE = """\
+PSR           J0000+0000
+EPHEM         DE421
+CLK           TT(BIPM2019)
+UNITS         TDB
+RAJ           04:37:15.0
+DECJ          -47:15:09.0
+PMRA          121.0
+PMDEC         -71.0
+PEPOCH        54000
+POSEPOCH      54000
+F0            173.0 1
+DM            2.6
+BINARY        DDK
+PB            5.74
+T0            54000.0
+A1            3.36
+ECC           1.9e-5
+OM            1.0
+KIN           137.0
+KOM           207.0
+M2            0.23
+{px_line}
+"""
+
+    def _build(self, px_line):
+        import io
+
+        import jaxpint.par as jpar
+        from jaxpint import build_model
+
+        par = jpar.get_model(io.StringIO(self._PAR_TEMPLATE.format(px_line=px_line)))
+        return build_model(par)
+
+    def test_missing_px_raises(self):
+        with pytest.raises(ValueError, match="DDK model requires PX"):
+            self._build("")
+
+    def test_zero_px_raises(self):
+        with pytest.raises(ValueError, match="positive PX"):
+            self._build("PX            0")
+
+    def test_positive_px_builds(self):
+        model, _ = self._build("PX            8.3")
+        from jaxpint.binary.ddk import BinaryDDK
+
+        assert any(isinstance(c, BinaryDDK) for c in model.delay_components)

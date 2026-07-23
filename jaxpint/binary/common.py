@@ -623,6 +623,24 @@ def ell1h_fourier_shapiro(h3, stigma, phi, nharms: int):
     return -2.0 * h3 * total
 
 
+def _sini_m2_from_h3_stigma(h3, stigma):
+    """``(sini, m2)`` from orthometric ``H3``/``STIGMA``, guarded at STIGMA = 0.
+
+    ``m2 = h3 / (stigma^3 * TSUN)`` genuinely diverges as STIGMA → 0 with H3
+    fixed (vanishing inclination), so there is no finite "correct" value
+    there; a fitter stepping STIGMA to/through 0 (or starting it free at 0)
+    would otherwise get an inf forward value and nan gradients that poison
+    the whole fit.  The guard returns ``(sini, m2) = (0, 0)`` — no Shapiro
+    contribution — keeping the objective finite so the optimizer can move
+    STIGMA away from the singular point.
+    """
+    sini = 2.0 * stigma / (1.0 + stigma**2)
+    safe_stigma = jnp.where(stigma != 0.0, stigma, 1.0)
+    m2 = jnp.where(stigma != 0.0, h3 / (safe_stigma**3 * TSUN), 0.0)
+    sini = jnp.where(stigma != 0.0, sini, 0.0)
+    return sini, m2
+
+
 def get_sini_m2(
     params: ParameterVector,
     shapiro_mode: str,
@@ -667,15 +685,16 @@ def get_sini_m2(
         assert h3_name is not None and stigma_name is not None
         h3 = params.param_value(h3_name)
         stigma = params.param_value(stigma_name)
-        sini = 2.0 * stigma / (1.0 + stigma**2)
-        m2 = h3 / (stigma**3 * TSUN)
+        sini, m2 = _sini_m2_from_h3_stigma(h3, stigma)
     elif shapiro_mode == "h3h4":
         assert h3_name is not None and h4_name is not None
         h3 = params.param_value(h3_name)
         h4 = params.param_value(h4_name)
-        stigma = h4 / h3
-        sini = 2.0 * stigma / (1.0 + stigma**2)
-        m2 = h3 / (stigma**3 * TSUN)
+        # STIGMA = H4/H3; guard H3 == 0 (reachable when H3 is free at its
+        # initial 0) — no orthometric amplitude means no Shapiro signal.
+        safe_h3 = jnp.where(h3 != 0.0, h3, 1.0)
+        stigma = jnp.where(h3 != 0.0, h4 / safe_h3, 0.0)
+        sini, m2 = _sini_m2_from_h3_stigma(h3, stigma)
     else:
         sini = 0.0
         m2 = 0.0

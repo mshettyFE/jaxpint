@@ -22,9 +22,6 @@ Convention notes that shape every test in this package:
   ``test_ent_building_blocks.test_gp_basis_frame_matches_enterprise``.
   GP logL tolerances are therefore residual-parity-limited (~1e-4), not
   Roemer-budgeted.
-- ``PHOFF`` must be non-zero in the par files: JaxPINT's model builder treats
-  a 0.0-valued parameter as unset (``model_builder._param_is_set``) and would
-  drop the phase-offset binding that the marginalization tests rely on.
 """
 
 from __future__ import annotations

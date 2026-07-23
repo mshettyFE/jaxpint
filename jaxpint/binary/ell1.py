@@ -216,6 +216,7 @@ class BinaryELL1(BinaryDelayComponent):
 
         pbdot = params.param_value_or(self.pbdot_name)
         a1dot = params.param_value_or(self.a1dot_name)
+        xpbdot = params.param_value_or(self.xpbdot_name)
 
         sini, m2 = get_sini_m2(
             params,
@@ -235,12 +236,16 @@ class BinaryELL1(BinaryDelayComponent):
         eps1, eps2 = self._compute_eps(params, ttasc_s)
 
         # --- Orbital phase (precision-preserving via int/frac day split) ---
+        # XPBDOT enters the orbital phase alongside PBDOT (PINT's OrbitPB:
+        # orbits = tt0/PB - 0.5*(PBDOT+XPBDOT)*(tt0/PB)^2) but NOT pbprime
+        # (PINT: pbprime = PB + PBDOT*tt0 only).
         pb_prime_s = pb_d * SECS_PER_DAY + pbdot * ttasc_s
         Phi = compute_orbital_phase(
             toa_data.tdb,
             tasc,
             pb_d,
             pbdot,
+            xpbdot=xpbdot,
             delay=delay,
             fb_higher=tuple(params.param_value(n) for n in self.fb_higher_names),
         )

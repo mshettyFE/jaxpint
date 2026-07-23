@@ -13,8 +13,21 @@ if TYPE_CHECKING:
 
 
 def param_is_set(par: "ParResult", name: str) -> bool:
-    """Check whether *name* exists in the ParameterVector and is non-zero."""
-    return name in par.params and float(par.params.param_value(name)) != 0.0
+    """Check whether *name* exists and is wired into the model: non-zero OR free.
+
+    "Present and free" counts as set even at value 0: a par line like
+    ``PMRA 0 1`` must still connect the parameter to its component —
+    otherwise its design-matrix column is identically zero, the SVD cutoff
+    truncates it, and the fit silently never moves it.  Fitting PM/PHOFF
+    (or PBDOT, M2, ...) from an initial 0 is standard practice and works in
+    PINT.  A *frozen* zero-valued parameter stays unset, so purely
+    vestigial ``FOO 0`` lines still cost nothing at runtime.
+    """
+    if name not in par.params:
+        return False
+    if float(par.params.param_value(name)) != 0.0:
+        return True
+    return not par.params.frozen_mask[par.params.param_index(name)]
 
 
 def opt_name(par: "ParResult", name: str) -> Optional[str]:
