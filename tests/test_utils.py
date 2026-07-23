@@ -278,31 +278,32 @@ class TestShermanMorrisonDot:
         result, _ = sherman_morrison_dot(Ndiag, v, jnp.array(1.0), x, x)
         assert result > 0
 
-    def test_jit(self):
-        n = 5
-        Ndiag = jnp.ones(n)
-        v = jnp.ones(n)
-        f = jax.jit(sherman_morrison_dot)
-        result, logdet = f(Ndiag, v, jnp.array(1.0), v, v)
-        assert jnp.isfinite(result)
-        assert jnp.isfinite(logdet)
-
-    def test_grad(self):
+    def test_jit_and_grad_exact(self):
+        """jit == eager, and the gradient matches the dense analytic oracle
+        d(x^T C^-1 x)/dN_i = -[(C^-1 x)_i]^2.
+        """
         key = jax.random.PRNGKey(2)
         k1, k2, k3 = jax.random.split(key, 3)
         n = 4
         Ndiag = jnp.abs(jax.random.normal(k1, (n,))) + 1.0
         v = jax.random.normal(k2, (n,))
+        w = jnp.array(1.0)
         x = jax.random.normal(k3, (n,))
 
+        eager = sherman_morrison_dot(Ndiag, v, w, x, x)
+        jitted = jax.jit(sherman_morrison_dot)(Ndiag, v, w, x, x)
+        assert jnp.allclose(jitted[0], eager[0], rtol=1e-14)
+        assert jnp.allclose(jitted[1], eager[1], rtol=1e-14)
+
         @jax.grad
-        def loss(Ndiag):
-            r, _ = sherman_morrison_dot(Ndiag, v, jnp.array(1.0), x, x)
+        def loss(Nd):
+            r, _ = sherman_morrison_dot(Nd, v, w, x, x)
             return r
 
         g = loss(Ndiag)
-        assert g.shape == (n,)
-        assert jnp.all(jnp.isfinite(g))
+        C = jnp.diag(Ndiag) + w * jnp.outer(v, v)
+        Cx = jnp.linalg.solve(C, x)
+        assert jnp.allclose(g, -(Cx ** 2), rtol=1e-9)
 
 
 # ===========================================================================
@@ -367,18 +368,10 @@ class TestWoodburyDot:
         assert jnp.isclose(sm_result, wb_result, rtol=1e-10)
         assert jnp.isclose(sm_logdet, wb_logdet, rtol=1e-10)
 
-    def test_jit(self):
-        n, k = 5, 2
-        Ndiag = jnp.ones(n)
-        U = jnp.ones((n, k))
-        Phidiag = jnp.ones(k)
-        x = jnp.ones(n)
-        f = jax.jit(woodbury_dot)
-        result, logdet = f(Ndiag, U, Phidiag, x, x)
-        assert jnp.isfinite(result)
-        assert jnp.isfinite(logdet)
-
-    def test_grad(self):
+    def test_jit_and_grad_exact(self):
+        """jit == eager, and the gradient matches the dense analytic oracle
+        d(x^T C^-1 x)/dN_i = -[(C^-1 x)_i]^2 (see the Sherman-Morrison
+        twin; replaces two finiteness-only smokes 2026-07-23)."""
         key = jax.random.PRNGKey(5)
         k1, k2, k3, k4 = jax.random.split(key, 4)
         n, k = 4, 2
@@ -387,14 +380,20 @@ class TestWoodburyDot:
         Phidiag = jnp.abs(jax.random.normal(k3, (k,))) + 0.1
         x = jax.random.normal(k4, (n,))
 
+        eager = woodbury_dot(Ndiag, U, Phidiag, x, x)
+        jitted = jax.jit(woodbury_dot)(Ndiag, U, Phidiag, x, x)
+        assert jnp.allclose(jitted[0], eager[0], rtol=1e-14)
+        assert jnp.allclose(jitted[1], eager[1], rtol=1e-14)
+
         @jax.grad
-        def loss(Ndiag):
-            r, _ = woodbury_dot(Ndiag, U, Phidiag, x, x)
+        def loss(Nd):
+            r, _ = woodbury_dot(Nd, U, Phidiag, x, x)
             return r
 
         g = loss(Ndiag)
-        assert g.shape == (n,)
-        assert jnp.all(jnp.isfinite(g))
+        C = jnp.diag(Ndiag) + U @ jnp.diag(Phidiag) @ U.T
+        Cx = jnp.linalg.solve(C, x)
+        assert jnp.allclose(g, -(Cx ** 2), rtol=1e-9)
 
 
 def _exact_woodbury_dot(Ndiag, U, Phidiag, x, y):
@@ -430,6 +429,22 @@ def _exact_woodbury_dot(Ndiag, U, Phidiag, x, y):
     return float(xNy - sum(aX[a] * s[a] for a in range(k)))
 
 
+def _collinear_marginalization_problem():
+    """Stress problem for the QR-vs-Cholesky Woodbury tests: a design with
+    condition number manufactured to be EXACTLY 1e6, under the flat prior.
+    """
+    n, k = 40, 6
+    rng = np.random.default_rng(0)
+    Q, _ = np.linalg.qr(rng.standard_normal((n, k)))
+    V, _ = np.linalg.qr(rng.standard_normal((k, k)))
+    U = Q @ (np.geomspace(1.0, 1e-6, k)[:, None] * V)
+    Ndiag = np.ones(n)
+    Phidiag = np.full(k, 1e40)  # flat-prior marginalization
+    x = rng.standard_normal(n)
+    y = rng.standard_normal(n)
+    return Ndiag, U, Phidiag, x, y
+
+
 class TestWoodburyDotQR:
     """Square-root (QR) Woodbury: parity on well-conditioned input, and a
     genuine accuracy win on the collinear marginalization-style block."""
@@ -454,20 +469,9 @@ class TestWoodburyDotQR:
         assert jnp.isclose(l0, l1, rtol=1e-10)
 
     def test_beats_cholesky_on_collinear_marginalization(self):
-        """Collinear design (Vandermonde) at Φ=1e40 -- the marginalization
-        regime. Against an exact reference the QR form must be both far more
+        """Against an exact reference the QR form must be both far more
         accurate than the Cholesky form AND below 1e-8 relative error."""
-        n, k = 40, 6
-        rng = np.random.default_rng(0)
-        # Design with cond(U) = 1e6 (genuine collinearity, like a real
-        # multi-parameter MSP's marginalized design after scaling). N = I, so
-        # cond(N^-1/2 U) = 1e6 exactly; the Gram squares this to ~1e12.
-        Q, _ = np.linalg.qr(rng.standard_normal((n, k)))
-        V, _ = np.linalg.qr(rng.standard_normal((k, k)))
-        U = Q @ (np.geomspace(1.0, 1e-6, k)[:, None] * V)
-        Ndiag = np.ones(n)
-        Phidiag = np.full(k, 1e40)                      # flat-prior marginalization
-        x = rng.standard_normal(n); y = rng.standard_normal(n)
+        Ndiag, U, Phidiag, x, y = _collinear_marginalization_problem()
 
         truth = _exact_woodbury_dot(Ndiag, U, Phidiag, x, y)
         chol, _ = woodbury_dot(
@@ -493,12 +497,17 @@ class TestWoodburyDotQR:
         _, logdet = woodbury_dot_qr(Ndiag, U, Phidiag, x, x)
         assert jnp.isclose(logdet, ref_logdet, rtol=1e-10)
 
-    def test_jit_and_grad(self):
+    def test_jit_and_grad_exact(self):
+        """jit == eager, and d(x^T C^-1 x)/dx = 2 C^-1 x ."""
         Ndiag, U, Phidiag, x, _ = self._well_conditioned()
-        r, ld = jax.jit(woodbury_dot_qr)(Ndiag, U, Phidiag, x, x)
-        assert jnp.isfinite(r) and jnp.isfinite(ld)
-        g = jax.grad(lambda r_: woodbury_dot_qr(Ndiag, U, Phidiag, r_, r_)[0])(x)
-        assert jnp.all(jnp.isfinite(g))
+        eager = woodbury_dot_qr(Ndiag, U, Phidiag, x, x)
+        jitted = jax.jit(woodbury_dot_qr)(Ndiag, U, Phidiag, x, x)
+        assert jnp.allclose(jitted[0], eager[0], rtol=1e-14)
+        assert jnp.allclose(jitted[1], eager[1], rtol=1e-14)
+
+        g = jax.grad(lambda x_: woodbury_dot_qr(Ndiag, U, Phidiag, x_, x_)[0])(x)
+        C = jnp.diag(Ndiag) + U @ jnp.diag(Phidiag) @ U.T
+        assert jnp.allclose(g, 2.0 * jnp.linalg.solve(C, x), rtol=1e-8)
 
 
 class TestWoodburySolveQR:
@@ -525,18 +534,10 @@ class TestWoodburySolveQR:
         assert jnp.max(jnp.abs(s0 - s1)) / npt_scale < 1e-12
 
     def test_beats_cholesky_on_collinear_marginalization(self):
-        """Same regime as TestWoodburyDotQR: cond(U) = 1e6 at Φ=1e40, where
-        the Gram squares the conditioning to ~1e12.  Validate C⁻¹y through
-        the exact quadratic form x^T (C⁻¹ y) against the rational reference."""
-        n, k = 40, 6
-        rng = np.random.default_rng(0)
-        Q, _ = np.linalg.qr(rng.standard_normal((n, k)))
-        V, _ = np.linalg.qr(rng.standard_normal((k, k)))
-        U = Q @ (np.geomspace(1.0, 1e-6, k)[:, None] * V)
-        Ndiag = np.ones(n)
-        Phidiag = np.full(k, 1e40)
-        x = rng.standard_normal(n)
-        y = rng.standard_normal(n)
+        """Same regime as TestWoodburyDotQR (shared problem builder).
+        Validate C^{-1}y through the exact quadratic form x^T (C^{-1} y) against
+        the rational reference."""
+        Ndiag, U, Phidiag, x, y = _collinear_marginalization_problem()
 
         truth = _exact_woodbury_dot(Ndiag, U, Phidiag, x, y)
         args = (
@@ -575,14 +576,22 @@ class TestWoodburySolveQR:
         assert jnp.isclose(rCr_factor, rCr, rtol=1e-14)
         assert jnp.isclose(logdet_factor, logdet, rtol=1e-14)
 
-    def test_jit_and_grad(self):
+    def test_jit_and_grad_exact(self):
+        """jit == eager, and the gradient matches the same loss taken
+        through the independent Cholesky-path woodbury_solve ."""
         Ndiag, U, Phidiag, B = self._well_conditioned()
-        s = jax.jit(woodbury_solve_qr)(Ndiag, U, Phidiag, B)
-        assert jnp.all(jnp.isfinite(s))
-        g = jax.grad(
-            lambda Nd: jnp.sum(woodbury_solve_qr(Nd, U, Phidiag, B) ** 2)
-        )(Ndiag)
-        assert jnp.all(jnp.isfinite(g))
+        eager = woodbury_solve_qr(Ndiag, U, Phidiag, B)
+        jitted = jax.jit(woodbury_solve_qr)(Ndiag, U, Phidiag, B)
+        assert jnp.allclose(jitted, eager, rtol=1e-14)
+
+        def loss(solve_fn):
+            return jax.grad(
+                lambda Nd: jnp.sum(solve_fn(Nd, U, Phidiag, B) ** 2)
+            )(Ndiag)
+
+        g_qr = loss(woodbury_solve_qr)
+        g_chol = loss(woodbury_solve)
+        assert jnp.allclose(g_qr, g_chol, rtol=1e-8)
 
 
 # ===========================================================================
@@ -787,16 +796,25 @@ class TestTaylorHornerPhase:
         )
         assert float(out.int[0]) == float(jnp.round(out.int[0]))
 
-    def test_jit_compatible(self):
-        coeffs = _scale_coeffs([600.0, -1e-15])
-        f = jax.jit(taylor_horner_phase)
-        out = f(
-            jnp.array([100.0]),
-            jnp.array([0.0]),
-            jnp.array([0.0]),
+    def test_jit_matches_exact(self):
+        """The exact-oracle bound must hold UNDER JIT, not just eagerly.
+
+        guards against XLA folding the optimization_barrier
+        during jit compilation, which would collapse the KBN error term and blow
+        the 1e-7 bound — a regression the eager tests cannot see.
+        """
+        raw_f = [700.0, -1e-15]
+        dt_int_days, dt_frac_days, delay = 7305.0, 0.314, 1.7e-3
+        coeffs = _scale_coeffs(raw_f)
+        out = jax.jit(taylor_horner_phase)(
+            jnp.array([dt_int_days]),
+            jnp.array([dt_frac_days]),
+            jnp.array([delay]),
             coeffs,
         )
-        assert jnp.isfinite(out.approx_total).all()
+        ref = _exact_phase(coeffs, dt_int_days, dt_frac_days, delay)
+        actual = Fraction(float(out.int[0])) + Fraction(float(out.frac[0]))
+        assert abs(float(actual - ref)) < 1e-7
 
 
 # ===========================================================================
