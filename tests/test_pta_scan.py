@@ -129,6 +129,53 @@ def _pta_logL_jit(global_params, pulsar_params, config):
 
 
 # ---------------------------------------------------------------------------
+# Module-scoped setups.  PTAConfig / params are immutable (equinox modules
+# and tuples), so tests share them freely; sharing the *same config object*
+# also maximizes `_pta_logL_jit` cache hits — one compile per structure for
+# the whole module instead of per test.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def setup2():
+    toa, tm, nm, pp, gp = _make_setup(n_pulsars=2)
+    return toa, tm, nm, pp, gp, _build_config(toa, tm, nm)
+
+
+@pytest.fixture(scope="module")
+def setup3():
+    toa, tm, nm, pp, gp = _make_setup(n_pulsars=3)
+    return toa, tm, nm, pp, gp, _build_config(toa, tm, nm)
+
+
+@pytest.fixture(scope="module")
+def setup4():
+    toa, tm, nm, pp, gp = _make_setup(n_pulsars=4)
+    return toa, tm, nm, pp, gp, _build_config(toa, tm, nm)
+
+
+@pytest.fixture(scope="module")
+def cw2():
+    toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=2, n_cw_sources=1)
+    config = _build_config(toa, tm, nm, signal_injectors=injectors)
+    return toa, tm, nm, pp, injectors, gp, config
+
+
+@pytest.fixture(scope="module")
+def cw3():
+    toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=3, n_cw_sources=1)
+    config = _build_config(toa, tm, nm, signal_injectors=injectors)
+    return toa, tm, nm, pp, injectors, gp, config
+
+
+@pytest.fixture(scope="module")
+def cw4():
+    toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=4, n_cw_sources=1)
+    config = _build_config(toa, tm, nm, signal_injectors=injectors)
+    return toa, tm, nm, pp, injectors, gp, config
+
+
+# ---------------------------------------------------------------------------
 # single_pulsar_pta_logL primitive
 # ---------------------------------------------------------------------------
 
@@ -136,9 +183,8 @@ def _pta_logL_jit(global_params, pulsar_params, config):
 class TestSinglePulsarPtaLogL:
     """The per-pulsar primitive must sum to the full pta_logL."""
 
-    def test_sums_to_pta_logL_no_injectors(self):
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=3)
-        config = _build_config(toa, tm, nm, signal_injectors=())
+    def test_sums_to_pta_logL_no_injectors(self, setup3):
+        _, _, _, pp, gp, config = setup3
         full = float(pta_logL(gp, pp, config))
         per_pulsar_sum = float(sum(
             single_pulsar_pta_logL(p, gp, pp[p], config) for p in range(3)
@@ -163,9 +209,8 @@ class TestSinglePulsarPtaLogL:
 class TestScanLogLDependencyAnalysis:
     """Verify that constant-pulsar contributions are evaluated only once."""
 
-    def test_one_per_pulsar_axis_only_target_recomputed(self):
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=4)
-        config = _build_config(toa, tm, nm)
+    def test_one_per_pulsar_axis_only_target_recomputed(self, setup4):
+        _, _, _, pp, gp, config = setup4
         target = 2
         grid = jnp.linspace(199.0, 201.0, 5)
 
@@ -192,9 +237,8 @@ class TestScanLogLDependencyAnalysis:
                                              *factor.call_args_list))
         assert traced == {0: 1, 1: 1, 2: 1, 3: 1}
 
-    def test_one_global_axis_all_pulsars_traced(self):
-        toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=3, n_cw_sources=1)
-        config = _build_config(toa, tm, nm, signal_injectors=injectors)
+    def test_one_global_axis_all_pulsars_traced(self, cw3):
+        _, _, _, pp, _, gp, config = cw3
         grid = jnp.linspace(-15.0, -13.0, 4)
 
         # A global axis perturbs every pulsar, so all of them must be (re)traced
@@ -226,17 +270,15 @@ class TestScanLogLDependencyAnalysis:
 
 class TestScanLogLNumeric:
 
-    def test_axes_empty_returns_pta_logL_scalar(self):
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=2)
-        config = _build_config(toa, tm, nm)
+    def test_axes_empty_returns_pta_logL_scalar(self, setup2):
+        _, _, _, pp, gp, config = setup2
         result = scan_logL(gp, pp, config, axes=[])
         ref = pta_logL(gp, pp, config)
         np.testing.assert_allclose(float(result), float(ref), rtol=1e-12, atol=1e-15)
         assert result.shape == ()
 
-    def test_1d_per_pulsar_matches_loop(self):
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=3)
-        config = _build_config(toa, tm, nm)
+    def test_1d_per_pulsar_matches_loop(self, setup3):
+        _, _, _, pp, gp, config = setup3
         grid = jnp.linspace(199.0, 201.0, 6)
         result = scan_logL(
             gp, pp, config,
@@ -253,9 +295,11 @@ class TestScanLogLNumeric:
         np.testing.assert_allclose(np.array(result), ref, rtol=1e-12, atol=1e-15)
         assert result.shape == (6,)
 
-    def test_2d_per_pulsar_matches_loop(self):
-        toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=4, n_cw_sources=1)
-        config = _build_config(toa, tm, nm, signal_injectors=injectors)
+    def test_2d_per_pulsar_matches_loop(self, cw4):
+        """Also the end-to-end factor-path check: PX axes on a CW-only
+        setup are noise-invariant, so this scan takes the precompute
+        path that ``TestScanLogLPrecomputeDispatch`` classifies."""
+        _, _, _, pp, _, gp, config = cw4
         grid_a = jnp.linspace(0.4, 0.6, 4)
         grid_b = jnp.linspace(0.3, 0.7, 4)
         A, B = 0, 2
@@ -277,9 +321,8 @@ class TestScanLogLNumeric:
                 ref[j, i] = float(_pta_logL_jit(gp, tuple(pp_mod), config))
         np.testing.assert_allclose(np.array(result), ref, rtol=1e-12, atol=1e-15)
 
-    def test_2d_per_pulsar_plus_global_matches_loop(self):
-        toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=3, n_cw_sources=1)
-        config = _build_config(toa, tm, nm, signal_injectors=injectors)
+    def test_2d_per_pulsar_plus_global_matches_loop(self, cw3):
+        _, _, _, pp, _, gp, config = cw3
         grid_local = jnp.linspace(0.4, 0.6, 3)
         grid_global = jnp.linspace(-15.0, -13.0, 4)
         result = scan_logL(
@@ -300,9 +343,8 @@ class TestScanLogLNumeric:
                 ref[i, j] = float(_pta_logL_jit(gp_mod, tuple(pp_mod), config))
         np.testing.assert_allclose(np.array(result), ref, rtol=1e-12, atol=1e-15)
 
-    def test_3d_mixed_matches_loop(self):
-        toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=3, n_cw_sources=1)
-        config = _build_config(toa, tm, nm, signal_injectors=injectors)
+    def test_3d_mixed_matches_loop(self, cw3):
+        _, _, _, pp, _, gp, config = cw3
         g0 = jnp.linspace(199.5, 200.5, 3)
         g1 = jnp.linspace(0.4, 0.6, 3)
         g2 = jnp.linspace(-15.0, -13.0, 3)
@@ -333,76 +375,28 @@ class TestScanLogLNumeric:
 
 
 class TestScanLogLShape:
+    """Output shape == numpy.meshgrid, at every arity, both indexings.
+    """
 
-    def test_2d_xy_shape(self):
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=2)
-        config = _build_config(toa, tm, nm)
-        gx = jnp.linspace(199.0, 201.0, 3)
-        gy = jnp.linspace(199.0, 201.0, 5)
-        result = scan_logL(
-            gp, pp, config,
-            axes=[
-                PerPulsarScanAxis(pulsar_idx=0, param_name="F0", values=gx),
-                PerPulsarScanAxis(pulsar_idx=1, param_name="F0", values=gy),
-            ],
-            indexing="xy",
-        )
-        # numpy default: (n_y, n_x) = (5, 3).
-        assert result.shape == (5, 3)
-
-    def test_2d_ij_shape(self):
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=2)
-        config = _build_config(toa, tm, nm)
-        gx = jnp.linspace(199.0, 201.0, 3)
-        gy = jnp.linspace(199.0, 201.0, 5)
-        result = scan_logL(
-            gp, pp, config,
-            axes=[
-                PerPulsarScanAxis(pulsar_idx=0, param_name="F0", values=gx),
-                PerPulsarScanAxis(pulsar_idx=1, param_name="F0", values=gy),
-            ],
-            indexing="ij",
-        )
-        assert result.shape == (3, 5)
-
-    def test_3d_xy_only_first_two_swap(self):
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=3)
-        config = _build_config(toa, tm, nm)
-        g0 = jnp.linspace(199.0, 201.0, 3)
-        g1 = jnp.linspace(199.0, 201.0, 5)
-        g2 = jnp.linspace(199.0, 201.0, 7)
-        result = scan_logL(
-            gp, pp, config,
-            axes=[
-                PerPulsarScanAxis(pulsar_idx=0, param_name="F0", values=g0),
-                PerPulsarScanAxis(pulsar_idx=1, param_name="F0", values=g1),
-                PerPulsarScanAxis(pulsar_idx=2, param_name="F0", values=g2),
-            ],
-            indexing="xy",
-        )
-        # numpy 'xy' for 3D: (n_1, n_0, n_2) — only first two axes swap.
-        assert result.shape == (5, 3, 7)
-
-    def test_shape_matches_numpy_meshgrid(self):
-        """Programmatic check: scan_logL output shape matches np.meshgrid."""
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=4)
-        config = _build_config(toa, tm, nm)
+    @pytest.mark.parametrize("indexing", ["xy", "ij"])
+    @pytest.mark.parametrize("n_axes", [1, 2, 3, 4])
+    def test_shape_matches_numpy_meshgrid(self, setup4, n_axes, indexing):
+        _, _, _, pp, gp, config = setup4
         grids = [
-            jnp.linspace(199.0, 201.0, n) for n in (3, 5, 7, 4)
+            jnp.linspace(199.0, 201.0, n) for n in (3, 5, 7, 4)[:n_axes]
         ]
         axes = [
             PerPulsarScanAxis(pulsar_idx=p, param_name="F0", values=grids[p])
-            for p in range(4)
+            for p in range(n_axes)
         ]
-        for indexing in ("xy", "ij"):
-            result = scan_logL(gp, pp, config, axes=axes, indexing=indexing)
-            expected_shape = np.meshgrid(
-                *[np.asarray(g) for g in grids], indexing=indexing,
-            )[0].shape
-            assert result.shape == expected_shape, (
-                f"indexing={indexing!r}: scan_logL shape {result.shape} "
-                f"!= np.meshgrid shape {expected_shape}"
-            )
+        result = scan_logL(gp, pp, config, axes=axes, indexing=indexing)
+        expected_shape = np.meshgrid(
+            *[np.asarray(g) for g in grids], indexing=indexing,
+        )[0].shape
+        assert result.shape == expected_shape, (
+            f"indexing={indexing!r}: scan_logL shape {result.shape} "
+            f"!= np.meshgrid shape {expected_shape}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -413,10 +407,9 @@ class TestScanLogLShape:
 class TestScanLogLGradient:
     """jax.grad and jax.vmap compose with scan_logL."""
 
-    def test_grad_through_global_axis_argnums_0(self):
+    def test_grad_through_global_axis_argnums_0(self, cw2):
         """grad w.r.t. base_global_params at a fixed scan."""
-        toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=2, n_cw_sources=1)
-        config = _build_config(toa, tm, nm, signal_injectors=injectors)
+        _, _, _, pp, _, gp, config = cw2
         grid = jnp.linspace(-15.0, -13.0, 4)
 
         # Sum-of-grid as a scalar so we can take its grad.
@@ -453,16 +446,14 @@ class TestScanLogLGradient:
 
 class TestScanLogLValidation:
 
-    def test_invalid_indexing_raises(self):
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=1)
-        config = _build_config(toa, tm, nm)
+    def test_invalid_indexing_raises(self, setup2):
+        _, _, _, pp, gp, config = setup2
         with pytest.raises(ValueError, match="indexing must be"):
             scan_logL(gp, pp, config, axes=[], indexing="bogus")
 
-    def test_unknown_per_pulsar_param_raises(self):
+    def test_unknown_per_pulsar_param_raises(self, setup3):
         """A typo'd PerPulsarScanAxis param fails early, not as a deep KeyError."""
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=3)
-        config = _build_config(toa, tm, nm)
+        _, _, _, pp, gp, config = setup3
         grid = jnp.linspace(0.0, 1.0, 3)
         with pytest.raises(ValueError, match="not in pulsar"):
             scan_logL(
@@ -470,10 +461,9 @@ class TestScanLogLValidation:
                 axes=[PerPulsarScanAxis(pulsar_idx=1, param_name="NOPE", values=grid)],
             )
 
-    def test_pulsar_idx_out_of_range_raises(self):
+    def test_pulsar_idx_out_of_range_raises(self, setup3):
         """An out-of-range pulsar_idx fails early instead of being silently dropped."""
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=3)
-        config = _build_config(toa, tm, nm)
+        _, _, _, pp, gp, config = setup3
         grid = jnp.linspace(0.0, 1.0, 3)
         with pytest.raises(ValueError, match="out of range"):
             scan_logL(
@@ -481,10 +471,9 @@ class TestScanLogLValidation:
                 axes=[PerPulsarScanAxis(pulsar_idx=99, param_name="F0", values=grid)],
             )
 
-    def test_unknown_global_param_raises(self):
+    def test_unknown_global_param_raises(self, setup2):
         """A GlobalScanAxis naming an absent global param fails early."""
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=2)  # gp == GlobalParams.empty()
-        config = _build_config(toa, tm, nm)
+        _, _, _, pp, gp, config = setup2  # gp == GlobalParams.empty()
         grid = jnp.linspace(0.0, 1.0, 3)
         with pytest.raises(ValueError, match="base_global_params"):
             scan_logL(
@@ -496,9 +485,8 @@ class TestScanLogLValidation:
 class TestScanLogLChunking:
     """Chunked outer-axis evaluation must match the unchunked result."""
 
-    def test_chunked_matches_unchunked_1d(self):
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=3)
-        config = _build_config(toa, tm, nm)
+    def test_chunked_matches_unchunked_1d(self, setup3):
+        _, _, _, pp, gp, config = setup3
         grid = jnp.linspace(199.0, 201.0, 11)  # not a clean multiple
         axes = [PerPulsarScanAxis(pulsar_idx=1, param_name="F0", values=grid)]
         ref = scan_logL(gp, pp, config, axes=axes)
@@ -510,10 +498,9 @@ class TestScanLogLChunking:
                 err_msg=f"chunk_size={cs}",
             )
 
-    def test_chunked_matches_unchunked_2d(self):
+    def test_chunked_matches_unchunked_2d(self, cw4):
         """Chunking the 2D PX×PX scan must reproduce the unchunked result."""
-        toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=4, n_cw_sources=1)
-        config = _build_config(toa, tm, nm, signal_injectors=injectors)
+        _, _, _, pp, _, gp, config = cw4
         grid_a = jnp.linspace(0.4, 0.6, 7)
         grid_b = jnp.linspace(0.45, 0.55, 5)
         axes = [
@@ -554,9 +541,9 @@ class TestWoodburyFactorSplit:
         np.testing.assert_allclose(float(new_xCy), float(ref_xCy), rtol=1e-12, atol=1e-15)
         np.testing.assert_allclose(float(new_logdet), float(ref_logdet), rtol=1e-12, atol=1e-15)
 
-    def test_single_pulsar_logL_with_factor_matches(self):
+    def test_single_pulsar_logL_with_factor_matches(self, setup2):
         """`single_pulsar_logL_with_factor` ≡ `single_pulsar_logL` per cell."""
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=1)
+        toa, tm, nm, pp, _, _ = setup2
         toa_p, tm_p, nm_p, pp_p = toa[0], tm[0], nm[0], pp[0]
         ref = float(single_pulsar_logL(toa_p, tm_p, nm_p, pp_p))
         factor = precompute_single_pulsar_factor(toa_p, nm_p, pp_p)
@@ -567,9 +554,8 @@ class TestWoodburyFactorSplit:
 class TestSinglePulsarPtaLogLWithFactor:
     """`single_pulsar_pta_logL_with_factor` ≡ `single_pulsar_pta_logL`."""
 
-    def test_no_injectors(self):
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=3)
-        config = _build_config(toa, tm, nm)
+    def test_no_injectors(self, setup3):
+        _, _, _, pp, gp, config = setup3
         for p in range(3):
             ref = float(single_pulsar_pta_logL(p, gp, pp[p], config))
             factor = precompute_single_pulsar_pta_factor(p, gp, pp[p], config)
@@ -578,9 +564,8 @@ class TestSinglePulsarPtaLogLWithFactor:
             ))
             np.testing.assert_allclose(got, ref, rtol=1e-12, atol=1e-15)
 
-    def test_with_cw_injector(self):
-        toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=2, n_cw_sources=1)
-        config = _build_config(toa, tm, nm, signal_injectors=injectors)
+    def test_with_cw_injector(self, cw2):
+        _, _, _, pp, _, gp, config = cw2
         for p in range(2):
             ref = float(single_pulsar_pta_logL(p, gp, pp[p], config))
             factor = precompute_single_pulsar_pta_factor(p, gp, pp[p], config)
@@ -589,10 +574,9 @@ class TestSinglePulsarPtaLogLWithFactor:
             ))
             np.testing.assert_allclose(got, ref, rtol=1e-12, atol=1e-15)
 
-    def test_factor_is_invariant_to_timing_param_change(self):
+    def test_factor_is_invariant_to_timing_param_change(self, cw2):
         """Factor built at base PX still gives correct logL after PX change."""
-        toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=2, n_cw_sources=1)
-        config = _build_config(toa, tm, nm, signal_injectors=injectors)
+        _, _, _, pp, _, gp, config = cw2
         p = 0
         factor = precompute_single_pulsar_pta_factor(p, gp, pp[p], config)
         # Vary PX (timing-domain) — factor should still be valid.
@@ -606,11 +590,15 @@ class TestSinglePulsarPtaLogLWithFactor:
 
 
 class TestScanLogLPrecomputeDispatch:
-    """`scan_logL` must select the precompute path for noise-invariant axes."""
+    """`scan_logL` must select the precompute path for noise-invariant axes.
 
-    def test_cw_only_setup_classifies_axes_as_safe(self):
-        toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=2, n_cw_sources=1)
-        config = _build_config(toa, tm, nm, signal_injectors=injectors)
+    Only the classification helpers are tested here; the end-to-end
+    factor-path == per-cell equivalence lives in
+    ``TestScanLogLNumeric::test_2d_per_pulsar_matches_loop`` 
+    """
+
+    def test_cw_only_setup_classifies_axes_as_safe(self, cw2):
+        _, _, _, pp, injectors, gp, config = cw2
         # CW injectors override delay only, not covariance.
         assert _injectors_contribute_covariance(injectors) is False
         # PerPulsarScanAxis on PX (timing-domain) → safe for the target pulsar.
@@ -622,33 +610,9 @@ class TestScanLogLPrecomputeDispatch:
                               values=jnp.array([-15.0, -14.0]))
         assert _axes_touch_covariance(0, [ax_g], (0,), config) is False
 
-    def test_factor_path_matches_per_cell_loop(self):
-        """End-to-end: scan over PX (factor path) ≡ per-cell pta_logL."""
-        toa, tm, nm, pp, injectors, gp = _make_cw_setup(n_pulsars=3, n_cw_sources=1)
-        config = _build_config(toa, tm, nm, signal_injectors=injectors)
-        grid_a = jnp.linspace(0.4, 0.6, 4)
-        grid_b = jnp.linspace(0.45, 0.55, 5)
-        result = scan_logL(
-            gp, pp, config,
-            axes=[
-                PerPulsarScanAxis(pulsar_idx=0, param_name="PX", values=grid_a),
-                PerPulsarScanAxis(pulsar_idx=2, param_name="PX", values=grid_b),
-            ],
-            indexing="ij",
-        )
-        ref = np.empty((len(grid_a), len(grid_b)))
-        for i, va in enumerate(grid_a):
-            for j, vb in enumerate(grid_b):
-                pp_mod = list(pp)
-                pp_mod[0] = pp[0].with_value("PX", float(va))
-                pp_mod[2] = pp[2].with_value("PX", float(vb))
-                ref[i, j] = float(_pta_logL_jit(gp, tuple(pp_mod), config))
-        np.testing.assert_allclose(np.array(result), ref, rtol=1e-12, atol=1e-15)
-
-    def test_noise_param_axis_falls_back(self):
+    def test_noise_param_axis_falls_back(self, setup2):
         """Per-pulsar EFAC scan must NOT use the precompute path."""
-        toa, tm, nm, pp, gp = _make_setup(n_pulsars=2)
-        config = _build_config(toa, tm, nm)
+        _, _, nm, pp, gp, config = setup2
         # Find an actual noise param name on pulsar 0; if none, skip.
         noise_params: list[str] = []
         for comp in nm[0].components:
