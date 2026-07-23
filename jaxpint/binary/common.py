@@ -11,7 +11,7 @@ PINT ``binary_generic.py``, ``binary_orbits.py``.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, cast
 
 import jax.numpy as jnp
 from jax.typing import ArrayLike
@@ -635,7 +635,7 @@ def _sini_m2_from_h3_stigma(h3, stigma):
     STIGMA away from the singular point.
     """
     sini = 2.0 * stigma / (1.0 + stigma**2)
-    safe_stigma = jnp.where(stigma != 0.0, stigma, 1.0)
+    safe_stigma = cast(Array, jnp.where(stigma != 0.0, stigma, 1.0))
     m2 = jnp.where(stigma != 0.0, h3 / (safe_stigma**3 * TSUN), 0.0)
     sini = jnp.where(stigma != 0.0, sini, 0.0)
     return sini, m2
