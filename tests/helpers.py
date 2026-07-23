@@ -551,3 +551,23 @@ def assert_covariance_matches_pint(
     np.testing.assert_allclose(
         jcorr, pcorr, atol=corr_atol, err_msg="correlation-matrix mismatch"
     )
+
+
+import functools as _functools
+
+
+@_functools.lru_cache(maxsize=None)
+def ngc6440e_native_fitter():
+    """NGC6440E through the native (PINT-free) loader, as a ready WLS fitter.
+    """
+    import pathlib
+
+    import jaxpint.par as jpar
+    from jaxpint import build_model, native
+    from jaxpint.fitters import WLSFitter as JaxWLSFitter
+
+    data = pathlib.Path(__file__).resolve().parent / "data" / "pint_inputs"
+    parsed = jpar.get_model(str(data / "NGC6440E.par"))
+    toa_data = native.get_TOAs(str(data / "NGC6440E.tim"), parsed)
+    tm, nm = build_model(parsed, toa_data)
+    return JaxWLSFitter(tm, toa_data, parsed.params, noise_model=nm), parsed

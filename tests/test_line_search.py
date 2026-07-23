@@ -163,13 +163,9 @@ def test_line_search_is_a_no_op_on_a_healthy_fit(monkeypatch):
     unguarded fitter was already misbehaving. If this test starts failing, the
     line search has begun rejecting healthy steps and that guarantee is gone.
     """
-    import jaxpint.par as par
-    from jaxpint import WLSFitter, build_model, native
+    from .helpers import ngc6440e_native_fitter
 
-    parsed = par.get_model(str(_DATA / "NGC6440E.par"))
-    toa_data = native.get_TOAs(str(_DATA / "NGC6440E.tim"), parsed)
-    tm, nm = build_model(parsed, toa_data)
-    fitter = WLSFitter(tm, toa_data, parsed.params, noise_model=nm)
+    fitter, _parsed = ngc6440e_native_fitter()
 
     damped = fitter.fit_toas()
     monkeypatch.setattr(fitter_base, "_MAX_CHI2_INCREASE", float("inf"))

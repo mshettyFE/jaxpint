@@ -186,7 +186,7 @@ def test_pvalue_of_injected_hd_signal_is_small():
     ``chol(Γ)``), scaled to the ``kv`` magnitude.  Its coherent HD structure
     lifts the OS SNR into the tail of its own phase-shift null.
     """
-    draw, _ = _null_model()
+    draw, _ = _null_model(n_psr=8)
     blocks = draw(jax.random.PRNGKey(17))
     n_psr, n_col = blocks.basis_proj_residual.shape
 
@@ -205,4 +205,4 @@ def test_pvalue_of_injected_hd_signal_is_small():
     background = phase_shift_snrs(signal, LOG10_A, jax.random.PRNGKey(1), 2000)
     p = pvalue(obs, background)
     assert obs > 0
-    assert p < 0.05
+    assert p < 0.05, f"p={p}"

@@ -292,16 +292,12 @@ _DATA = pathlib.Path(__file__).resolve().parent / "data" / "pint_inputs"
 
 @pytest.fixture(scope="module")
 def ngc_native():
-    """Native-loader NGC6440E fitter (par parse + tim load + build_model).
+    """Native-loader NGC6440E fitter — the memoized helpers builder,
+    shared process-wide (also consumed by test_line_search).
     """
-    import jaxpint.par as jpar
-    from jaxpint import build_model, native
-    from jaxpint.fitters import WLSFitter as JaxWLSFitter
+    from tests.helpers import ngc6440e_native_fitter
 
-    parsed = jpar.get_model(str(_DATA / "NGC6440E.par"))
-    toa_data = native.get_TOAs(str(_DATA / "NGC6440E.tim"), parsed)
-    tm, nm = build_model(parsed, toa_data)
-    return JaxWLSFitter(tm, toa_data, parsed.params, noise_model=nm), parsed
+    return ngc6440e_native_fitter()
 
 
 def test_default_maxiter_is_the_downhill_default():

@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+import functools
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -48,6 +49,7 @@ class BinarySpec:
 # ---------------------------------------------------------------------------
 
 
+@functools.lru_cache(maxsize=None)  # 3 tests x this spec reuse one PINT build (read-only)
 def _bt_make_full() -> tuple:
     import astropy.units as u
     from pint.models.stand_alone_psr_binaries.BT_model import BTmodel
@@ -117,6 +119,7 @@ def _bt_make_min() -> tuple:
 # ---------------------------------------------------------------------------
 
 
+@functools.lru_cache(maxsize=None)  # 3 tests x this spec reuse one PINT build (read-only)
 def _dd_make_full() -> tuple:
     import astropy.units as u
     from pint.models.stand_alone_psr_binaries.DD_model import DDmodel
@@ -201,6 +204,7 @@ def _dd_make_min() -> tuple:
 # ---------------------------------------------------------------------------
 
 
+@functools.lru_cache(maxsize=None)  # 3 tests x this spec reuse one PINT build (read-only)
 def _ddgr_make_full() -> tuple:
     import astropy.units as u
     from pint.models.stand_alone_psr_binaries.DDGR_model import DDGRmodel
@@ -283,6 +287,7 @@ def _ddk_toa_data_with_obs_pos(t_mjd: np.ndarray):
     )
 
 
+@functools.lru_cache(maxsize=None)  # 3 tests x this spec reuse one PINT build (read-only)
 def _ddk_make_full() -> tuple:
     import astropy.units as u
     from pint.models.stand_alone_psr_binaries.DDK_model import DDKmodel
@@ -406,6 +411,7 @@ def _ddk_make_min() -> tuple:
 # ---------------------------------------------------------------------------
 
 
+@functools.lru_cache(maxsize=None)  # 3 tests x this spec reuse one PINT build (read-only)
 def _ell1_make_full() -> tuple:
     import astropy.units as u
     from pint.models.stand_alone_psr_binaries.ELL1_model import ELL1model
