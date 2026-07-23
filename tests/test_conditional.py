@@ -13,6 +13,8 @@ see https://scoste.fr/posts/schur/ for math
 
 from __future__ import annotations
 
+import functools
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -53,6 +55,7 @@ def _interleaved_basis(toas_seconds, n_freq):
     )
 
 
+@functools.lru_cache(maxsize=None)
 def _pulsar_with_red_noise(p: int):
     """One pulsar with white + 8-bin power-law red noise (asymmetric per i).
 
@@ -94,7 +97,9 @@ def _pulsar_with_red_noise(p: int):
     return td, tm, nm, pp
 
 
+@functools.lru_cache(maxsize=None)
 def _hd_config(log10_A: float = LOG10_A):
+    """Two-pulsar HD-correlated setup (memoized; see _pulsar_with_red_noise)."""
     tds, tms, nms, pps = zip(*[_pulsar_with_red_noise(i) for i in range(2)])
     rng = np.random.default_rng(5)
     pos = rng.normal(size=(2, 3))
@@ -215,7 +220,10 @@ def test_sample_conditional_moments():
     cond = conditional_gwb(gp, pps, config)
     cov = np.asarray(conditional_covariance(cond))
 
-    n_draws = 4000
+    # 1500 draws: variance-estimator SE ~ sqrt(2/n) ~ 3.7% vs rtol 0.15
+    # (~4 sigma); off-diagonal sample-cov SE ~ 1/sqrt(n) ~ 0.026 vs
+    # atol 0.15 (~5.8 sigma).  
+    n_draws = 1500
     draws = np.asarray(
         sample_conditional(jax.random.PRNGKey(2), cond, n_draws=n_draws)
     )
@@ -230,7 +238,6 @@ def test_sample_conditional_moments():
     # Full covariance, off-diagonals included: whitened draws must be N(0, I).
     n = cond.mean.shape[0]
     Z = (draws - np.asarray(cond.mean)) @ np.asarray(cond.precision_chol)
-    # off-diagonal sample-cov SE ~ 1/sqrt(n_draws) ~ 0.016 at 4000 draws
     npt.assert_allclose(np.cov(Z, rowvar=False), np.eye(n), atol=0.15)
 
     single = sample_conditional(jax.random.PRNGKey(3), cond)
@@ -321,7 +328,8 @@ def test_delay_bands_match_dense_and_draws():
         )
 
     # Independent route: pointwise std of delays over posterior draws.
-    draws = sample_conditional(jax.random.PRNGKey(7), cond, n_draws=3000)
+    # 1500 draws: SE(std) ~ 1/sqrt(2n) ~ 1.8% vs rtol 0.15 (~8 sigma).
+    draws = sample_conditional(jax.random.PRNGKey(7), cond, n_draws=1500)
     for p in range(2):
         delay_p = jax.vmap(lambda a: conditional_gwb_delays(config, a)[p])(draws)
         npt.assert_allclose(
