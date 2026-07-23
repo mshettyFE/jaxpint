@@ -335,7 +335,14 @@ class TestORFMatrix:
         np.testing.assert_allclose(Gamma, Gamma.T, atol=1e-15)
 
     def test_hd_orf_diagonal(self):
-        """HD ORF diagonal is ~0.5 (self-correlation limit)."""
+        """HD ORF diagonal is exactly 1.0 (auto-correlation).
+
+        The diagonal is the AUTO-correlation Γ_aa = 1.0, NOT the ξ→0 limit
+        of the cross-correlation curve (0.5) — matches discovery/enterprise's
+        ``hd_orf`` special case.  A 0.5 diagonal halves every pulsar's GWB
+        auto-power and biases amplitude posteriors (this test previously
+        enshrined exactly that porting bug).
+        """
         rng = np.random.default_rng(1)
         positions = rng.normal(size=(4, 3))
         positions /= np.linalg.norm(positions, axis=1, keepdims=True)
@@ -348,9 +355,41 @@ class TestORFMatrix:
         )
         Gamma = injector.get_orf_matrix()
         np.testing.assert_allclose(
-            jnp.diag(Gamma), 0.5, atol=1e-6,
-            err_msg="HD ORF diagonal should be ~0.5",
+            jnp.diag(Gamma), 1.0, atol=1e-15,
+            err_msg="HD ORF diagonal must be 1.0 (auto-correlation)",
         )
+
+    def test_monopole_dipole_orf_invertible(self):
+        """Monopole (rank-1 all-ones) and dipole (rank <= 3) ORFs carry the
+        enterprise/discovery ``1.0 + 1e-6`` diagonal conditioning.  Without
+        it, Γ is exactly singular and the outer-tier ``inv``/``cholesky``
+        returns silent NaNs under JAX."""
+        from jaxpint.pta.signals.orf import monopole_orf
+
+        rng = np.random.default_rng(3)
+        positions = rng.normal(size=(6, 3))
+        positions /= np.linalg.norm(positions, axis=1, keepdims=True)
+        positions = jnp.array(positions)
+
+        for orf_func in (monopole_orf, dipole_orf):
+            injector = HDCorrelatedGWBInjector(
+                pulsar_positions=positions,
+                n_components=3,
+                T_span=365.25 * 86400.0,
+                orf_func=orf_func,
+            )
+            Gamma = injector.get_orf_matrix()
+            np.testing.assert_allclose(
+                jnp.diag(Gamma), 1.0 + 1e-6, atol=1e-15,
+                err_msg=f"{orf_func.__name__} diagonal must be 1 + 1e-6",
+            )
+            # Both the Cholesky and the inverse must come back finite.
+            assert jnp.all(jnp.isfinite(jnp.linalg.cholesky(Gamma))), (
+                f"{orf_func.__name__}: cholesky produced NaNs"
+            )
+            assert jnp.all(jnp.isfinite(jnp.linalg.inv(Gamma))), (
+                f"{orf_func.__name__}: inv produced NaNs"
+            )
 
     def test_hd_orf_matches_pairwise(self):
         """ORF matrix entries match direct hd_orf() calls."""

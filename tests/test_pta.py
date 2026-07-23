@@ -341,9 +341,21 @@ class TestFourierBasis:
 
 class TestORF:
     def test_hd_self_correlation(self):
-        """Self-correlation: HD(0) = 0.5.  Hellings & Downs (1983) Eq. 2."""
+        """Auto-correlation: HD(a, a) = 1.0, twice the ξ→0 cross limit.
+
+        The Hellings & Downs (1983) Eq. 2 curve gives 0.5 as ξ→0 for two
+        *distinct* co-located pulsars; a pulsar with itself is fully
+        correlated (Γ_aa = 1.0).  Matches discovery/enterprise.
+        """
         pos = jnp.array([1.0, 0.0, 0.0])
-        assert jnp.isclose(hd_orf(pos, pos), 0.5, atol=1e-6)
+        assert jnp.isclose(hd_orf(pos, pos), 1.0, atol=1e-15)
+
+    def test_hd_coincident_but_distinct_limit(self):
+        """Two distinct pulsars at vanishing separation approach 0.5."""
+        pos1 = jnp.array([1.0, 0.0, 0.0])
+        pos2 = jnp.array([1.0, 1e-8, 0.0])
+        pos2 = pos2 / jnp.linalg.norm(pos2)
+        assert jnp.isclose(hd_orf(pos1, pos2), 0.5, atol=1e-6)
 
     def test_hd_orthogonal(self):
         """90° separation from Hellings & Downs (1983) Eq. 2.
