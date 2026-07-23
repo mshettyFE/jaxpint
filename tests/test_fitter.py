@@ -190,14 +190,34 @@ class TestSyntheticFit:
         assert jnp.all(jax_fit.parameter_uncertainties > 0)
 
     @pytest.mark.slow
-    def test_covariance_symmetric(self, jax_fit):
-        cov = jax_fit.covariance_matrix
-        np.testing.assert_allclose(np.array(cov), np.array(cov.T), atol=1e-20)
+    def test_covariance_matches_pint(self, pint_fit, jax_fit):
+        """Parameter covariance matches PINT's WLS covariance.
 
-    @pytest.mark.slow
-    def test_correlation_diagonal_ones(self, jax_fit):
-        corr = jax_fit.correlation_matrix
-        np.testing.assert_allclose(np.diag(np.array(corr)), 1.0, atol=1e-12)
+        Compared as uncertainties (sqrt-diag, relative) plus correlation
+        matrix (dimensionless, absolute): a raw elementwise comparison
+        would be dominated by the ~30-decade dynamic range between the
+        F1 and DM entries.  
+        """
+        pcov = pint_fit.parameter_covariance_matrix
+        plabels = [lbl for lbl, _ in pcov.labels[0]]
+        pmat = np.asarray(pcov.matrix, dtype=np.float64)
+
+        jcov = np.asarray(jax_fit.covariance_matrix)
+        jnames = list(jax_fit.params.free_names())
+
+        # Align PINT's (Offset, F0, F1, DM) labeling to JaxPINT's free
+        # order; JaxPINT strips the Offset row/column.
+        idx = [plabels.index(n) for n in jnames]
+        psub = pmat[np.ix_(idx, idx)]
+
+        jerr = np.sqrt(np.diag(jcov))
+        perr = np.sqrt(np.diag(psub))
+        np.testing.assert_allclose(jerr, perr, rtol=1e-9)
+        np.testing.assert_allclose(
+            jcov / np.outer(jerr, jerr),
+            psub / np.outer(perr, perr),
+            atol=1e-9,
+        )
 
     @pytest.mark.slow
     def test_dof(self, synthetic_data, jax_fit):

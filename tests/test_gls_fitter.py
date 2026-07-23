@@ -405,3 +405,178 @@ class TestQuantizationVsPINT:
             err_msg="Quantization matrix does not match PINT",
         )
 
+
+
+# ---------------------------------------------------------------------------
+# Full GLS fit vs PINT (covariance parity)
+# ---------------------------------------------------------------------------
+
+
+class TestGLSFitVsPINT:
+    """Covariance parity vs PINT's GLSFitter on B1855+09 9yv1.
+
+    The dataset carries EFAC/EQUAD/ECORR and power-law red noise, so this
+    exercises the full Woodbury/augmented GLS covariance -- the path that
+    ``TestGLSReducesToWLS`` (no ECORR) cannot reach.
+    """
+
+    @pytest.fixture(scope="class")
+    def b1855(self):
+        import pint.models as pint_models
+        from pint.config import examplefile
+        from pint.toa import get_TOAs
+
+        model = pint_models.get_model(examplefile("B1855+09_NANOGrav_9yv1.gls.par"))
+        toas = get_TOAs(examplefile("B1855+09_NANOGrav_9yv1.tim"), ephem="DE421")
+        return model, toas
+
+    @pytest.fixture(scope="class")
+    def pint_gls_fit(self, b1855):
+        import copy
+
+        from pint.fitter import GLSFitter as PINTGLSFitter
+
+        model, toas = b1855
+        f = PINTGLSFitter(toas, copy.deepcopy(model))
+        f.fit_toas(maxiter=1)
+        return f
+
+    @pytest.fixture(scope="class")
+    def jax_gls_fit(self, b1855):
+        from jaxpint.bridge import (
+            build_timing_model,
+            pint_model_to_params,
+            pint_toas_to_jax,
+        )
+        from jaxpint.fitters import GLSFitter
+
+        model, toas = b1855
+        toa_data = pint_toas_to_jax(toas, model=model)
+        params = pint_model_to_params(model).params
+        jax_model, noise_model = build_timing_model(model, toas=toas)
+        fitter = GLSFitter(jax_model, toa_data, params, noise_model=noise_model)
+        return fitter.fit_toas(maxiter=1)
+
+    @pytest.mark.slow
+    def test_chi2_matches(self, pint_gls_fit, jax_gls_fit):
+        npt.assert_allclose(jax_gls_fit.chi2, pint_gls_fit.resids.chi2, rtol=1e-3)
+
+    @pytest.mark.slow
+    def test_covariance_matches_pint(self, pint_gls_fit, jax_gls_fit):
+        """GLS parameter covariance matches PINT.
+
+        T0/OM are excluded: B1855's low eccentricity makes them a
+        near-exact degenerate pair, where JaxPINT's SVD cutoff (zero
+        variance along the dropped direction) and PINT's Cholesky (huge
+        marginal variance along it) legitimately report different
+        marginals.  Everything else -- spin, astrometry, DMX, JUMPs, the
+        remaining binary parameters -- must agree.
+        """
+        from tests.helpers import assert_covariance_matches_pint
+
+        assert_covariance_matches_pint(
+            jax_gls_fit,
+            pint_gls_fit,
+            uncert_rtol=0.02,
+            corr_atol=0.025,
+            exclude=("T0", "OM"),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Ill-conditioned covariance: dense oracle
+# ---------------------------------------------------------------------------
+
+
+class TestGLSCovarianceIllConditioned:
+    """Covariance parity against a dense oracle at high condition number.
+
+    ``TestGLSSteps`` uses a random, well-conditioned design whose
+    normalized normal matrix has singular values clustered near 1. 
+    This class stresses the opposite regime: two near-collinear columns
+    (condition number > 1e6, still above the SVD cutoff), where that bug
+    class produces covariance errors of order the condition number.
+    """
+
+    @pytest.fixture
+    def ill_conditioned_gls_problem(self):
+        n_toas = 50
+        n_epochs = 6
+        key = jax.random.PRNGKey(7)
+        keys = jax.random.split(key, 4)
+
+        t = jnp.linspace(0.0, 1.0, n_toas)
+        ortho = jax.random.normal(keys[0], (n_toas,))
+        # Columns 1 and 2 are near-collinear: correlation ~ 1 - 5e-8,
+        # putting the smallest singular value of the normalized normal
+        # matrix at ~1e-7 -- far above the 1e-14*dim SVD cutoff, far
+        # below the well-conditioned regime.
+        M = jnp.stack(
+            [
+                jnp.ones(n_toas),
+                t,
+                t + 3e-4 * ortho / jnp.linalg.norm(ortho) * jnp.linalg.norm(t),
+                jax.random.normal(keys[1], (n_toas,)),
+            ],
+            axis=1,
+        ) * 1e-3
+
+        Ndiag = jax.random.uniform(keys[2], (n_toas,), minval=1e-12, maxval=1e-10)
+        U_np = np.zeros((n_toas, n_epochs))
+        for i in range(n_epochs):
+            U_np[i * 8 : min(i * 8 + 8, n_toas), i] = 1.0
+        U = jnp.array(U_np)
+        Phidiag = jax.random.uniform(keys[3], (n_epochs,), minval=1e-14, maxval=1e-12)
+        residuals = jax.random.normal(jax.random.PRNGKey(11), (n_toas,)) * 1e-6
+        threshold = 1e-14 * max(n_toas, 4)
+        return residuals, Ndiag, U, Phidiag, M, threshold
+
+    def test_covariance_matches_dense_reference(self, ill_conditioned_gls_problem):
+        """fullcov and augmented covariances match dense inv(M^T C^-1 M).
+
+        The dense NumPy reference shares no code with the JAX Woodbury /
+        augmented solves.  Anti-vacuity guard: the fixture must actually
+        be ill-conditioned, so a future edit cannot quietly return it to
+        the benign regime where this test stops testing anything.
+        """
+        from jaxpint.fitters._base import lstsq_step_augmented, lstsq_step_fullcov
+
+        residuals, Ndiag, U, Phidiag, M, threshold = ill_conditioned_gls_problem
+
+        # Anti-vacuity: normalized normal matrix must be ill-conditioned.
+        Mn = np.asarray(M)
+        C = np.diag(np.asarray(Ndiag)) + np.asarray(U) @ np.diag(
+            np.asarray(Phidiag)
+        ) @ np.asarray(U).T
+        mtcm = Mn.T @ np.linalg.solve(C, Mn)
+        d = np.sqrt(np.diag(mtcm))
+        corr = mtcm / np.outer(d, d)
+        assert np.linalg.cond(corr) > 1e6, (
+            f"fixture no longer ill-conditioned: cond={np.linalg.cond(corr):.3e}"
+        )
+
+        cov_ref = np.linalg.inv(mtcm)
+
+        _, cov_fc, _ = lstsq_step_fullcov(
+            residuals, Ndiag, U, Phidiag, M, threshold
+        )
+        _, cov_aug, _, _ = lstsq_step_augmented(
+            residuals, Ndiag, U, Phidiag, M, threshold
+        )
+
+        # Compare as uncertainties + correlations (the covariance spans
+        # many decades along the degenerate direction).
+        for label, cov in (("fullcov", cov_fc), ("augmented", cov_aug)):
+            cov = np.asarray(cov)
+            err = np.sqrt(np.diag(cov))
+            ref_err = np.sqrt(np.diag(cov_ref))
+            npt.assert_allclose(
+                err, ref_err, rtol=1e-6,
+                err_msg=f"{label}: uncertainty mismatch vs dense oracle",
+            )
+            npt.assert_allclose(
+                cov / np.outer(err, err),
+                cov_ref / np.outer(ref_err, ref_err),
+                atol=1e-6,
+                err_msg=f"{label}: correlation mismatch vs dense oracle",
+            )

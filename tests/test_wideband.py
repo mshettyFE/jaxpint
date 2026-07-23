@@ -530,33 +530,6 @@ class TestWidebandGLSFitter:
         assert not jnp.any(jnp.isnan(jnp.diag(cov)))
 
     @pytest.mark.slow
-    def test_covariance_symmetric(self, jax_wb):
-        """Pre-fit covariance from the solve step should be symmetric."""
-        from jaxpint.fitters._base import _subtract_weighted_mean, wls_step
-
-        jax_model, toa_data, params, noise_model = jax_wb
-
-        sigma_toa = noise_model.scaled_sigma(toa_data, params)
-        sigma_dm = noise_model.scaled_dm_sigma(toa_data, params)
-        sigma_combined = jnp.sqrt(
-            jnp.concatenate([sigma_toa**2, sigma_dm**2])
-        )
-
-        time_resid = _subtract_weighted_mean(
-            compute_time_residuals(jax_model, toa_data, params), sigma_toa
-        )
-        residuals = jnp.concatenate([
-            time_resid,
-            compute_dm_residuals(jax_model, toa_data, params),
-        ])
-
-        M = compute_wideband_design_matrix(jax_model, toa_data, params)
-        threshold = 1e-14 * max(2 * toa_data.n_toas, params.n_free)
-        _, cov, _ = wls_step(residuals, sigma_combined, M, threshold)
-
-        npt.assert_allclose(np.array(cov), np.array(cov.T), atol=1e-20)
-
-    @pytest.mark.slow
     def test_postfit_residuals_finite(self, jax_wb):
         """Post-fit time and DM residuals should be finite."""
         jax_model, toa_data, params, noise_model = jax_wb
@@ -636,9 +609,23 @@ class TestWidebandFitVsPINT:
         assert jnp.all(jax_wb_fit.parameter_uncertainties > 0)
 
     @pytest.mark.slow
-    def test_covariance_symmetric(self, jax_wb_fit):
-        cov = jax_wb_fit.covariance_matrix
-        npt.assert_allclose(np.array(cov), np.array(cov.T), atol=1e-20)
+    def test_covariance_matches_pint(self, pint_wb_fit, jax_wb_fit):
+        """Wideband parameter covariance matches PINT's WidebandTOAFitter.
+
+        Compared as unit-converted uncertainties plus the (unit-invariant)
+        correlation matrix.  Measured 2026-07-23: uncertainties agree to
+        <=2.5e-3 relative (worst: SINI), correlations to ~1.1e-3 absolute;
+        ELAT/ELONG differ only by the rad->deg conversion the helper
+        applies.  No degenerate exclusions needed.
+        """
+        from tests.helpers import assert_covariance_matches_pint
+
+        assert_covariance_matches_pint(
+            jax_wb_fit,
+            pint_wb_fit,
+            uncert_rtol=0.01,
+            corr_atol=0.005,
+        )
 
     @pytest.mark.slow
     def test_postfit_residuals_finite(self, jax_wb_fit):

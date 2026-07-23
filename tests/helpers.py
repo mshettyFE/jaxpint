@@ -480,3 +480,74 @@ def run_gls_whitening(
         whitened = result.residuals / sigma
 
     return whitened, result
+
+
+def assert_covariance_matches_pint(
+    jax_fit,
+    pint_fitter,
+    *,
+    uncert_rtol: float,
+    corr_atol: float,
+    exclude: tuple = (),
+):
+    """Assert a JaxPINT fit's parameter covariance matches a PINT fitter's.
+
+    Aligns by parameter name (PINT's labeled ``parameter_covariance_matrix``
+    with the Offset row/column dropped), converts JaxPINT uncertainties to
+    PINT's native units via astropy (e.g. rad -> deg for angles), and
+    compares:
+
+    - per-parameter uncertainties (sqrt-diag) at ``uncert_rtol``
+    - the correlation matrix (dimensionless, unit-invariant) at ``corr_atol``
+
+    ``exclude`` names parameters left out of the comparison, e.g. members
+    of a near-degenerate pair where JaxPINT's SVD-cutoff convention (zero
+    variance along dropped directions) and PINT's Cholesky (huge marginal
+    variance along the same directions) legitimately disagree.
+    """
+    import astropy.units as u
+
+    pcov = pint_fitter.parameter_covariance_matrix
+    plabels = [lbl for lbl, _ in pcov.labels[0]]
+    pmat = np.asarray(pcov.matrix, dtype=np.float64)
+
+    params = jax_fit.params
+    free_idx = np.asarray(params.free_indices_array())
+    names = list(params.free_names())
+    keep = [k for k, n in enumerate(names) if n not in exclude]
+    assert keep, "exclude list removed every parameter"
+
+    jcov = np.asarray(jax_fit.covariance_matrix)[np.ix_(keep, keep)]
+
+    # JaxPINT internal units -> PINT native units (dimensionless_angles
+    # handles rad -> deg and the rad/s -> mas/yr proper-motion cases).
+    # When the unit strings already agree (including PINT-only units such
+    # as "ls" for A1, which astropy cannot parse), no conversion is needed.
+    def _scale(k):
+        jax_unit_str = params.units[free_idx[k]]
+        pint_unit = getattr(pint_fitter.model, names[k]).units
+        if pint_unit is None or jax_unit_str == str(pint_unit):
+            return 1.0
+        return float(
+            (1.0 * u.Unit(jax_unit_str))
+            .to(pint_unit, equivalencies=u.dimensionless_angles())
+            .value
+        )
+
+    scales = np.array([_scale(k) for k in keep])
+
+    idx = [plabels.index(names[k]) for k in keep]
+    psub = pmat[np.ix_(idx, idx)]
+
+    jerr = np.sqrt(np.diag(jcov)) * scales
+    perr = np.sqrt(np.diag(psub))
+    np.testing.assert_allclose(
+        jerr, perr, rtol=uncert_rtol,
+        err_msg=f"uncertainty mismatch; params={[names[k] for k in keep]}",
+    )
+
+    jcorr = jcov / np.outer(np.sqrt(np.diag(jcov)), np.sqrt(np.diag(jcov)))
+    pcorr = psub / np.outer(perr, perr)
+    np.testing.assert_allclose(
+        jcorr, pcorr, atol=corr_atol, err_msg="correlation-matrix mismatch"
+    )
