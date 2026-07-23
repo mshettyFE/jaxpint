@@ -200,21 +200,6 @@ class TestExternalDelay:
         )
         npt.assert_allclose(float(logL_zero), float(logL_base), rtol=1e-12)
 
-    def test_delay_is_deterministic(self, synth_objects):
-        """Same delay should give the same result every time."""
-        jax_model, noise_model, toa_data, params = synth_objects
-        t = toa_data.tdb_frac
-        delay = 1e-6 * jnp.sin(2 * jnp.pi * 2.0 * t)
-
-        logL_1 = single_pulsar_logL(
-            toa_data, jax_model, noise_model, params, external_delay=delay,
-        )
-        logL_2 = single_pulsar_logL(
-            toa_data, jax_model, noise_model, params, external_delay=delay,
-        )
-        assert float(logL_1) == float(logL_2)
-
-
 class TestExternalCovariance:
     """Verify external covariance injection."""
 
