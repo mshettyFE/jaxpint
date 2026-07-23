@@ -217,6 +217,7 @@ class SolarWindDispersionX(DispersionDelayComponent):
             safe_denom = jnp.where(denom == 0.0, 1.0, denom)
             scaling = jnp.where(denom == 0.0, 0.0, (toa_geom - opp_geom) / safe_denom)
 
-            dm = dm + jnp.where(in_bin, swxdm * scaling, 0.0)
+            # r == 0 marks a barycentric TOA. Solar-wind DM is zero for such rows
+            dm = dm + jnp.where(in_bin & (r_km > 0.0), swxdm * scaling, 0.0)
 
         return dm
