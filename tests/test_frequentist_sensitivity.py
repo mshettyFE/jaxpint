@@ -8,7 +8,6 @@ from jaxpint.pta.signals.cw import cw_delay_from_array
 from jaxpint.pta.extraction import default_extraction_orientations, orientation_coeffs, quadratic_coeffs
 from jaxpint.frequentist.sensitivity import earth_term_gram, unit_noncentrality
 from jaxpint.frequentist.stats import chi2_threshold, h0_min_from_lambda
-from tests.helpers import make_simple_pulsar
 
 # A GW frequency resolved over the synthetic pulsars' ~1-day span: an unresolved
 # (real ~nHz) CW leaves the sin/cos quadratures degenerate, so the Earth-term
@@ -16,36 +15,22 @@ from tests.helpers import make_simple_pulsar
 # frequency-agnostic; this only makes the network Gram M well-conditioned rank-4.
 LOG10_FGW = -5.0
 _CT_SKY, _GP_SKY = 0.3, 1.2
-# Three well-separated sky directions -> diverse (F+, Fx), so the *network* Earth-term
-# Gram is full rank 4 (a single pulsar's is only rank 2: F+, Fx are scalars, leaving
-# just the sin/cos quadratures).
-_POSITIONS = [
-    jnp.array([0.2, 0.5, -0.84]),
-    jnp.array([-0.6, 0.3, 0.7]),
-    jnp.array([0.8, -0.5, 0.1]),
-]
+
+# The marginalized pulsars themselves are shared with (and built by)
+# test_frequentist_detection: same three well-separated sky directions —
+# diverse (F+, Fx), so the *network* Earth-term Gram is full rank 4 (a
+# single pulsar's is only rank 2: F+, Fx are scalars, leaving just the
+# sin/cos quadratures).  The memoized builder makes the three 200-TOA
+# marginalizations happen once for both files.
+from tests.test_frequentist_detection import _marginalized_pulsars
 
 
 @pytest.fixture(scope="module")
 def network():
     """A 3-pulsar network: per-pulsar likelihoods + the summed rank-4 Earth-term Gram M."""
-    from jaxpint.bayes import marginalize_single_pulsar
-
-    pulsars, M = [], jnp.zeros((4, 4))
-    for i, p in enumerate(_POSITIONS):
-        td, tm, nm, pp = make_simple_pulsar(200, f0=100.0, f1=-1e-14, seed=i)
-        over = {n for n in pp.free_names() if n in ("F0", "F1")}
-        g, _, skel = marginalize_single_pulsar(
-            over=over,
-            toa_data=td,
-            timing_model=tm,
-            noise_model=nm,
-            fiducial_params=pp,
-            allow_nonlinear=True,
-            validate_linearity=False,
-        )
-        pos = p / jnp.linalg.norm(p)
-        pulsars.append((g, skel, td, pos))
+    pulsars = list(_marginalized_pulsars())
+    M = jnp.zeros((4, 4))
+    for g, skel, td, pos in pulsars:
         M = M + earth_term_gram(g, skel, td, pos, 1.0, _CT_SKY, _GP_SKY, LOG10_FGW)
     return {"pulsars": pulsars, "M": M}
 
