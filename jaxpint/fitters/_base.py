@@ -900,7 +900,10 @@ def _normalized_svd_solve(
     S_safe = jnp.where(S <= threshold * S[0], jnp.inf, S)
 
     xhat = (Vt.T @ ((U_svd.T @ mtcy_n) / S_safe)) / norms
-    cov_n = (Vt.T / S_safe**2) @ Vt
+    # ``mtcm`` is already the normal matrix (quadratic in the design), so
+    # its inverse is V S^-1 V^T -- unlike ``wls_step``, whose SVD is of the
+    # design matrix itself and therefore needs S^-2.
+    cov_n = (Vt.T / S_safe) @ Vt
     covariance = (cov_n / norms).T / norms
     return xhat, covariance, norms
 
