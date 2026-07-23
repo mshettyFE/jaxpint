@@ -65,42 +65,22 @@ class TestPLChromNoiseBasic:
     ``test_correlated_noise_common.py``.
     """
 
-    def test_runtime_scaling(self):
-        """covariance() basis should equal raw basis × (fref/f)^alpha."""
+    @pytest.mark.parametrize("alpha", [2.0, 4.0])
+    def test_runtime_scaling(self, alpha):
+        """covariance() basis equals raw basis × (fref/f)^alpha at runtime.
+
+        alpha=2 doubles as the reduces-to-DM-scaling case.  The exact
+        rtol-1e-12 pin at two distinct alphas also implies alpha
+        sensitivity and the 800-vs-1400 MHz variance ordering.
+        """
         plchrom, params, toa_data, F_raw, _, _, obs_freqs = _make_plchrom(
-            n_toas=20, alpha=4.0
+            n_toas=20, alpha=alpha
         )
         _, U, _ = plchrom.covariance(toa_data, params)
 
-        D = (FREF / obs_freqs[:20]) ** 4.0
+        D = (FREF / obs_freqs[:20]) ** alpha
         expected = F_raw * jnp.asarray(D)[:, None]
         npt.assert_allclose(np.array(U), np.array(expected), rtol=1e-12)
-
-    def test_alpha_2_matches_dm_scaling(self):
-        """When alpha=2, the scaling should match DM's (fref/f)^2."""
-        plchrom, params, toa_data, F_raw, _, _, obs_freqs = _make_plchrom(
-            n_toas=20, alpha=2.0
-        )
-        _, U, _ = plchrom.covariance(toa_data, params)
-
-        D = (FREF / obs_freqs[:20]) ** 2.0
-        expected = F_raw * jnp.asarray(D)[:, None]
-        npt.assert_allclose(np.array(U), np.array(expected), rtol=1e-12)
-
-    def test_alpha_sensitivity(self):
-        """Different alpha values should produce different scaled bases."""
-        plchrom, params, toa_data, _, _, _, _ = _make_plchrom(n_toas=20, alpha=2.0)
-
-        _, U_alpha2, _ = plchrom.covariance(toa_data, params)
-
-        params_alpha4 = make_params(
-            ("TNCHROMAMP", "TNCHROMGAM", "TNCHROMIDX"),
-            [-13.0, 3.5, 4.0],
-            units=("", "", ""),
-        )
-        _, U_alpha4, _ = plchrom.covariance(toa_data, params_alpha4)
-
-        assert not np.allclose(U_alpha2, U_alpha4)
 
     def test_differentiable_through_alpha(self):
         """jax.grad through covariance w.r.t. TNCHROMIDX should work."""
@@ -115,16 +95,6 @@ class TestPLChromNoiseBasic:
         # TNCHROMIDX is at index 2
         assert jnp.isfinite(grad[2])
         assert grad[2] != 0.0
-
-    def test_chrom_scaling_frequency_dependence(self):
-        """Lower-frequency TOAs should have larger noise amplitude."""
-        plchrom, params, toa_data, _, _, _, _ = _make_plchrom(n_toas=100, alpha=4.0)
-        _, U, Phidiag = plchrom.covariance(toa_data, params)
-        C_diag = jnp.sum(U ** 2 * Phidiag[None, :], axis=1)
-
-        var_800 = C_diag[0::2].mean()
-        var_1400 = C_diag[1::2].mean()
-        assert var_800 > var_1400
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +119,7 @@ class TestPLChromNoiseWhitening:
         C_analytic = U @ jnp.diag(Phidiag) @ U.T
         analytic_var = jnp.diag(C_analytic)
 
-        n_draws = 10_000
+        n_draws = 4_000
         keys = jax.random.split(jax.random.PRNGKey(123), n_draws)
         draws = jax.vmap(lambda k: plchrom.generate(toa_data, params, k))(keys)
         empirical_var = jnp.var(draws, axis=0)

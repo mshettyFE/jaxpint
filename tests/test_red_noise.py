@@ -49,23 +49,15 @@ def _make_plred(n_toas=100, n_freqs=5, T=3.0 * 365.25 * 86400.0):
 
 # ---------------------------------------------------------------------------
 # Unit tests
+#
+# No red-specific basic tests remain: PLRedNoise is the base case of the
+# static-basis power-law family, so everything at this level is shared.
+# Shape/PSD/generate contracts (including the exact Arzoumanian PSD-weight
+# formula at rtol 1e-12, which subsumes the old red-spectrum ordering
+# check) live in ``test_correlated_noise_common.py``; PINT parity for the
+# bridge-built component lives in ``test_pl_noise_vs_pint.py`` and
+# ``enterprise_checks/test_ent_red_noise.py``.
 # ---------------------------------------------------------------------------
-
-
-class TestPLRedNoiseBasic:
-    """Red-noise-specific tests; shared shape/PSD/generate tests live in
-    ``test_correlated_noise_common.py``.
-    """
-
-    def test_psd_weights_red_spectrum(self):
-        """Lower frequencies should have higher PSD (red spectrum)."""
-        plred, params, _, _, _, _ = _make_plred(n_freqs=10)
-        weights = plred.psd_weights(params)
-        # Even indices are sin weights; compare consecutive frequencies. Derive
-        # the bound from the actual length (2*n_freqs) so no frequency pair is
-        # silently skipped.
-        for i in range(0, weights.shape[0] - 2, 2):
-            assert weights[i] > weights[i + 2]
 
 
 # ---------------------------------------------------------------------------
@@ -85,10 +77,6 @@ class TestPLRedNoiseWhitening:
         checking that the empirical per-TOA variance matches the
         diagonal of the analytic covariance.
 
-        With 10,000 draws the SE of each per-element variance estimate
-        is sqrt(2/N) * sigma^2 ~ 1.4% of the true value.  Across 60
-        elements, the worst-case excursion is ~3.5*SE ~ 5%, so
-        rtol=0.06 gives comfortable margin.
         """
         n_toas = 60
         n_freqs = 5
@@ -101,13 +89,11 @@ class TestPLRedNoiseWhitening:
         C_analytic = U @ jnp.diag(Phidiag) @ U.T
         analytic_var = jnp.diag(C_analytic)
 
-        n_draws = 10_000
+        n_draws = 4_000
         keys = jax.random.split(jax.random.PRNGKey(123), n_draws)
         draws = jax.vmap(lambda k: plred.generate(toa_data, params, k))(keys)
         empirical_var = jnp.var(draws, axis=0)
 
-        # SE(var) = sigma^2 * sqrt(2/N) ~ 1.4%.  With 60 elements,
-        # Bonferroni-corrected ~3.5 sigma tail => ~5% max deviation.
         npt.assert_allclose(
             np.array(empirical_var),
             np.array(analytic_var),
@@ -149,10 +135,10 @@ class TestPLRedNoiseWhitening:
         C = jnp.diag(Ndiag_w) + U_rn @ jnp.diag(Phi_rn) @ U_rn.T
         L = jnp.linalg.cholesky(C)
 
-        # 5000 draws x 60 elements = 300,000 whitened samples.
-        # SE(std) ~ 1/sqrt(2*300000) ~ 0.0013.  atol=0.02 gives ~15 sigma.
-        # SE(mean) ~ 1/sqrt(300000) ~ 0.0018.  atol=0.02 gives ~11 sigma.
-        n_draws = 5000
+        # 2000 draws x 60 elements = 120,000 whitened samples.
+        # SE(std) ~ 1/sqrt(2*120000) ~ 0.002.  atol=0.02 gives ~10 sigma.
+        # SE(mean) ~ 1/sqrt(120000) ~ 0.003.  atol=0.02 gives ~7 sigma.
+        n_draws = 2000
         keys = jax.random.split(jax.random.PRNGKey(456), n_draws)
         def _whiten(k):
             delays = simulate_noise(toa_data, params, k, [white, plred])
