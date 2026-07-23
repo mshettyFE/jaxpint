@@ -9,6 +9,8 @@ will contract into pairwise cross-correlations.
 
 from __future__ import annotations
 
+import functools
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -39,6 +41,7 @@ LOG10_A = -14.0
 GAMMA = 4.33
 
 
+@functools.lru_cache(maxsize=None)  # immutable returns; shared with test_optimal_nmos
 def _two_pulsar_gwb_config(n_components=5):
     """A 2-pulsar PTA with a single HD-correlated GWB injector."""
     rng = np.random.default_rng(7)
@@ -73,6 +76,7 @@ def _two_pulsar_gwb_config(n_components=5):
     return gp, tuple(pps), config, inj
 
 
+@functools.lru_cache(maxsize=None)  # immutable returns; shared with test_optimal_nmos
 def _two_pulsar_red_noise_config(n_components=5, n_red=3):
     """2-pulsar HD-GWB config WITH per-pulsar intrinsic red noise.
 

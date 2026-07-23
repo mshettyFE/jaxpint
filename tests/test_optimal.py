@@ -7,6 +7,8 @@ Vigeland et al. (2018, arXiv:1805.12188).
 
 from __future__ import annotations
 
+import functools
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -26,8 +28,10 @@ LOG10_A = -14.0
 GAMMA = 4.33
 
 
+@functools.lru_cache(maxsize=None)
 def _blocks(n_pulsars=4, n_components=5):
-    """Per-pulsar GW blocks for an ``n_pulsars`` HD-correlated array."""
+    """Per-pulsar GW blocks for an ``n_pulsars`` HD-correlated array.
+    """
     rng = np.random.default_rng(3)
     positions = rng.normal(size=(n_pulsars, 3))
     positions /= np.linalg.norm(positions, axis=1, keepdims=True)

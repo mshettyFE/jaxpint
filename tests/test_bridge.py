@@ -21,20 +21,39 @@ from jaxpint.bridge import (
 )
 
 
-@pytest.fixture
-def ngc6440e():
-    """Load the NGC6440E test pulsar (simple, isolated)."""
+# the per-test wrappers hand out a DEEP-COPIED model of the fixture 
+# (five tests mutate it: the
+# uncertainty write-back and the params_to_pint_model round-trips) and the
+# shared TOAs read-only (no consumer mutates them — the one test that
+# strips TDB columns, test_auto_compute_tdb, does its own load).
+
+
+@pytest.fixture(scope="module")
+def _ngc6440e_cached():
     model = models.get_model(examplefile("NGC6440E.par"))
     toas = toa.get_TOAs(examplefile("NGC6440E.tim"), ephem="DE421")
     return model, toas
 
 
 @pytest.fixture
-def b1855():
-    """Load B1855+09 (binary, with JUMPs/EFAC/EQUAD)."""
+def ngc6440e(_ngc6440e_cached):
+    """NGC6440E (simple, isolated): fresh model copy + shared TOAs."""
+    model, toas = _ngc6440e_cached
+    return copy.deepcopy(model), toas
+
+
+@pytest.fixture(scope="module")
+def _b1855_cached():
     model = models.get_model(examplefile("B1855+09_NANOGrav_9yv1.gls.par"))
     toas = toa.get_TOAs(examplefile("B1855+09_NANOGrav_9yv1.tim"), ephem="DE421")
     return model, toas
+
+
+@pytest.fixture
+def b1855(_b1855_cached):
+    """B1855+09 (binary, with JUMPs/EFAC/EQUAD): fresh model copy + shared TOAs."""
+    model, toas = _b1855_cached
+    return copy.deepcopy(model), toas
 
 
 # ===================================================================
