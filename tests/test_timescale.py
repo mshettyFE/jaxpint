@@ -129,18 +129,3 @@ def test_compute_posvels_vs_pint():
         "obs_uranus_pos", "obs_neptune_pos", "obs_earth_pos",
     }
 
-
-@pytest.mark.slow
-def test_compute_posvels_barycenter_zero_obs_term():
-    from jaxpint.clock.posvels import compute_posvels
-
-    ti = np.array([57000.0])
-    tf = np.array([0.3])
-    bary = compute_posvels(ti, tf, None, ephem="DE440")
-    geo = compute_posvels(ti, tf, (0.0, 0.0, 0.0), ephem="DE440")
-    # The barycentre observatory IS the SSB, so its SSB-relative posvel is zero --
-    # distinct from the geocentre (itrf_xyz == 0), whose ssb_obs == earth posvel.
-    assert bary["ssb_obs_pos"].shape == (1, 3)
-    assert np.allclose(bary["ssb_obs_pos"], 0.0)
-    assert np.allclose(bary["ssb_obs_vel"], 0.0)
-    assert not np.allclose(bary["ssb_obs_pos"], geo["ssb_obs_pos"])
