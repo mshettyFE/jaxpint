@@ -138,7 +138,8 @@ def _two_pulsar_red_noise_config(n_components=5, n_red=3):
 
 
 def test_blocks_match_per_pulsar_intermediates():
-    """kv/km per pulsar match a direct _per_pulsar_intermediates call, exactly."""
+    """kv/km per pulsar match a direct _per_pulsar_intermediates call, exactly.
+    Catches drift between per_pulsar_gw_blocks and _per_pulsar_intermediates"""
     gp, pps, config, inj = _two_pulsar_gwb_config()
     blocks = per_pulsar_gw_blocks(gp, pps, config)
 
