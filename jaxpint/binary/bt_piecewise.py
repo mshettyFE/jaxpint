@@ -125,7 +125,7 @@ class BinaryBTPiecewise(BinaryDelayComponent):
         xpbdot = params.param_value_or(self.xpbdot_name)
 
         n_toas = toa_data.n_toas
-        toa_mjd = toa_data.tdb.total
+        toa_mjd = toa_data.tdb.approx_total
 
         # --- Build per-TOA T0 and A1 from piecewise intervals ---
         t0_int_per_toa = jnp.full(n_toas, t0.int)

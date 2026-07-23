@@ -154,13 +154,16 @@ class ExponentialDip(DelayComponent):
         fref = params.param_value(self.expdipfref_name)  # MHz
         ffac = toa_data.freq / fref
 
-        toa_tdb = toa_data.tdb.total  # MJD (days)
-
         total = jnp.zeros(toa_data.n_toas)
 
         for i in range(self.n_dips):
-            T = params.epoch_dual(self.expdipep_names[i]).total
-            dt = toa_tdb - T  # days
+            # Difference in DualFloat form BEFORE collapsing: subtracting
+            # the two collapsed ~59000-day totals in float64 would discard
+            # the low-order bits the int/frac split exists to preserve
+            # (.total is documented unsafe at large int).
+            dt = (
+                toa_data.tdb - params.epoch_dual(self.expdipep_names[i])
+            ).total  # days
 
             A = params.param_value(self.expdipamp_names[i])  # seconds
             gamma = params.param_value(self.expdipidx_names[i])  # dimensionless

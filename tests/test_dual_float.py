@@ -59,12 +59,6 @@ def raw_phase_inputs(draw):
     return int_part, frac_part
 
 
-def scalars():
-    """Non-zero, finite scalars for multiplication tests."""
-    return floats(min_value=-1000.0, max_value=1000.0,
-                  allow_nan=False, allow_infinity=False).filter(lambda x: abs(x) > 1e-10)
-
-
 @composite
 def big_int_dual_floats(draw):
     """DualFloat with int in [1e9, 1e12] range (realistic pulsar scales)."""
@@ -99,7 +93,7 @@ class TestDaysNormalization:
         frac_in = jnp.array([1.3, -0.2])
         d = DualFloat.from_days(int_in, frac_in)
         expected = int_in + frac_in
-        assert jnp.allclose(d.total, expected, atol=ulp_tol(expected))
+        assert jnp.allclose(d.approx_total, expected, atol=ulp_tol(expected))
 
     def test_large_overflow(self):
         """Large fractional values are carried correctly."""
@@ -163,7 +157,7 @@ class TestCrossConstruction:
         """Converting between normalization conventions preserves total."""
         d = DualFloat.from_days(jnp.array(59000.0), jnp.array(0.7))
         c = DualFloat.from_cycles(d.int, d.frac)
-        assert jnp.allclose(d.total, c.total, atol=ulp_tol(d.total))
+        assert jnp.allclose(d.approx_total, c.approx_total, atol=ulp_tol(d.approx_total))
 
     def test_subtraction_of_days_values(self):
         """Subtracting two days-normalized DualFloats gives correct total."""
@@ -189,7 +183,7 @@ class TestJAXCompat:
     def test_jit_days(self):
         @jax.jit
         def f(x, y):
-            return DualFloat.from_days(x, y).total
+            return DualFloat.from_days(x, y).approx_total
         assert jnp.allclose(f(jnp.array(59000.0), jnp.array(1.3)),
                             jnp.array(59001.3))
 
@@ -206,7 +200,7 @@ class TestJAXCompat:
     def test_grad_through_days(self):
         def loss(frac):
             d = DualFloat.from_days(jnp.array(59000.0), frac)
-            return d.total
+            return d.approx_total
 
         grad_fn = jax.grad(loss)
         g = grad_fn(jnp.array(0.5))
@@ -214,7 +208,7 @@ class TestJAXCompat:
 
 
 # ===========================================================================
-# Deterministic unit tests (from original PhaseResult tests)
+# Deterministic unit tests 
 # ===========================================================================
 
 class TestDualFloatDeterministic:
@@ -238,16 +232,6 @@ class TestDualFloatDeterministic:
         b = DualFloat.from_cycles(jnp.array([5.0]), jnp.array([-0.2]))
         result = (a + b) - b
         assert jnp.allclose(result.total, a.total, atol=ulp_tol(a.total))
-
-    def test_mul_scalar(self):
-        p = DualFloat.from_cycles(jnp.array([1.0]), jnp.array([0.25]))
-        doubled = p * 2.0
-        assert jnp.allclose(doubled.total, jnp.array([2.5]), atol=ulp_tol(2.5))
-
-    def test_rmul(self):
-        p = DualFloat.from_cycles(jnp.array([1.0]), jnp.array([0.25]))
-        doubled = 2.0 * p
-        assert jnp.allclose(doubled.total, jnp.array([2.5]), atol=ulp_tol(2.5))
 
     def test_negative_double(self):
         """Double negation should be identity."""
@@ -308,7 +292,7 @@ class TestDualFloatHypothesis:
         int_in, frac_in = raw
         p = DualFloat.from_cycles(jnp.array(int_in), jnp.array(frac_in))
         expected = int_in + frac_in
-        assert abs(float(p.total) - expected) <= ulp_tol(expected)
+        assert abs(float(p.approx_total) - expected) <= ulp_tol(expected)
 
     # -- Addition properties --
 
@@ -327,7 +311,7 @@ class TestDualFloatHypothesis:
         """(a + b) + c ≈ a + (b + c) in total phase."""
         lhs = (a + b) + c
         rhs = a + (b + c)
-        assert jnp.allclose(lhs.total, rhs.total, atol=ulp_tol(lhs.total))
+        assert jnp.allclose(lhs.approx_total, rhs.approx_total, atol=ulp_tol(lhs.approx_total))
 
     @given(dual_floats_cycles())
     @settings(deadline=None)
@@ -370,25 +354,6 @@ class TestDualFloatHypothesis:
         assert float(pp.int) == float(a.int)
         assert float(pp.frac) == float(a.frac)
 
-    # -- Scalar multiplication properties --
-
-    @given(dual_floats_cycles(), scalars())
-    @settings(deadline=None)
-    def test_scalar_mul_distributes(self, a, s):
-        """s * (a + b) ≈ s*a + s*b for a random b."""
-        b = DualFloat.from_cycles(jnp.array(42.0), jnp.array(0.123))
-        lhs = s * (a + b)
-        rhs = (s * a) + (s * b)
-        assert jnp.allclose(lhs.total, rhs.total, atol=ulp_tol(lhs.total))
-
-    @given(dual_floats_cycles())
-    @settings(deadline=None)
-    def test_mul_by_one_is_identity(self, a):
-        """1 * a == a."""
-        result = 1.0 * a
-        assert float(result.int) == float(a.int)
-        assert float(result.frac) == float(a.frac)
-
     # -- Precision roundtrip tests --
 
     @given(dual_floats_cycles(), dual_floats_cycles())
@@ -396,7 +361,7 @@ class TestDualFloatHypothesis:
     def test_add_sub_roundtrip_field_level(self, a, b):
         """(a + b) - b recovers a in total phase."""
         result = (a + b) - b
-        assert abs(float(result.total) - float(a.total)) <= ulp_tol(a.total)
+        assert abs(float(result.approx_total) - float(a.approx_total)) <= ulp_tol(a.approx_total)
 
     @given(
         integers(min_value=500_000_000, max_value=2_000_000_000),
@@ -524,7 +489,7 @@ class TestNormalizationEdgeCases:
         p = DualFloat.from_cycles(jnp.array(0.0), jnp.array(raw_frac))
         assert float(p.frac) >= -0.5
         assert float(p.frac) < 0.5
-        assert abs(float(p.total) - raw_frac) <= ulp_tol(raw_frac)
+        assert abs(float(p.approx_total) - raw_frac) <= ulp_tol(raw_frac)
 
 
 # ===========================================================================
@@ -616,14 +581,6 @@ class TestLongdoubleOracle:
         ld_result = ld_a - ld_b
         pr_total = self._to_ld(result)
         assert abs(float(pr_total - ld_result)) <= ulp_tol(max(abs(ld_a), abs(ld_b)))
-
-    @given(dual_floats_cycles(), scalars())
-    @settings(deadline=None)
-    def test_scalar_mul_oracle(self, a, s):
-        result = a * s
-        ld_result = self._to_ld(a) * np.longdouble(s)
-        pr_total = self._to_ld(result)
-        assert abs(float(pr_total - ld_result)) <= ulp_tol(ld_result)
 
     @given(dual_floats_cycles(), dual_floats_cycles(), dual_floats_cycles())
     @settings(deadline=None)
@@ -751,7 +708,7 @@ class TestPINTPhaseComparison:
             + DualFloat.from_cycles(jnp.array(float(ii2)), jnp.array(ff2))
         )
         pint_total = float(pint_result.int[0]) + float(pint_result.frac[0])
-        jax_total = float(jax_result.total)
+        jax_total = float(jax_result.approx_total)
         assert jax_total == pytest.approx(pint_total, abs=ulp_tol(pint_total))
 
 
@@ -874,26 +831,263 @@ class TestNegationCanonicalForm:
 
 
 # ===========================================================================
-# __mul__ integer invariant
+# Contract edges 
 # ===========================================================================
 
-class TestMulIntegerInvariant:
-    """After a * scalar, the result's int field must be integer-valued."""
+class TestContractEdges:
+    """Pin behavior at the edges of DualFloat's contract.
+    - non-finite propagation
+    -signed zero
+    - non-canonical inputs
+    - the 2^53 ceiling
+    - boundary sums *through* ArithmeticError 
+    - transform invariance (vmap/scan)
+    - and exact gradients at carry events 
+    """
 
-    @pytest.mark.parametrize("int_in, frac_in, scalar", [
-        (10950.0, 0.123, 622.122),         # pulsar-ish
-        (1.0, 0.25, 0.5),                  # small case
-        (-3.0, -0.4, 1.7),                 # negative int
-        (1e6, 0.3, 1e-3),                  # scalar < 1
-    ])
-    def test_int_is_integer(self, int_in, frac_in, scalar):
-        a = DualFloat.from_cycles(jnp.array(int_in), jnp.array(frac_in))
-        result = a * scalar
-        # int field must equal its own rounding (i.e. be exactly integer)
-        assert float(result.int) == float(jnp.round(result.int))
+    # -- non-finite propagation ---------------------------------------
 
-    @given(dual_floats_cycles(), scalars())
-    @settings(deadline=None)
-    def test_int_is_integer_hypothesis(self, a, s):
-        result = a * s
-        assert float(result.int) == float(jnp.round(result.int))
+    @pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+    def test_nonfinite_int_propagates_visibly(self, bad):
+        """Poisoned int must stay visible through arithmetic, never
+        silently become a finite-but-wrong value."""
+        d = DualFloat.from_cycles(jnp.array(bad), jnp.array(0.1))
+        r = d + DualFloat.from_cycles(jnp.array(1.0), jnp.array(0.1))
+        assert not bool(jnp.isfinite(r.int))
+
+    @pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+    def test_nonfinite_frac_propagates_visibly(self, bad):
+        d = DualFloat.from_cycles(jnp.array(1.0), jnp.array(bad))
+        r = d + DualFloat.from_cycles(jnp.array(1.0), jnp.array(0.1))
+        assert (not bool(jnp.isfinite(r.int))) or (
+            not bool(jnp.isfinite(r.frac))
+        )
+
+    # -- signed zero ---------------------------------------------------
+
+    def test_negative_zero_frac_normalizes_benignly(self):
+        d = DualFloat.from_cycles(jnp.array(5.0), jnp.array(-0.0))
+        assert float(d.int) == 5.0
+        assert float(d.frac) == 0.0
+
+    def test_neg_of_zero_frac(self):
+        n = -DualFloat.from_cycles(jnp.array(5.0), jnp.array(0.0))
+        assert float(n.int) == -5.0
+        assert float(n.frac) == 0.0  
+
+    # -- raw non-canonical construction --------------------------------
+
+    def test_raw_noncanonical_preserves_total_through_add(self):
+        """Raw DualFloat(int=0.3, frac=0.7) bypasses the factories.
+
+        De-facto contract: arithmetic still preserves the TOTAL to ~1 ulp,
+        but the integer-int invariant is NOT restored — field-level tricks
+        (pulse numbering) are only licensed after factory normalization.
+        """
+        from fractions import Fraction
+
+        raw = DualFloat(int=jnp.array(0.3), frac=jnp.array(0.7))
+        r = raw + DualFloat.from_cycles(jnp.array(1.0), jnp.array(0.0))
+        exact = Fraction(0.3) + Fraction(0.7) + 1
+        got = Fraction(float(r.int)) + Fraction(float(r.frac))
+        assert abs(float(got - exact)) <= ulp_tol(2.0)
+
+    # -- the 2^53 ceiling ----------------------------------------------
+
+    def test_int_carry_exact_just_below_2pow53(self):
+        from fractions import Fraction
+
+        big = 2.0**53 - 2.0
+        d = DualFloat.from_cycles(jnp.array(big), jnp.array(0.4))
+        r = d + DualFloat.from_cycles(jnp.array(1.0), jnp.array(0.2))
+        exact = Fraction(big) + Fraction(0.4) + 1 + Fraction(0.2)
+        got = Fraction(float(r.int)) + Fraction(float(r.frac))
+        assert abs(float(got - exact)) <= ulp_tol(1.0)
+
+    def test_int_ceiling_is_2pow53(self):
+        """Above 2^53, odd integer ints are unrepresentable and carries go
+        lossy — the design's fundamental cliff.  The operating envelope
+        (phase ~1e11 cycles, MJD ~6e4 days) sits 4+ orders below; this
+        test documents WHERE exactness ends so the envelope claim is
+        testable rather than folklore.
+        """
+        from fractions import Fraction
+
+        big = 2.0**53
+        d = DualFloat.from_cycles(jnp.array(big), jnp.array(0.4))
+        r = d + DualFloat.from_cycles(jnp.array(1.0), jnp.array(0.2))
+        exact = Fraction(big) + Fraction(0.4) + 1 + Fraction(0.2)
+        got = Fraction(float(r.int)) + Fraction(float(r.frac))
+        assert abs(float(got - exact)) >= 1.0  # loss, by design, here
+
+    # -- boundary sums THROUGH arithmetic ------------------------------
+
+    def test_add_lands_exactly_on_plus_half(self):
+        """frac sum of exactly +0.5 must carry: result frac = -0.5."""
+        s = DualFloat.from_cycles(jnp.array(10.0), jnp.array(0.25)) + \
+            DualFloat.from_cycles(jnp.array(20.0), jnp.array(0.25))
+        assert float(s.int) == 31.0
+        assert float(s.frac) == -0.5
+
+    def test_add_lands_exactly_on_minus_half(self):
+        """frac sum of exactly -0.5 is already canonical: no carry."""
+        s = DualFloat.from_cycles(jnp.array(10.0), jnp.array(-0.25)) + \
+            DualFloat.from_cycles(jnp.array(20.0), jnp.array(-0.25))
+        assert float(s.int) == 30.0
+        assert float(s.frac) == -0.5
+
+    @pytest.mark.parametrize("k", [-2, -1, 0, 1, 2])
+    def test_add_near_half_boundary_exact_and_canonical(self, k):
+        """Sums landing k ulp(0.5) around +0.5: total exact, frac canonical."""
+        from fractions import Fraction
+
+        ulp_half = float(np.spacing(0.5))
+        f2 = 0.25 + k * ulp_half  # exactly representable (2 ulp of 0.25 apart)
+        a = DualFloat.from_cycles(jnp.array(0.0), jnp.array(0.25))
+        b = DualFloat.from_cycles(jnp.array(0.0), jnp.array(f2))
+        s = a + b
+        exact = Fraction(0.25) + Fraction(f2)
+        got = Fraction(float(s.int)) + Fraction(float(s.frac))
+        assert got == exact  # bit-exact: both fracs share an exponent range
+        assert -0.5 <= float(s.frac) < 0.5
+
+    # -- transform invariance ------------------------------------------
+
+    def test_vmap_heterogeneous_carries_match_scalar_path(self):
+        """A vmapped add with per-element carry decisions (no carry / carry
+        up / boundary carry / carry down) must be bitwise identical to the
+        scalar path."""
+        f1 = jnp.array([0.1, 0.45, 0.25, -0.45])
+        f2 = jnp.array([0.3, 0.45, 0.25, -0.45])
+
+        def add_pair(x, y):
+            return DualFloat.from_cycles(jnp.zeros(()), x) + \
+                DualFloat.from_cycles(jnp.zeros(()), y)
+
+        batched = jax.vmap(add_pair)(f1, f2)
+        for i in range(4):
+            scalar = add_pair(f1[i], f2[i])
+            assert float(batched.int[i]) == float(scalar.int)
+            assert float(batched.frac[i]) == float(scalar.frac)
+
+    def test_scan_accumulation_matches_python_loop(self):
+        """lax.scan (jit) accumulation must be bitwise identical to the
+        eager Python loop — carries may not depend on the transform."""
+        inc = DualFloat.from_cycles(jnp.array(0.0), jnp.array(0.123456789))
+        n = 512
+
+        acc_scan, _ = jax.lax.scan(
+            lambda c, _: (c + inc, None),
+            DualFloat.from_cycles(jnp.array(0.0), jnp.array(0.0)),
+            None,
+            length=n,
+        )
+        acc_loop = DualFloat.from_cycles(jnp.array(0.0), jnp.array(0.0))
+        for _ in range(n):
+            acc_loop = acc_loop + inc
+
+        assert float(acc_scan.int) == float(acc_loop.int)
+        assert float(acc_scan.frac) == float(acc_loop.frac)
+
+    # -- gradients at carry events -------------------------------------
+
+    @pytest.mark.parametrize(
+        "f0",
+        [0.1, 0.2, 0.25, 0.2 - 1e-13],
+        ids=["interior", "lands-exactly-on-0.5", "carries", "1e-13-below"],
+    )
+    def test_grad_of_total_through_add_is_exactly_unity(self, f0):
+        """d(total)/d(frac) == 1.0 EXACTLY, including when the frac sum
+        lands exactly on the 0.5 carry boundary (f0=0.2 with +0.3).
+
+        This is the property protecting every jacfwd design matrix: the
+        floor/where carry machinery must be gradient-transparent.
+        """
+
+        def total_after_add(f):
+            d = DualFloat.from_cycles(jnp.asarray(10.0), f)
+            e = d + DualFloat.from_cycles(jnp.asarray(5.0), jnp.asarray(0.3))
+            return e.int + e.frac
+
+        g = jax.grad(total_after_add)(jnp.asarray(f0))
+        assert float(g) == 1.0
+
+    def test_grad_through_sub_production_pattern(self):
+        """Mirror of dt = tdb - epoch with sensitivity through the epoch
+        frac (the fitter path: epoch int is static, frac carries grad)."""
+
+        def dt_total(ep_frac):
+            tdb = DualFloat.from_days(jnp.asarray(59001.0), jnp.asarray(0.75))
+            ep = DualFloat.from_days(jnp.asarray(59000.0), ep_frac)
+            diff = tdb - ep
+            return diff.int + diff.frac
+
+        g = jax.grad(dt_total)(jnp.asarray(0.25))
+        assert float(g) == -1.0
+
+    # -- operand broadcasting ------------------------------------------
+
+    def test_add_broadcasts_scalar_shape_against_array(self):
+        """Pin the semantics: scalar-shape + array-shape broadcasts (JAX
+        rules), producing a well-formed array DualFloat."""
+        a = DualFloat.from_cycles(jnp.zeros(3), jnp.array([0.1, 0.2, 0.3]))
+        b = DualFloat.from_cycles(jnp.asarray(1.0), jnp.asarray(0.25))
+        r = a + b
+        assert r.int.shape == (3,)
+        for i, f in enumerate([0.1, 0.2, 0.3]):
+            scalar = DualFloat.from_cycles(jnp.zeros(()), jnp.asarray(f)) + b
+            assert float(r.int[i]) == float(scalar.int)
+            assert float(r.frac[i]) == float(scalar.frac)
+
+    def test_add_incompatible_shapes_raises(self):
+        a = DualFloat.from_cycles(jnp.zeros(3), jnp.zeros(3))
+        b = DualFloat.from_cycles(jnp.zeros(4), jnp.zeros(4))
+        with pytest.raises((ValueError, TypeError)):
+            _ = a + b
+
+
+class TestGuardedTotal:
+    """Subtract-before-you-scale enforcement.
+
+    ``.total`` is guarded via equinox.error_if at |int| > 30000: collapsing
+    an absolute MJD/phase is a runtime error under eager, jit, vmap, and
+    grad.  ``.approx_total`` is the explicit, unguarded opt-out for
+    tolerance-insensitive reads (windowing / interpolation).
+    """
+
+    def test_guard_fires_on_absolute_mjd(self):
+        d = DualFloat.from_days(jnp.array(59000.0), jnp.array(0.5))
+        with pytest.raises(Exception, match="approx_total"):
+            _ = float(d.total)
+
+    def test_guard_fires_on_absolute_phase(self):
+        d = DualFloat.from_cycles(jnp.array(1.0e10), jnp.array(0.25))
+        with pytest.raises(Exception, match="approx_total"):
+            _ = float(d.total)
+
+    def test_guard_fires_under_jit(self):
+        @jax.jit
+        def collapse(d):
+            return d.total
+
+        d = DualFloat.from_days(jnp.array(59000.0), jnp.array(0.5))
+        with pytest.raises(Exception, match="approx_total"):
+            _ = float(collapse(d))
+
+    def test_total_allowed_on_subtracted_values(self):
+        """The production pattern: difference first, then collapse."""
+        a = DualFloat.from_days(jnp.array(59001.0), jnp.array(0.75))
+        b = DualFloat.from_days(jnp.array(59000.0), jnp.array(0.25))
+        assert float((a - b).total) == 1.5
+
+    def test_approx_total_unguarded_on_absolute_mjd(self):
+        d = DualFloat.from_days(jnp.array(59000.0), jnp.array(0.5))
+        assert float(d.approx_total) == 59000.5
+
+    def test_guarded_total_grad_transparent(self):
+        """error_if must not perturb the gradient (still exactly 1)."""
+
+        def f(frac):
+            return DualFloat.from_cycles(jnp.array(10.0), frac).total
+
+        assert float(jax.grad(f)(jnp.array(0.25))) == 1.0

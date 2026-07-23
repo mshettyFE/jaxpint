@@ -94,7 +94,7 @@ class TestSpindownPhase:
         result = spindown(toa_data, params, delay)
         expected = expected_fn(dt_sec, coeffs)
         assert isinstance(result, DualFloat)
-        assert jnp.isclose(result.total, expected, rtol=1e-12)
+        assert jnp.isclose(result.approx_total, expected, rtol=1e-12)
 
     def test_delay_subtracted(self):
         """Delay reduces effective dt."""
@@ -173,7 +173,7 @@ class TestPrecision:
         # Expected: F0 * ((61000 - 50000) + 1e-14) * 86400
         dt_expected = (toa_int - pepoch_int + tiny_frac) * 86400.0
         expected_phase = 1.0 * dt_expected
-        assert jnp.isclose(result.total, expected_phase, rtol=1e-12)
+        assert jnp.isclose(result.approx_total, expected_phase, rtol=1e-12)
 
     def test_realistic_msp_30yr_high_order(self):
         """End-to-end Spindown precision check at NANOGrav-realistic scale.
@@ -249,7 +249,7 @@ class TestJIT:
         assert jitted._cache_size() == 1, (
             f"recompiled on same-structure inputs: {jitted._cache_size()} variants"
         )
-        assert not jnp.array_equal(r1.total, r2.total)
+        assert not jnp.array_equal(r1.approx_total, r2.approx_total)
 
 
 # ===========================================================================
@@ -297,7 +297,7 @@ class TestGrad:
         delay = jnp.zeros(toa_data.n_toas)
 
         def loss(p):
-            return spindown(toa_data, p, delay).total.sum()
+            return spindown(toa_data, p, delay).approx_total.sum()
 
         grads = jax.grad(loss)(params)
         assert jnp.all(jnp.isfinite(grads.values))

@@ -98,13 +98,13 @@ class ChromaticCMX(ChromaticDelayComponent):
         The base ``__call__`` applies ``· K_DM · freq^(-TNCHROMIDX)`` to give
         the delay in seconds.
         """
-        toa_mjd = toa_data.mjd.total
+        toa_mjd = toa_data.mjd.approx_total
 
         cm = jnp.zeros(toa_data.n_toas)
 
         for i in range(self.n_bins):
-            r1 = params.epoch_dual(self.cmxr1_names[i]).total
-            r2 = params.epoch_dual(self.cmxr2_names[i]).total
+            r1 = params.epoch_dual(self.cmxr1_names[i]).approx_total
+            r2 = params.epoch_dual(self.cmxr2_names[i]).approx_total
 
             in_bin = (toa_mjd >= r1) & (toa_mjd <= r2)
             cmx_val = params.param_value(self.cmx_names[i])

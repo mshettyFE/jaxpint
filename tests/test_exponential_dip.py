@@ -141,7 +141,7 @@ class TestGradientSafety:
         delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
         assert jnp.all(jnp.isfinite(delay))
         # Pre-dip TOAs (thousands of days before the onset) contribute ~0.
-        pre = toa_data.tdb.total < 54990.0
+        pre = toa_data.tdb.approx_total < 54990.0
         np.testing.assert_allclose(np.array(delay)[np.array(pre)], 0.0, atol=1e-30)
 
     def test_grads_finite_for_all_params_far_from_dip(self):
