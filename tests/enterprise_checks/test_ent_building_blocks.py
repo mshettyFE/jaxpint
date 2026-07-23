@@ -10,9 +10,8 @@ hidden behind loose tolerances:
 
 - BOTH stacks evaluate GP bases at *barycentered* TOAs, and the time arrays
   are identical ;
-- enterprise's HD ORF auto-term is 1.0 (pulsar term included, the NANOGrav
-  convention), JaxPINT's ``hd_orf`` self-correlation is 0.5
-  (``test_hd_orf_diagonal_convention``).
+- BOTH stacks put 1.0 on the HD ORF diagonal (auto-term with pulsar term
+  included — the enterprise/discovery convention;
 """
 
 from __future__ import annotations
@@ -174,18 +173,10 @@ def test_hd_orf_offdiagonal():
 
 
 def test_hd_orf_diagonal_convention():
-    """Sentinel: HD auto-correlation is 1.0 in enterprise, 0.5 in JaxPINT.
+    """HD auto-correlation is 1.0 in BOTH stacks (pulsar term included).
 
-    enterprise's ``utils.hd_orf`` special-cases ``pos1 == pos2`` to 1.0 (the
-    NANOGrav convention: the auto-term includes the pulsar term), while
-    JaxPINT's ``hd_orf`` clips the log and returns the 0.5 self-correlation
-    limit — and ``HDCorrelatedGWBInjector`` puts that on the ORF diagonal,
-    halving the GWB auto-power relative to enterprise.  This is a genuine
-    convention gap awaiting adjudication; ``test_ent_hd_gwb.py`` shows the
-    likelihood machinery matches once the diagonal is overridden to 1.0.
-    If JaxPINT is changed to the enterprise convention, update this test and
-    flip the sentinel in test_ent_hd_gwb.py.
-    """
+    enterprise's ``utils.hd_orf`` special-cases ``pos1 == pos2`` to 1.0, and
+    discovery's does the same — JaxPINT's ``hd_orf`` now matches.     """
     import jax.numpy as jnp
     from enterprise.signals.utils import hd_orf as ent_hd_orf
 
@@ -193,7 +184,13 @@ def test_hd_orf_diagonal_convention():
 
     pos = np.array([0.3, -0.4, np.sqrt(1 - 0.25)])
     assert float(ent_hd_orf(pos, pos)) == 1.0
-    npt.assert_allclose(float(hd_orf(jnp.asarray(pos), jnp.asarray(pos))), 0.5, rtol=1e-12)
+    npt.assert_allclose(
+        float(hd_orf(jnp.asarray(pos), jnp.asarray(pos))),
+        float(ent_hd_orf(pos, pos)),
+        rtol=1e-15,
+        err_msg="HD ORF auto-term no longer matches enterprise — GWB "
+        "auto-power (and amplitude posteriors) would be biased",
+    )
 
 
 def test_orf_matrix_of_injector_offdiagonal():

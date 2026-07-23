@@ -10,13 +10,10 @@ Two deliberate wrinkles:
   returns a callable Factor), so the PTA is built with
   ``lnlikelihood=LogLikelihoodDenseCholesky`` — numerically equivalent, just
   a dense solve.
-- the ORF diagonal: enterprise's ``utils.hd_orf`` returns 1.0 for the
-  auto-term (pulsar term included, the NANOGrav convention) while JaxPINT's
-  ``HDCorrelatedGWBInjector`` puts ``hd_orf(p, p) = 0.5`` on the diagonal
-  (discovery-style self-correlation).  The machinery test overrides JaxPINT's
-  ORF diagonal to 1.0 to prove the likelihood plumbing matches; the sentinel
-  test pins the fact that the native convention diverges (by O(1) in logL for
-  these amplitudes) until the convention gap is adjudicated.
+- the ORF diagonal: both stacks now put 1.0 on the auto-term (pulsar term
+  included), pinned at unit level by
+  ``test_ent_building_blocks.test_hd_orf_diagonal_convention``, so the logL
+  comparison below runs fully native
 """
 
 from __future__ import annotations
@@ -95,23 +92,13 @@ def _grid_logLs(pta, global_params, config, bundles):
     return np.asarray(logLs_ent), np.asarray(logLs_jax)
 
 
-def test_hd_logL_matches_with_enterprise_diagonal(pta_bundles):
-    """Two-tier Woodbury == enterprise once the ORF diagonal is 1.0.
+def test_hd_logL_matches_enterprise(pta_bundles):
+    """Two-tier Woodbury == enterprise, fully native (no ORF override).
 
-    JaxPINT's injector gets an orf_func whose auto-term matches enterprise;
-    everything else (HD off-diagonals, PSD, bases, outer solve) is native.
-    Residual-parity-limited (observed ~8e-5); tolerance carries ~6x margin.
     """
-    import jax.numpy as jnp
-
-    from jaxpint.pta.signals.orf import hd_orf
-
-    def hd_orf_enterprise_diag(p1, p2):
-        return jnp.where(jnp.dot(p1, p2) > 1.0 - 1e-12, 1.0, hd_orf(p1, p2))
-
     tspan = shared_tspan(pta_bundles)
     pta = _ent_hd_pta(pta_bundles, tspan)
-    global_params, config = _jax_hd(pta_bundles, tspan, orf_func=hd_orf_enterprise_diag)
+    global_params, config = _jax_hd(pta_bundles, tspan)  # native hd_orf
     logLs_ent, logLs_jax = _grid_logLs(pta, global_params, config, pta_bundles)
 
     npt.assert_allclose(
@@ -119,7 +106,7 @@ def test_hd_logL_matches_with_enterprise_diagonal(pta_bundles):
         logLs_ent,
         atol=5e-4,
         rtol=0,
-        err_msg="HD-correlated logL mismatch with matched ORF diagonal",
+        err_msg="native HD-correlated logL mismatch beyond residual-parity budget",
     )
     npt.assert_allclose(
         np.diff(logLs_jax),
@@ -127,27 +114,4 @@ def test_hd_logL_matches_with_enterprise_diagonal(pta_bundles):
         atol=5e-4,
         rtol=1e-4,
         err_msg="HD delta-logL over parameter grid disagrees",
-    )
-
-
-def test_hd_native_diagonal_diverges_from_enterprise(pta_bundles):
-    """Sentinel: JaxPINT's native ORF diagonal (0.5) does NOT match enterprise.
-
-    Documents the convention gap (see module docstring and
-    test_ent_building_blocks.test_hd_orf_diagonal_convention).  Observed
-    divergence ~2 in logL at log10_A=-14.  If HDCorrelatedGWBInjector is
-    switched to the enterprise/NANOGrav auto-term convention, this test must
-    be flipped into an equality check and the override removed from the
-    machinery test above.
-    """
-    tspan = shared_tspan(pta_bundles)
-    pta = _ent_hd_pta(pta_bundles, tspan)
-    global_params, config = _jax_hd(pta_bundles, tspan)  # native hd_orf
-    logLs_ent, logLs_jax = _grid_logLs(pta, global_params, config, pta_bundles)
-
-    gap = np.abs(logLs_jax - logLs_ent)
-    assert gap.min() > 0.1, (
-        f"native-diagonal logL now agrees with enterprise (gap={gap}); the ORF "
-        "diagonal convention seems to have been aligned — update this sentinel "
-        "and the diagonal override in the machinery test"
     )

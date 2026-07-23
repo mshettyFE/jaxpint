@@ -33,22 +33,38 @@ def hd_orf(pos1: Float[Array, "3"], pos2: Float[Array, "3"]) -> Float[Array, ""]
     Returns
     -------
     float
-        HD correlation coefficient in [−1/8, 1/2].
+        HD correlation coefficient: cross-pulsar values in [−1/8, 1/2],
+        with Γ_aa = 1.0 on the diagonal (``pos1 == pos2``).
+
+    Notes
+    -----
+    The diagonal is the **auto**-correlation \Gamma_aa = 1.0 — twice the \zeta→0
+    limit of the cross-correlation curve (0.5), because a single pulsar's
+    GWB response is fully correlated with itself (both the plus and cross
+    response terms survive, whereas for two distinct co-located pulsars
+    only the average does).  Matches discovery/enterprise's ``hd_orf``
+    special case; without it every pulsar receives half the GWB
+    auto-power and amplitude posteriors are biased.
 
     References
     ----------
     .. [orf_hd83] Hellings & Downs (1983), ApJL 265, L39.
     """
     omc2 = (1.0 - jnp.dot(pos1, pos2)) / 2.0
-    # Guard against log(0) when pos1 == pos2 (self-correlation → 0.5)
+    # Clip guards log(0) in the (masked) cross-correlation branch when
+    # pos1 == pos2; the diagonal takes the explicit 1.0 branch below.
     omc2 = jnp.clip(omc2, 1e-30)
-    return 1.5 * omc2 * jnp.log(omc2) - 0.25 * omc2 + 0.5
+    cross = 1.5 * omc2 * jnp.log(omc2) - 0.25 * omc2 + 0.5
+    return jnp.where(jnp.all(pos1 == pos2), 1.0, cross)
 
 
 def monopole_orf(pos1: Float[Array, "3"], pos2: Float[Array, "3"]) -> Float[Array, ""]:
     """Monopole ORF (isotropic, unit correlation for all pairs).
 
-    Returns 1.0 for every pulsar pair regardless of angular separation.
+    Returns 1.0 for every distinct pulsar pair and ``1.0 + 1e-6`` on the
+    diagonal — the conditioning trick from enterprise/discovery.  Without
+    it Γ is the all-ones matrix (rank 1), and the ``inv``/``cholesky`` in
+    the correlated outer tier returns silent NaNs under JAX.
 
     Parameters
     ----------
@@ -58,16 +74,20 @@ def monopole_orf(pos1: Float[Array, "3"], pos2: Float[Array, "3"]) -> Float[Arra
     Returns
     -------
     float
-        Always 1.0.
+        ``1.0 + 1e-6`` when ``pos1 == pos2``, else 1.0.
     """
-    return jnp.where(jnp.allclose(pos1, pos2), 1.0, 1.0)
+    return jnp.where(jnp.all(pos1 == pos2), 1.0 + 1.0e-6, 1.0)
 
 
 def dipole_orf(pos1: Float[Array, "3"], pos2: Float[Array, "3"]) -> Float[Array, ""]:
     """Dipole ORF (correlation proportional to cos(angle)).
 
     Returns the cosine of the angular separation between the two pulsars,
-    i.e. ``dot(pos1, pos2)``.
+    ``dot(pos1, pos2)``, with ``1.0 + 1e-6`` on the diagonal — the
+    conditioning trick from enterprise/discovery.  Without it
+    Γ = P Pᵀ has rank ≤ 3 for more than 3 pulsars, and the
+    ``inv``/``cholesky`` in the correlated outer tier returns silent NaNs
+    under JAX.
 
     Parameters
     ----------
@@ -77,6 +97,7 @@ def dipole_orf(pos1: Float[Array, "3"], pos2: Float[Array, "3"]) -> Float[Array,
     Returns
     -------
     float
-        Cosine of the angular separation, in [-1, 1].
+        ``1.0 + 1e-6`` when ``pos1 == pos2``, else the cosine of the
+        angular separation, in [-1, 1].
     """
-    return jnp.dot(pos1, pos2)
+    return jnp.where(jnp.all(pos1 == pos2), 1.0 + 1.0e-6, jnp.dot(pos1, pos2))
