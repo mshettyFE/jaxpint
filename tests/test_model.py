@@ -494,7 +494,13 @@ class TestVsPINT:
 
     @pytest.mark.slow
     def test_build_timing_model_phase_matches(self, ngc6440e):
-        """build_timing_model produces a model whose phase is finite and consistent."""
+        """Full bridge-built model matches PINT's absolute phase (incl. pulse numbers).
+
+        Unlike the mean-subtracted residual parity tests, comparing
+        ``abs_phase=True`` phase catches TZR/pulse-numbering bugs: a
+        constant integer-turn offset is invisible to residuals but fails
+        here.
+        """
         pint_model, toas = ngc6440e
         from jaxpint.bridge import build_timing_model, pint_toas_to_jax, pint_model_to_params
 
@@ -502,11 +508,25 @@ class TestVsPINT:
         toa_data = pint_toas_to_jax(toas, model=pint_model)
         params = pint_model_to_params(pint_model).params
 
-        phase = jax_model.compute_phase(toa_data, params)
-        total = phase.int + phase.frac
+        jax_phase = jax_model.compute_phase(toa_data, params)
 
-        assert jnp.all(jnp.isfinite(total))
-        assert total.shape == (toas.ntoas,)
+        # PINT reference: longdouble absolute phase (TZR-referenced).
+        pint_phase = pint_model.phase(toas, abs_phase=True)
+
+        # Never collapse int + frac at ~1e9 cycles (float64 ulp there is
+        # ~1e-7 cycles).  Difference the parts first: the int-part
+        # difference is small, so the sum below is exact.  This is also
+        # robust to the two implementations landing on opposite sides of a
+        # frac = +/-0.5 boundary (int off by one, frac compensating).
+        dint = np.asarray(jax_phase.int) - pint_phase.int.astype(np.float64)
+        dfrac = np.asarray(jax_phase.frac) - pint_phase.frac.astype(np.float64)
+        dphase = dint + dfrac
+
+        # Delay-path differences (float64 astrometry/Shapiro/DM vs PINT
+        # longdouble) are ~ns-level; at F0 ~ 61.5 Hz that is ~1e-7 cycles.
+        # Measured max|dphase| on 2026-07-23: 5.8e-8 cycles, with the int
+        # parts agreeing exactly.
+        np.testing.assert_allclose(dphase, 0.0, atol=2e-7)
 
     @pytest.mark.slow
     def test_spindown_phase_matches_pint_component(self, ngc6440e):
