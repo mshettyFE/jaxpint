@@ -1,5 +1,7 @@
 """Tests for jaxpint.frequentist.detection (F-stat detection + empirical backgrounds)."""
 
+import functools
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -29,12 +31,15 @@ _POSITIONS = [
 ]
 
 
-@pytest.fixture(scope="module")
-def real_blocks():
-    """3 pulsars through the real marginalized likelihood: per-pulsar (S,C)/G + geometry."""
+@functools.lru_cache(maxsize=None)
+def _marginalized_pulsars():
+    """The marginalized 3-pulsar network, shared with
+    test_frequentist_sensitivity (which imports this builder).
+
+    """
     from jaxpint.bayes import marginalize_single_pulsar
 
-    pulsars, sc_l, gram_l = [], [], []
+    out = []
     for i, p in enumerate(_POSITIONS):
         td, tm, nm, pp = make_simple_pulsar(200, f0=100.0, f1=-1e-14, seed=i)
         over = {n for n in pp.free_names() if n in ("F0", "F1")}
@@ -49,8 +54,17 @@ def real_blocks():
         )
         _ = g(skel)  # warm up the noise model's cached device basis
         pos = p / jnp.linalg.norm(p)
+        out.append((g, skel, td, pos))
+    return tuple(out)
+
+
+@pytest.fixture(scope="module")
+def real_blocks():
+    """3 pulsars through the real marginalized likelihood: per-pulsar (S,C)/G + geometry."""
+    pulsars = list(_marginalized_pulsars())
+    sc_l, gram_l = [], []
+    for g, skel, td, _pos in pulsars:
         sc, gram = quadrature_blocks(g, skel, td, LOG10_FGW)
-        pulsars.append((g, skel, td, pos))
         sc_l.append(sc)
         gram_l.append(gram)
     return {
@@ -165,21 +179,8 @@ def test_quadrature_blocks_affine_in_injected_strain():
     # pulsar's likelihood and injecting at the final h0. That refactor is exact ONLY
     # if the matched filter is affine in the injected strain and the Gram is
     # injection-independent; verify both directly against the real likelihood.
-    from jaxpint.bayes import marginalize_single_pulsar
-
-    td, tm, nm, pp = make_simple_pulsar(200, f0=100.0, f1=-1e-14, seed=0)
-    over = {n for n in pp.free_names() if n in ("F0", "F1")}
-    g, _, skel = marginalize_single_pulsar(
-        over=over,
-        toa_data=td,
-        timing_model=tm,
-        noise_model=nm,
-        fiducial_params=pp,
-        allow_nonlinear=True,
-        validate_linearity=False,
-    )
-    pos = jnp.array([0.2, 0.5, -0.84])
-    pos = pos / jnp.linalg.norm(pos)
+    # (Pulsar 0 of the shared network — formerly a verbatim rebuild of it.)
+    g, skel, td, pos = _marginalized_pulsars()[0]
     cw_unit = jnp.array([1.0, 0.3, 1.2, LOG10_FGW, 0.5, 0.6, 0.9])
     s_unit = cw_delay_from_array(
         td, pos, 1.0, cw_unit, earth_term_only=True, linear_amplitude=True
