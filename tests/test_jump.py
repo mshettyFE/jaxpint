@@ -58,11 +58,20 @@ class TestConstruction:
 
 
 class TestPhaseJump:
-    def test_single_jump_masked_toas(self):
-        """Jump applies only to masked TOAs: phase = JUMP * F0."""
+    @pytest.mark.parametrize("mask", [
+        pytest.param([True, True, False, False, False, False], id="mixed"),
+        pytest.param([False] * 6, id="all_false"),
+        pytest.param([True] * 6, id="all_true"),
+    ])
+    def test_single_jump_masked_toas(self, mask):
+        """Jump applies only to masked TOAs: phase = JUMP * F0.
+
+        The absent-mask-key case (TZR fallback) is a different code path and
+        keeps its own test below.
+        """
         f0 = 200.0
         jump_val = 1e-6  # 1 microsecond
-        mask = np.array([True, True, False, False, False, False])
+        mask = np.array(mask)
 
         jump = PhaseJump(jump_param_names=("JUMP1",))
         params = _make_jump_params(f0=f0, jump_values=(jump_val,), jump_names=("JUMP1",))
@@ -135,31 +144,6 @@ class TestPhaseJump:
         result = jump(toa_data, params, delay)
         assert jnp.allclose(result.total, 0.0, atol=1e-15)
 
-    def test_all_false_mask(self):
-        """A mask of all False gives zero phase."""
-        jump = PhaseJump(jump_param_names=("JUMP1",))
-        params = _make_jump_params(f0=200.0, jump_values=(1e-6,), jump_names=("JUMP1",))
-        mask = np.zeros(4, dtype=bool)
-        toa_data = _make_toa_with_masks(n_toas=4, masks={"JUMP1": mask})
-        delay = jnp.zeros(4)
-
-        result = jump(toa_data, params, delay)
-        assert jnp.allclose(result.total, 0.0, atol=1e-15)
-
-    def test_all_true_mask(self):
-        """A mask of all True applies the jump to every TOA."""
-        f0 = 150.0
-        jump_val = 5e-7
-        jump = PhaseJump(jump_param_names=("JUMP1",))
-        params = _make_jump_params(f0=f0, jump_values=(jump_val,), jump_names=("JUMP1",))
-        mask = np.ones(4, dtype=bool)
-        toa_data = _make_toa_with_masks(n_toas=4, masks={"JUMP1": mask})
-        delay = jnp.zeros(4)
-
-        result = jump(toa_data, params, delay)
-        expected = jnp.full(4, jump_val * f0)
-        assert jnp.allclose(result.total, expected, atol=1e-15)
-
 
 class TestJIT:
     def test_jit_call(self):
@@ -214,12 +198,14 @@ class TestGrad:
         expected = jnp.where(jnp.array(mask), f0, 0.0)
         assert jnp.allclose(d_phase_d_jump, expected, atol=1e-12)
 
-    def test_grad_finite(self):
-        """All gradients are finite."""
+    def test_grad_multi_jump_exact(self):
+        """Each jump's gradient is F0 * n_masked, independent of the other.
+        """
+        f0 = 200.0
         jump = PhaseJump(jump_param_names=("JUMP1", "JUMP2"))
         mask1 = np.array([True, True, False])
         mask2 = np.array([False, True, True])
-        params = _make_jump_params(f0=200.0, jump_values=(1e-6, 2e-6))
+        params = _make_jump_params(f0=f0, jump_values=(1e-6, 2e-6))
         toa_data = _make_toa_with_masks(
             n_toas=3, masks={"JUMP1": mask1, "JUMP2": mask2}
         )
@@ -229,7 +215,11 @@ class TestGrad:
             return jump(toa_data, p, delay).total.sum()
 
         grads = jax.grad(loss)(params)
-        assert jnp.all(jnp.isfinite(grads.values))
+        for name, mask in (("JUMP1", mask1), ("JUMP2", mask2)):
+            idx = params.param_index(name)
+            assert jnp.isclose(
+                grads.values[idx], f0 * np.sum(mask), rtol=1e-12
+            ), name
 
 
 # ===========================================================================
