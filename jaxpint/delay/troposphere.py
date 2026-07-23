@@ -263,7 +263,7 @@ class TroposphereDelay(DelayComponent):
         assert toa_data.obs_height_km is not None
         assert toa_data.tropo_alt_valid is not None
 
-        tdb_mjd = toa_data.tdb.total
+        tdb_mjd = toa_data.tdb.approx_total
         sin_alt = jnp.sin(toa_data.tropo_alt)
         abs_lat = jnp.abs(toa_data.obs_geodetic_lat)
         year_frac = _year_fraction(tdb_mjd, toa_data.obs_geodetic_lat)

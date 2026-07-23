@@ -110,13 +110,13 @@ class DispersionDMX(DispersionDelayComponent):
         array, shape (n_toas,)
             Piecewise DM in pc cm^-3 at each TOA.
         """
-        toa_mjd = toa_data.mjd.total
+        toa_mjd = toa_data.mjd.approx_total
 
         dm = jnp.zeros(toa_data.n_toas)
 
         for i in range(self.n_bins):
-            r1 = params.epoch_dual(self.dmxr1_names[i]).total
-            r2 = params.epoch_dual(self.dmxr2_names[i]).total
+            r1 = params.epoch_dual(self.dmxr1_names[i]).approx_total
+            r2 = params.epoch_dual(self.dmxr2_names[i]).approx_total
 
             in_bin = (toa_mjd >= r1) & (toa_mjd <= r2)
             dmx_val = params.param_value(self.dmx_names[i])

@@ -119,7 +119,7 @@ class IFunc(PhaseComponent):
             Phase contribution in cycles (int + frac split).
         """
         f0 = params.param_value(self.f0_name)
-        t = toa_data.tdb.total - delay / SECS_PER_DAY
+        t = toa_data.tdb.approx_total - delay / SECS_PER_DAY
 
         mjds = jnp.array(self.control_mjds)
         delays = jnp.array(self.control_delays)

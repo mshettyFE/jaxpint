@@ -132,12 +132,12 @@ class PiecewiseSpindown(PhaseComponent):
         DualFloat
             Phase contribution in cycles (int + frac split).
         """
-        toa_tdb = toa_data.tdb.total
+        toa_tdb = toa_data.tdb.approx_total
         phase = jnp.zeros(toa_data.n_toas)
 
         for i in range(self.n_pieces):
-            start = params.epoch_dual(self.pwstart_names[i]).total
-            stop = params.epoch_dual(self.pwstop_names[i]).total
+            start = params.epoch_dual(self.pwstart_names[i]).approx_total
+            stop = params.epoch_dual(self.pwstop_names[i]).approx_total
             affected = (toa_tdb >= start) & (toa_tdb < stop)
 
             # Time since segment epoch (DualFloat precision)

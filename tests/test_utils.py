@@ -796,7 +796,7 @@ class TestTaylorHornerPhase:
             jnp.array([0.0]),
             coeffs,
         )
-        assert jnp.isfinite(out.total).all()
+        assert jnp.isfinite(out.approx_total).all()
 
 
 # ===========================================================================

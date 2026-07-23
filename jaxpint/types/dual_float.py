@@ -15,6 +15,13 @@ import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
+# Boundary between "safe to collapse" (subtracted values: day/cycle
+# differences, |int| <= ~2e4 even for 55-yr baselines) and "must
+# difference first" (absolute MJD >= ~4e4; absolute phase >= 1e9).
+# Try to think about weather you care about precision loss when
+# choosing between the .total and .approx_total
+_TOTAL_GUARD_THRESHOLD = 30_000.0
+
 
 class DualFloat(eqx.Module):
     """A value split into integer and fractional parts for extended precision.
@@ -93,12 +100,33 @@ class DualFloat(eqx.Module):
 
     @property
     def total(self) -> Float[Array, "..."]:
-        """Collapse int + frac into a single float64 array.
+        """Collapse int + frac into a single float64 array — GUARDED.
 
-        Safe when ``int`` is small (e.g. phase residuals, time differences
-        of a few days). Unsafe when ``int`` is large (e.g. absolute MJD
-        ~60000 or absolute phase ~10^10 cycles) — the addition discards
-        the low-order bits of ``frac``.
+        Raises (via :func:`equinox.error_if`; jit/vmap/grad-safe) when
+        ``|int| > 30000``, where the collapse discards low-order bits of
+        ``frac`` (error ~ulp(int)).  For tolerance-insensitive reads of absolute values
+        (window membership, interpolation grids) use
+        :attr:`approx_total`, which is unguarded by explicit contract.
+        """
+        guarded_int = eqx.error_if(
+            self.int,
+            jnp.any(jnp.abs(self.int) > _TOTAL_GUARD_THRESHOLD),
+            "DualFloat.total on |int| > 3e4: collapsing an absolute "
+            "MJD/phase discards the precision the int/frac split exists "
+            "to preserve.  Difference first ((a - b).total), or use "
+            ".approx_total for tolerance-insensitive uses "
+            "(windowing / interpolation).",
+        )
+        return guarded_int + self.frac
+
+    @property
+    def approx_total(self) -> Float[Array, "..."]:
+        """``int + frac`` WITHOUT the large-int guard.
+
+        Precision is ~ulp(int): ~6e-12 days (~0.5 us) at MJD 59000.
+        For tolerance-insensitive uses only — window-membership tests,
+        interpolation lookups, year fractions.  Anything feeding a
+        residual or phase must difference first and use :attr:`total`.
         """
         return self.int + self.frac
 
@@ -121,17 +149,9 @@ class DualFloat(eqx.Module):
         )
         return DualFloat(int=new_int, frac=new_frac)
 
-    def __mul__(self, scalar) -> DualFloat:
-        scalar = jnp.asarray(scalar, dtype=jnp.float64)
-        raw_int = self.int * scalar
-        raw_frac = self.frac * scalar
-        # Restore the "int is integer-valued" invariant: round raw_int back
-        # to an integer and route its fractional residue into raw_frac.
-        # raw_int - int_rounded is exact in float64 for typical pulsar
-        # magnitudes (Sterbenz lemma applies once |raw_int| >= 1).
-        int_rounded = jnp.round(raw_int)
-        frac_adjusted = raw_frac + (raw_int - int_rounded)
-        return DualFloat.from_cycles(int_rounded, frac_adjusted)
-
-    def __rmul__(self, scalar) -> DualFloat:
-        return self.__mul__(scalar)
+    # NOTE: scalar multiplication (__mul__/__rmul__) was removed
+    # No production code ever needed it: the pipeline's discipline is
+    # "subtract before you scale" (dt = tdb - epoch, then dt.total * s on
+    # the small-int result), and the one precision-critical scaling
+    # (phase accumulation) lives in taylor_horner_phase's compensated
+    # Horner, which operates on the int/frac fields directly.

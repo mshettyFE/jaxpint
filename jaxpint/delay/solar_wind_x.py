@@ -187,7 +187,7 @@ class SolarWindDispersionX(DispersionDelayComponent):
         theta, r_km = _sun_angle_and_distance(toa_data, psr_dir)
 
         # 3. TOA MJD for bin assignment (UTC, matching PINT's mjd_float).
-        toa_mjd = toa_data.mjd.total
+        toa_mjd = toa_data.mjd.approx_total
 
         # 4. Fiducial angles for conjunction/opposition (1-element arrays for
         #    compatibility with _solar_wind_geometry_swm1).
@@ -199,8 +199,8 @@ class SolarWindDispersionX(DispersionDelayComponent):
         dm = jnp.zeros(toa_data.n_toas)
 
         for i in range(self.n_bins):
-            r1 = params.epoch_dual(self.swxr1_names[i]).total
-            r2 = params.epoch_dual(self.swxr2_names[i]).total
+            r1 = params.epoch_dual(self.swxr1_names[i]).approx_total
+            r2 = params.epoch_dual(self.swxr2_names[i]).approx_total
             in_bin = (toa_mjd >= r1) & (toa_mjd <= r2)
 
             swxdm = params.param_value(self.swxdm_names[i])
