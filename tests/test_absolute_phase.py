@@ -27,13 +27,24 @@ class TestExtractTzrTdb:
     """Tests for extract_tzr_tdb and its integration into pint_toas_to_jax."""
 
     @pytest.mark.slow
-    def test_explicit_absphase(self, ngc6440e):
-        """Model with TZRMJD in par file produces TZR TDB values."""
+    def test_extract_tzr_toa_fields(self, ngc6440e):
+        """One extraction: all field contracts + pint_toas_to_jax wiring.
+        """
         model, toas = ngc6440e
-        td = pint_toas_to_jax(toas, model=model)
+        tzr_info = extract_tzr_toa(model, toas)
 
-        assert td.tzr_tdb_int is not None
-        assert td.tzr_tdb_frac is not None
+        # Field contracts (int/frac split, physicality, geometry shape).
+        assert 0.0 <= tzr_info["tdb_frac"] < 1.0
+        assert tzr_info["tdb_int"] == int(tzr_info["tdb_int"])
+        assert tzr_info["freq"] is not None
+        assert tzr_info["freq"] > 0
+        assert tzr_info["ssb_obs_pos"] is not None
+        assert tzr_info["ssb_obs_pos"].shape == (3,)
+
+        # pint_toas_to_jax(model=...) wires exactly these values through.
+        td = pint_toas_to_jax(toas, model=model)
+        assert float(td.tzr_tdb_int) == tzr_info["tdb_int"]
+        assert float(td.tzr_tdb_frac) == tzr_info["tdb_frac"]
 
     @pytest.mark.slow
     def test_auto_generated_absphase(self, ngc6440e):
@@ -72,37 +83,3 @@ class TestExtractTzrTdb:
 
         assert td.tzr_tdb_int is None
         assert td.tzr_tdb_frac is None
-
-    @pytest.mark.slow
-    def test_tzr_tdb_frac_in_unit_interval(self, ngc6440e):
-        """Fractional day should be in [0, 1)."""
-        model, toas = ngc6440e
-        tzr_info = extract_tzr_toa(model, toas)
-
-        assert 0.0 <= tzr_info["tdb_frac"] < 1.0
-
-    @pytest.mark.slow
-    def test_tzr_tdb_int_is_integer(self, ngc6440e):
-        """Integer day should be a whole number."""
-        model, toas = ngc6440e
-        tzr_info = extract_tzr_toa(model, toas)
-
-        assert tzr_info["tdb_int"] == int(tzr_info["tdb_int"])
-
-    @pytest.mark.slow
-    def test_tzr_freq_extracted(self, ngc6440e):
-        """TZR frequency is extracted."""
-        model, toas = ngc6440e
-        tzr_info = extract_tzr_toa(model, toas)
-
-        assert tzr_info["freq"] is not None
-        assert tzr_info["freq"] > 0
-
-    @pytest.mark.slow
-    def test_tzr_ssb_obs_pos_extracted(self, ngc6440e):
-        """TZR SSB observer position is extracted."""
-        model, toas = ngc6440e
-        tzr_info = extract_tzr_toa(model, toas)
-
-        assert tzr_info["ssb_obs_pos"] is not None
-        assert tzr_info["ssb_obs_pos"].shape == (3,)

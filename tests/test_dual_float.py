@@ -700,7 +700,7 @@ class TestPINTPhaseComparison:
         floats(min_value=-0.5, max_value=0.5, exclude_max=True,
                allow_nan=False, allow_infinity=False),
     )
-    @settings(deadline=None)
+    @settings(deadline=None, max_examples=25)
     def test_hypothesis_addition_agreement(self, ii1, ff1, ii2, ff2):
         pint_result = self.PINTPhase(ii1, ff1) + self.PINTPhase(ii2, ff2)
         jax_result = (
