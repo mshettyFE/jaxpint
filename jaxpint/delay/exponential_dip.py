@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
@@ -165,17 +166,26 @@ class ExponentialDip(DelayComponent):
             gamma = params.param_value(self.expdipidx_names[i])  # dimensionless
             tau = params.param_value(self.expdiptau_names[i])  # days
 
-            # Normalization so extremum = A
-            norm = (tau / eps) ** (eps / tau) * (tau / (tau - eps)) ** (
-                (tau - eps) / tau
-            )
+            # Normalization so extremum = A.  The second factor is
+            # (1/s)^s = exp(-s log s) with s = (tau - eps)/tau; evaluate it
+            # in log space with s guarded so that tau == eps (s = 0, where
+            # the limit is exactly 1) does not divide by zero, and eps > tau
+            # (negative base to a fractional power -> nan, outside the model
+            # domain of transition-faster-than-decay) clamps to the s = 0
+            # boundary instead of poisoning the fit.
+            s = jnp.maximum((tau - eps) / tau, 0.0)
+            safe_s = jnp.where(s > 0.0, s, 1.0)
+            norm = (tau / eps) ** (eps / tau) * jnp.exp(-s * jnp.log(safe_s))
 
-            # Exponential factor with smooth logistic transition.
-            expfac_pos = jnp.exp(-dt / tau) / (1.0 + jnp.exp(-dt / eps))
-            expfac_neg = jnp.exp(dt * (tau - eps) / (tau * eps)) / (
-                1.0 + jnp.exp(dt / eps)
-            )
-            expfac = jnp.where(dt >= 0.0, expfac_pos, expfac_neg)
+            # Exponential factor with smooth logistic transition.  Both
+            # branches of the former where(dt >= 0, ...) form are
+            # algebraically exp(-dt/tau) * sigmoid(dt/eps); evaluate that in
+            # log space so neither side can overflow.  The old form's
+            # exp(±dt/eps) overflowed to inf/inf = nan for |dt/eps| > ~709
+            # (routine over a multi-year span), and even though where()
+            # masked the forward value, the nan leaked into gradients of
+            # every dip parameter for all far-away TOAs.
+            expfac = jnp.exp(-dt / tau + jax.nn.log_sigmoid(dt / eps))
 
             total = total + (-A * ffac**gamma * norm * expfac)
 

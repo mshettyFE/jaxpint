@@ -10,12 +10,16 @@ pytest.importorskip("pint")  # optional dependency; skip module if absent
 from pint.models import get_model
 from pint.simulation import make_fake_toas_uniform
 
+import equinox as eqx
+
 from jaxpint.bridge import pint_toas_to_jax, pint_model_to_params, build_timing_model
 from jaxpint.delay.solar_wind import (
     SolarWindDispersion,
     _solar_wind_geometry_swm0,
     _solar_wind_geometry_swm1,
+    _sun_angle_and_distance,
 )
+from tests.helpers import make_params, make_toa_data
 
 
 # ---------------------------------------------------------------------------
@@ -315,3 +319,71 @@ class TestValidation:
     def test_swm1_requires_swp(self):
         with pytest.raises(ValueError, match="swp_name"):
             SolarWindDispersion(ne_sw_param_names=("NE_SW",), swm=1)
+
+
+# ---------------------------------------------------------------------------
+# Barycentric (obs_sun_pos == 0) guard
+# ---------------------------------------------------------------------------
+
+
+class TestBarycentricGuard:
+    """A barycentric TOA row (obs_sun_pos == 0, e.g. the TZRSITE @ TZR row the
+    bridge zeroes deliberately) formerly hit 0/0 = nan in
+    ``_sun_angle_and_distance`` and poisoned the whole delay/phase chain
+    whenever NE_SW != 0.  astrometry.py and shapiro.py guard the same case;
+    solar wind now does too: such rows contribute exactly zero DM."""
+
+    def _setup(self, swm=0):
+        # Row 0: barycentric (zeros).  Row 1: a realistic observer-Sun vector
+        # (~1 AU along x).  make_toa_data defaults obs_sun_pos to all-zeros;
+        # patch in the mixed geometry.
+        toa_data = make_toa_data(t_mjd=[55000.3, 55001.3])
+        obs_sun = jnp.array([[0.0, 0.0, 0.0], [1.496e8, 0.0, 0.0]])
+        toa_data = eqx.tree_at(lambda t: t.obs_sun_pos, toa_data, obs_sun)
+
+        names = ["RAJ", "DECJ", "NE_SW", "PEPOCH"]
+        values = [1.0, 0.3, 8.0, 0.0]
+        units = ["rad", "rad", "cm^-3", "day"]
+        if swm == 1:
+            names.append("SWP")
+            values.append(2.0)
+            units.append("")
+        params = make_params(
+            names=tuple(names), values=tuple(values), units=tuple(units),
+            epoch_int_values={"PEPOCH": 55000.0},
+        )
+        comp = SolarWindDispersion(
+            ne_sw_param_names=("NE_SW",),
+            swepoch_name="PEPOCH",
+            swm=swm,
+            swp_name="SWP" if swm == 1 else None,
+        )
+        return toa_data, params, comp
+
+    @pytest.mark.parametrize("swm", [0, 1])
+    def test_zero_obs_sun_row_gives_zero_dm(self, swm):
+        toa_data, params, comp = self._setup(swm=swm)
+        dm = comp.compute_dm(toa_data, params, jnp.zeros(2))
+        assert jnp.all(jnp.isfinite(dm)), f"non-finite DM: {dm}"
+        assert float(dm[0]) == 0.0  # barycentric row: no line of sight
+        assert float(dm[1]) != 0.0  # real row unaffected by the guard
+
+    @pytest.mark.parametrize("swm", [0, 1])
+    def test_grads_finite_with_zero_obs_sun_row(self, swm):
+        toa_data, params, comp = self._setup(swm=swm)
+
+        def loss(p):
+            return comp.compute_dm(toa_data, p, jnp.zeros(2)).sum()
+
+        grads = jax.grad(loss)(params)
+        assert jnp.all(jnp.isfinite(grads.values)), (
+            f"non-finite gradients: "
+            f"{[n for n, g in zip(params.names, grads.values) if not jnp.isfinite(g)]}"
+        )
+
+    def test_sun_angle_helper_finite_at_zero(self):
+        toa_data, params, comp = self._setup()
+        psr_dir = jnp.tile(jnp.array([[0.5, 0.5, 0.7071]]), (2, 1))
+        theta, r_km = _sun_angle_and_distance(toa_data, psr_dir)
+        assert jnp.all(jnp.isfinite(theta))
+        assert float(r_km[0]) == 0.0  # true r is preserved, not the dummy

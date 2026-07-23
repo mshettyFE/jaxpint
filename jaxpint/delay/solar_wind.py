@@ -93,7 +93,11 @@ def _sun_angle_and_distance(
     """
     obs_sun = toa_data.obs_sun_pos  # (n_toas, 3) km
     r_km = jnp.sqrt(jnp.sum(obs_sun**2, axis=1))
-    obs_sun_hat = obs_sun / r_km[:, None]
+    # Guard r == 0: a barycentric TOA (e.g. a TZRSITE @ TZR row, whose
+    # obs_sun_pos the bridge deliberately zeroes) would otherwise produce
+    # 0/0 = nan here
+    safe_r = jnp.where(r_km == 0.0, 1.0, r_km)
+    obs_sun_hat = obs_sun / safe_r[:, None]
     cos_theta = jnp.sum(obs_sun_hat * psr_dir, axis=1)
     theta = jnp.arccos(jnp.clip(cos_theta, -1.0, 1.0))
     return theta, r_km
@@ -118,7 +122,11 @@ def _solar_wind_geometry_swm0(
     # Near these limits rho/sin(rho) -> 1, so ratio -> 1.
     safe_sin = jnp.where(sin_theta == 0.0, 1.0, sin_theta)
     ratio = jnp.where(sin_theta == 0.0, 1.0, rho / safe_sin)
-    geometry_km = AU_KM**2 * ratio / r_km
+    # r == 0 marks a barycentric TOA (see _sun_angle_and_distance): no
+    # observer-Sun line of sight, so its solar-wind contribution is zero
+    # (rather than the inf/nan a bare division would give).
+    safe_r = jnp.where(r_km == 0.0, 1.0, r_km)
+    geometry_km = jnp.where(r_km == 0.0, 0.0, AU_KM**2 * ratio / safe_r)
     return geometry_km / PC_TO_KM
 
 

@@ -142,9 +142,16 @@ class Glitch(PhaseComponent):
                 glph + glf0 * dt + 0.5 * glf1 * dt**2 + (1.0 / 6.0) * glf2 * dt**3
             )
 
-            # Exponential decay term (safe against gltd == 0)
+            # Exponential decay term (safe against gltd == 0).  Clamp dt to
+            # >= 0 inside the exp: pre-glitch TOAs (dt < 0) are zeroed by the
+            # where(dt > 0, ...) below anyway, but without the clamp
+            # exp(+|dt|/gltd) overflows to inf for a short GLTD over a
+            # decades-long pre-glitch span, and the resulting nan leaks
+            # through the where() into gradients of every glitch parameter.
             safe_gltd = jnp.where(gltd != 0.0, gltd, 1.0)
-            decay = glf0d * safe_gltd * (1.0 - jnp.exp(-dt / safe_gltd))
+            decay = (
+                glf0d * safe_gltd * (1.0 - jnp.exp(-jnp.maximum(dt, 0.0) / safe_gltd))
+            )
             decay = jnp.where(gltd != 0.0, decay, 0.0)
             glitch_phase = glitch_phase + decay
 

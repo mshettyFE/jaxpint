@@ -287,6 +287,36 @@ class TestJitAndGrad:
         grad_params = jax.grad(phase_sum)(params)
         assert jnp.all(jnp.isfinite(grad_params.values))
 
+    def test_grad_finite_pre_glitch_short_gltd(self):
+        """Pre-glitch TOAs decades before a short-GLTD glitch: finite grads.
+
+        exp(-dt/gltd) with dt < 0 is exp(+|dt|/gltd); for |dt| > ~709*GLTD
+        it overflowed to inf, and the where(dt > 0, ...) mask let the
+        resulting nan leak into gradients of every glitch parameter.  The
+        clamp exp(-max(dt, 0)/gltd) is exact for the surviving branch."""
+        comp, params = _make_single_glitch(
+            glph=0.1, glf0=1e-6, glf1=-1e-14, glf0d=1e-6, gltd=10.0,
+            glep_int=59100.0,
+        )
+        # ~25 years before the glitch: |dt|/GLTD ~ 900 >> 709.
+        toa_data = make_toa_data(t_mjd=[50000.0, 59110.0])
+        delay = jnp.zeros(2)
+
+        forward = comp(toa_data, params, delay)
+        assert jnp.all(jnp.isfinite(forward.int + forward.frac))
+        # Pre-glitch TOA contributes exactly zero phase.
+        assert float(forward.int[0] + forward.frac[0]) == 0.0
+
+        def phase_sum(p):
+            result = comp(toa_data, p, delay)
+            return jnp.sum(result.int + result.frac)
+
+        grad_params = jax.grad(phase_sum)(params)
+        assert jnp.all(jnp.isfinite(grad_params.values)), (
+            f"non-finite gradients: "
+            f"{[n for n, g in zip(params.names, grad_params.values) if not jnp.isfinite(g)]}"
+        )
+
 
 # ===========================================================================
 # Integration test: JaxPINT glitch phase vs PINT glitch phase
