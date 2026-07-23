@@ -54,105 +54,69 @@ class TestBinaryBTPiecewise:
 
         npt.assert_allclose(d_pw, d_bt, atol=1e-15)
 
-    def test_one_a1_piece(self, bt_params):
-        """Single A1X piece: in-piece TOAs use A1X, others use global A1."""
+    @pytest.mark.parametrize("piece_kind", ["a1x", "t0x"])
+    def test_one_piece_overrides_only_in_piece(self, bt_params, piece_kind):
+        """A single piece (A1X or T0X) affects only the in-piece TOAs.
+        """
+        from jaxpint.binary.bt import BinaryBT
         from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
 
         t0_int = np.floor(bt_params["T0"])
         t0_frac = bt_params["T0"] - t0_int
 
-        a1_global = bt_params["A1"]
-        a1x = a1_global + 0.001  # slightly different
+        base_names = ("PB", "T0", "A1", "ECC", "OM")
+        base_values = [bt_params["PB"], t0_frac, bt_params["A1"],
+                       bt_params["ECC"], bt_params["OM"]]
+        epoch_ints = {"T0": t0_int}
 
-        param_names = ("PB", "T0", "A1", "ECC", "OM", "A1X_0000", "XR1_0000", "XR2_0000")
-        param_values = [
-            bt_params["PB"], t0_frac, a1_global, bt_params["ECC"], bt_params["OM"],
-            a1x, 55000.0, 55100.0,
-        ]
-        p = make_params(param_names, param_values,
-                        epoch_int_values={"T0": t0_int})
+        if piece_kind == "a1x":
+            piece_names = ("A1X_0000", "XR1_0000", "XR2_0000")
+            piece_values = [bt_params["A1"] + 0.001, 55000.0, 55100.0]
+            t0x_names, a1x_names = (), ("A1X_0000",)
+        else:
+            t0x = bt_params["T0"] + 0.00001
+            t0x_int = np.floor(t0x)
+            piece_names = ("T0X_0000", "XR1_0000", "XR2_0000")
+            piece_values = [t0x - t0x_int, 55000.0, 55100.0]
+            epoch_ints = {**epoch_ints, "T0X_0000": t0x_int}
+            t0x_names, a1x_names = ("T0X_0000",), ()
+
+        p = make_params(base_names + piece_names,
+                        base_values + piece_values,
+                        epoch_int_values=epoch_ints)
 
         bt_pw = BinaryBTPiecewise(
             pb_name="PB", t0_name="T0", a1_name="A1",
             ecc_name="ECC", om_name="OM",
             n_pieces=1,
-            t0x_names=(), a1x_names=("A1X_0000",),
+            t0x_names=t0x_names, a1x_names=a1x_names,
             xr1_names=("XR1_0000",), xr2_names=("XR2_0000",),
         )
 
         # TOAs: half in piece, half outside
         t_in = np.linspace(55010.0, 55090.0, 10)
         t_out = np.linspace(55110.0, 55190.0, 10)
-        t_all = np.concatenate([t_in, t_out])
-        toa_data = make_binary_toa_data(t_all, tzr_tdb_int=55000.0)
+        toa_data = make_binary_toa_data(
+            np.concatenate([t_in, t_out]), tzr_tdb_int=55000.0
+        )
         d = np.array(bt_pw(toa_data, p, jnp.zeros(20)))
 
-        # With global A1 everywhere
-        from jaxpint.binary.bt import BinaryBT
         bt_global = BinaryBT(pb_name="PB", t0_name="T0", a1_name="A1",
-                              ecc_name="ECC", om_name="OM")
-        p_global = make_params(
-            ("PB", "T0", "A1", "ECC", "OM"),
-            [bt_params["PB"], t0_frac, a1_global, bt_params["ECC"], bt_params["OM"]],
-            epoch_int_values={"T0": t0_int},
-        )
+                             ecc_name="ECC", om_name="OM")
+        p_global = make_params(base_names, base_values,
+                               epoch_int_values={"T0": t0_int})
         d_global = np.array(bt_global(toa_data, p_global, jnp.zeros(20)))
 
-        # Out-of-piece TOAs should match global
+        # Out-of-piece TOAs should match global exactly
         npt.assert_allclose(d[10:], d_global[10:], atol=1e-15)
-        # In-piece TOAs should differ (different A1)
+        # In-piece TOAs should differ (overridden piece parameter)
         assert not np.allclose(d[:10], d_global[:10]), "In-piece delays should differ"
 
-    def test_one_t0_piece(self, bt_params):
-        """Single T0X piece changes the delay for in-piece TOAs."""
-        from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
+    def test_two_pieces_select_their_own_values(self, bt_params):
+        """Each piece's TOAs equal plain BinaryBT run with THAT piece's A1X.
 
-        t0_int = np.floor(bt_params["T0"])
-        t0_frac = bt_params["T0"] - t0_int
-        t0x = bt_params["T0"] + 0.00001  # slightly shifted
-        t0x_int = np.floor(t0x)
-        t0x_frac = t0x - t0x_int
-
-        param_names = ("PB", "T0", "A1", "ECC", "OM", "T0X_0000", "XR1_0000", "XR2_0000")
-        param_values = [
-            bt_params["PB"], t0_frac, bt_params["A1"], bt_params["ECC"], bt_params["OM"],
-            t0x_frac, 55000.0, 55100.0,
-        ]
-        p = make_params(param_names, param_values,
-                        epoch_int_values={"T0": t0_int, "T0X_0000": t0x_int})
-
-        bt_pw = BinaryBTPiecewise(
-            pb_name="PB", t0_name="T0", a1_name="A1",
-            ecc_name="ECC", om_name="OM",
-            n_pieces=1,
-            t0x_names=("T0X_0000",), a1x_names=(),
-            xr1_names=("XR1_0000",), xr2_names=("XR2_0000",),
-        )
-
-        t_in = np.linspace(55010.0, 55090.0, 10)
-        t_out = np.linspace(55110.0, 55190.0, 10)
-        t_all = np.concatenate([t_in, t_out])
-        toa_data = make_binary_toa_data(t_all, tzr_tdb_int=55000.0)
-        d = np.array(bt_pw(toa_data, p, jnp.zeros(20)))
-
-        # With global T0 only
+        """
         from jaxpint.binary.bt import BinaryBT
-        bt_global = BinaryBT(pb_name="PB", t0_name="T0", a1_name="A1",
-                              ecc_name="ECC", om_name="OM")
-        p_global = make_params(
-            ("PB", "T0", "A1", "ECC", "OM"),
-            [bt_params["PB"], t0_frac, bt_params["A1"], bt_params["ECC"], bt_params["OM"]],
-            epoch_int_values={"T0": t0_int},
-        )
-        d_global = np.array(bt_global(toa_data, p_global, jnp.zeros(20)))
-
-        # Out-of-piece should match global
-        npt.assert_allclose(d[10:], d_global[10:], atol=1e-15)
-        # In-piece should differ
-        assert not np.allclose(d[:10], d_global[:10]), "In-piece delays should differ"
-
-    def test_two_pieces(self, bt_params):
-        """Two non-overlapping pieces with different A1X values."""
         from jaxpint.binary.bt_piecewise import BinaryBTPiecewise
 
         t0_int = np.floor(bt_params["T0"])
@@ -191,8 +155,21 @@ class TestBinaryBTPiecewise:
         toa_data = make_binary_toa_data(t_all, tzr_tdb_int=55000.0)
         d = np.array(bt_pw(toa_data, p, jnp.zeros(20)))
 
-        # Delays in piece 0 and piece 1 should differ (different A1X)
-        assert not np.allclose(d[:10], d[10:]), "Pieces should have different delays"
+        # Exact reference: plain BT evaluated with each piece's A1X.
+        bt_global = BinaryBT(pb_name="PB", t0_name="T0", a1_name="A1",
+                             ecc_name="ECC", om_name="OM")
+        for a1x_val, sl in ((a1x_0, slice(0, 10)), (a1x_1, slice(10, 20))):
+            p_ref = make_params(
+                ("PB", "T0", "A1", "ECC", "OM"),
+                [bt_params["PB"], t0_frac, a1x_val,
+                 bt_params["ECC"], bt_params["OM"]],
+                epoch_int_values={"T0": t0_int},
+            )
+            d_ref = np.array(bt_global(toa_data, p_ref, jnp.zeros(20)))
+            npt.assert_allclose(
+                d[sl], d_ref[sl], atol=1e-15,
+                err_msg=f"piece with A1X={a1x_val} not applied to its own TOAs",
+            )
 
     @pytest.mark.slow
     def test_piecewise_matches_pint_regular_bt(self, bt_params):
