@@ -128,17 +128,20 @@ class TestCWInjectorLinearMode:
 class TestH0Marginalized:
     """h0_95_marginalized: mixture-CDF quantile over an orientation grid."""
 
+    @pytest.mark.parametrize("n_copies", [1, 7])
     @pytest.mark.parametrize("X,Y", [(0.0, 4.0), (5.0, 2.0), (-3.0, 1.5)])
-    def test_single_orientation_reduces_to_closed_form(self, X, Y):
-        # A one-point grid is one truncated Gaussian -> must match the closed form.
-        marg = h0_95_marginalized(jnp.array([X]), jnp.array([Y]))
-        closed = h0_95_closed_form(jnp.float64(X), jnp.float64(Y))
-        assert jnp.allclose(marg, closed, rtol=1e-6)
+    def test_degenerate_grid_reduces_to_closed_form(self, X, Y, n_copies):
+        """A degenerate grid must reproduce the closed-form quantile.
 
-    def test_identical_orientations_reduce_to_closed_form(self):
-        # N copies of the same component is the same posterior -> same quantile.
-        X, Y = 2.0, 1.3
-        marg = h0_95_marginalized(jnp.full((7,), X), jnp.full((7,), Y))
+        n=1: a one-point grid is a single truncated Gaussian (grid edge
+        case).  n=7: N identical copies are the same posterior, so the
+        quantile must be unchanged — this leg catches mixture-weight
+        normalization bugs (summing component CDFs instead of averaging
+        passes n=1 exactly and fails n=7).
+        """
+        marg = h0_95_marginalized(
+            jnp.full((n_copies,), X), jnp.full((n_copies,), Y)
+        )
         closed = h0_95_closed_form(jnp.float64(X), jnp.float64(Y))
         assert jnp.allclose(marg, closed, rtol=1e-6)
 
