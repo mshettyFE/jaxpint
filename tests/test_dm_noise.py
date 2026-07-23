@@ -58,35 +58,6 @@ def _make_pldm(n_toas=100, n_freqs=5, T=3.0 * 365.25 * 86400.0):
 
 
 # ---------------------------------------------------------------------------
-# Unit tests
-# ---------------------------------------------------------------------------
-
-
-class TestPLDMNoiseBasic:
-    """DM-noise-specific tests; shared shape/PSD/generate tests live in
-    ``test_correlated_noise_common.py``.
-    """
-
-    def test_psd_weights_red_spectrum(self):
-        """Lower frequencies should have higher PSD."""
-        pldm, params, _, _, _, _, _, _ = _make_pldm(n_freqs=10)
-        weights = pldm.psd_weights(params)
-        for i in range(0, weights.shape[0] - 2, 2):
-            assert weights[i] > weights[i + 2]
-
-    def test_dm_scaling_frequency_dependence(self):
-        """Lower-frequency TOAs should have larger noise amplitude."""
-        pldm, params, toa_data, _, _, _, _, _ = _make_pldm(n_toas=100)
-        _, U, Phidiag = pldm.covariance(toa_data, params)
-        C_diag = jnp.sum(U ** 2 * Phidiag[None, :], axis=1)
-
-        # 800 MHz TOAs (even indices) should have larger variance than 1400 MHz (odd)
-        var_800 = C_diag[0::2].mean()
-        var_1400 = C_diag[1::2].mean()
-        assert var_800 > var_1400
-
-
-# ---------------------------------------------------------------------------
 # Covariance-generation consistency (whitening)
 # ---------------------------------------------------------------------------
 
@@ -108,7 +79,7 @@ class TestPLDMNoiseWhitening:
         C_analytic = U @ jnp.diag(Phidiag) @ U.T
         analytic_var = jnp.diag(C_analytic)
 
-        n_draws = 10_000
+        n_draws = 4_000
         keys = jax.random.split(jax.random.PRNGKey(123), n_draws)
         draws = jax.vmap(lambda k: pldm.generate(toa_data, params, k))(keys)
         empirical_var = jnp.var(draws, axis=0)

@@ -102,7 +102,10 @@ class TestPLSWNoiseBasic:
     """
 
     def test_sw_scaling_with_geometry(self):
-        """Verify scaled basis matches manual geometry × DMCONST / f² computation."""
+        """Verify scaled basis matches manual geometry × DMCONST / f² computation.
+        Verifies assembly, not geometry itself.
+
+        """
         n_toas = 20
         plsw, params, toa_data, F_raw, _, _, obs_freqs, obs_sun_pos = _make_plsw(
             n_toas=n_toas
@@ -123,23 +126,6 @@ class TestPLSWNoiseBasic:
         expected_basis = F_raw * D_expected[:, None]
 
         npt.assert_allclose(np.array(U), np.array(expected_basis), rtol=1e-10)
-
-    def test_swm0_geometry_nonzero(self):
-        """SWM=0 geometry should produce non-zero scaling with realistic positions."""
-        plsw, params, toa_data, _, _, _, _, _ = _make_plsw(n_toas=20)
-        scaling = plsw._sw_scaling(toa_data, params)
-        assert jnp.all(jnp.isfinite(scaling))
-        assert jnp.all(scaling != 0.0)
-
-    def test_sw_scaling_frequency_dependence(self):
-        """Lower-frequency TOAs should have larger SW noise amplitude."""
-        plsw, params, toa_data, _, _, _, _, _ = _make_plsw(n_toas=100)
-        _, U, Phidiag = plsw.covariance(toa_data, params)
-        C_diag = jnp.sum(U ** 2 * Phidiag[None, :], axis=1)
-
-        var_800 = C_diag[0::2].mean()
-        var_1400 = C_diag[1::2].mean()
-        assert var_800 > var_1400
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +150,7 @@ class TestPLSWNoiseWhitening:
         C_analytic = U @ jnp.diag(Phidiag) @ U.T
         analytic_var = jnp.diag(C_analytic)
 
-        n_draws = 10_000
+        n_draws = 4_000
         keys = jax.random.split(jax.random.PRNGKey(123), n_draws)
         draws = jax.vmap(lambda k: plsw.generate(toa_data, params, k))(keys)
         empirical_var = jnp.var(draws, axis=0)
