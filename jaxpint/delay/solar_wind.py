@@ -248,20 +248,19 @@ class SolarWindDispersion(DispersionDelayComponent):
     @classmethod
     def build(cls, ctx: "BuildContext") -> "Optional[SolarWindDispersion]":
         """Construct from a parsed model (astrometry names resolved on ``ctx``)."""
-        from jaxpint._build_context import value, epoch_or_pepoch
+        from jaxpint._build_context import epoch_or_pepoch, param_is_set
 
         par = ctx.par
         # NE_SW Taylor coefficients: base NE_SW (order 0) plus NE_SW{i} that are
-        # actually set (nonzero). indexed_family gives them in numeric order, which
-        # the Taylor sum requires (tuple position == derivative order).
+        # actually set (nonzero OR free -- "NE_SW1 0 1" must stay wired so a
+        # fit can move it; see param_is_set).
         ne_sw_names = ["NE_SW"]
         for i in par.params.indexed_family("NE_SW"):
             name = f"NE_SW{i}"
-            if value(par, name) != 0.0:
+            if param_is_set(par, name):
                 ne_sw_names.append(name)
 
-        ne_sw_val = value(par, "NE_SW") if ("NE_SW" in par.params) else 0.0
-        if not (len(ne_sw_names) > 1 or ne_sw_val != 0.0):
+        if not (len(ne_sw_names) > 1 or param_is_set(par, "NE_SW")):
             return None
 
         swm = par.int_params.get("SWM", 0)

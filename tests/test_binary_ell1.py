@@ -1,5 +1,6 @@
 """Tests for BinaryELL1 delay model against PINT."""
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import numpy.testing as npt
@@ -67,3 +68,117 @@ class TestBinaryELL1vsPINT:
 
         npt.assert_allclose(jax_delay, pint_delay, atol=1e-12, rtol=1e-12)
 
+
+
+class TestXPBDOT:
+    """XPBDOT must actually enter the orbital phase (PINT OrbitPB:
+    orbits = tt0/PB - 0.5*(PBDOT+XPBDOT)*(tt0/PB)^2, while
+    pbprime = PB + PBDOT*tt0 only).  The component formerly declared and
+    populated ``xpbdot_name`` but never read it, so the parameter silently
+    had zero effect."""
+
+    def _delay(self, pbdot, xpbdot):
+        from jaxpint.binary.ell1 import BinaryELL1
+
+        ell1 = BinaryELL1(
+            pb_name="PB", tasc_name="TASC", a1_name="A1",
+            eps1_name="EPS1", eps2_name="EPS2",
+            pbdot_name="PBDOT", xpbdot_name="XPBDOT",
+            shapiro_mode="none",
+        )
+        t = np.linspace(54001.0, 55800.0, 120)
+        params = make_binary_params(
+            ("PB", "TASC", "A1", "EPS1", "EPS2", "PBDOT", "XPBDOT"),
+            (10.0, 0.0, 50.0, 1e-5, -2e-5, pbdot, xpbdot),
+            epoch_int_values={"TASC": 54000.0},
+        )
+        toa_data = make_binary_toa_data(t)
+        return np.array(ell1(toa_data, params, jnp.zeros(len(t))))
+
+    def test_xpbdot_has_effect(self):
+        base = self._delay(pbdot=0.0, xpbdot=0.0)
+        with_x = self._delay(pbdot=0.0, xpbdot=1e-10)
+        assert np.max(np.abs(with_x - base)) > 1e-9
+
+    def test_xpbdot_adds_to_pbdot_in_phase(self):
+        """PBDOT and XPBDOT enter the phase only through their sum; the sole
+        difference between (pbdot=x, 0) and (0, xpbdot=x) is the pbprime
+        (nhat) factor in the inverse-timing correction, which is orders of
+        magnitude below the leading effect."""
+        x = 1e-10
+        via_pbdot = self._delay(pbdot=x, xpbdot=0.0)
+        via_xpbdot = self._delay(pbdot=0.0, xpbdot=x)
+        effect = np.max(np.abs(via_pbdot - self._delay(0.0, 0.0)))
+        diff = np.max(np.abs(via_pbdot - via_xpbdot))
+        assert diff < 1e-6 * effect
+
+
+class TestH3StigmaGuard:
+    """get_sini_m2's h3stigma/h3h4 modes divide by STIGMA^3 (and H3 for
+    h3h4).  STIGMA (or H3) free at its initial 0 -- or a fitter stepping
+    through 0 -- formerly produced an inf forward value and nan gradients;
+    the guard returns (sini, m2) = (0, 0) so the objective stays finite."""
+
+    def _component_and_params(self, mode, **overrides):
+        from jaxpint.binary.ell1 import BinaryELL1
+
+        names = ["PB", "TASC", "A1", "EPS1", "EPS2", "H3", "STIGMA", "H4"]
+        values = {
+            "PB": 10.0, "TASC": 0.0, "A1": 50.0,
+            "EPS1": 1e-5, "EPS2": -2e-5,
+            "H3": 1e-7, "STIGMA": 0.3, "H4": 3e-8,
+        }
+        values.update(overrides)
+        kwargs = dict(
+            pb_name="PB", tasc_name="TASC", a1_name="A1",
+            eps1_name="EPS1", eps2_name="EPS2",
+            h3_name="H3", shapiro_mode=mode,
+        )
+        if mode == "h3stigma":
+            kwargs["stigma_name"] = "STIGMA"
+        else:
+            kwargs["h4_name"] = "H4"
+        ell1 = BinaryELL1(**kwargs)
+        params = make_binary_params(
+            tuple(names), tuple(values[n] for n in names),
+            epoch_int_values={"TASC": 54000.0},
+        )
+        return ell1, params
+
+    @pytest.mark.parametrize(
+        "mode,zero_param",
+        [("h3stigma", "STIGMA"), ("h3h4", "H3")],
+    )
+    def test_zero_orthometric_param_finite(self, mode, zero_param):
+        ell1, params = self._component_and_params(mode, **{zero_param: 0.0})
+        t = np.linspace(54001.0, 54100.0, 50)
+        toa_data = make_binary_toa_data(t)
+
+        delay = ell1(toa_data, params, jnp.zeros(len(t)))
+        assert jnp.all(jnp.isfinite(delay))
+
+        def loss(p):
+            return ell1(toa_data, p, jnp.zeros(len(t))).sum()
+
+        grads = jax.grad(loss)(params)
+        assert jnp.all(jnp.isfinite(grads.values)), (
+            f"non-finite gradients: "
+            f"{[n for n, g in zip(params.names, grads.values) if not jnp.isfinite(g)]}"
+        )
+
+    def test_nonzero_stigma_unchanged(self):
+        """The guard must not perturb the regular h3stigma path."""
+        ell1, params = self._component_and_params("h3stigma")
+        t = np.linspace(54001.0, 54100.0, 50)
+        toa_data = make_binary_toa_data(t)
+        delay = ell1(toa_data, params, jnp.zeros(len(t)))
+        assert jnp.all(jnp.isfinite(delay))
+        # Shapiro contributes: differs from the no-shapiro configuration.
+        from jaxpint.binary.ell1 import BinaryELL1
+
+        no_shap = BinaryELL1(
+            pb_name="PB", tasc_name="TASC", a1_name="A1",
+            eps1_name="EPS1", eps2_name="EPS2", shapiro_mode="none",
+        )
+        base = no_shap(toa_data, params, jnp.zeros(len(t)))
+        assert float(jnp.max(jnp.abs(delay - base))) > 0.0

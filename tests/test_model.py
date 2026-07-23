@@ -646,3 +646,148 @@ class TestValidateFlagMasks:
         par = self._par([])
         toa = make_toa_data(n_toas=4, flag_masks={})
         _validate_flag_masks(par, toa)  # no raise
+
+
+# ===========================================================================
+# param_is_set: free-at-zero parameters stay wired into the model
+# ===========================================================================
+
+
+class TestFreeAtZeroParams:
+    """A free parameter at value 0 (e.g. ``PMRA 0 1``) must stay connected to
+    its component.  ``param_is_set`` formerly required a nonzero value, so
+    such parameters ended up referenced by no component: their design-matrix
+    column was identically zero, the SVD cutoff truncated it, and the fit
+    silently never moved them — while fitting PM/PHOFF from an initial 0 is
+    standard practice (and works in PINT).  Frozen zero-valued parameters
+    remain unset."""
+
+    _PAR = """\
+PSR           J0000+0000
+EPHEM         DE421
+CLK           TT(BIPM2019)
+UNITS         TDB
+RAJ           04:37:15.0
+DECJ          -47:15:09.0
+PMRA          0 1
+PMDEC         0 1
+PX            0
+PEPOCH        54000
+POSEPOCH      54000
+F0            100.0 1
+F1            -1e-15 1
+DM            15.0 1
+PHOFF         0 1
+TZRMJD        54000
+TZRFRQ        1400
+TZRSITE       @
+"""
+
+    def _build(self):
+        import io
+
+        import jaxpint.par as jpar
+        from jaxpint import build_model
+
+        par = jpar.get_model(io.StringIO(self._PAR))
+        model, _ = build_model(par)
+        return par, model
+
+    def test_param_is_set_semantics(self):
+        import io
+
+        import jaxpint.par as jpar
+        from jaxpint._build_context import param_is_set
+
+        par = jpar.get_model(io.StringIO(self._PAR))
+        assert param_is_set(par, "PMRA")  # zero but free -> set
+        assert param_is_set(par, "PHOFF")  # zero but free -> set
+        assert param_is_set(par, "F0")  # nonzero -> set
+        assert not param_is_set(par, "PX")  # zero AND frozen -> unset
+        assert not param_is_set(par, "NOT_A_PARAM")
+
+    def test_free_at_zero_pm_wired_into_astrometry(self):
+        from jaxpint.delay.astrometry import AstrometryEquatorial
+
+        _, model = self._build()
+        astro = [
+            c for c in model.delay_components
+            if isinstance(c, AstrometryEquatorial)
+        ]
+        assert len(astro) == 1
+        assert astro[0].pmra_name == "PMRA"
+        assert astro[0].pmdec_name == "PMDEC"
+        # PX is zero and frozen -> stays disconnected.
+        assert astro[0].px_name is None
+
+    def test_free_at_zero_phoff_wired(self):
+        _, model = self._build()
+        assert model.phoff_name == "PHOFF"
+
+    def test_free_at_zero_pm_has_nonzero_design_column(self):
+        """End-to-end: d(delay)/d(PMRA) is not identically zero at PMRA=0."""
+        par, model = self._build()
+        params = par.params
+        assert "PMRA" in params.free_names()
+
+        from tests.helpers import make_toa_data
+
+        # Spread over a year so proper motion has a lever arm; realistic
+        # ssb_obs_pos is not needed for a nonzero-column check, but the
+        # default zeros would make the astrometric delay vanish — patch in
+        # an Earth-orbit-scale position.
+        import equinox as eqx
+
+        t = np.linspace(54001.0, 54365.0, 12)
+        toa_data = make_toa_data(t_mjd=t)
+        phase = 2.0 * np.pi * (t - t[0]) / 365.25
+        obs = np.stack(
+            [1.496e8 * np.cos(phase), 1.496e8 * np.sin(phase), np.zeros_like(phase)],
+            axis=1,
+        )
+        toa_data = eqx.tree_at(
+            lambda td: td.ssb_obs_pos, toa_data, jnp.asarray(obs)
+        )
+
+        def delay_sum(p):
+            return model.compute_delay(toa_data, p).sum()
+
+        grads = jax.grad(delay_sum)(params)
+        pmra_idx = params.param_index("PMRA")
+        assert jnp.isfinite(grads.values[pmra_idx])
+        assert float(jnp.abs(grads.values[pmra_idx])) > 0.0
+
+    def test_free_at_zero_px_has_finite_nonzero_gradient(self):
+        """PX free at 0 now stays wired; the parallax term is linear in PX,
+        so d(delay)/d(PX) at PX=0 must be finite and nonzero (the former
+        1/PX formulation gave 0*inf = nan there)."""
+        import io
+
+        import equinox as eqx
+
+        import jaxpint.par as jpar
+        from jaxpint import build_model
+        from tests.helpers import make_toa_data
+
+        par_text = self._PAR.replace("PX            0", "PX            0 1")
+        par = jpar.get_model(io.StringIO(par_text))
+        model, _ = build_model(par)
+        params = par.params
+        assert "PX" in params.free_names()
+
+        t = np.linspace(54001.0, 54365.0, 12)
+        toa_data = make_toa_data(t_mjd=t)
+        phase = 2.0 * np.pi * (t - t[0]) / 365.25
+        obs = np.stack(
+            [1.496e8 * np.cos(phase), 1.496e8 * np.sin(phase), np.zeros_like(phase)],
+            axis=1,
+        )
+        toa_data = eqx.tree_at(lambda td: td.ssb_obs_pos, toa_data, jnp.asarray(obs))
+
+        def delay_sum(p):
+            return model.compute_delay(toa_data, p).sum()
+
+        grads = jax.grad(delay_sum)(params)
+        px_grad = grads.values[params.param_index("PX")]
+        assert jnp.isfinite(px_grad)
+        assert float(jnp.abs(px_grad)) > 0.0
