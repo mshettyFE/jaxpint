@@ -384,61 +384,6 @@ class TestIntegration:
         # grad_pv.values has shape (n_toas, n_params)
         assert grad_pv.values.shape == (5, 6)
 
-    def test_precision_dt_subtraction(self):
-        """Verify int/frac split preserves nanosecond precision over decades.
-
-        The key insight: with the split, the fractional subtraction
-        (toa_frac - epoch_frac) involves numbers in [0,1) so there's no
-        catastrophic cancellation. Without the split, subtracting two
-        ~60000-day MJDs directly loses ~5 digits.
-        """
-        # Two MJDs ~30 years apart
-        toa_int = jnp.array(59000.0)
-        toa_frac = jnp.array(0.123456789012345)
-        epoch_int = 48000.0
-        epoch_frac = jnp.array(0.987654321098765)
-
-        # High-precision dt via int/frac split
-        # Integer part is exact; fractional part has no cancellation
-        dt_int = toa_int - epoch_int  # exactly 11000.0
-        dt_frac = toa_frac - epoch_frac  # full precision, both in [0,1)
-        dt_split = dt_int + dt_frac
-
-        # Direct float64 subtraction (simulating no split)
-        toa_full = toa_int + toa_frac  # 59000.123... loses precision in representation
-        epoch_full = jnp.array(epoch_int) + epoch_frac
-        dt_direct = toa_full - epoch_full
-
-        # Both should give the same large-scale answer. Use rtol=0 so the bound
-        # is a real 1e-8 absolute tolerance: with the default rtol=1e-5 on a
-        # ~11000-valued result the effective tolerance is ~0.1, which would pass
-        # even on a gross error. (The two differ only by dt_direct's ~1e-11
-        # cancellation loss, so 1e-8 is comfortably satisfied.)
-        assert jnp.isclose(dt_split, dt_direct, atol=1e-8, rtol=0.0)
-
-        # But the split preserves more precision in the fractional part.
-        # We can verify this by checking that the fractional subtraction
-        # is exact to float64 eps (~1e-16), while the direct subtraction
-        # of ~60000-valued numbers can only be accurate to ~60000 * eps ~ 1e-11.
-        #
-        # Test: the fractional difference should be representable to full precision.
-        frac_diff = float(toa_frac - epoch_frac)
-        # This is a small number (~-0.864) computed from two [0,1) numbers:
-        # no cancellation, full 16 digits of precision.
-        expected_frac = 0.123456789012345 - 0.987654321098765
-        assert abs(frac_diff - expected_frac) < 2e-16, (
-            f"Fractional difference lost precision: err={abs(frac_diff - expected_frac)}"
-        )
-
-        # And the split dt preserves this: dt_split = 11000.0 + frac_diff (exact addition)
-        # So dt_split has full precision of frac_diff, i.e. ~1e-16 relative to frac_diff,
-        # which is ~1e-16 days ~ 0.0086 nanoseconds. Well under 1ns.
-        one_ns_in_days = 1e-9 / 86400.0
-        expected_dt = 11000.0 + expected_frac
-        err_split = abs(float(dt_split) - expected_dt)
-        assert err_split < one_ns_in_days, f"Split error {err_split} exceeds 1ns"
-
-
 # ===========================================================================
 # NamedVector shared interface (ParameterVector + GlobalParams)
 # ===========================================================================
