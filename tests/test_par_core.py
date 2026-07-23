@@ -365,3 +365,80 @@ def test_par_subpackage_has_no_pint_imports():
             if s.startswith("import pint") or s.startswith("from pint"):
                 offenders.append(f"{py.relative_to(_REPO)}:{i}: {s}")
     assert not offenders, "PINT imported in jaxpint/par/:\n" + "\n".join(offenders)
+
+def test_synthesize_pb_from_fb0():
+    """FB0 only → PB synthesized as 1 / (FB0 * 86400) days, appended to the list."""
+    from jaxpint.par import ParamKind, RawParam
+    from jaxpint.par.aliases import synthesize_pb_from_fb
+
+    fb0_hz = 8.3387216e-5  # J0023+0923 value
+    raw = [RawParam("FB0", ParamKind.FLOAT, value=fb0_hz, unit="Hz", frozen=False)]
+    synthesize_pb_from_fb(raw)
+    synth = raw[1:]
+
+    assert [r.name for r in synth] == ["PB"]
+    assert abs(synth[0].value - 1.0 / (fb0_hz * 86400.0)) < 1e-15
+    assert synth[0].unit == "d"
+    assert synth[0].frozen is False
+
+
+def test_synthesize_pbdot_from_fb1():
+    """FB0 and FB1 set → both PB and PBDOT synthesized."""
+    from jaxpint.par import ParamKind, RawParam
+    from jaxpint.par.aliases import synthesize_pb_from_fb
+
+    fb0_hz = 8.3387216e-5
+    fb1 = 3.6553667e-20
+    raw = [
+        RawParam("FB0", ParamKind.FLOAT, value=fb0_hz, unit="Hz", frozen=False),
+        RawParam("FB1", ParamKind.FLOAT, value=fb1, unit="Hz / s", frozen=True),
+    ]
+    synthesize_pb_from_fb(raw)
+    synth = raw[2:]
+
+    assert [r.name for r in synth] == ["PB", "PBDOT"]
+    assert abs(synth[0].value - 1.0 / (fb0_hz * 86400.0)) < 1e-15
+    assert abs(synth[1].value - (-fb1 / (fb0_hz * fb0_hz))) < 1e-25
+    assert [r.unit for r in synth] == ["d", "s / s"]
+    assert [r.frozen for r in synth] == [False, True]
+
+
+def test_synthesize_pb_skips_when_pb_set():
+    """If PB is already present, synthesis must not fire (would otherwise
+    duplicate PB in the parameter vector)."""
+    from jaxpint.par import ParamKind, RawParam
+    from jaxpint.par.aliases import synthesize_pb_from_fb
+
+    raw = [
+        RawParam("FB0", ParamKind.FLOAT, value=8.3387216e-5, unit="Hz"),
+        RawParam("PB", ParamKind.FLOAT, value=0.139, unit="d"),  # days
+    ]
+    synthesize_pb_from_fb(raw)
+
+    assert [r.name for r in raw] == ["FB0", "PB"]  # nothing appended
+
+
+def test_synthesize_pbdot_skips_when_pbdot_set():
+    """PB synthesized, but PBDOT already present → don't overwrite."""
+    from jaxpint.par import ParamKind, RawParam
+    from jaxpint.par.aliases import synthesize_pb_from_fb
+
+    raw = [
+        RawParam("FB0", ParamKind.FLOAT, value=8.3387216e-5, unit="Hz"),
+        RawParam("FB1", ParamKind.FLOAT, value=3.6553667e-20, unit="Hz / s"),
+        RawParam("PBDOT", ParamKind.FLOAT, value=1e-12, unit="s / s"),
+    ]
+    synthesize_pb_from_fb(raw)
+    synth = raw[3:]
+
+    assert [r.name for r in synth] == ["PB"]
+
+
+def test_synthesize_pb_noop_without_fb0():
+    """No FB0 → no synthesis, regardless of other state."""
+    from jaxpint.par.aliases import synthesize_pb_from_fb
+
+    raw = []
+    synthesize_pb_from_fb(raw)
+
+    assert raw == []

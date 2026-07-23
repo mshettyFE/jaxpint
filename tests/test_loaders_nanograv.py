@@ -45,6 +45,7 @@ def _stage_per_pulsar_layout(root: Path) -> None:
     shutil.copy2(tim_src, psr_dir / tim_src.name)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("stager", [_stage_par_tim_layout, _stage_per_pulsar_layout])
 def test_load_nanograv_pta_layouts(tmp_path, stager):
     stager(tmp_path)
@@ -73,6 +74,7 @@ def test_load_nanograv_pta_layouts(tmp_path, stager):
     assert cfg.n_pulsars == 1
 
 
+@pytest.mark.slow
 def test_load_nanograv_pta_pulsar_names_and_exclude(tmp_path):
     _stage_per_pulsar_layout(tmp_path)
 
@@ -89,6 +91,7 @@ def test_load_nanograv_pta_pulsar_names_and_exclude(tmp_path):
         load_nanograv_pta(tmp_path, exclude=["B1855+09"], planets=False)
 
 
+@pytest.mark.slow
 def test_load_nanograv_pta_planet_shapiro(tmp_path):
     """Real par files often set PLANET_SHAPIRO Y; the bridge must populate
     planet positions so SolarSystemShapiroDelay's runtime check doesn't trip."""
@@ -132,6 +135,7 @@ def test_load_nanograv_pta_planet_shapiro(tmp_path):
     assert jnp.isfinite(logL)
 
 
+@pytest.mark.slow
 def test_load_nanograv_pta_synthesizes_tnredamp_from_rnamp(tmp_path):
     """NANOGrav 15-yr par files specify red noise via tempo2-style RNAMP/RNIDX
     only; the bridge must synthesize TNREDAMP/TNREDGAM (the names PLRedNoise
@@ -186,6 +190,7 @@ def test_load_nanograv_pta_synthesizes_tnredamp_from_rnamp(tmp_path):
     assert jnp.isfinite(logL)
 
 
+@pytest.mark.slow
 def test_load_nanograv_pta_does_not_synthesize_when_tnredamp_set(tmp_path):
     """The unmodified bundled par file has TNRedAmp populated. Synthesis must
     not fire — TNREDAMP appears once (from the normal extraction path), not
@@ -197,84 +202,6 @@ def test_load_nanograv_pta_does_not_synthesize_when_tnredamp_set(tmp_path):
 
     assert params.names.count("TNREDAMP") == 1
     assert params.names.count("TNREDGAM") == 1
-
-
-def test_synthesize_pb_from_fb0():
-    """FB0 only → PB synthesized as 1 / (FB0 * 86400) days, appended to the list."""
-    from jaxpint.par import ParamKind, RawParam
-    from jaxpint.par.aliases import synthesize_pb_from_fb
-
-    fb0_hz = 8.3387216e-5  # J0023+0923 value
-    raw = [RawParam("FB0", ParamKind.FLOAT, value=fb0_hz, unit="Hz", frozen=False)]
-    synthesize_pb_from_fb(raw)
-    synth = raw[1:]
-
-    assert [r.name for r in synth] == ["PB"]
-    assert abs(synth[0].value - 1.0 / (fb0_hz * 86400.0)) < 1e-15
-    assert synth[0].unit == "d"
-    assert synth[0].frozen is False
-
-
-def test_synthesize_pbdot_from_fb1():
-    """FB0 and FB1 set → both PB and PBDOT synthesized."""
-    from jaxpint.par import ParamKind, RawParam
-    from jaxpint.par.aliases import synthesize_pb_from_fb
-
-    fb0_hz = 8.3387216e-5
-    fb1 = 3.6553667e-20
-    raw = [
-        RawParam("FB0", ParamKind.FLOAT, value=fb0_hz, unit="Hz", frozen=False),
-        RawParam("FB1", ParamKind.FLOAT, value=fb1, unit="Hz / s", frozen=True),
-    ]
-    synthesize_pb_from_fb(raw)
-    synth = raw[2:]
-
-    assert [r.name for r in synth] == ["PB", "PBDOT"]
-    assert abs(synth[0].value - 1.0 / (fb0_hz * 86400.0)) < 1e-15
-    assert abs(synth[1].value - (-fb1 / (fb0_hz * fb0_hz))) < 1e-25
-    assert [r.unit for r in synth] == ["d", "s / s"]
-    assert [r.frozen for r in synth] == [False, True]
-
-
-def test_synthesize_pb_skips_when_pb_set():
-    """If PB is already present, synthesis must not fire (would otherwise
-    duplicate PB in the parameter vector)."""
-    from jaxpint.par import ParamKind, RawParam
-    from jaxpint.par.aliases import synthesize_pb_from_fb
-
-    raw = [
-        RawParam("FB0", ParamKind.FLOAT, value=8.3387216e-5, unit="Hz"),
-        RawParam("PB", ParamKind.FLOAT, value=0.139, unit="d"),  # days
-    ]
-    synthesize_pb_from_fb(raw)
-
-    assert [r.name for r in raw] == ["FB0", "PB"]  # nothing appended
-
-
-def test_synthesize_pbdot_skips_when_pbdot_set():
-    """PB synthesized, but PBDOT already present → don't overwrite."""
-    from jaxpint.par import ParamKind, RawParam
-    from jaxpint.par.aliases import synthesize_pb_from_fb
-
-    raw = [
-        RawParam("FB0", ParamKind.FLOAT, value=8.3387216e-5, unit="Hz"),
-        RawParam("FB1", ParamKind.FLOAT, value=3.6553667e-20, unit="Hz / s"),
-        RawParam("PBDOT", ParamKind.FLOAT, value=1e-12, unit="s / s"),
-    ]
-    synthesize_pb_from_fb(raw)
-    synth = raw[3:]
-
-    assert [r.name for r in synth] == ["PB"]
-
-
-def test_synthesize_pb_noop_without_fb0():
-    """No FB0 → no synthesis, regardless of other state."""
-    from jaxpint.par.aliases import synthesize_pb_from_fb
-
-    raw = []
-    synthesize_pb_from_fb(raw)
-
-    assert raw == []
 
 
 def _ell1h_par_result(*, h3=False, h4=False, stigma=False, nharms=None):
@@ -449,6 +376,7 @@ def _stage_two_pulsars(root: Path) -> None:
     shutil.copy2(tim_src, root / "tim" / "B1899+09_copy.tim")
 
 
+@pytest.mark.slow
 def test_iter_matches_load(tmp_path):
     """iter_nanograv_pta yields exactly what load_nanograv_pta materializes."""
     import numpy as np
@@ -478,6 +406,7 @@ def test_iter_matches_load(tmp_path):
         )
 
 
+@pytest.mark.slow
 def test_iter_releases_references(tmp_path):
     """Nothing in the load path retains a record once the consumer drops it."""
     import gc
@@ -496,6 +425,7 @@ def test_iter_releases_references(tmp_path):
     gen.close()
 
 
+@pytest.mark.slow
 def test_iter_selection_order_and_exclude(tmp_path):
     from jaxpint import iter_nanograv_pta
 
@@ -520,6 +450,7 @@ def test_iter_selection_order_and_exclude(tmp_path):
         next(gen)
 
 
+@pytest.mark.slow
 def test_iter_early_break_loads_nothing_further(tmp_path):
     """Lazy loading: breaking after the first record never builds the second."""
     from unittest.mock import patch
@@ -537,6 +468,7 @@ def test_iter_early_break_loads_nothing_further(tmp_path):
     assert load_one.call_count == 1  # second pulsar was never loaded
 
 
+@pytest.mark.slow
 def test_map_pulsars_equivalence_and_hygiene(tmp_path):
     """map_pulsars applies fn in selection order AND releases each record.
 
@@ -570,6 +502,7 @@ def test_map_pulsars_equivalence_and_hygiene(tmp_path):
     assert all(n_toas > 100 for _, n_toas in results)
 
 
+@pytest.mark.slow
 def test_map_pulsars_clear_caches_flag(tmp_path):
     """clear_caches=True clears the JAX cache per pulsar; False never does."""
     from unittest.mock import patch
@@ -597,6 +530,7 @@ def test_map_pulsars_clear_caches_flag(tmp_path):
 # subset, which is TT(TAI).  Defaults now derive from the par.
 
 
+@pytest.mark.slow
 def test_load_nanograv_pta_derives_clock_from_par(tmp_path):
     """The par's CLK selects the realization, and it is recorded on TOAData."""
     par, tim = _example_par_tim()
@@ -612,6 +546,7 @@ def test_load_nanograv_pta_derives_clock_from_par(tmp_path):
     assert psrs.toa_data_list[0].clock_realization == "TT(TAI)"
 
 
+@pytest.mark.slow
 def test_load_nanograv_pta_explicit_bipm_overrides_par(tmp_path):
     """An explicit kwarg still forces uniformity across the array."""
     par, tim = _example_par_tim()
