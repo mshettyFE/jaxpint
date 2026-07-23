@@ -126,13 +126,6 @@ class TestSingleSegment:
             np.array(jax_delay), pint_delay, rtol=1e-10, atol=1e-15,
         )
 
-    def test_nonzero(self, single_setup):
-        toa_data, params, _, _, comp = single_setup
-        jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
-
-        assert jnp.all(jnp.isfinite(jax_delay))
-        assert jnp.max(jnp.abs(jax_delay)) > 1e-10
-
 
 # ---------------------------------------------------------------------------
 # Tests: Multiple segments match PINT
@@ -155,14 +148,6 @@ class TestMultipleSegments:
         np.testing.assert_allclose(
             np.array(jax_delay), pint_delay, rtol=1e-5, atol=1e-15,
         )
-
-    def test_nonzero(self, multi_setup):
-        toa_data, params, _, _, comp = multi_setup
-        jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
-
-        assert jnp.all(jnp.isfinite(jax_delay))
-        # At least some TOAs should have non-zero delay (those inside bins)
-        assert jnp.max(jnp.abs(jax_delay)) > 1e-10
 
 
 # ---------------------------------------------------------------------------

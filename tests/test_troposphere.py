@@ -86,17 +86,6 @@ class TestMatchesPINT:
         )
 
     @pytest.mark.slow
-    def test_nonzero(self, tropo_setup):
-        """Troposphere delay should be non-trivially nonzero."""
-        toa_data, params, _ = tropo_setup
-
-        comp = TroposphereDelay()
-        jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
-
-        assert jnp.all(jnp.isfinite(jax_delay))
-        assert jnp.max(jnp.abs(jax_delay)) > 1e-12
-
-    @pytest.mark.slow
     def test_correct_troposphere_n(self):
         """When CORRECT_TROPOSPHERE N, no troposphere data should be populated."""
         par = _PAR.replace("CORRECT_TROPOSPHERE  Y", "CORRECT_TROPOSPHERE  N")

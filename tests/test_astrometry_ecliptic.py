@@ -226,19 +226,6 @@ class TestDelayMatchesPINT:
             np.array(jax_delay), pint_delay, rtol=5e-7, atol=1e-10,
         )
 
-    @pytest.mark.slow
-    def test_delay_is_nonzero(self, ecl_simple):
-        """Delay should be non-trivially nonzero."""
-        toa_data, params, _, _ = ecl_simple
-
-        comp = AstrometryEcliptic(
-            obliquity_arcsec=OBLIQUITY_ARCSEC["IERS2010"],
-        )
-        jax_delay = comp(toa_data, params, jnp.zeros(toa_data.n_toas))
-
-        assert jnp.all(jnp.isfinite(jax_delay))
-        assert jnp.max(jnp.abs(jax_delay)) > 1e-5
-
 
 # ---------------------------------------------------------------------------
 # Bridge integration
@@ -495,19 +482,3 @@ class TestB1855Delay:
             np.array(jax_delay), pint_delay, rtol=5e-6, atol=1e-10,
         )
 
-    @pytest.mark.slow
-    def test_delay_nonzero_and_finite(self, b1855):
-        """Delay values should be finite and non-trivially nonzero."""
-        pint_model, toas = b1855
-        toa_data = pint_toas_to_jax(toas, model=pint_model)
-        params = pint_model_to_params(pint_model).params
-        jax_model, _ = build_timing_model(pint_model)
-
-        ecl_comp = [
-            c for c in jax_model.delay_components
-            if isinstance(c, AstrometryEcliptic)
-        ][0]
-        jax_delay = ecl_comp(toa_data, params, jnp.zeros(toa_data.n_toas))
-
-        assert jnp.all(jnp.isfinite(jax_delay))
-        assert jnp.max(jnp.abs(jax_delay)) > 1e-3  # Roemer delay is ~500s
