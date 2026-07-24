@@ -5,6 +5,20 @@ numpyro provides natively is used directly (e.g. enterprise's ``TruncNormal``
 is exactly ``numpyro.distributions.TruncatedNormal(loc, scale, low, high)``,
 same truncated-renormalization convention; pinned against enterprise in
 tests/enterprise_checks).
+
+**Arbitrary user priors (enterprise's ``UserParameter``):** there is no
+adapter class, deliberately — numpyro's ``Distribution`` ABC *is* the
+extension point, and :class:`LinearExp` below is the template to copy.  The
+enterprise facets map directly: prior pdf → ``log_prob``, sampler →
+``sample``, PPF → ``icdf``.  The contract that requires actual care: the
+log-density must be JAX-differentiable on the support, and ``support`` must
+be declared with the correct numpyro constraint — NUTS samples in
+unconstrained space and derives the change-of-variables Jacobian from that
+declaration, so a wrong ``support`` silently skews the posterior (see the
+prior-only NUTS recovery test in test_bayes_samplers_priors.py, and the KS
+tests there for how to validate a new distribution's shape).  ``icdf`` is
+optional unless the prior must participate in inverse-CDF (hypercube)
+transforms for external nested samplers.
 """
 
 from __future__ import annotations
