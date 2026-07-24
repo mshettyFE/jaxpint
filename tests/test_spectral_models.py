@@ -113,6 +113,33 @@ def test_powerlaw_matches_frozen_enterprise_golden():
     npt.assert_allclose(w, ref, rtol=1e-12)
 
 
+# Shared with tools/gen_enterprise_goldens.py's SPECS entry — the loader's
+# params assertion fails on any mismatch, so the two cannot drift silently.
+GENMODES_WGTS = [1.0e-4, 1.2e-4, 8.0e-5, 1.5e-4, 9.0e-5]
+
+
+def test_df_array_measure_matches_enterprise_genmodes_golden():
+    """A ragged per-mode df array reproduces enterprise's powerlaw_genmodes.
+
+    JaxPINT has no genmodes spectrum class: the mode measure belongs to the
+    grid, carried by the ``df`` argument (scalar for uniform grids, array
+    for irregular ones — enterprise's ``wgts**2`` convention).  This pins
+    that equivalence against an enterprise-generated golden, and is the
+    only test exercising ``psd_weights`` with a genuinely non-uniform
+    measure — the per-pulsar noise components pass ``freq_bin_widths``
+    arrays too, but (until log-spaced bases land) always uniform ones.
+    """
+    spec = PowerLawSpectrum(log10_A=LOG10_A, gamma=GAMMA)
+    df_arr = jnp.asarray(GENMODES_WGTS) ** 2
+    w = np.asarray(spec.psd_weights(FREQS, df_arr, _value_of(spec.param_defaults())))
+    ref = enterprise_golden(
+        "powerlaw_genmodes_weights",
+        params={"log10_A": LOG10_A, "gamma": GAMMA, "wgts": GENMODES_WGTS},
+        grid={"t_span_s": T_SPAN, "n_components": N_COMP},
+    )
+    npt.assert_allclose(w, ref, rtol=1e-12)
+
+
 def test_broken_powerlaw_reduces_to_powerlaw():
     """With the bend far above the sampled band, the bend factor is 1."""
     spec = BrokenPowerLawSpectrum(log10_A=LOG10_A, gamma=GAMMA, log10_fb=-2.0)

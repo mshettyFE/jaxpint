@@ -212,6 +212,62 @@ def test_turnover_knee_prior_weights(white_bundle):
         )
 
 
+def test_df_array_measure_matches_enterprise_genmodes(white_bundle):
+    """PowerLawSpectrum with an array df matches enterprise's powerlaw_genmodes.
+
+    JaxPINT carries a non-uniform mode measure in the ``df`` argument
+    (= enterprise's ``wgts**2``) rather than in a dedicated genmodes
+    spectrum — this pins that convention equivalence live, on ragged
+    weights, at a real pulsar's frequency grid.
+    """
+    from enterprise.signals.gp_priors import powerlaw_genmodes as ent_genmodes
+    from enterprise.signals.utils import createfourierdesignmatrix_red
+
+    from jaxpint.spectra import PowerLawSpectrum
+
+    b = white_bundle
+    tspan = float(b.psr.toas.max() - b.psr.toas.min())
+    _, freqs_ent = createfourierdesignmatrix_red(b.psr.toas, nmodes=10, Tspan=tspan)
+    freqs = freqs_ent[::2]
+    rng = np.random.default_rng(5)
+    wgts = np.sqrt(1.0 / tspan) * rng.uniform(0.5, 2.0, 10)
+    for log10_A, gamma in [(-14.0, 4.33), (-13.5, 2.0)]:
+        spec = PowerLawSpectrum(log10_A=log10_A, gamma=gamma)
+        phi_jax = np.asarray(
+            spec.psd_weights(freqs, wgts**2, lambda s: spec.defaults[s])
+        )
+        phi_ent = ent_genmodes(freqs_ent, log10_A=log10_A, gamma=gamma, wgts=wgts)
+        npt.assert_allclose(
+            phi_jax,
+            phi_ent,
+            rtol=1e-12,
+            err_msg=f"df-array weights disagree at (log10_A={log10_A}, gamma={gamma})",
+        )
+
+
+def test_improper_prior_constant_matches_enterprise(white_bundle):
+    """marginal.py's INFINITE_POWER == enterprise's live infinitepower.
+
+    JaxPINT has no infinitepower spectrum class: the improper-flat
+    convention lives in jaxpint.bayes.marginal (enterprise expresses the
+    same integral as ``infinitepower`` over a basis, e.g. its TimingModel
+    signal).  Absolute-logL parity between the stacks rests on the two
+    regularizer constants agreeing — pinned here against enterprise's
+    current code, and against its frozen output in test_bayes_marginal.
+    """
+    from enterprise.signals.gp_priors import infinitepower as ent_infinitepower
+    from enterprise.signals.utils import createfourierdesignmatrix_red
+
+    from jaxpint.bayes.marginal import INFINITE_POWER
+
+    b = white_bundle
+    tspan = float(b.psr.toas.max() - b.psr.toas.min())
+    _, freqs_ent = createfourierdesignmatrix_red(b.psr.toas, nmodes=10, Tspan=tspan)
+    npt.assert_array_equal(
+        np.full(freqs_ent.shape, INFINITE_POWER), ent_infinitepower(freqs_ent)
+    )
+
+
 def test_quantization_matrix(white_bundle):
     """ECORR epoch quantization: identical groupings (dt=1 s, nmin=2).
 

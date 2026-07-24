@@ -26,6 +26,56 @@
    3.682736223502415e-17
   ]
  },
+ "powerlaw_genmodes_weights": {
+  "function": "enterprise.signals.gp_priors.powerlaw_genmodes",
+  "grid": {
+   "t_span_s": 100000000.0,
+   "n_components": 5
+  },
+  "params": {
+   "log10_A": -14.0,
+   "gamma": 4.33,
+   "wgts": [
+    0.0001,
+    0.00012,
+    8e-05,
+    0.00015,
+    9e-05
+   ]
+  },
+  "values": [
+   3.9148103905815167e-14,
+   3.9148103905815167e-14,
+   2.8029370434213957e-15,
+   2.8029370434213957e-15,
+   2.1525620205583117e-16,
+   2.1525620205583117e-16,
+   2.1775768356541644e-16,
+   2.1775768356541644e-16,
+   2.9830163410369573e-17,
+   2.9830163410369573e-17
+  ]
+ },
+ "infinitepower_weights": {
+  "function": "enterprise.signals.gp_priors.infinitepower",
+  "grid": {
+   "t_span_s": 100000000.0,
+   "n_components": 5
+  },
+  "params": {},
+  "values": [
+   1e+40,
+   1e+40,
+   1e+40,
+   1e+40,
+   1e+40,
+   1e+40,
+   1e+40,
+   1e+40,
+   1e+40,
+   1e+40
+  ]
+ },
  "turnover_weights": {
   "function": "enterprise.signals.gp_priors.turnover",
   "grid": {

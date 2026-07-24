@@ -1232,3 +1232,72 @@ class TestPTAMarg:
         logL = float(g(global_params, reduced_skeletons))
         assert jnp.isfinite(logL)
         assert marginalized == over
+
+
+# ---------------------------------------------------------------------------
+# The improper-flat convention constant (enterprise's ``infinitepower``)
+# ---------------------------------------------------------------------------
+
+
+def test_infinite_power_constant_matches_enterprise_golden():
+    """INFINITE_POWER == enterprise's gp_priors.infinitepower output.
+
+    Absolute-logL parity with enterprise/discovery rests on both stacks
+    using the same improper-prior regularizer: enterprise's TimingModel
+    signal is ``infinitepower`` over the design matrix, and marginal.py's
+    Woodbury block uses INFINITE_POWER for the same integral.  The frozen
+    golden is enterprise's own output (tools/gen_enterprise_goldens.py), so
+    this trips if either stack ever changes its constant.
+    """
+    from jaxpint.bayes.marginal import INFINITE_POWER
+
+    from tests.helpers import enterprise_golden
+
+    ref = enterprise_golden(
+        "infinitepower_weights",
+        params={},
+        grid={"t_span_s": 1.0e8, "n_components": 5},
+    )
+    npt.assert_array_equal(ref, np.full(10, INFINITE_POWER))
+
+
+def test_marginalization_matches_improper_gp_formulation():
+    """marginalize_single_pulsar == Φ=INFINITE_POWER GP over the same columns.
+
+    Two independent routes to the same improper-flat marginalization: (A)
+    jaxpint.bayes.marginal — its own jvp-built design matrix, cached
+    Woodbury block, and QR solve; (B) plain single_pulsar_logL handed
+    independently-built design-matrix columns as an ``external_cov`` at
+    Φ = INFINITE_POWER — the enterprise-style formulation (enterprise's
+    TimingModel signal is exactly infinitepower over the design matrix).
+    Same convention constant, so the logLs must agree to solver precision —
+    a two-algebras consistency check on the marginalization machinery.
+    """
+    from jaxpint.bayes.marginal import INFINITE_POWER
+
+    td, tm, nm, pp = make_simple_pulsar(n_toas=30, f0=200.0, f1=-1e-15, seed=11)
+    over = ("F0", "F1")
+
+    g, _, reduced = marginalize_single_pulsar(
+        over=over,
+        toa_data=td,
+        timing_model=tm,
+        noise_model=nm,
+        fiducial_params=pp,
+    )
+    logL_marg = float(g(reduced))
+
+    # Independent design-matrix build: full jacfwd, then slice — deliberately
+    # NOT marginal.py's one-hot jvp route (and with the opposite sign
+    # convention, which MΦMᵀ cannot see).
+    def resid(values):
+        return compute_time_residuals(tm, td, pp.with_values(values))
+
+    J = jax.jacfwd(resid)(pp.values)
+    cols = jnp.stack([J[:, pp.param_index(n)] for n in over], axis=1)
+    Phi = jnp.full(len(over), INFINITE_POWER)
+    logL_gp = float(single_pulsar_logL(td, tm, nm, pp, external_cov=(cols, Phi)))
+
+    # Observed agreement is bit-exact on this fixture; rtol leaves headroom
+    # for BLAS/platform variation only.
+    npt.assert_allclose(logL_gp, logL_marg, rtol=1e-12)

@@ -52,6 +52,22 @@ SPECS: dict[str, dict] = {
             "gamma": 4.33,
         },
     },
+    # Ragged per-mode weights (bin-width replacement is wgts**2); values are
+    # ~sqrt(1/T_span) with deliberate scatter so no uniform df reproduces them.
+    "powerlaw_genmodes_weights": {
+        "function": "powerlaw_genmodes",
+        "grid": PSD_GRID,
+        "params": {
+            "log10_A": -14.0,
+            "gamma": 4.33,
+            "wgts": [1.0e-4, 1.2e-4, 8.0e-5, 1.5e-4, 9.0e-5],
+        },
+    },
+    "infinitepower_weights": {
+        "function": "infinitepower",
+        "grid": PSD_GRID,
+        "params": {},
+    },
     "turnover_weights": {
         "function": "turnover",
         "grid": PSD_GRID,
@@ -96,10 +112,13 @@ def generate() -> dict:
     }
     for name, spec in SPECS.items():
         fn = getattr(gp_priors, spec["function"])
+        # Array-valued params are stored as JSON lists; enterprise wants ndarrays.
+        kwargs = {
+            k: np.asarray(v) if isinstance(v, list) else v
+            for k, v in spec["params"].items()
+        }
         # json floats round-trip float64 exactly (shortest-repr).
-        vals = [
-            float(v) for v in np.asarray(fn(_psd_freqs(spec["grid"]), **spec["params"]))
-        ]
+        vals = [float(v) for v in np.asarray(fn(_psd_freqs(spec["grid"]), **kwargs))]
         out[name] = {
             "function": f"enterprise.signals.gp_priors.{spec['function']}",
             "grid": spec["grid"],

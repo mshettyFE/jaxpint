@@ -81,7 +81,15 @@ class SpectralModel(ABC):
         freqs : (n_freq,) array
             Fourier frequencies in Hz.
         df : scalar or (n_freq,) array
-            Frequency bin widths.
+            Frequency bin widths — the per-mode integration measure.  The
+            array form is how a non-uniform grid (log-spaced / custom modes)
+            carries each mode's measure, and is exactly enterprise's
+            ``powerlaw_genmodes`` convention with ``df = wgts**2`` (parity
+            is pinned in test_spectral_models against an
+            enterprise-generated golden).  There is no separate genmodes
+            spectrum class: the measure belongs to the grid, so callers with
+            non-uniform bases pass it here (as the per-pulsar noise
+            components already do via ``freq_bin_widths``).
         value_of : callable
             Maps a parameter suffix from :meth:`param_defaults` to its
             (possibly traced) value.
