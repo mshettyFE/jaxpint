@@ -148,6 +148,23 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra cpu --extra dev --extra enterprise
 
+      # Clock files and JPL ephemeris kernels (de440.bsp alone is ~114 MB)
+      # land in ~/.astropy/cache via astropy's downloader. A cold cache
+      # re-downloads everything every run, turning JPL/GitHub slowness into
+      # red CI (observed 2026-07-24: de440 timeouts erroring every
+      # enterprise_checks fixture in the pta shard; a BIPM clock-file
+      # timeout killing core before tests ran). Static key: the cached
+      # artifacts are pinned/immutable (kernels never change; clock files
+      # are pinned via SEED_CLOCK_REF / $PINT_CLOCK_OVERRIDE) -- bump v1 to
+      # force a refresh. On a miss the pre-warm steps below populate it
+      # serially with retries, and the end-of-job save also captures
+      # anything workers fetched mid-test, so subsequent runs are offline.
+      - name: Cache astropy downloads (clocks + JPL ephemerides)
+        uses: actions/cache@v4
+        with:
+          path: ~/.astropy/cache
+          key: astropy-cache-v1-${{ runner.os }}
+
       # Pin the clock snapshot to the seed commit the suite is tested against
       # (jaxpint.clock._pinned.SEED_CLOCK_REF -- the single source of truth,
       # bumped via tools/bump_clock_pin.py). Exporting JAXPINT_CLOCK_REF makes
@@ -167,12 +184,19 @@ jobs:
       # snapshot into the shared package dir at once and races on the download
       # temp files. One serial pre-fetch leaves a warm SNAPSHOT.json at the
       # pinned ref, so the workers make zero network calls.
+      # Retried: a single transient GitHub-raw read timeout must not kill
+      # the shard before tests run.
       - name: Pre-warm clock snapshot cache
         env:
           JAX_PLATFORMS: cpu
-        run: >-
-          uv run --extra cpu --extra dev --extra enterprise
-          python -c "import jaxpint.clock as clock; clock.ensure_fresh()"
+        run: |
+          for attempt in 1 2 3; do
+            uv run --extra cpu --extra dev --extra enterprise \
+              python -c "import jaxpint.clock as clock; clock.ensure_fresh()" && break
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            echo "clock snapshot pre-warm failed (attempt $attempt); retrying in 20s"
+            sleep 20
+          done
 
       # The bridge / PINT-parity tests build real PINT models + TOAs, which pull
       # PINT's OWN clock corrections (a separate machinery from jaxpint's, into
@@ -194,17 +218,37 @@ jobs:
       # AttributeError. Call the module-level loaders directly, then run
       # update_clock_files() WITHOUT bipm_versions (that path is fine) for the
       # per-observatory clock files.
-      - name: Pre-warm PINT clock cache
+      # Also pre-warms the JPL solar-system ephemerides the fixtures
+      # barycenter with: de440 (~114 MB; enterprise_checks + two vendored
+      # pars) and de421 (most vendored pars). The rarer kernels
+      # (de405/de436/de200) download on demand mid-test and ride the same
+      # astropy cache from then on. Retried like the step above, with a
+      # generous astropy remote_timeout because JPL's servers are slow on
+      # bad days -- the exact failure mode that motivated the cache.
+      - name: Pre-warm PINT clock + ephemeris cache
         env:
           JAX_PLATFORMS: cpu
         run: |
-          uv run --extra cpu --extra dev --extra enterprise python - <<'EOF'
+          prewarm() {
+            uv run --extra cpu --extra dev --extra enterprise python - <<'EOF'
+          from astropy.utils.data import conf
+          conf.remote_timeout = 120.0
           import pint.observatory as o
           for v in ["BIPM2023", "BIPM2019"]:
               o._load_bipm_clock(v)
           o._load_gps_clock()
           o.update_clock_files()
+          from pint.solar_system_ephemerides import load_kernel
+          for ephem in ["de440", "de421"]:
+              load_kernel(ephem)
           EOF
+          }
+          for attempt in 1 2 3; do
+            prewarm && break
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            echo "PINT cache pre-warm failed (attempt $attempt); retrying in 20s"
+            sleep 20
+          done
 
       # --runslow -> include the @slow PINT-validation / fitting / noise tests.
       # -n auto   -> parallelize across the runner's cores via pytest-xdist.
