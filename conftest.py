@@ -73,11 +73,28 @@ _PINT_RE = re.compile(r"^\s*(?:import\s+pint|from\s+pint)", re.M)
 # end-of-run banner (pytest_terminal_summary) so the two can't drift apart.
 _SKIP_NO_PINT_REASON = "requires PINT (pip install jaxpint[pint])"
 
+# Same auto-detection for enterprise (tests/enterprise_checks/): another
+# optional reference stack whose imports live inside function bodies precisely
+# so this module-level source scan can gate them.  CI installs the extra (see
+# tests.yml) so the parity suite runs there; a local install without it skips
+# cleanly instead of erroring at the first in-test ``from enterprise...``.
+_HAS_ENTERPRISE = importlib.util.find_spec("enterprise") is not None
+_ENTERPRISE_RE = re.compile(r"^\s*(?:import\s+enterprise|from\s+enterprise)", re.M)
+_SKIP_NO_ENTERPRISE_REASON = "requires enterprise (pip install jaxpint[enterprise])"
+
 
 @functools.lru_cache(maxsize=None)
 def _module_uses_pint(path: str) -> bool:
     try:
         return bool(_PINT_RE.search(open(path, encoding="utf-8").read()))
+    except OSError:
+        return False
+
+
+@functools.lru_cache(maxsize=None)
+def _module_uses_enterprise(path: str) -> bool:
+    try:
+        return bool(_ENTERPRISE_RE.search(open(path, encoding="utf-8").read()))
     except OSError:
         return False
 
@@ -111,12 +128,18 @@ def pytest_configure(config):
         "requires_pint: test imports PINT (auto-detected per module; skipped "
         "when PINT is not installed).",
     )
+    config.addinivalue_line(
+        "markers",
+        "requires_enterprise: test imports enterprise (auto-detected per "
+        "module; skipped when enterprise is not installed).",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
     run_slow = config.getoption("--runslow")
     skip_slow = pytest.mark.skip(reason="need --runslow option to run")
     skip_no_pint = pytest.mark.skip(reason=_SKIP_NO_PINT_REASON)
+    skip_no_enterprise = pytest.mark.skip(reason=_SKIP_NO_ENTERPRISE_REASON)
     for item in items:
         if not run_slow and "slow" in item.keywords:
             item.add_marker(skip_slow)
@@ -124,6 +147,10 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.requires_pint)  # denote for -m selection
             if not _HAS_PINT:
                 item.add_marker(skip_no_pint)  # graceful skip, not a hard error
+        if _module_uses_enterprise(str(item.fspath)):
+            item.add_marker(pytest.mark.requires_enterprise)
+            if not _HAS_ENTERPRISE:
+                item.add_marker(skip_no_enterprise)
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
