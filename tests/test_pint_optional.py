@@ -13,7 +13,6 @@ import re
 import subprocess
 import sys
 
-import pytest
 
 _REPO = pathlib.Path(__file__).resolve().parents[1]
 
@@ -61,21 +60,35 @@ def test_native_path_usable_without_pint():
     assert "OK" in r.stdout
 
 
-@pytest.mark.parametrize("symbol", [
+_PINT_BACKED_SYMBOLS = (
     "pint_toas_to_jax", "build_timing_model", "pint_model_to_params",
     "extract_tzr_toa", "params_to_pint_model",
-])
-def test_pint_backed_symbol_raises_clear_error(symbol):
+)
+
+
+def test_pint_backed_symbols_raise_clear_error():
+    """Every PINT-backed lazy symbol raises ImportError naming jaxpint[pint].
+
+    One subprocess for all symbols: the per-process cost is the `import
+    jaxpint` (~seconds), and each attribute access independently re-enters the
+    lazy ``__getattr__``, so looping inside one interpreter tests exactly what
+    five separate interpreters did.  Per-symbol outcomes are still printed and
+    asserted individually.
+    """
     r = _run(
         "import jaxpint\n"
-        "try:\n"
-        f"    jaxpint.{symbol}\n"
-        "    print('NO_ERROR')\n"
-        "except ImportError as e:\n"
-        "    print('IMPORTERROR', 'jaxpint[pint]' in str(e))\n"
+        f"for symbol in {list(_PINT_BACKED_SYMBOLS)!r}:\n"
+        "    try:\n"
+        "        getattr(jaxpint, symbol)\n"
+        "        print('NO_ERROR', symbol)\n"
+        "    except ImportError as e:\n"
+        "        print('IMPORTERROR', symbol, 'jaxpint[pint]' in str(e))\n"
     )
     assert r.returncode == 0, r.stderr
-    assert "IMPORTERROR True" in r.stdout, r.stdout
+    lines = r.stdout.strip().splitlines()
+    assert len(lines) == len(_PINT_BACKED_SYMBOLS), r.stdout
+    for line in lines:
+        assert line.startswith("IMPORTERROR") and line.endswith("True"), r.stdout
 
 
 def test_no_pint_import_outside_bridge():

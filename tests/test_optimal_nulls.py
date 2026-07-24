@@ -111,7 +111,9 @@ def test_os_null_is_standard_normal():
     """OS SNR over many noise draws has mean ≈ 0, std ≈ 1."""
     draw, _ = _null_model()
     keys = jax.random.split(jax.random.PRNGKey(11), 4000)
-    snrs = np.array([float(optimal_statistic(draw(k), LOG10_A).snr) for k in keys])
+    snrs = np.asarray(
+        jax.vmap(lambda k: optimal_statistic(draw(k), LOG10_A).snr)(keys)
+    )
     assert abs(snrs.mean()) < 0.05
     assert abs(snrs.std() - 1.0) < 0.05
 
@@ -147,7 +149,9 @@ def test_gx2_matches_empirical_os_null():
     """
     draw, _ = _null_model()
     keys = jax.random.split(jax.random.PRNGKey(13), 4000)
-    snrs = np.array([float(optimal_statistic(draw(k), LOG10_A).snr) for k in keys])
+    snrs = np.asarray(
+        jax.vmap(lambda k: optimal_statistic(draw(k), LOG10_A).snr)(keys)
+    )
     eigs = jnp.linalg.eigvalsh(os_quadratic_form(draw(keys[0])))
     grid = np.percentile(snrs, [5, 25, 50, 75, 95])
     emp = np.array([(snrs <= v).mean() for v in grid])

@@ -159,6 +159,10 @@ class TestAnalyticCorrectness:
         # peak of the integrand sits at the grid center, not at the edge.
         # K=20 → truncation error ~ exp(-K²/2) is utterly negligible.
         # N=16001 → trapezoidal error on a Gaussian is ~ (δ/σ)² ≈ 1.5e-6.
+        # (Grid size is NOT the runtime cost here — 
+        # N=2001 ran in the same 17s, because the time is the vmap
+        # trace+compile of the full nonlinear logL, not the evals.  So the
+        # grid stays at the high-margin size.)
         K = 20.0
         N_grid = 16001
         F1_fid = float(params.param_value("F1"))
@@ -259,6 +263,9 @@ class TestAnalyticCorrectness:
         # enough resolution in the tight direction at ~0.99 correlation for
         # ~1e-3 error in log space; we measure empirically and leave headroom.
         K = 8.0
+        # N=300 per axis: NOT the runtime cost — 
+        # (6.25x fewer evals) ran in the same ~15.5s; the time is the vmap
+        # trace+compile of the nonlinear logL.  Keep the higher-margin grid.
         N_per_axis = 300
         F1_grid = jnp.linspace(
             theta_max[0] - K * sigma_F1, theta_max[0] + K * sigma_F1, N_per_axis

@@ -18,13 +18,7 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 
-# Test-time runtime shape checking, scoped to the JAX-array core.
-# jaxtyping shape annotations are documentation unless a runtime typechecker is
-# installed; this import hook wraps the listed modules' functions with beartype
-# so their Float[Array, "..."] shapes (and shared dim names across args) are
-# verified whenever a test exercises them.  Must run before those modules are
-# first imported (conftest loads before any test module).
-#
+
 # Scoped to ``jaxpint.utils`` -- the pure-JAX-array numerical core, where the
 # annotations are exact and beartype runs clean.  Broadening package-wide was
 # tried and is NOT currently viable: beartype surfaces pervasive *annotation
@@ -154,7 +148,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     )
 
 
-hypothesis.settings.register_profile("interactive", deadline=None)
+hypothesis.settings.register_profile("interactive", deadline=None, max_examples=25)
 hypothesis.settings.register_profile(
     "ci", deadline=None, print_blob=True, derandomize=True
 )

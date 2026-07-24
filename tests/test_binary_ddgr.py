@@ -181,7 +181,6 @@ class TestBinaryDDGRvsPINT:
 
         npt.assert_allclose(delay_ddgr, delay_dd, atol=1e-11, rtol=1e-11)
 
-    @pytest.mark.slow
     def test_ddgr_xomdot(self, ddgr_params):
         """XOMDOT should produce a different delay than without it."""
         from jaxpint.binary.ddgr import BinaryDDGR

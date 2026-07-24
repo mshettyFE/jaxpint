@@ -1,5 +1,6 @@
 """Tests for the solar wind dispersion delay component."""
 
+import functools
 from io import StringIO
 
 import jax
@@ -66,7 +67,8 @@ CORRECT_TROPOSPHERE  N
 
 
 def _make_setup(par_str):
-    """Build PINT model + JaxPINT data from a par string."""
+    """Build PINT model + JaxPINT data from a par string.
+    """
     model = get_model(StringIO(par_str))
     toas = make_fake_toas_uniform(
         startMJD=54500, endMJD=55500,
@@ -94,6 +96,9 @@ def _make_setup(par_str):
     assert len(jax_sw) == 1
 
     return toa_data, params, pint_delay, model, jax_sw[0]
+
+
+_make_setup = functools.lru_cache(maxsize=None)(_make_setup)
 
 
 @pytest.fixture
