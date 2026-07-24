@@ -26,6 +26,8 @@ from jaxpint.constants import FYR
 __all__ = [
     "powerlaw_psd",
     "broken_powerlaw_psd",
+    "turnover_psd",
+    "turnover_knee_psd",
     "free_spectrum_psd",
     "expand_sin_cos",
 ]
@@ -105,6 +107,108 @@ def broken_powerlaw_psd(
     fb = 10.0**log10_fb
     bend = (1.0 + (f / fb) ** (1.0 / kappa)) ** (kappa * gamma)
     return powerlaw_psd(f, log10_A, gamma) * bend
+
+
+def turnover_psd(
+    f: Float[Array, " n_freq"],
+    log10_A: ArrayLike,
+    gamma: ArrayLike,
+    lf0: ArrayLike,
+    kappa: ArrayLike = 10.0 / 3.0,
+    beta: ArrayLike = 0.5,
+) -> Float[Array, " n_freq"]:
+    r"""Power law with a low-frequency turnover below ``f_0 = 10^{lf0}``.
+
+    The environmentally-driven GWB spectrum of Sampson, Cornish & McWilliams
+    (2015) [psd_scm15]_ in enterprise's ``gp_priors.turnover`` convention: the
+    characteristic strain is a power law suppressed below the transition
+    frequency,
+
+    .. math::
+        h_c(f) = A \left(\frac{f}{f_{\rm yr}}\right)^{(3-\gamma)/2}
+                 \Big[1 + \big(f_0/f\big)^{\kappa}\Big]^{-\beta},
+
+    and ``S(f) = h_c^2(f) / (12 \pi^2 f^3)``, i.e. the plain power law times
+    the suppression factor ``(1 + (f_0/f)^\kappa)^{-2\beta}``.  Well above
+    ``f_0`` this reduces to :func:`powerlaw_psd`; below it the spectrum bends
+    down with asymptotic extra slope ``2\beta\kappa``.
+
+    Parameters
+    ----------
+    f : (n_freq,) array
+        Frequencies in Hz.
+    log10_A, gamma : scalar
+        Power-law amplitude and spectral index (see :func:`powerlaw_psd`).
+    lf0 : scalar
+        Log-10 of the turnover frequency in Hz.
+    kappa : scalar
+        Turnover sharpness (10/3 for stellar three-body scattering).
+    beta : scalar
+        Strain suppression exponent (production analyses fix 0.5).
+
+    Returns
+    -------
+    psd : (n_freq,) array
+        Power spectral density in units of s^3.
+
+    References
+    ----------
+    .. [psd_scm15] Sampson, Cornish & McWilliams (2015), PRD 91, 084055.
+    """
+    f0 = 10.0**lf0
+    suppression = (1.0 + (f0 / f) ** kappa) ** (2.0 * beta)
+    return powerlaw_psd(f, log10_A, gamma) / suppression
+
+
+def turnover_knee_psd(
+    f: Float[Array, " n_freq"],
+    log10_A: ArrayLike,
+    gamma: ArrayLike,
+    lfb: ArrayLike,
+    lfk: ArrayLike,
+    kappa: ArrayLike = 10.0 / 3.0,
+    delta: ArrayLike = -1.0,
+) -> Float[Array, " n_freq"]:
+    r"""Turnover spectrum with an additional high-frequency knee.
+
+    Enterprise's ``gp_priors.turnover_knee``: a low-frequency environmental
+    bend at ``f_b = 10^{lfb}`` (as in :func:`turnover_psd` with
+    ``beta = 1/2``) plus a knee at ``f_k = 10^{lfk}`` where the finite number
+    of contributing binaries steepens the spectrum,
+
+    .. math::
+        h_c(f) = A \left(\frac{f}{f_{\rm yr}}\right)^{(3-\gamma)/2}
+                 \big(1 + f/f_k\big)^{\delta}
+                 \Big[1 + \big(f_b/f\big)^{\kappa}\Big]^{-1/2},
+
+    with ``S(f) = h_c^2(f) / (12 \pi^2 f^3)``.  With the bend far below the
+    band and ``delta = 0`` this reduces to :func:`powerlaw_psd`.
+
+    Parameters
+    ----------
+    f : (n_freq,) array
+        Frequencies in Hz.
+    log10_A, gamma : scalar
+        Power-law amplitude and spectral index (see :func:`powerlaw_psd`).
+    lfb : scalar
+        Log-10 of the low-frequency (environmental) bend frequency in Hz.
+    lfk : scalar
+        Log-10 of the knee frequency in Hz (population finiteness).
+    kappa : scalar
+        Bend sharpness (10/3 for stellar three-body scattering).
+    delta : scalar
+        Strain slope change above the knee (negative steepens the PSD).
+
+    Returns
+    -------
+    psd : (n_freq,) array
+        Power spectral density in units of s^3.
+    """
+    fb = 10.0**lfb
+    fk = 10.0**lfk
+    knee = (1.0 + f / fk) ** (2.0 * delta)
+    bend = 1.0 + (fb / f) ** kappa
+    return powerlaw_psd(f, log10_A, gamma) * knee / bend
 
 
 def free_spectrum_psd(log10_rho: Float[Array, " n_freq"]) -> Float[Array, " n_freq"]:

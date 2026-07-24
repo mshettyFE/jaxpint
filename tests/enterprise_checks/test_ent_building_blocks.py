@@ -128,6 +128,146 @@ def test_powerlaw_prior_weights(white_bundle):
         )
 
 
+def test_turnover_prior_weights(white_bundle):
+    """turnover PSD weights match enterprise's gp_priors.turnover.
+
+    Enterprise folds df (recomputed internally from the frequency grid) and
+    the (sin,cos) repeat into the returned weights; JaxPINT applies its own
+    ``widths`` and repeat — identical grids, so the comparison is direct.
+    """
+    from enterprise.signals.gp_priors import turnover as ent_turnover
+    from enterprise.signals.utils import createfourierdesignmatrix_red
+
+    from jaxpint._psd import turnover_psd
+    from jaxpint.utils import build_fourier_basis
+
+    b = white_bundle
+    tspan = float(b.psr.toas.max() - b.psr.toas.min())
+    _, freqs_ent = createfourierdesignmatrix_red(b.psr.toas, nmodes=10, Tspan=tspan)
+    _, freqs_jax, widths_jax = build_fourier_basis(b.psr.toas, 10, tspan)
+    cases = [
+        # (log10_A, gamma, lf0, kappa, beta)
+        (-15.0, 4.33, -8.5, 10.0 / 3.0, 0.5),  # enterprise defaults
+        (-14.0, 13.0 / 3.0, -8.0, 2.0, 0.5),
+        (-13.5, 3.0, -7.5, 5.0, 1.0),
+    ]
+    for log10_A, gamma, lf0, kappa, beta in cases:
+        phi_ent = ent_turnover(
+            freqs_ent, log10_A=log10_A, gamma=gamma, lf0=lf0, kappa=kappa, beta=beta
+        )
+        phi_jax = np.repeat(
+            np.asarray(
+                turnover_psd(freqs_jax, log10_A, gamma, lf0, kappa, beta) * widths_jax
+            ),
+            2,
+        )
+        npt.assert_allclose(
+            phi_jax,
+            phi_ent,
+            rtol=1e-12,
+            err_msg=f"turnover weights disagree at lf0={lf0}, kappa={kappa}",
+        )
+
+
+def test_turnover_knee_prior_weights(white_bundle):
+    """turnover_knee PSD weights match enterprise's gp_priors.turnover_knee."""
+    from enterprise.signals.gp_priors import turnover_knee as ent_turnover_knee
+    from enterprise.signals.utils import createfourierdesignmatrix_red
+
+    from jaxpint._psd import turnover_knee_psd
+    from jaxpint.utils import build_fourier_basis
+
+    b = white_bundle
+    tspan = float(b.psr.toas.max() - b.psr.toas.min())
+    _, freqs_ent = createfourierdesignmatrix_red(b.psr.toas, nmodes=10, Tspan=tspan)
+    _, freqs_jax, widths_jax = build_fourier_basis(b.psr.toas, 10, tspan)
+    cases = [
+        # (log10_A, gamma, lfb, lfk, kappa, delta)
+        (-15.0, 4.33, -8.65, -7.5, 10.0 / 3.0, -1.0),
+        (-14.0, 13.0 / 3.0, -9.0, -7.8, 2.0, -0.5),
+        (-13.5, 3.0, -8.2, -7.0, 5.0, -2.0),
+    ]
+    for log10_A, gamma, lfb, lfk, kappa, delta in cases:
+        phi_ent = ent_turnover_knee(
+            freqs_ent,
+            log10_A=log10_A,
+            gamma=gamma,
+            lfb=lfb,
+            lfk=lfk,
+            kappa=kappa,
+            delta=delta,
+        )
+        phi_jax = np.repeat(
+            np.asarray(
+                turnover_knee_psd(freqs_jax, log10_A, gamma, lfb, lfk, kappa, delta)
+                * widths_jax
+            ),
+            2,
+        )
+        npt.assert_allclose(
+            phi_jax,
+            phi_ent,
+            rtol=1e-12,
+            err_msg=f"turnover_knee weights disagree at lfb={lfb}, lfk={lfk}",
+        )
+
+
+def test_df_array_measure_matches_enterprise_genmodes(white_bundle):
+    """PowerLawSpectrum with an array df matches enterprise's powerlaw_genmodes.
+
+    JaxPINT carries a non-uniform mode measure in the ``df`` argument
+    (= enterprise's ``wgts**2``) rather than in a dedicated genmodes
+    spectrum — this pins that convention equivalence live, on ragged
+    weights, at a real pulsar's frequency grid.
+    """
+    from enterprise.signals.gp_priors import powerlaw_genmodes as ent_genmodes
+    from enterprise.signals.utils import createfourierdesignmatrix_red
+
+    from jaxpint.spectra import PowerLawSpectrum
+
+    b = white_bundle
+    tspan = float(b.psr.toas.max() - b.psr.toas.min())
+    _, freqs_ent = createfourierdesignmatrix_red(b.psr.toas, nmodes=10, Tspan=tspan)
+    freqs = freqs_ent[::2]
+    rng = np.random.default_rng(5)
+    wgts = np.sqrt(1.0 / tspan) * rng.uniform(0.5, 2.0, 10)
+    for log10_A, gamma in [(-14.0, 4.33), (-13.5, 2.0)]:
+        spec = PowerLawSpectrum(log10_A=log10_A, gamma=gamma)
+        phi_jax = np.asarray(
+            spec.psd_weights(freqs, wgts**2, lambda s: spec.defaults[s])
+        )
+        phi_ent = ent_genmodes(freqs_ent, log10_A=log10_A, gamma=gamma, wgts=wgts)
+        npt.assert_allclose(
+            phi_jax,
+            phi_ent,
+            rtol=1e-12,
+            err_msg=f"df-array weights disagree at (log10_A={log10_A}, gamma={gamma})",
+        )
+
+
+def test_improper_prior_constant_matches_enterprise(white_bundle):
+    """marginal.py's INFINITE_POWER == enterprise's live infinitepower.
+
+    JaxPINT has no infinitepower spectrum class: the improper-flat
+    convention lives in jaxpint.bayes.marginal (enterprise expresses the
+    same integral as ``infinitepower`` over a basis, e.g. its TimingModel
+    signal).  Absolute-logL parity between the stacks rests on the two
+    regularizer constants agreeing — pinned here against enterprise's
+    current code, and against its frozen output in test_bayes_marginal.
+    """
+    from enterprise.signals.gp_priors import infinitepower as ent_infinitepower
+    from enterprise.signals.utils import createfourierdesignmatrix_red
+
+    from jaxpint.bayes.marginal import INFINITE_POWER
+
+    b = white_bundle
+    tspan = float(b.psr.toas.max() - b.psr.toas.min())
+    _, freqs_ent = createfourierdesignmatrix_red(b.psr.toas, nmodes=10, Tspan=tspan)
+    npt.assert_array_equal(
+        np.full(freqs_ent.shape, INFINITE_POWER), ent_infinitepower(freqs_ent)
+    )
+
+
 def test_quantization_matrix(white_bundle):
     """ECORR epoch quantization: identical groupings (dt=1 s, nmin=2).
 

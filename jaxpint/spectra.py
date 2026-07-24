@@ -35,12 +35,16 @@ from jaxpint._psd import (
     expand_sin_cos,
     free_spectrum_psd,
     powerlaw_psd,
+    turnover_knee_psd,
+    turnover_psd,
 )
 
 __all__ = [
     "SpectralModel",
     "PowerLawSpectrum",
     "BrokenPowerLawSpectrum",
+    "TurnoverSpectrum",
+    "TurnoverKneeSpectrum",
     "FreeSpectrum",
 ]
 
@@ -77,7 +81,15 @@ class SpectralModel(ABC):
         freqs : (n_freq,) array
             Fourier frequencies in Hz.
         df : scalar or (n_freq,) array
-            Frequency bin widths.
+            Frequency bin widths — the per-mode integration measure.  The
+            array form is how a non-uniform grid (log-spaced / custom modes)
+            carries each mode's measure, and is exactly enterprise's
+            ``powerlaw_genmodes`` convention with ``df = wgts**2`` (parity
+            is pinned in test_spectral_models against an
+            enterprise-generated golden).  There is no separate genmodes
+            spectrum class: the measure belongs to the grid, so callers with
+            non-uniform bases pass it here (as the per-pulsar noise
+            components already do via ``freq_bin_widths``).
         value_of : callable
             Maps a parameter suffix from :meth:`param_defaults` to its
             (possibly traced) value.
@@ -128,6 +140,95 @@ class BrokenPowerLawSpectrum(SpectralModel):
             value_of("gamma"),
             value_of("log10_fb"),
             self.kappa,
+        )
+        return expand_sin_cos(psd * df)
+
+
+class TurnoverSpectrum(SpectralModel):
+    """Power law with a low-frequency turnover (enterprise's ``turnover``).
+
+    ``S(f) = S_pl(f) · (1 + (f_0/f)^κ)^(-2β)`` with ``f_0 = 10^lf0`` (see
+    :func:`jaxpint._psd.turnover_psd`): the environmentally-driven GWB
+    spectrum used in NANOGrav production noise runs.  Params ``log10_A,
+    gamma, lf0, kappa`` — the set enterprise_extensions samples for
+    ``psd='turnover'``.  The strain suppression exponent ``β`` is a fixed
+    constructor constant (0.5 everywhere in production), like
+    :class:`BrokenPowerLawSpectrum`'s ``κ``.
+    """
+
+    def __init__(
+        self,
+        log10_A: float = -15.0,
+        gamma: float = 4.33,
+        lf0: float = -8.5,
+        kappa: float = 10.0 / 3.0,
+        beta: float = 0.5,
+    ):
+        self.beta = beta
+        self.defaults = {
+            "log10_A": log10_A,
+            "gamma": gamma,
+            "lf0": lf0,
+            "kappa": kappa,
+        }
+
+    def param_defaults(self) -> dict[str, float]:
+        return dict(self.defaults)
+
+    def psd_weights(self, freqs, df, value_of) -> Float[Array, " n_basis"]:
+        psd = turnover_psd(
+            freqs,
+            value_of("log10_A"),
+            value_of("gamma"),
+            value_of("lf0"),
+            value_of("kappa"),
+            self.beta,
+        )
+        return expand_sin_cos(psd * df)
+
+
+class TurnoverKneeSpectrum(SpectralModel):
+    """Turnover with a high-frequency knee (enterprise's ``turnover_knee``).
+
+    ``S(f) = S_pl(f) · (1 + f/f_k)^(2δ) / (1 + (f_b/f)^κ)`` with
+    ``f_b = 10^lfb``, ``f_k = 10^lfk`` (see
+    :func:`jaxpint._psd.turnover_knee_psd`): environmental bend below
+    ``f_b``, population-finiteness steepening above ``f_k``.  Params
+    ``log10_A, gamma, lfb, lfk, kappa, delta`` — all six are sampled by
+    enterprise_extensions for ``psd='turnover_knee'``.  Defaults start each
+    shape parameter at the center of its production prior.
+    """
+
+    def __init__(
+        self,
+        log10_A: float = -15.0,
+        gamma: float = 4.33,
+        lfb: float = -8.65,
+        lfk: float = -7.5,
+        kappa: float = 10.0 / 3.0,
+        delta: float = -1.0,
+    ):
+        self.defaults = {
+            "log10_A": log10_A,
+            "gamma": gamma,
+            "lfb": lfb,
+            "lfk": lfk,
+            "kappa": kappa,
+            "delta": delta,
+        }
+
+    def param_defaults(self) -> dict[str, float]:
+        return dict(self.defaults)
+
+    def psd_weights(self, freqs, df, value_of) -> Float[Array, " n_basis"]:
+        psd = turnover_knee_psd(
+            freqs,
+            value_of("log10_A"),
+            value_of("gamma"),
+            value_of("lfb"),
+            value_of("lfk"),
+            value_of("kappa"),
+            value_of("delta"),
         )
         return expand_sin_cos(psd * df)
 

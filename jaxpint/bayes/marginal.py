@@ -44,9 +44,20 @@ from jaxpint.utils import concat_woodbury_blocks
 
 
 __all__ = [
+    "INFINITE_POWER",
     "marginalize_single_pulsar",
     "marginalize_pta",
 ]
+
+# The improper-flat prior regularizer: each marginalized column enters the
+# Woodbury update with this prior variance.  Large enough that the solve
+# treats the coefficient as unconstrained (Φ⁻¹ ≈ 1e-40), small enough to stay
+# comfortably inside float64.  This is the SAME constant as enterprise's
+# ``gp_priors.infinitepower`` (its TimingModel signal is infinitepower over
+# the design matrix) and discovery's marginalization — absolute-logL parity
+# with those stacks depends on the constants agreeing, so it is pinned
+# against enterprise's own output in tests (golden + live enterprise_checks).
+INFINITE_POWER = 1e40
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +268,7 @@ def _marg_woodbury_block(
         tangents
     )  # (n_marg, n_toas): row k = ∂r/∂y_{indices[k]}
     M = -cols.T  # (n_toas, n_marg)
-    Phi = jnp.full(len(indices), 1e40, dtype=jnp.float64)
+    Phi = jnp.full(len(indices), INFINITE_POWER, dtype=jnp.float64)
     return M, Phi
 
 
