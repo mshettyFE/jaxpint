@@ -195,7 +195,10 @@ def _versions() -> dict[str, str]:
     except Exception:
         t2v = "unknown"
     try:
-        import libstempo
+        # Deliberately not installable in CI (needs tempo2 built; see the
+        # `reference` extra in pyproject.toml) -- the except arm handles
+        # absence at runtime, so only the static checker needs quieting.
+        import libstempo  # pyright: ignore[reportMissingImports]
 
         ltv = getattr(libstempo, "__version__", "unknown")
     except Exception:
