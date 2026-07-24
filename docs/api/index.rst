@@ -12,6 +12,7 @@ Core
    jaxpint.model
    jaxpint.spectra
    jaxpint.likelihood
+   jaxpint.summary
    jaxpint.simulation
    jaxpint.utils
    jaxpint.constants

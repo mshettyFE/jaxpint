@@ -401,7 +401,8 @@ def summarize_pta(
     ``priors`` is given -- prior coverage of every site the numpyro model
     builders will request (``f"{pulsar}_{param}"`` per free parameter plus
     bare global names, matching
-    :func:`jaxpint.bayes.samplers.numpyro.build_pta_model`).
+    ``jaxpint.bayes.samplers.numpyro.build_pta_model`` -- documented
+    in-source, not in the API reference, hence no cross-link).
 
     Parameters
     ----------
@@ -412,7 +413,8 @@ def summarize_pta(
     global_params : GlobalParams, optional
         The vector to be passed to ``pta_logL``; cross-checked against what
         the config's injectors register.
-    priors : PriorSpec or {site: numpyro Distribution}, optional
+    priors : dict, optional
+        A ``PriorSpec`` or bare ``{site: numpyro Distribution}`` mapping.
     pulsar_names : sequence of str, optional
         Labels (and numpyro site prefixes). Defaults to ``psr0, psr1, ...`` --
         pass the real names if you plan to use the prior-coverage check.
