@@ -15,3 +15,4 @@ FileRepo/
 jaxpint/data/clock/*
 !jaxpint/data/clock/clock_metadata.json
 TODO
+.jax_cache/
