@@ -114,7 +114,7 @@ def test_curn_equals_sum_of_single_pulsar_ptas(pta_bundles):
     total = pta.get_lnlikelihood(params)
 
     singles = 0.0
-    full_models = _ent_curn_pta(pta_bundles, tspan)._signalcollections
+    full_models = pta._signalcollections
     for sc in full_models:
         singles += signal_base.PTA([sc]).get_lnlikelihood(params)
     npt.assert_allclose(total, singles, rtol=1e-12)

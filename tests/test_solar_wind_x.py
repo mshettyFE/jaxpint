@@ -1,5 +1,6 @@
 """Tests for the piecewise solar wind dispersion delay component (SWX)."""
 
+import functools
 from io import StringIO
 
 import jax
@@ -57,7 +58,8 @@ SWXR2_0002    55600
 
 
 def _make_setup(par_str):
-    """Build PINT model + JaxPINT data + PINT reference delay."""
+    """Build PINT model + JaxPINT data + PINT reference delay.
+    """
     model = get_model(StringIO(par_str))
     toas = make_fake_toas_uniform(
         startMJD=54200, endMJD=55400,
@@ -84,6 +86,9 @@ def _make_setup(par_str):
     assert len(jax_swx) == 1
 
     return toa_data, params, pint_delay, model, jax_swx[0]
+
+
+_make_setup = functools.lru_cache(maxsize=None)(_make_setup)
 
 
 def _toas_outside(model, startMJD, endMJD, n=10):
