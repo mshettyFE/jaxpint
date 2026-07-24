@@ -150,6 +150,30 @@ class PTAConfig(eqx.Module):
         """
         return len(self.toa_data_list)
 
+    def summary(
+        self,
+        pulsar_params=None,
+        global_params=None,
+        priors=None,
+        pulsar_names=None,
+        verbose: bool = False,
+    ) -> str:
+        """Text report of everything this config feeds the likelihood.
+
+        Delegates to :func:`jaxpint.summary.summarize_pta`; see there for the
+        section list and cross-checks.  Host-side only (not jit-safe).
+        """
+        from jaxpint.summary import summarize_pta
+
+        return summarize_pta(
+            self,
+            pulsar_params=pulsar_params,
+            global_params=global_params,
+            priors=priors,
+            pulsar_names=pulsar_names,
+            verbose=verbose,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Shared per-pulsar aggregation helper

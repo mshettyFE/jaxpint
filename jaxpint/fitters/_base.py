@@ -155,6 +155,29 @@ class BaseFitter(ABC):
         self.params = params
         self.noise_model = noise_model
 
+    def summary(self, name: Optional[str] = None) -> str:
+        """Text report of the model/noise/params this fitter will fit.
+
+        Delegates to :func:`jaxpint.summary.summarize_model` with this
+        fitter's timing model, noise model (an empty one when ``None``),
+        current parameters, and TOA data; see there for the section list
+        and cross-checks.  Host-side only (not jit-safe).
+        """
+        from jaxpint.summary import summarize_model
+
+        noise_model = (
+            self.noise_model
+            if self.noise_model is not None
+            else NoiseModel(white_noise=None, correlated=())
+        )
+        return summarize_model(
+            self.model,
+            noise_model,
+            self.params,
+            toa_data=self.toa_data,
+            name=name,
+        )
+
     @abstractmethod
     def fit_toas(self, maxiter: int = _DEFAULT_MAXITER, **kwargs) -> BaseFitResult:
         """Run the fit and return a result container.

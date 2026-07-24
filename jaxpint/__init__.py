@@ -61,6 +61,7 @@ from .fitters import (
 )
 from .model_builder import build_model
 from .likelihood import single_pulsar_clogL, single_pulsar_logL
+from .summary import summarize_model, summarize_pta
 from . import native
 from .loaders import (
     NanogravPTA,
@@ -132,6 +133,8 @@ __all__ = [
     "SolarWindDispersionX",
     "single_pulsar_logL",
     "single_pulsar_clogL",
+    "summarize_model",
+    "summarize_pta",
     "Spindown",
     "TOAData",
     "TimingModel",

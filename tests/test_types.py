@@ -154,6 +154,22 @@ class TestParameterVector:
         assert jnp.isclose(pv.param_value("F0"), 200.0)
         assert jnp.isclose(pv.param_value("DM"), 15.0)
 
+    def test_param_status(self):
+        from jaxpint.types import ParamStatus
+
+        pv = _make_param_vector()
+        # StrEnum members: typed identity AND string equality both hold.
+        assert pv.param_status("F0") is ParamStatus.FREE
+        assert pv.param_status("F0") == "free"
+        assert pv.param_status("PEPOCH") == "frozen"
+        # Marginalized wins over the frozen flag, mirroring _free_indices.
+        marg = pv.with_marginalized(["F1", "PEPOCH"])
+        assert marg.param_status("F1") is ParamStatus.MARGINALIZED
+        assert marg.param_status("PEPOCH") == "marginalized"
+        assert marg.param_status("F0") == "free"
+        with pytest.raises(KeyError):
+            pv.param_status("NOPE")
+
     def test_epoch_value(self):
         pv = _make_param_vector()
         int_day, frac_day = pv.epoch_value("PEPOCH")

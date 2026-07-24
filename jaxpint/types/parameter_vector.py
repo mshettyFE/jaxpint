@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
 from jaxpint.types.dual_float import DualFloat
 from jaxpint.types.named_vector import NamedVector
+
+
+class ParamStatus(StrEnum):
+    """Fitting status of a parameter in a :class:`ParameterVector`."""
+
+    FREE = "free"
+    FROZEN = "frozen"
+    MARGINALIZED = "marginalized"
 
 
 # Shared NaN singleton for "no reported sigma" entries in the static
@@ -205,6 +215,34 @@ class ParameterVector(NamedVector):
             The 1-sigma uncertainty, or ``nan`` if not reported.
         """
         return self.uncertainties[self._name_to_index[name]]
+
+    def param_status(self, name: str) -> ParamStatus:
+        """Fitting status of a parameter (:class:`ParamStatus` member).
+
+        A marginalized parameter reports
+        ``MARGINALIZED`` regardless of its frozen flag -- its value is the
+        linearization point y_fid, not an ordinary frozen value -- and
+        ``FREE`` means not frozen AND not marginalized.
+
+        Like :meth:`param_uncertainty`, this is plain Python metadata for
+        host-side use (report generation, deciding fit flags when writing a
+        par), not a traced JAX value.  Members compare equal to their
+        strings, so ``param_status(name) == "free"`` works.
+
+        Parameters
+        ----------
+        name : str
+            Parameter name.
+
+        Returns
+        -------
+        ParamStatus
+            ``FREE``, ``FROZEN``, or ``MARGINALIZED``.
+        """
+        i = self._name_to_index[name]
+        if self.marginalized_mask[i]:
+            return ParamStatus.MARGINALIZED
+        return ParamStatus.FROZEN if self.frozen_mask[i] else ParamStatus.FREE
 
     # param_value_or inherited from NamedVector.
 

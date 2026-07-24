@@ -14,7 +14,7 @@ Defines the foundational types:
 from jaxpint.types.dual_float import DualFloat
 from jaxpint.types.named_vector import NamedVector
 from jaxpint.types.global_params import GlobalParams
-from jaxpint.types.parameter_vector import ParameterVector
+from jaxpint.types.parameter_vector import ParameterVector, ParamStatus
 from jaxpint.types.toa_data import TOAData
 
 __all__ = [
@@ -22,5 +22,6 @@ __all__ = [
     "TOAData",
     "NamedVector",
     "ParameterVector",
+    "ParamStatus",
     "GlobalParams",
 ]
