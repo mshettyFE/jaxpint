@@ -1236,6 +1236,9 @@ docs = [
     { name = "sphinx" },
     { name = "sphinx-copybutton" },
 ]
+enterprise = [
+    { name = "enterprise-pulsar" },
+]
 pint = [
     { name = "pint-pulsar" },
 ]
@@ -1258,7 +1261,7 @@ requires-dist = [
     { name = "astropy", specifier = ">=6.0" },
     { name = "beartype", marker = "extra == 'dev'", specifier = ">=0.18" },
     { name = "certifi", specifier = ">=2023.7.22" },
-    { name = "enterprise-pulsar", marker = "extra == 'reference'", specifier = ">=3.4" },
+    { name = "enterprise-pulsar", marker = "extra == 'enterprise'", specifier = ">=3.4" },
     { name = "equinox", specifier = ">=0.11.0" },
     { name = "git-filter-repo", marker = "extra == 'dev'", specifier = ">=2.47.0" },
     { name = "healpy", marker = "extra == 'skymap'", specifier = ">=1.16.0" },
@@ -1268,6 +1271,7 @@ requires-dist = [
     { name = "jax", extras = ["cpu"], marker = "extra == 'cpu'", specifier = ">=0.4.20" },
     { name = "jax", extras = ["cpu", "cuda13"], marker = "extra == 'cuda'", specifier = ">=0.4.20" },
     { name = "jaxpint", extras = ["docs"], marker = "extra == 'dev'" },
+    { name = "jaxpint", extras = ["enterprise"], marker = "extra == 'reference'" },
     { name = "jaxpint", extras = ["pint"], marker = "extra == 'dev'" },
     { name = "jaxpint", extras = ["sampling"], marker = "extra == 'dev'" },
     { name = "jaxpint", extras = ["skymap"], marker = "extra == 'dev'" },
@@ -1293,7 +1297,7 @@ requires-dist = [
     { name = "sphinx-autobuild", marker = "extra == 'dev'", specifier = ">=2024.10.3" },
     { name = "sphinx-copybutton", marker = "extra == 'docs'", specifier = ">=0.5.2" },
 ]
-provides-extras = ["pint", "cuda", "cpu", "skymap", "sampling", "reference", "docs", "dev"]
+provides-extras = ["pint", "cuda", "cpu", "skymap", "sampling", "enterprise", "reference", "docs", "dev"]
 
 [[package]]
 name = "jaxtyping"

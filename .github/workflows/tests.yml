@@ -128,12 +128,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      # scikit-sparse (a hard dependency of enterprise-pulsar) ships no wheels
+      # and compiles against SuiteSparse; without these headers the
+      # `--extra enterprise` sync below fails at the sdist build step. The
+      # built wheel lands in uv's cache (keyed on uv.lock), so this compiles
+      # once per lock change, not per run.
+      - name: Install SuiteSparse headers (for scikit-sparse)
+        run: sudo apt-get update && sudo apt-get install -y libsuitesparse-dev
+
       # --extra cpu  -> jax[cpu]
       # --extra dev  -> pytest, pytest-xdist, hypothesis, pint, etc.
       #   (dev already pulls in [docs], [skymap], [pint], so the bridge and
       #   skymap-dependent tests can import their optional deps.)
+      # --extra enterprise -> enterprise-pulsar, so tests/enterprise_checks
+      #   (in the pta shard) RUNS the parity suite instead of skipping it via
+      #   conftest.py's requires_enterprise auto-skip. Named on every uv run
+      #   below as well: a `uv run` naming fewer extras would re-sync the env
+      #   and uninstall it mid-job.
       - name: Install dependencies
-        run: uv sync --extra cpu --extra dev
+        run: uv sync --extra cpu --extra dev --extra enterprise
 
       # Pin the clock snapshot to the seed commit the suite is tested against
       # (jaxpint.clock._pinned.SEED_CLOCK_REF -- the single source of truth,
@@ -144,7 +157,7 @@ jobs:
       # rather than hardcoded here so bumping the pin needs no workflow edit.
       - name: Pin clock ref to the tested seed commit
         run: |
-          REF=$(uv run --extra cpu --extra dev \
+          REF=$(uv run --extra cpu --extra dev --extra enterprise \
             python -c "from jaxpint.clock._pinned import SEED_CLOCK_REF; print(SEED_CLOCK_REF)")
           echo "JAXPINT_CLOCK_REF=$REF" >> "$GITHUB_ENV"
           echo "Pinned JAXPINT_CLOCK_REF=$REF"
@@ -158,7 +171,7 @@ jobs:
         env:
           JAX_PLATFORMS: cpu
         run: >-
-          uv run --extra cpu --extra dev
+          uv run --extra cpu --extra dev --extra enterprise
           python -c "import jaxpint.clock as clock; clock.ensure_fresh()"
 
       # The bridge / PINT-parity tests build real PINT models + TOAs, which pull
@@ -185,7 +198,7 @@ jobs:
         env:
           JAX_PLATFORMS: cpu
         run: |
-          uv run --extra cpu --extra dev python - <<'EOF'
+          uv run --extra cpu --extra dev --extra enterprise python - <<'EOF'
           import pint.observatory as o
           for v in ["BIPM2023", "BIPM2019"]:
               o._load_bipm_clock(v)
@@ -209,7 +222,8 @@ jobs:
           JAX_PLATFORMS: cpu
           HYPOTHESIS_PROFILE: ci
         run: >-
-          uv run --extra cpu --extra dev pytest --runslow -n auto
+          uv run --extra cpu --extra dev --extra enterprise
+          pytest --runslow -n auto
           --dist worksteal ${{ matrix.paths }}
 
   # Static type checking (pyright). Fast, so it gates PRs alongside the suite.
@@ -230,14 +244,20 @@ jobs:
         with:
           python-version: "3.12"
 
-      # pyright needs the deps installed to resolve imports (jax, astropy, pint).
+      # pyright needs the deps installed to resolve imports (jax, astropy, pint,
+      # and enterprise for tests/enterprise_checks -- tests are in scope and
+      # reportMissingImports is error-level, so an unresolvable `enterprise`
+      # would redden this job). SuiteSparse headers: see the test job.
       # --extra dev pulls in pyright itself (+ pint for the bridge modules);
       # --extra cpu provides jax[cpu]. Extras repeated on `uv run` (see above).
+      - name: Install SuiteSparse headers (for scikit-sparse)
+        run: sudo apt-get update && sudo apt-get install -y libsuitesparse-dev
+
       - name: Install dependencies
-        run: uv sync --extra cpu --extra dev
+        run: uv sync --extra cpu --extra dev --extra enterprise
 
       - name: Run pyright
-        run: uv run --extra cpu --extra dev pyright
+        run: uv run --extra cpu --extra dev --extra enterprise pyright
 
   # Lint (ruff). Static and fast; gates PRs alongside the suite. Rules and scope
   # live in [tool.ruff] in pyproject.toml (notebooks excluded; tests linted but not
