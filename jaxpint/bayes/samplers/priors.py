@@ -52,6 +52,7 @@ __all__ = [
     "PRIOR_DEFAULTS",
     "noise_priors_simple",
     "free_spectrum_priors",
+    "turnover_priors",
     "distance_priors",
     "from_par_file",
     "cw_priors",
@@ -160,6 +161,13 @@ PRIOR_DEFAULTS: dict[str, _DistFactory] = {
     "gw_gamma": lambda: dist.Uniform(0.0, 7.0),
     # Free-spectrum per-bin RMS (seconds); range mirrors discovery
     "log10_rho": lambda: dist.Uniform(-9.0, -4.0),
+    # Turnover / turnover-knee spectral shape; bounds mirror
+    # enterprise_extensions' (common_)red_noise_block psd='turnover(_knee)'.
+    "turnover_lf0": lambda: dist.Uniform(-9.0, -7.0),
+    "turnover_kappa": lambda: dist.Uniform(0.0, 7.0),
+    "turnover_knee_lfb": lambda: dist.Uniform(-9.3, -8.0),
+    "turnover_knee_lfk": lambda: dist.Uniform(-8.0, -7.0),
+    "turnover_knee_delta": lambda: dist.Uniform(-2.0, 0.0),
     # Continuous-wave source parameters (prefixed per source; see cw_priors).
     "log10_h": lambda: dist.Uniform(-18.0, -11.0),
     "log10_fgw": lambda: dist.Uniform(-9.0, -7.0),
@@ -244,6 +252,46 @@ def free_spectrum_priors(
         names = spectrum.param_names
     factory = defaults["log10_rho"]
     return PriorSpec({f"{prefix}{name}": factory() for name in names})
+
+
+def turnover_priors(
+    prefix: str = "gwb_",
+    *,
+    knee: bool = False,
+    defaults: Mapping[str, _DistFactory] = PRIOR_DEFAULTS,
+) -> PriorSpec:
+    """Priors for a turnover-spectrum common process.
+
+    Covers exactly what a :class:`~jaxpint.spectra.TurnoverSpectrum`-backed
+    injector registers (``{prefix}log10_A``, ``{prefix}gamma``,
+    ``{prefix}lf0``, ``{prefix}kappa``), or — with ``knee=True`` — a
+    :class:`~jaxpint.spectra.TurnoverKneeSpectrum` (``lfb``/``lfk``/``delta``
+    instead of ``lf0``).  Amplitude and index reuse the GWB entries
+    (``"gw_log10_A"`` / ``"gw_gamma"``); shape parameters take the
+    ``"turnover_*"`` entries, whose bounds mirror enterprise_extensions'
+    production blocks.
+
+    Parameters
+    ----------
+    prefix
+        The injector's ``GlobalParams`` prefix (default ``"gwb_"``).
+    knee
+        Assemble for the knee variant instead of the plain turnover.
+    defaults
+        Factory table (``PRIOR_DEFAULTS`` by default).
+    """
+    flat = {
+        f"{prefix}log10_A": defaults["gw_log10_A"](),
+        f"{prefix}gamma": defaults["gw_gamma"](),
+        f"{prefix}kappa": defaults["turnover_kappa"](),
+    }
+    if knee:
+        flat[f"{prefix}lfb"] = defaults["turnover_knee_lfb"]()
+        flat[f"{prefix}lfk"] = defaults["turnover_knee_lfk"]()
+        flat[f"{prefix}delta"] = defaults["turnover_knee_delta"]()
+    else:
+        flat[f"{prefix}lf0"] = defaults["turnover_lf0"]()
+    return PriorSpec(flat)
 
 
 # Polymorphic prior argument for distance_priors.

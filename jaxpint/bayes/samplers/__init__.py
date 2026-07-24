@@ -38,6 +38,7 @@ from jaxpint.bayes.samplers.priors import (
     noise_priors_simple,
     resolve_priors,
     timing_marg_set,
+    turnover_priors,
 )
 
 __all__ = [
@@ -48,6 +49,7 @@ __all__ = [
     "PRIOR_DEFAULTS",
     "noise_priors_simple",
     "free_spectrum_priors",
+    "turnover_priors",
     "distance_priors",
     "from_par_file",
     "cw_priors",
