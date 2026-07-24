@@ -148,7 +148,7 @@ class TurnoverSpectrum(SpectralModel):
     """Power law with a low-frequency turnover (enterprise's ``turnover``).
 
     ``S(f) = S_pl(f) · (1 + (f_0/f)^κ)^(-2β)`` with ``f_0 = 10^lf0`` (see
-    :func:`jaxpint._psd.turnover_psd`): the environmentally-driven GWB
+    ``jaxpint._psd.turnover_psd``): the environmentally-driven GWB
     spectrum used in NANOGrav production noise runs.  Params ``log10_A,
     gamma, lf0, kappa`` — the set enterprise_extensions samples for
     ``psd='turnover'``.  The strain suppression exponent ``β`` is a fixed
@@ -192,7 +192,7 @@ class TurnoverKneeSpectrum(SpectralModel):
 
     ``S(f) = S_pl(f) · (1 + f/f_k)^(2δ) / (1 + (f_b/f)^κ)`` with
     ``f_b = 10^lfb``, ``f_k = 10^lfk`` (see
-    :func:`jaxpint._psd.turnover_knee_psd`): environmental bend below
+    ``jaxpint._psd.turnover_knee_psd``): environmental bend below
     ``f_b``, population-finiteness steepening above ``f_k``.  Params
     ``log10_A, gamma, lfb, lfk, kappa, delta`` — all six are sampled by
     enterprise_extensions for ``psd='turnover_knee'``.  Defaults start each
