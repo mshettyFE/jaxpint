@@ -18,6 +18,23 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 
+# Persistent XLA compilation cache: recompiling identical kernels dominates
+# repeat test runs.  Thresholds are ZERO deliberately ,
+# the suite's compile cost is hundreds of sub-0.5s kernels, so the library
+# defaults (min_compile_time_secs=1) cache almost nothing (2 entries), while
+# threshold 0 cached 343 entries/1.5MB on test_binary_common.py alone and cut
+# its warm-run time 22.8s → 11.9s (−48%).  The cache key includes the
+# jax/jaxlib version, so stale entries self-invalidate; the dir just
+# accumulates (delete .jax_cache/ to reclaim space).  An externally set
+# JAX_COMPILATION_CACHE_DIR wins over the repo-local default.
+if not os.environ.get("JAX_COMPILATION_CACHE_DIR"):
+    jax.config.update(
+        "jax_compilation_cache_dir",
+        os.path.join(os.path.dirname(__file__), ".jax_cache"),
+    )
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 0.0)
+jax.config.update("jax_persistent_cache_min_entry_size_bytes", 0)
+
 
 # Scoped to ``jaxpint.utils`` -- the pure-JAX-array numerical core, where the
 # annotations are exact and beartype runs clean.  Broadening package-wide was

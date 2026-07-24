@@ -1,5 +1,9 @@
 # Run the full pytest suite (including @slow PINT-validation tests) and pyright
 # static type checking on every push to main and every pull request.
+# The suite runs as three parallel path shards (see the `test` job's matrix)
+# so each run's wall-clock is setup + the longest shard. No coverage in CI:
+# the report was write-only (never uploaded or gated on); run
+# `pytest --cov=jaxpint` locally when a coverage read is wanted.
 #
 # Mirrors the environment conventions from docs.yml: uv for installs,
 # --extra cpu (no CUDA wheels on the runner), and JAX_PLATFORMS=cpu so JAX
@@ -34,9 +38,82 @@ permissions:
 
 jobs:
   # The complete suite including @slow tests (numerical validation against
-  # PINT). Runs on every push to main and every pull request.
+  # PINT), split into three parallel shards so PR wall-clock is
+  # setup + the longest shard instead of the whole suite (~20 min -> ~10).
+  #
+  # Shard design: two explicit path groups balanced by measured runtime
+  #  plus a "core" shard that runs EVERYTHING ELSE
+  # via --ignore-glob of the first two groups' patterns. New test files
+  # therefore land in "core" automatically -- nothing is ever silently
+  # unsharded. IMPORTANT: the pta/components pattern lists appear twice
+  # (positively in their own shard, negatively in core's ignore list); edit
+  # both together or a file will run twice / not at all. Rebalance by moving
+  # a glob between groups when one shard's time drifts (check the Actions
+  # timing view, or locally: pytest <globs> --runslow -q --durations=0).
   test:
     runs-on: ubuntu-latest
+    strategy:
+      # One red shard shouldn't hide another shard's result.
+      fail-fast: false
+      matrix:
+        include:
+          # GW / inference stack: PTA likelihood, marginalization, optimal
+          # statistic, frequentist + CW searches, enterprise cross-checks.
+          - shard: pta
+            paths: >-
+              tests/test_pta*.py tests/test_optimal*.py
+              tests/test_frequentist*.py tests/test_cw_*.py
+              tests/test_bayes*.py tests/test_conditional.py
+              tests/test_correlated_gwb.py tests/test_incoherent_ul.py
+              tests/test_clogL*.py tests/test_credible_maps.py
+              tests/test_stats_*.py tests/enterprise_checks
+          # Timing-model components: binaries, noise processes, wideband,
+          # solar wind, dispersion -- the PINT-parity-heavy group.
+          - shard: components
+            paths: >-
+              tests/test_binary*.py tests/test_kepler.py
+              tests/test_wideband.py tests/test_*noise*.py
+              tests/test_solar_wind*.py tests/test_dispersion*.py
+              tests/test_glitch.py tests/test_jump.py tests/test_wavex.py
+              tests/test_fdjump.py tests/test_fd_chromatic.py
+              tests/test_exponential_dip.py tests/test_shapiro.py
+              tests/test_spin.py tests/test_spectral_models.py
+              tests/test_gwb_basis.py
+          # Everything else (bridge, fitters, loaders, par/tim, clock,
+          # dual_float, ...): the complement of the two groups above.
+          # Keep these ignore patterns in lockstep with the path lists above.
+          - shard: core
+            paths: >-
+              tests/
+              --ignore-glob='tests/test_pta*.py'
+              --ignore-glob='tests/test_optimal*.py'
+              --ignore-glob='tests/test_frequentist*.py'
+              --ignore-glob='tests/test_cw_*.py'
+              --ignore-glob='tests/test_bayes*.py'
+              --ignore=tests/test_conditional.py
+              --ignore=tests/test_correlated_gwb.py
+              --ignore=tests/test_incoherent_ul.py
+              --ignore-glob='tests/test_clogL*.py'
+              --ignore=tests/test_credible_maps.py
+              --ignore-glob='tests/test_stats_*.py'
+              --ignore=tests/enterprise_checks
+              --ignore-glob='tests/test_binary*.py'
+              --ignore=tests/test_kepler.py
+              --ignore=tests/test_wideband.py
+              --ignore-glob='tests/test_*noise*.py'
+              --ignore-glob='tests/test_solar_wind*.py'
+              --ignore-glob='tests/test_dispersion*.py'
+              --ignore=tests/test_glitch.py
+              --ignore=tests/test_jump.py
+              --ignore=tests/test_wavex.py
+              --ignore=tests/test_fdjump.py
+              --ignore=tests/test_fd_chromatic.py
+              --ignore=tests/test_exponential_dip.py
+              --ignore=tests/test_shapiro.py
+              --ignore=tests/test_spin.py
+              --ignore=tests/test_spectral_models.py
+              --ignore=tests/test_gwb_basis.py
+    name: test (${{ matrix.shard }})
     steps:
       - uses: actions/checkout@v4
 
@@ -118,20 +195,22 @@ jobs:
 
       # --runslow -> include the @slow PINT-validation / fitting / noise tests.
       # -n auto   -> parallelize across the runner's cores via pytest-xdist.
+      # --dist worksteal -> rebalance test items as workers free up, so the
+      #   long tail (20s PTA-marg tests etc.) doesn't strand idle workers.
       # HYPOTHESIS_PROFILE=ci -> deterministic seeds + reproduction blobs on
       #   failure (see conftest.py). JAX_PLATFORMS=cpu keeps JAX off the GPU.
       # The --extra flags are repeated on `uv run` (not just `uv sync` above):
       # a bare `uv run` re-syncs to the default deps and would uninstall the
       # dev extra (pytest), so the extras must be named here too.
-      # --cov: report-only coverage (config in [tool.coverage]); pytest-cov
-      #   supports the -n auto xdist parallelism.
-      - name: Run full test suite
+      # No --cov: instrumentation taxes every shard 10-20% for a report that
+      # was never uploaded or gated on. Run `pytest --cov=jaxpint` locally.
+      - name: Run test shard
         env:
           JAX_PLATFORMS: cpu
           HYPOTHESIS_PROFILE: ci
         run: >-
           uv run --extra cpu --extra dev pytest --runslow -n auto
-          --cov=jaxpint --cov-report=term-missing --cov-report=xml
+          --dist worksteal ${{ matrix.paths }}
 
   # Static type checking (pyright). Fast, so it gates PRs alongside the suite.
   # Scope and per-rule severities live in [tool.pyright] in pyproject.toml
