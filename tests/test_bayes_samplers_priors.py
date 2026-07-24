@@ -215,3 +215,146 @@ def test_resolve_priors_missing_raises(two_pulsars):
 def test_resolve_priors_accepts_bare_dict():
     out = resolve_priors(["a"], {"a": dist.Normal(0.0, 1.0)})
     assert isinstance(out["a"], dist.Normal)
+
+
+# ---------------------------------------------------------------------------
+# LinearExp (upper-limit prior) + TruncNormal conventions
+# ---------------------------------------------------------------------------
+
+
+def _linear_exp_cdf_reference(x):
+    """Analytic LinearExp(-18, -11) CDF, transcribed independently of the
+    implementation (never calls ``d.cdf``) — the KS anchor that pins the
+    full *shape* of the sampled distribution, not just its mean."""
+    lo, hi = 10.0**-18.0, 10.0**-11.0
+    return (10.0**x - lo) / (hi - lo)
+
+
+def test_linear_exp_matches_analytic_pdf():
+    """log_prob == ln(10)·10^x / (10^pmax − 10^pmin) on the support."""
+    import numpy as np
+
+    from jaxpint.bayes.samplers import LinearExp
+
+    d = LinearExp(-18.0, -11.0)
+    xs = np.linspace(-17.9, -11.1, 7)
+    pdf = np.exp(np.asarray([float(d.log_prob(x)) for x in xs]))
+    expected = np.log(10.0) * 10.0**xs / (10.0**-11.0 - 10.0**-18.0)
+    np.testing.assert_allclose(pdf, expected, rtol=1e-12)
+
+
+def test_linear_exp_normalizes_and_inverts():
+    """∫pdf = 1 over the support; cdf/icdf are exact inverses; edges map."""
+    import numpy as np
+
+    from jaxpint.bayes.samplers import LinearExp
+
+    d = LinearExp(-18.0, -11.0)
+    xs = np.linspace(-18.0, -11.0, 20001)
+    pdf = np.exp(np.asarray(d.log_prob(jnp.asarray(xs))))
+    np.testing.assert_allclose(np.trapezoid(pdf, xs), 1.0, rtol=1e-6)
+
+    q = np.linspace(0.0, 1.0, 101)
+    x = np.asarray(d.icdf(jnp.asarray(q)))
+    np.testing.assert_allclose(np.asarray(d.cdf(jnp.asarray(x))), q, atol=1e-12)
+    assert float(d.icdf(0.0)) == -18.0
+    np.testing.assert_allclose(float(d.icdf(1.0)), -11.0, rtol=1e-15)
+
+
+def test_linear_exp_samples_are_uniform_in_amplitude():
+    """The full CDF of the draws matches the analytic LinearExp CDF (KS).
+
+    A shape test, not a moment test: pins the ``icdf``-based sampling path
+    against the independently transcribed CDF, so a symmetric-but-warped
+    inverse (right mean, wrong distribution) fails here.
+    """
+    import jax
+    import numpy as np
+    from scipy.stats import kstest
+
+    from jaxpint.bayes.samplers import LinearExp
+
+    d = LinearExp(-18.0, -11.0)
+    x = np.asarray(d.sample(jax.random.PRNGKey(0), (40000,)))
+    assert ((x >= -18.0) & (x <= -11.0)).all()
+    res = kstest(x, _linear_exp_cdf_reference)
+    assert res.pvalue > 1e-3, f"KS rejected: D={res.statistic:.4g}, p={res.pvalue:.3g}"
+
+
+def test_linear_exp_nuts_recovers_prior():
+    """Prior-only NUTS: the constrained-support transform Jacobian is right.
+
+    Sampling a LinearExp site with no likelihood must reproduce the prior —
+    uniform in the linear amplitude.  NUTS samples the unconstrained
+    ``u = logit((x-a)/(b-a))``; numpyro adds the pushforward Jacobian
+    ``|dx/du| = (b-a)·σ(u)(1-σ(u))`` for the ``biject_to(interval)``
+    transform (Stan Reference Manual, "Constraint Transforms", lower/upper
+    bounded scalar), keyed off the distribution's declared ``support``.
+    The classic hand-rolled-distribution bug — declaring ``real`` support,
+    or baking a transform into ``log_prob`` without the compensating
+    Jacobian — skews the amplitude mean detectably here.
+    """
+    import jax
+    import numpy as np
+    import numpyro
+    from numpyro.infer import MCMC, NUTS
+
+    from jaxpint.bayes.samplers import LinearExp
+
+    def model():
+        numpyro.sample("x", LinearExp(-18.0, -11.0))
+
+    mcmc = MCMC(
+        NUTS(model), num_warmup=300, num_samples=1200, num_chains=1,
+        progress_bar=False,
+    )
+    mcmc.run(jax.random.PRNGKey(1))
+    x = np.asarray(mcmc.get_samples()["x"])
+    assert ((x >= -18.0) & (x <= -11.0)).all()
+    # Full-shape KS check against the independently transcribed CDF; NUTS
+    # draws are autocorrelated (KS assumes iid), so thin before testing and
+    # keep the rejection threshold loose.
+    from scipy.stats import kstest
+
+    res = kstest(x[::5], _linear_exp_cdf_reference)
+    assert res.pvalue > 1e-3, f"KS rejected: D={res.statistic:.4g}, p={res.pvalue:.3g}"
+
+
+def test_ul_switches_swap_amplitude_priors():
+    """cw_priors(ul=True) / turnover_priors(ul=True) emit LinearExp."""
+    from jaxpint.bayes.samplers import LinearExp, turnover_priors
+
+    spec = cw_priors(ul=True)
+    d = spec.flat["cw_log10_h"]
+    assert isinstance(d, LinearExp)
+    assert float(d.pmin) == -18.0 and float(d.pmax) == -11.0
+    # Other CW entries unchanged; default form unchanged.
+    assert isinstance(spec.flat["cw_cos_inc"], dist.Uniform)
+    assert isinstance(cw_priors().flat["cw_log10_h"], dist.Uniform)
+
+    to = turnover_priors(ul=True)
+    assert isinstance(to.flat["gwb_log10_A"], LinearExp)
+    assert isinstance(turnover_priors().flat["gwb_log10_A"], dist.Uniform)
+    # UL entries exist in the defaults table.
+    assert isinstance(PRIOR_DEFAULTS["rednoise_log10_A_ul"](), LinearExp)
+
+
+def test_truncated_normal_is_enterprise_truncnormal_convention():
+    """numpyro's TruncatedNormal == scipy/enterprise's renormalized pdf.
+
+    Enterprise's TruncNormalPrior is scipy.stats.truncnorm — a Gaussian
+    renormalized by the mass inside [low, high].  Verify numpyro follows
+    the identical convention (analytically, via jax.scipy norm pdf/cdf) so
+    ``dist.TruncatedNormal`` can stand in for enterprise's TruncNormal with
+    no wrapper.
+    """
+    import numpy as np
+    from jax.scipy.stats import norm
+
+    loc, scale, low, high = 4.33, 1.2, 0.0, 7.0
+    d = dist.TruncatedNormal(loc, scale, low=low, high=high)
+    xs = np.linspace(0.3, 6.7, 9)
+    pdf = np.exp(np.asarray([float(d.log_prob(x)) for x in xs]))
+    mass = float(norm.cdf((high - loc) / scale) - norm.cdf((low - loc) / scale))
+    expected = np.asarray(norm.pdf((xs - loc) / scale)) / scale / mass
+    np.testing.assert_allclose(pdf, expected, rtol=1e-10)

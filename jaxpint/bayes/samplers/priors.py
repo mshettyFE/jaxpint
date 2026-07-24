@@ -41,6 +41,8 @@ from typing import (
 import numpy as np
 import numpyro.distributions as dist
 
+from jaxpint.bayes.samplers.distributions import LinearExp
+
 if TYPE_CHECKING:
     from jaxpint.spectra import FreeSpectrum
     from jaxpint.types import GlobalParams, ParameterVector
@@ -159,6 +161,12 @@ PRIOR_DEFAULTS: dict[str, _DistFactory] = {
     # Hellings-Downs gravitational-wave background.
     "gw_log10_A": lambda: dist.Uniform(-18.0, -11.0),
     "gw_gamma": lambda: dist.Uniform(0.0, 7.0),
+    # Upper-limit variants: uniform in the LINEAR amplitude (enterprise's
+    # LinearExp; e_e's prior='uniform'), same bounds as the log-uniform
+    # detection entries above.
+    "gw_log10_A_ul": lambda: LinearExp(-18.0, -11.0),
+    "rednoise_log10_A_ul": lambda: LinearExp(-20.0, -11.0),
+    "log10_h_ul": lambda: LinearExp(-18.0, -11.0),
     # Free-spectrum per-bin RMS (seconds); range mirrors discovery
     "log10_rho": lambda: dist.Uniform(-9.0, -4.0),
     # Turnover / turnover-knee spectral shape; bounds mirror
@@ -258,6 +266,7 @@ def turnover_priors(
     prefix: str = "gwb_",
     *,
     knee: bool = False,
+    ul: bool = False,
     defaults: Mapping[str, _DistFactory] = PRIOR_DEFAULTS,
 ) -> PriorSpec:
     """Priors for a turnover-spectrum common process.
@@ -267,9 +276,10 @@ def turnover_priors(
     ``{prefix}lf0``, ``{prefix}kappa``), or — with ``knee=True`` — a
     :class:`~jaxpint.spectra.TurnoverKneeSpectrum` (``lfb``/``lfk``/``delta``
     instead of ``lf0``).  Amplitude and index reuse the GWB entries
-    (``"gw_log10_A"`` / ``"gw_gamma"``); shape parameters take the
-    ``"turnover_*"`` entries, whose bounds mirror enterprise_extensions'
-    production blocks.
+    (``"gw_log10_A"`` / ``"gw_gamma"``); with ``ul=True`` the amplitude
+    switches to the ``"gw_log10_A_ul"`` LinearExp upper-limit entry.  Shape
+    parameters take the ``"turnover_*"`` entries, whose bounds mirror
+    enterprise_extensions' production blocks.
 
     Parameters
     ----------
@@ -277,11 +287,13 @@ def turnover_priors(
         The injector's ``GlobalParams`` prefix (default ``"gwb_"``).
     knee
         Assemble for the knee variant instead of the plain turnover.
+    ul
+        Use the upper-limit (uniform-in-amplitude) prior on ``log10_A``.
     defaults
         Factory table (``PRIOR_DEFAULTS`` by default).
     """
     flat = {
-        f"{prefix}log10_A": defaults["gw_log10_A"](),
+        f"{prefix}log10_A": defaults["gw_log10_A_ul" if ul else "gw_log10_A"](),
         f"{prefix}gamma": defaults["gw_gamma"](),
         f"{prefix}kappa": defaults["turnover_kappa"](),
     }
@@ -419,6 +431,7 @@ def _maybe_par_uncert(pp: "ParameterVector", name: str) -> Optional[float]:
 def cw_priors(
     prefix: str = "cw_",
     *,
+    ul: bool = False,
     defaults: Mapping[str, _DistFactory] = PRIOR_DEFAULTS,
 ) -> PriorSpec:
     """Standard continuous-wave source priors (no ``phi_psr`` nuisances).
@@ -426,19 +439,22 @@ def cw_priors(
     The seven canonical CW parameters used by :class:`~jaxpint.pta.CWInjector`,
     drawn from ``defaults`` (``PRIOR_DEFAULTS`` by default) keyed by the bare
     suffix, so their bounds are overridable in the same table-driven way as the
-    other bulk helpers.  No per-pulsar ``phi_psr`` is included: JaxPINT
-    parameterises the pulsar-term phase via the physical distance ``PX`` (see
-    :func:`distance_priors`), so a free phase per pulsar is redundant.  For the
-    discovery-style distance-marginalised parameterisation, use
-    :func:`cw_phi_psr_priors`.
+    other bulk helpers.  With ``ul=True`` the strain prior switches from
+    log-uniform to :class:`~jaxpint.bayes.samplers.distributions.LinearExp`
+    (the ``"log10_h_ul"`` entry) — the upper-limit convention.  No per-pulsar
+    ``phi_psr`` is included: JaxPINT parameterises the pulsar-term phase via
+    the physical distance ``PX`` (see :func:`distance_priors`), so a free
+    phase per pulsar is redundant.  For the discovery-style
+    distance-marginalised parameterisation, use :func:`cw_phi_psr_priors`.
     """
-    return PriorSpec(
-        {
-            f"{prefix}{suffix}": defaults[suffix]()
-            for suffix in _CW_SUFFIXES
-            if suffix in defaults
-        }
-    )
+    flat = {
+        f"{prefix}{suffix}": defaults[suffix]()
+        for suffix in _CW_SUFFIXES
+        if suffix in defaults
+    }
+    if ul:
+        flat[f"{prefix}log10_h"] = defaults["log10_h_ul"]()
+    return PriorSpec(flat)
 
 
 def cw_phi_psr_priors(psrs: PulsarBundle, *, prefix: str = "cw_") -> PriorSpec:

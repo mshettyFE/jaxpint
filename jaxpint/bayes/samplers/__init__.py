@@ -15,6 +15,7 @@ Two layers:
 
 from __future__ import annotations
 
+from jaxpint.bayes.samplers.distributions import LinearExp
 from jaxpint.bayes.samplers.numpyro import (
     build_pta_clogL_model,
     build_pta_clogL_whitened_model,
@@ -42,6 +43,8 @@ from jaxpint.bayes.samplers.priors import (
 )
 
 __all__ = [
+    # Custom distributions
+    "LinearExp",
     # Prior assembly
     "PriorSpec",
     "PulsarBundle",

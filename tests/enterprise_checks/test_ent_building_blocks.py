@@ -268,6 +268,40 @@ def test_improper_prior_constant_matches_enterprise(white_bundle):
     )
 
 
+def test_linear_exp_pdf_matches_enterprise():
+    """LinearExp (upper-limit prior) pdf agrees with enterprise's parameter.LinearExp."""
+    from enterprise.signals import parameter
+
+    from jaxpint.bayes.samplers import LinearExp
+
+    d = LinearExp(-18.0, -11.0)
+    ent = parameter.LinearExp(-18, -11)("x")
+    for v in [-17.5, -15.0, -12.3, -11.05]:
+        npt.assert_allclose(
+            float(np.exp(d.log_prob(v))),
+            float(ent.get_pdf(v)),
+            rtol=1e-12,
+            err_msg=f"LinearExp pdf disagrees at {v}",
+        )
+
+
+def test_truncated_normal_pdf_matches_enterprise():
+    """numpyro TruncatedNormal pdf agrees with enterprise's parameter.TruncNormal."""
+    import numpyro.distributions as dist
+    from enterprise.signals import parameter
+
+    loc, scale, low, high = 4.33, 1.2, 0.0, 7.0
+    d = dist.TruncatedNormal(loc, scale, low=low, high=high)
+    ent = parameter.TruncNormal(loc, scale, low, high)("t")
+    for v in [0.4, 2.0, 4.33, 6.6]:
+        npt.assert_allclose(
+            float(np.exp(d.log_prob(v))),
+            float(ent.get_pdf(v)),
+            rtol=1e-10,
+            err_msg=f"TruncNormal pdf disagrees at {v}",
+        )
+
+
 def test_quantization_matrix(white_bundle):
     """ECORR epoch quantization: identical groupings (dt=1 s, nmin=2).
 
