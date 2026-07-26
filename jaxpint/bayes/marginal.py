@@ -25,6 +25,7 @@ import dataclasses
 import warnings
 from typing import (
     Callable,
+    ClassVar,
     Iterable,
     Optional,
     Sequence,
@@ -487,28 +488,19 @@ class _MarginalizationInjector(SignalInjector):
     injector ignores its ``pulsar_params`` and ``global_params`` arguments
     and just returns the cached tuple.
 
-    Stored as a regular Python attribute (not an :class:`eqx.field`),
-    mirroring the convention used by concrete :class:`SignalInjector`
-    subclasses like
-    :class:`~jaxpint.pta.signals.gwb.CURNInjector` and
-    :class:`~jaxpint.pta.signals.correlated_gwb.HDCorrelatedGWBInjector`.
     """
+
+    cached_blocks: tuple[
+        Optional[tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]],
+        ...,
+    ]
 
     # The cached block is the timing design matrix M at Φ = 1e40 — genuinely
     # collinear for multi-parameter MSPs.  Declaring needs_qr switches the PTA
     # inner tier to the square-root (QR) Woodbury, matching the single-pulsar
     # path's ``use_qr=True``: the Gram-Cholesky form loses ~4 digits on this
     # block (relerr ~3e-4 in rᵀC⁻¹r → an O(1) absolute logL error per pulsar).
-    needs_qr = True
-
-    def __init__(
-        self,
-        cached_blocks: tuple[
-            Optional[tuple[Float[Array, "n_toas n_marg_p"], Float[Array, " n_marg_p"]]],
-            ...,
-        ],
-    ):
-        self.cached_blocks = cached_blocks
+    needs_qr: ClassVar[bool] = True
 
     def register_params(self, global_params: GlobalParams) -> GlobalParams:
         # Marg'd parameters are per-pulsar and held at fiducial — no new
@@ -751,11 +743,10 @@ def marginalize_pta(
         )
 
     marg_injector = _MarginalizationInjector(tuple(cached_blocks))
-    # ``signal_injectors`` is a static-field tuple of ``SignalInjector``
-    # instances.  ``eqx.tree_at`` interprets ``c.signal_injectors`` as a
-    # pytree of leaves rather than as a single field to replace, so use
-    # the standard dataclass replacement instead — eqx.Module is a
-    # frozen dataclass under the hood.
+    # ``eqx.tree_at`` interprets ``c.signal_injectors`` as a pytree of
+    # leaves rather than as a single field to replace, so use the standard
+    # dataclass replacement instead — eqx.Module is a frozen dataclass
+    # under the hood (this also re-runs PTAConfig's __post_init__ checks).
     modified_config = dataclasses.replace(
         config,
         signal_injectors=config.signal_injectors + (marg_injector,),

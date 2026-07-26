@@ -2,20 +2,31 @@
 
 A *signal injector* contributes shared PTA parameters and either a deterministic
 delay, a per-pulsar stochastic covariance, or -- for correlated signals -- the
-ingredients of a cross-pulsar covariance.  These abstract base classes are the
-interface that :func:`jaxpint.pta.pta_logL` consumes and that the concrete
-implementations in :mod:`jaxpint.pta.signals` provide.
+ingredients of a cross-pulsar covariance.
 
 They live in their own leaf module (depending only on the core data types) so
 both the likelihood engine and the signal implementations can import the
 contract without either side depending on the other.
+
+Both bases are :class:`equinox.Module`, so every injector is a pytree:
+array-valued fields (pulsar positions, precomputed ORF matrices, cached
+Woodbury blocks) are dynamic leaves that enter jit as traced inputs, while
+configuration (prefixes, flags, parameter specs) must be declared
+``eqx.field(static=True)`` on the subclass.  This is what lets
+:class:`~jaxpint.pta.likelihood.PTAConfig` hold injectors as ordinary
+(non-static) fields instead of baking their arrays into the compiled HLO
+as constants.  Subclasses are frozen dataclasses: declare fields on the
+class and assign them in ``__init__`` (helpers called from ``__init__``
+may still assign, as equinox only freezes after construction); nothing may
+mutate an injector afterwards.
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import ClassVar, Optional
 
+import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.types import GlobalParams, ParameterVector, TOAData
@@ -26,7 +37,7 @@ from jaxpint.types import GlobalParams, ParameterVector, TOAData
 # ---------------------------------------------------------------------------
 
 
-class SignalInjector(ABC):
+class SignalInjector(eqx.Module):
     """Abstract base class for PTA signal components.
 
     Each injector:
@@ -36,10 +47,14 @@ class SignalInjector(ABC):
     2. Produces delay arrays and/or covariance ``(U, Phi)`` tuples per
        pulsar via :meth:`delay` / :meth:`covariance` (optional —
        default implementations return ``None``).
+    3. Declares which per-pulsar parameters it reads via
+       :meth:`required_pulsar_params` (optional — default declares
+       nothing; summaries use it to credit reads).
 
     Subclasses must implement :meth:`register_params`.  Override
     :meth:`delay` for deterministic signals (e.g. CW) and/or
-    :meth:`covariance` for stochastic signals (e.g. GWB).
+    :meth:`covariance` for stochastic signals (e.g. GWB), and
+    :meth:`required_pulsar_params` if either reads ``pulsar_params``.
 
     :func:`pta_logL` is agnostic to the signal type.
     """
@@ -132,13 +147,41 @@ class SignalInjector(ABC):
         """
         return None
 
+    def required_pulsar_params(self, p: int) -> tuple[str, ...]:
+        """Per-pulsar parameter names this injector reads for pulsar *p*.
+
+        :meth:`delay` / :meth:`covariance` receive pulsar *p*'s full
+        :class:`~jaxpint.types.ParameterVector`, so — unlike timing/noise
+        components, whose ``*_name`` field convention makes
+        ``required_params()`` derivable — a read is invisible to summaries
+        unless declared here.  Override to name every parameter the
+        injector reads from ``pulsar_params`` for pulsar *p* (e.g. the CW
+        injector's pulsar-term distance parameter).
+        :func:`jaxpint.summary.summarize_pta` uses the declaration to
+        credit injectors in the per-pulsar "read by" column, keep
+        injector-read parameters off the orphan list, and warn when a
+        declared parameter is missing from a pulsar's vector.
+
+        Parameters
+        ----------
+        p : int
+            Pulsar index within the PTA.
+
+        Returns
+        -------
+        tuple of str
+            Names read from pulsar *p*'s vector.  Default: empty (this
+            injector reads no per-pulsar parameters).
+        """
+        return ()
+
 
 # ---------------------------------------------------------------------------
 # Correlated signal injector ABC
 # ---------------------------------------------------------------------------
 
 
-class CorrelatedSignalInjector(ABC):
+class CorrelatedSignalInjector(eqx.Module):
     """Abstract base class for cross-pulsar correlated signal components.
 
     Unlike :class:`SignalInjector`, which produces per-pulsar covariance
@@ -146,6 +189,10 @@ class CorrelatedSignalInjector(ABC):
     to build a PTA-wide covariance with inter-pulsar correlations: a
     per-pulsar Fourier basis, a global PSD vector, and an overlap reduction
     function (ORF) matrix coupling pulsar pairs.
+
+    There is no ``required_pulsar_params`` here: correlated injectors only
+    ever see ``toa_data`` and ``global_params``, never a pulsar's
+    ``ParameterVector``, so they have no per-pulsar reads to declare.
     """
 
     @abstractmethod

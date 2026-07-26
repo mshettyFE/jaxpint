@@ -87,10 +87,15 @@ class PTAConfig(eqx.Module):
     each correlated injector contributes an outer-tier Cholesky solve over
     the cross-pulsar Fourier-basis system.
 
-    ``toa_data_list`` and ``noise_models`` are *dynamic* (traced) fields;
-    marking them static balloons jit memory because the per-pulsar arrays
-    get baked into the compiled HLO. The remaining fields are compile-time
-    constants.
+    ``toa_data_list``, ``noise_models``, and the injector tuples are
+    *dynamic* (traced) fields; marking them static balloons jit memory
+    because the per-pulsar arrays get baked into the compiled HLO.
+    Injectors are :class:`equinox.Module` pytrees, so only their
+    array-valued leaves (CW pulsar positions, precomputed ORF matrices,
+    cached marginalization blocks) are traced — their configuration
+    (prefixes, flags, parameter specs) is static metadata on each
+    injector and remains part of the jit cache key.  ``timing_models``
+    is static (compile-time constant).
 
     Raises
     ------
@@ -102,10 +107,8 @@ class PTAConfig(eqx.Module):
     toa_data_list: tuple[TOAData, ...]
     noise_models: tuple[NoiseModel, ...]
     timing_models: tuple[TimingModel, ...] = eqx.field(static=True)
-    signal_injectors: tuple[SignalInjector, ...] = eqx.field(static=True)
-    correlated_injectors: tuple[CorrelatedSignalInjector, ...] = eqx.field(
-        static=True, default=()
-    )
+    signal_injectors: tuple[SignalInjector, ...]
+    correlated_injectors: tuple[CorrelatedSignalInjector, ...] = ()
 
     def __post_init__(self):
         n_toa = len(self.toa_data_list)
@@ -197,7 +200,7 @@ def _collect_injector_ext_delay(
     toa_data_p: TOAData,
     pulsar_params_p: ParameterVector,
     global_params: GlobalParams,
-    signal_injectors,
+    signal_injectors: tuple[SignalInjector, ...],
 ) -> Optional[Float[Array, " n_toas"]]:
     """Sum per-pulsar deterministic-delay contributions from injectors.
 
@@ -216,8 +219,8 @@ def _collect_injector_ext_cov(
     toa_data_p: TOAData,
     pulsar_params_p: ParameterVector,
     global_params: GlobalParams,
-    signal_injectors,
-):
+    signal_injectors: tuple[SignalInjector, ...],
+) -> Optional[tuple[Float[Array, "n_toas k"], Float[Array, " k"]]]:
     """Concatenate per-pulsar covariance contributions from injectors.
 
     Returns ``(U_ext, Phi_ext)`` or ``None`` (if no injector contributes).

@@ -17,14 +17,11 @@ Beyond listing the parts, the summaries run cheap cross-checks:
 - prior sites vs. the site names the numpyro model builders will request
   (``f"{pulsar}_{param}"`` per-pulsar + bare global names).
 
-Known blind spot: parameter-reader discovery walks only ``TimingModel`` and
-``NoiseModel`` components, whose ``*_name``/``*_names`` field convention makes
-``required_params()`` work.  PTA-level injectors receive ``pulsar_params`` in
-``delay()``/``covariance()`` and may read per-pulsar parameters (e.g. the CW
-injector's PX-based pulsar-term distance) without declaring them, so the
-"read by" column cannot credit an injector, and a parameter read *only* by an
-injector is wrongly listed as read-by-nothing.  Fixing this properly means
-giving injectors a declared-parameter convention.
+Parameter-reader discovery walks ``TimingModel`` and ``NoiseModel``
+components (via ``required_params()``, derivable from their
+``*_name``/``*_names`` field convention) and PTA signal injectors (via
+:meth:`~jaxpint.pta.SignalInjector.required_pulsar_params`, the
+injectors' declared-parameter convention).
 
 Everything returns a plain ``str``; write it to a file or ``print`` it.  All
 functions are host-side (they may trigger eager JAX evaluation for basis
@@ -35,12 +32,21 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from typing import Any, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 
 import numpy as np
 
 from jaxpint.components import _make_component_names
 from jaxpint.types import GlobalParams, ParameterVector, TOAData
+
+if TYPE_CHECKING:
+    from jaxpint.pta.injectors import CorrelatedSignalInjector, SignalInjector
+
+    # Local union: the summary renders both injector kinds uniformly (it only
+    # probes register_params and rendering hooks).  Kept private to this
+    # module — the two contracts share no dependency, so a package-level
+    # union would overstate their relationship.
+    Injector = SignalInjector | CorrelatedSignalInjector
 
 __all__ = ["summarize_model", "summarize_pta"]
 
@@ -101,22 +107,12 @@ def _component_config(comp) -> str:
     """Non-parameter-name config of a component, as ``k=v`` pairs.
 
     Parameter bindings (``*_name`` / ``*_names`` fields) are rendered
-    separately with their live values, so they are skipped here.  Works for
-    both equinox modules (dataclass fields) and plain classes such as the
-    signal injectors (public instance attributes).
-    """
-    if dataclasses.is_dataclass(comp):
-        # eqx.Module components: fields() gives the declared schema in
-        # declaration order and excludes __check_init__-style cached attrs.
-        items = [
-            (f.name, getattr(comp, f.name, None)) for f in dataclasses.fields(comp)
-        ]
-    else:
-        # Plain-class signal injectors (CURNInjector etc.): attributes are set
-        # ad hoc in _setup_spectrum, so vars() is the only introspection. If
-        # the injectors are ever converted to eqx.Module, this branch becomes
-        # dead and the function collapses to the dataclass path.
-        items = [(k, v) for k, v in vars(comp).items() if not k.startswith("_")]
+    separately with their live values, so they are skipped here."""
+    items = [
+        (f.name, getattr(comp, f.name, None))
+        for f in dataclasses.fields(comp)
+        if not f.name.startswith("_")
+    ]
     pairs = []
     for attr, val in items:
         if attr.endswith("_name") or attr.endswith("_names"):
@@ -229,6 +225,7 @@ def summarize_model(
     params: ParameterVector,
     toa_data: Optional[TOAData] = None,
     name: Optional[str] = None,
+    extra_readers: Optional[Mapping[str, Sequence[str]]] = None,
 ) -> str:
     """Render one pulsar's assembled model as a text report.
 
@@ -247,6 +244,11 @@ def summarize_model(
         Enables the data section, flag-mask counts, and noise basis widths.
     name : str, optional
         Pulsar label for the header.
+    extra_readers : dict, optional
+        Additional ``{parameter name -> reader labels}`` credited in the
+        "read by" column beyond what the components declare.
+        :func:`summarize_pta` uses this to credit PTA signal injectors
+        (from ``required_pulsar_params``) in its verbose per-pulsar dumps.
 
     Returns
     -------
@@ -334,6 +336,9 @@ def summarize_model(
             referenced.setdefault(pname, []).append(label)
     if timing_model.phoff_name is not None:
         referenced.setdefault(timing_model.phoff_name, []).append("TimingModel")
+    if extra_readers:
+        for pname, labels in extra_readers.items():
+            referenced.setdefault(pname, []).extend(labels)
 
     n = params.n_params
     n_free = params.n_free
@@ -377,7 +382,7 @@ def summarize_model(
 # ---------------------------------------------------------------------------
 
 
-def _registered_names(injector) -> Optional[tuple[str, ...]]:
+def _registered_names(injector: "Injector") -> Optional[tuple[str, ...]]:
     """Global-parameter names an injector registers (probed side-effect-free)."""
     try:
         return injector.register_params(GlobalParams.empty()).names
@@ -396,8 +401,10 @@ def summarize_pta(
     """Render a PTA configuration as a text report.
 
     Sections: per-pulsar overview table, per-pulsar and correlated signal
-    injectors (with the global parameters each registers), the global
-    parameter table cross-checked against injector registration, and -- when
+    injectors (with the global parameters each registers and the per-pulsar
+    parameters each declares it reads via ``required_pulsar_params``), the
+    global parameter table cross-checked against injector registration
+    (credited per instance as ``ClassName#i``), and -- when
     ``priors`` is given -- prior coverage of every site the numpyro model
     builders will request (``f"{pulsar}_{param}"`` per free parameter plus
     bare global names, matching
@@ -463,14 +470,22 @@ def summarize_pta(
 
     # --- injectors --------------------------------------------------------
 
-    def _injector_lines(kind: str, injectors) -> tuple[list[str], dict[str, str]]:
-        """Section lines plus the {global param -> injector class} it registers."""
+    def _injector_lines(
+        kind: str, injectors: Sequence["Injector"]
+    ) -> tuple[list[str], dict[str, str]]:
+        """Section lines plus the {global param -> injector label} it registers.
+
+        Labels are ``ClassName#i`` with *i* the 1-based position in the
+        section, so two instances of the same class (e.g. two CW sources)
+        stay distinguishable in the global-parameter table.
+        """
         lines = [f"{kind}:"]
         registered: dict[str, str] = {}
         if not injectors:
             lines.append("  (none)")
             return lines, registered
         for i, inj in enumerate(injectors, 1):
+            label = f"{type(inj).__name__}#{i}"
             cfg = _component_config(inj)
             lines.append(f"  {i}. {type(inj).__name__}" + (f"  [{cfg}]" if cfg else ""))
             reg = _registered_names(inj)
@@ -479,8 +494,52 @@ def summarize_pta(
             else:
                 lines.append(f"       registers: {', '.join(reg) if reg else '(none)'}")
                 for r in reg:
-                    registered.setdefault(r, type(inj).__name__)
+                    registered.setdefault(r, label)
+            lines.extend(_pulsar_reads_lines(inj))
         return lines, registered
+
+    def _pulsar_reads_lines(inj: "Injector") -> list[str]:
+        """Render the injector's declared per-pulsar reads (and missing-param
+        warnings when ``pulsar_params`` is available).
+
+        Correlated injectors have no ``required_pulsar_params`` (they never
+        see ``pulsar_params``), so they get no line at all.
+        """
+        probe = getattr(inj, "required_pulsar_params", None)
+        if probe is None:
+            return []
+        reads: dict[str, list[int]] = {}
+        for p in range(n_psr):
+            try:
+                req = probe(p)
+            except Exception:
+                return [
+                    "       reads per-pulsar: <required_pulsar_params probe failed>"
+                ]
+            for pname in req:
+                reads.setdefault(pname, []).append(p)
+        if not reads:
+            return ["       reads per-pulsar: (none)"]
+        parts = [
+            pname
+            + (
+                " (all pulsars)"
+                if len(ps) == n_psr
+                else f" (pulsars {', '.join(map(str, ps))})"
+            )
+            for pname, ps in reads.items()
+        ]
+        lines = [f"       reads per-pulsar: {'; '.join(parts)}"]
+        if pulsar_params is not None:
+            for pname, ps in reads.items():
+                missing = [p for p in ps if pname not in pulsar_params[p]]
+                if missing:
+                    lines.append(
+                        f"       WARNING: reads {pname}, missing from "
+                        f"pulsar_params for pulsar(s) "
+                        + ", ".join(names[p] for p in missing)
+                    )
+        return lines
 
     # First registrant wins on duplicate names, so merge in section order.
     registered_by: dict[str, str] = {}
@@ -576,6 +635,19 @@ def summarize_pta(
             out.append("(verbose=True requires pulsar_params; skipping full dumps)")
         else:
             for p in range(n_psr):
+                # Credit signal injectors in this pulsar's "read by" column;
+                # labels match the numbered injector section above.
+                extra: dict[str, list[str]] = {}
+                for i, inj in enumerate(config.signal_injectors, 1):
+                    probe = getattr(inj, "required_pulsar_params", None)
+                    if probe is None:
+                        continue
+                    try:
+                        req = probe(p)
+                    except Exception:
+                        continue
+                    for pname in req:
+                        extra.setdefault(pname, []).append(f"{type(inj).__name__}#{i}")
                 out.append("")
                 out.append(
                     summarize_model(
@@ -584,6 +656,7 @@ def summarize_pta(
                         pulsar_params[p],
                         toa_data=config.toa_data_list[p],
                         name=names[p],
+                        extra_readers=extra or None,
                     ).rstrip()
                 )
 

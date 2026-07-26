@@ -24,13 +24,15 @@ from __future__ import annotations
 
 from typing import Optional
 
+import equinox as eqx
+
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 from jaxtyping import Array, Float
 
-from jaxpint.types import TOAData
+from jaxpint.types import GlobalParams, ParameterVector, TOAData
 from jaxpint.pta.injectors import SignalInjector
 
 # Speed of light (m/s) and kpc → metres conversion
@@ -370,6 +372,16 @@ class CWInjector(SignalInjector):
         in ``jaxpint.bayes.cw_upper_limit``.  Default False.
     """
 
+    positions: Float[Array, "n_psr 3"]
+    dist_param: str = eqx.field(static=True)
+    prefix: str = eqx.field(static=True)
+    earth_term_only: bool = eqx.field(static=True)
+    linear_amplitude: bool = eqx.field(static=True)
+    pulsar_term_mask: tuple[bool, ...] = eqx.field(static=True)
+    amp_name: str = eqx.field(static=True)
+    param_names: tuple[str, ...] = eqx.field(static=True)
+    param_spec_items: tuple[tuple[str, float], ...] = eqx.field(static=True)
+
     def __init__(
         self,
         pulsar_positions: Float[Array, "n_psr 3"],
@@ -380,11 +392,11 @@ class CWInjector(SignalInjector):
         linear_amplitude: bool = False,
         pulsar_term_mask: Optional[tuple[bool, ...]] = None,
     ):
-        self.positions = pulsar_positions
+        self.positions = jnp.asarray(pulsar_positions)
         self.dist_param = dist_param_name
         self.prefix = prefix
-        self.earth_term_only = earth_term_only
-        self.linear_amplitude = linear_amplitude
+        self.earth_term_only = bool(earth_term_only)
+        self.linear_amplitude = bool(linear_amplitude)
         n_psr = int(pulsar_positions.shape[0])
         if pulsar_term_mask is None:
             pulsar_term_mask = tuple(True for _ in range(n_psr))
@@ -404,7 +416,7 @@ class CWInjector(SignalInjector):
             CW_LINEAR_AMP_DEFAULT if linear_amplitude else CW_PARAM_DEFAULTS["log10_h"]
         )
         nonamp = [k for k in CW_PARAM_DEFAULTS if k != "log10_h"]
-        self.param_names: tuple[str, ...] = (self.amp_name, *nonamp)
+        self.param_names = (self.amp_name, *nonamp)
 
         spec = {self.amp_name: amp_default}
         spec.update({k: CW_PARAM_DEFAULTS[k] for k in nonamp})
@@ -416,11 +428,18 @@ class CWInjector(SignalInjector):
                     f"Valid parameters: {list(self.param_names)}"
                 )
             spec.update(initial_values)
-        self.param_spec: dict[str, float] = spec
+        # Items-tuple, not a dict: static fields must be hashable, and the
+        # tuple preserves registration order.
+        self.param_spec_items = tuple(spec.items())
+
+    @property
+    def param_spec(self) -> dict[str, float]:
+        """Initial parameter values as an insertion-ordered dict view."""
+        return dict(self.param_spec_items)
 
     # -- SignalInjector protocol ------------------------------------------------
 
-    def register_params(self, global_params):
+    def register_params(self, global_params: GlobalParams) -> GlobalParams:
         """Register CW source parameters into *global_params*.
 
         Parameters
@@ -437,7 +456,23 @@ class CWInjector(SignalInjector):
         values = [self.param_spec[n] for n in self.param_names]
         return global_params.add_params(names, values)
 
-    def delay(self, p, toa_data, pulsar_params, global_params):
+    def required_pulsar_params(self, p: int) -> tuple[str, ...]:
+        """``dist_param`` (PX) iff pulsar *p* contributes its pulsar term.
+
+        Mirrors the branch in :meth:`delay`: an Earth-term-only injector
+        (or a masked-out, non-anchor pulsar) never reads the distance.
+        """
+        if self.earth_term_only or not self.pulsar_term_mask[p]:
+            return ()
+        return (self.dist_param,)
+
+    def delay(
+        self,
+        p: int,
+        toa_data: TOAData,
+        pulsar_params: ParameterVector,
+        global_params: GlobalParams,
+    ) -> Float[Array, " n_toas"]:
         """Compute CW delay for pulsar *p*.
 
         Parameters
@@ -716,6 +751,15 @@ class CWInjectorStack(SignalInjector):
     >>> config = PTAConfig(..., signal_injectors=(injector,))
     """
 
+    positions: Float[Array, "n_psr 3"]
+    dist_param: str = eqx.field(static=True)
+    n_sources: int = eqx.field(static=True)
+    prefixes: tuple[str, ...] = eqx.field(static=True)
+    earth_term_only: bool = eqx.field(static=True)
+    param_spec_items_per_source: tuple[tuple[tuple[str, float], ...], ...] = eqx.field(
+        static=True
+    )
+
     def __init__(
         self,
         pulsar_positions: Float[Array, "n_psr 3"],
@@ -725,14 +769,14 @@ class CWInjectorStack(SignalInjector):
         per_source_values: Optional[list[dict[str, float]]] = None,
         earth_term_only: bool = False,
     ):
-        self.positions = pulsar_positions
+        self.positions = jnp.asarray(pulsar_positions)
         self.dist_param = dist_param_name
-        self.n_sources = n_sources
+        self.n_sources = int(n_sources)
         self.prefixes = tuple(f"cw{i}_" for i in range(n_sources))
-        self.earth_term_only = earth_term_only
+        self.earth_term_only = bool(earth_term_only)
 
         # Build per-source param specs
-        self.param_specs: list[dict[str, float]] = []
+        param_specs: list[dict[str, float]] = []
         for m in range(n_sources):
             spec = dict(CW_PARAM_DEFAULTS)
             if initial_values is not None:
@@ -753,12 +797,17 @@ class CWInjectorStack(SignalInjector):
                 if unknown:
                     raise ValueError(f"Unknown CW parameters in source {m}: {unknown}")
                 spec.update(per_source_values[m])
-            self.param_specs.append(spec)
+            param_specs.append(spec)
+        self.param_spec_items_per_source = tuple(
+            tuple(spec.items()) for spec in param_specs
+        )
 
-        # _param_indices will be set during register_params
-        self._param_indices: Optional[jnp.ndarray] = None
+    @property
+    def param_specs(self) -> list[dict[str, float]]:
+        """Per-source initial parameter values as insertion-ordered dicts."""
+        return [dict(items) for items in self.param_spec_items_per_source]
 
-    def register_params(self, global_params):
+    def register_params(self, global_params: GlobalParams) -> GlobalParams:
         """Register all CW sources' parameters into *global_params*.
 
         Parameters
@@ -771,20 +820,25 @@ class CWInjectorStack(SignalInjector):
         GlobalParams
             Updated copy with all CW sources' parameters appended.
         """
-        indices = []
         for m in range(self.n_sources):
             prefix = self.prefixes[m]
-            spec = self.param_specs[m]
+            spec = dict(self.param_spec_items_per_source[m])
             names = [f"{prefix}{n}" for n in _CW_PARAM_NAMES]
             values = [spec[n] for n in _CW_PARAM_NAMES]
-            offset = global_params.n_params
             global_params = global_params.add_params(names, values)
-            indices.append(list(range(offset, offset + _N_CW_PARAMS)))
-
-        self._param_indices = jnp.array(indices, dtype=jnp.int32)
         return global_params
 
-    def delay(self, p, toa_data, pulsar_params, global_params):
+    def required_pulsar_params(self, p: int) -> tuple[str, ...]:
+        """``dist_param`` (PX) for every pulsar unless Earth-term only."""
+        return () if self.earth_term_only else (self.dist_param,)
+
+    def delay(
+        self,
+        p: int,
+        toa_data: TOAData,
+        pulsar_params: ParameterVector,
+        global_params: GlobalParams,
+    ) -> Float[Array, " n_toas"]:
         """Compute total CW delay for pulsar *p* (vmapped over sources).
 
         Parameters
@@ -803,11 +857,30 @@ class CWInjectorStack(SignalInjector):
         (n_toas,) array
             Total CW timing residual summed over all sources, in seconds.
         """
-        cw_stack = global_params.values[self._param_indices]  # (n_sources, 7)
+        # Host-side (trace-time) name→index lookup: parameter names are static
+        # metadata on GlobalParams, so this compiles to a constant gather.
+        # Recomputing here (rather than caching during register_params) keeps
+        # the injector immutable and register_params side-effect-free.
+        indices = jnp.array(
+            [
+                [global_params.param_index(f"{prefix}{n}") for n in _CW_PARAM_NAMES]
+                for prefix in self.prefixes
+            ],
+            dtype=jnp.int32,
+        )
+        cw_stack = global_params.values[indices]  # (n_sources, 7)
+        # Earth-term-only has no pulsar-distance dependence, so don't require
+        # PX in the vector (same guard as CWInjector.delay; keeps this in
+        # lockstep with required_pulsar_params).
+        pulsar_dist = (
+            jnp.float64(1.0)
+            if self.earth_term_only
+            else pulsar_params.param_value(self.dist_param)
+        )
         return sum_cw_delays(
             toa_data,
             self.positions[p],
-            pulsar_params.param_value(self.dist_param),
+            pulsar_dist,
             cw_stack,
             earth_term_only=self.earth_term_only,
         )

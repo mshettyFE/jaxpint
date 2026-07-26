@@ -22,10 +22,11 @@ from __future__ import annotations
 
 from typing import Optional
 
+import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
-from jaxpint.types import TOAData
+from jaxpint.types import GlobalParams, ParameterVector, TOAData
 from jaxpint.pta.injectors import SignalInjector
 from jaxpint.spectra import (
     PowerLawSpectrum,
@@ -135,13 +136,13 @@ CURN_PARAM_DEFAULTS: dict[str, float] = {
 
 
 # ---------------------------------------------------------------------------
-# Shared spectrum-backed injector plumbing (composition, not inheritance)
+# Shared spectrum-backed injector plumbing
 # ---------------------------------------------------------------------------
 # CURNInjector and HDCorrelatedGWBInjector sit under different ABCs
 # (SignalInjector vs CorrelatedSignalInjector) but share the same spectrum
 # setup: store the config, build the parameter spec from the spectrum, and
 # register those globals under `prefix`. Kept as free functions the injectors
-# delegate to, so neither hierarchy grows a second base (no mixin / MRO).
+# delegate to, so neither hierarchy grows a second base.
 
 
 def _setup_spectrum(
@@ -156,29 +157,38 @@ def _setup_spectrum(
 ) -> None:
     """Populate an injector's spectrum config in place (shared ``__init__`` body).
 
-    ``label`` names the injector only for the "unknown parameter" error message.
+    Runs during ``__init__`` (equinox modules stay assignable until
+    construction completes), filling the shared static spectrum fields
+    declared on both injector hierarchies.  ``label`` names the injector
+    only for the "unknown parameter" error message.
     """
-    inj.n_components = n_components
-    inj.T_span = T_span
+    # int()/float() coercion keeps these static fields hashable even when a
+    # caller passes numpy/jax scalars (jit hashes static fields for its cache
+    # key; a 0-d jax array would raise TypeError there).
+    inj.n_components = int(n_components)
+    inj.T_span = float(T_span)
     inj.prefix = prefix
     inj.spectrum = PowerLawSpectrum() if spectrum is None else spectrum
     validate_spectrum_components(inj.spectrum, n_components)
 
-    inj.param_spec = inj.spectrum.param_defaults()
+    spec = inj.spectrum.param_defaults()
     if initial_values is not None:
-        unknown = set(initial_values) - set(inj.param_spec)
+        unknown = set(initial_values) - set(spec)
         if unknown:
             raise ValueError(
-                f"Unknown {label} parameters: {unknown}. "
-                f"Valid parameters: {list(inj.param_spec)}"
+                f"Unknown {label} parameters: {unknown}. Valid parameters: {list(spec)}"
             )
-        inj.param_spec.update(initial_values)
+        spec.update(initial_values)
+    # Stored as an items-tuple, not a dict: static fields must be hashable,
+    # and the tuple preserves registration order.  The ``param_spec``
+    # property restores the dict view.
+    inj.param_spec_items = tuple(spec.items())
 
 
-def _register_spectrum_params(inj, global_params):
+def _register_spectrum_params(inj, global_params: GlobalParams) -> GlobalParams:
     """Append the injector's prefixed spectrum globals (shared ``register_params``)."""
-    names = [f"{inj.prefix}{n}" for n in inj.param_spec]
-    return global_params.add_params(names, list(inj.param_spec.values()))
+    names = [f"{inj.prefix}{n}" for n, _ in inj.param_spec_items]
+    return global_params.add_params(names, [v for _, v in inj.param_spec_items])
 
 
 class CURNInjector(SignalInjector):
@@ -206,6 +216,12 @@ class CURNInjector(SignalInjector):
         keeps ``Φ`` diagonal, so the Woodbury path is identical.
     """
 
+    n_components: int = eqx.field(static=True)
+    T_span: float = eqx.field(static=True)
+    prefix: str = eqx.field(static=True)
+    spectrum: SpectralModel = eqx.field(static=True)
+    param_spec_items: tuple[tuple[str, float], ...] = eqx.field(static=True)
+
     def __init__(
         self,
         n_components: int,
@@ -218,9 +234,14 @@ class CURNInjector(SignalInjector):
             self, n_components, T_span, prefix, initial_values, spectrum, label="CURN"
         )
 
+    @property
+    def param_spec(self) -> dict[str, float]:
+        """Initial parameter values as an insertion-ordered dict view."""
+        return dict(self.param_spec_items)
+
     # -- SignalInjector ABC -----------------------------------------------------
 
-    def register_params(self, global_params):
+    def register_params(self, global_params: GlobalParams) -> GlobalParams:
         """Register CURN amplitude and spectral index into *global_params*.
 
         Parameters
@@ -238,7 +259,13 @@ class CURNInjector(SignalInjector):
 
     # delay() inherited from SignalInjector — returns None (CURN is stochastic)
 
-    def covariance(self, p, toa_data, pulsar_params, global_params):
+    def covariance(
+        self,
+        p: int,
+        toa_data: TOAData,
+        pulsar_params: ParameterVector,
+        global_params: GlobalParams,
+    ) -> tuple[Float[Array, "n_toas n_basis"], Float[Array, " n_basis"]]:
         """Compute ``(U, Phi)`` GWB covariance contribution for pulsar *p*.
 
         Parameters

@@ -7,6 +7,7 @@ import numpyro.distributions as dist
 import pytest
 
 from jaxpint.pta.likelihood import PTAConfig
+from jaxpint.pta.signals.cw import CWInjector
 from jaxpint.pta.signals.gwb import CURNInjector
 from jaxpint.summary import summarize_model, summarize_pta
 from jaxpint.types import GlobalParams
@@ -191,6 +192,111 @@ class TestSummarizePta:
         )
         assert text.count("JaxPINT model summary") == 2
         assert "Spindown" in text
+
+
+# ===========================================================================
+# Injector parameter crediting (required_pulsar_params convention)
+# ===========================================================================
+
+
+def _pta_with_cw(with_px=(True, True), **cw_kwargs):
+    """Two-pulsar PTA with one CWInjector; PX per pulsar controlled by with_px."""
+    pulsars = [make_simple_pulsar(20, f0=200.0, f1=-1e-15, seed=i) for i in range(2)]
+    base_names = ("F0", "F1", "PEPOCH", "EFAC1", "EQUAD1")
+    base_values = (200.0, -1e-15, 0.0, 1.0, 0.0)
+    base_frozen = (False, False, True, True, True)
+    pulsar_params = tuple(
+        make_params(
+            names=base_names + (("PX",) if has_px else ()),
+            values=base_values + ((1.0,) if has_px else ()),
+            frozen_mask=base_frozen + ((True,) if has_px else ()),
+            epoch_int_values={"PEPOCH": 59000.0},
+        )
+        for has_px in with_px
+    )
+    positions = jnp.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    injector = CWInjector(positions, **cw_kwargs)
+    global_params = injector.register_params(GlobalParams.empty())
+    config = PTAConfig(
+        toa_data_list=tuple(p[0] for p in pulsars),
+        timing_models=tuple(p[1] for p in pulsars),
+        noise_models=tuple(p[2] for p in pulsars),
+        signal_injectors=(injector,),
+    )
+    return config, pulsar_params, global_params
+
+
+class TestInjectorParamCrediting:
+    def test_reads_line_all_pulsars(self):
+        config, pulsar_params, global_params = _pta_with_cw()
+        text = summarize_pta(
+            config, pulsar_params=pulsar_params, global_params=global_params
+        )
+        assert "reads per-pulsar: PX (all pulsars)" in text
+
+    def test_reads_line_none_for_curn(self, small_pta):
+        config, pulsar_params, global_params = small_pta
+        text = summarize_pta(
+            config, pulsar_params=pulsar_params, global_params=global_params
+        )
+        assert "reads per-pulsar: (none)" in text
+
+    def test_reads_line_respects_pulsar_term_mask(self):
+        config, pulsar_params, global_params = _pta_with_cw(
+            pulsar_term_mask=(True, False)
+        )
+        text = summarize_pta(
+            config, pulsar_params=pulsar_params, global_params=global_params
+        )
+        assert "reads per-pulsar: PX (pulsars 0)" in text
+
+    def test_reads_line_earth_term_only(self):
+        config, pulsar_params, global_params = _pta_with_cw(earth_term_only=True)
+        text = summarize_pta(
+            config, pulsar_params=pulsar_params, global_params=global_params
+        )
+        assert "reads per-pulsar: (none)" in text
+
+    def test_missing_declared_param_warns(self):
+        config, pulsar_params, global_params = _pta_with_cw(with_px=(True, False))
+        text = summarize_pta(
+            config, pulsar_params=pulsar_params, global_params=global_params
+        )
+        assert "WARNING: reads PX, missing from pulsar_params" in text
+        assert "psr1" in text
+
+    def test_verbose_read_by_credits_injector(self):
+        config, pulsar_params, global_params = _pta_with_cw()
+        text = summarize_pta(
+            config,
+            pulsar_params=pulsar_params,
+            global_params=global_params,
+            verbose=True,
+        )
+        # PX's "read by" column credits the injector instance...
+        assert "CWInjector#1" in text
+        # ...so PX is no longer an orphan (and nothing else is either).
+        assert "not read by any component" not in text
+
+    def test_multiple_instances_disambiguated(self):
+        config, pulsar_params, _ = _pta_with_cw()
+        positions = jnp.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+        cw2 = CWInjector(positions, prefix="cw1_")
+        config = PTAConfig(
+            toa_data_list=config.toa_data_list,
+            timing_models=config.timing_models,
+            noise_models=config.noise_models,
+            signal_injectors=config.signal_injectors + (cw2,),
+        )
+        global_params = cw2.register_params(
+            config.signal_injectors[0].register_params(GlobalParams.empty())
+        )
+        text = summarize_pta(
+            config, pulsar_params=pulsar_params, global_params=global_params
+        )
+        table = text.split("Global parameters")[1]
+        assert "CWInjector#1" in table
+        assert "CWInjector#2" in table
 
 
 # ===========================================================================

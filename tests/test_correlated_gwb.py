@@ -11,6 +11,7 @@ Validates:
 
 from __future__ import annotations
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -318,11 +319,14 @@ class TestCURNEquivalence:
             initial_values={"log10_A": log10_A, "gamma": gamma},
         )
         # Deliberately replace the precomputed HD ORF with the identity so the
-        # injector is uncorrelated across pulsars (== CURN).  This pokes a
-        # private field on purpose: forcing a non-HD ORF is a test-only
-        # manipulation, not behaviour the public HD API should expose.
+        # injector is uncorrelated across pulsars (== CURN).  This rewrites a
+        # private field on purpose (via tree_at — injectors are frozen eqx
+        # modules): forcing a non-HD ORF is a test-only manipulation, not
+        # behaviour the public HD API should expose.
         n_psr = positions.shape[0]
-        gwb_corr._orf_matrix = jnp.eye(n_psr)
+        gwb_corr = eqx.tree_at(
+            lambda inj: inj._orf_matrix, gwb_corr, jnp.eye(n_psr)
+        )
 
         gp_corr = gwb_corr.register_params(GlobalParams.empty())
 

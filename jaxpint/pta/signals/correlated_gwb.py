@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
+import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
@@ -58,6 +59,13 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
         PSD model (default :class:`~jaxpint.spectra.PowerLawSpectrum`).
     """
 
+    n_components: int = eqx.field(static=True)
+    T_span: float = eqx.field(static=True)
+    prefix: str = eqx.field(static=True)
+    spectrum: SpectralModel = eqx.field(static=True)
+    param_spec_items: tuple[tuple[str, float], ...] = eqx.field(static=True)
+    _orf_matrix: Float[Array, "n_psr n_psr"]
+
     def __init__(
         self,
         pulsar_positions: Float[Array, "n_psr 3"],
@@ -81,6 +89,11 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
                 Gamma = Gamma.at[a, b].set(val)
                 Gamma = Gamma.at[b, a].set(val)
         self._orf_matrix = Gamma
+
+    @property
+    def param_spec(self) -> dict[str, float]:
+        """Initial parameter values as an insertion-ordered dict view."""
+        return dict(self.param_spec_items)
 
     # -- CorrelatedSignalInjector ABC ------------------------------------------
 
