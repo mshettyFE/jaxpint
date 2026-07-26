@@ -13,6 +13,9 @@ Beyond listing the parts, the summaries run cheap cross-checks:
 - parameters in the vector that **no component reads** (a mistyped name in a
   hand-built vector lands here);
 - flag masks that match **zero TOAs** (a mistyped selector flag lands here);
+- ECORR parameters whose epoch quantization kept **zero epochs** (the mask
+  matched TOAs but every group fell below the ``nmin`` cut -- the parameter
+  is sampled but inert);
 - global parameters vs. what the config's injectors actually register;
 - prior sites vs. the site names the numpyro model builders will request
   (``f"{pulsar}_{param}"`` per-pulsar + bare global names).
@@ -24,8 +27,11 @@ components (via ``required_params()``, derivable from their
 injectors' declared-parameter convention).
 
 Everything returns a plain ``str``; write it to a file or ``print`` it.  All
-functions are host-side (they may trigger eager JAX evaluation for basis
-shapes) and must not be called inside ``jax.jit``.
+functions are host-side and must not be called inside ``jax.jit``.  Basis
+widths are read from the host-side column counts (no device transfer, so a
+text dump does not defeat the noise components' deferred device
+allocation); the one remaining eager JAX evaluation is the noise-covariance
+"total:" smoke-test line in :func:`summarize_model`.
 """
 
 from __future__ import annotations
@@ -212,11 +218,60 @@ def _toa_data_section(toa_data: TOAData) -> list[str]:
 
 
 def _basis_width(comp, toa_data: TOAData, params: ParameterVector) -> str:
+    # Host-side fast path: basis-GP components know their column count from
+    # the host-numpy source of truth, so a text dump costs no host->device
+    # transfer and does not defeat the deferred device allocation (bases
+    # stay off-device until a real likelihood evaluation).  The width is
+    # correct even for dynamic (parameter-scaled) bases: scaling changes
+    # column values, never column counts.
+    probe = getattr(comp, "_host_columns", None)
+    if probe is not None:
+        try:
+            return f"n_basis={probe().shape[1]}"
+        except Exception:
+            pass  # fall through to the eager path
     try:
         _, U, _ = comp.covariance(toa_data, params)
         return f"n_basis={U.shape[1]}"
     except Exception as e:  # summary must never fail on a component quirk
         return f"n_basis=<error: {e}>"
+
+
+def _basis_kind(comp) -> str:
+    """``basis=static`` / ``basis=dynamic`` per the ``static_basis()`` advertisement.
+
+    Static means pre-stackable (columns fixed at build time); dynamic means
+    the columns depend on fitted parameters (chromatic ``(fref/f)^α``,
+    solar-wind geometry) and are rebuilt per likelihood call.
+    """
+    try:
+        return "basis=static" if comp.static_basis() is not None else "basis=dynamic"
+    except Exception:  # summary must never fail on a component quirk
+        return "basis=<probe failed>"
+
+
+def _ecorr_zero_epoch_warnings(comp) -> list[str]:
+    """Warn on ECORR parameters whose quantization kept zero epochs.
+
+    The zero-TOA flag-mask warning catches a mistyped selector, but ECORR
+    has a second silent-failure mode: a mask can match TOAs and *still*
+    keep no epochs, because ``build_quantization_matrix`` drops epoch
+    groups below its ``nmin`` cut.  Such a parameter exists, is sampled,
+    and does nothing.  Duck-typed on ``ecorr_names``/``ecorr_epoch_slices``
+    so non-ECORR components pass through untouched.
+    """
+    names = getattr(comp, "ecorr_names", None)
+    slices = getattr(comp, "ecorr_epoch_slices", None)
+    if not names or slices is None:
+        return []
+    empty = [n for n, (start, end) in zip(names, slices) if start == end]
+    if not empty:
+        return []
+    return [
+        "       WARNING: ECORR parameter(s) with zero kept epochs (no TOAs "
+        "matched, or every epoch group fell below the nmin cut) -- the "
+        "parameter is sampled but inert: " + ", ".join(empty)
+    ]
 
 
 def summarize_model(
@@ -298,15 +353,17 @@ def summarize_model(
             return [f"  {slot}: (none)"]
         cfg = _component_config(comp)
         is_correlated = any(comp is c for c in noise_model.correlated)
-        width = (
-            "  " + _basis_width(comp, toa_data, params)
-            if toa_data is not None and is_correlated
-            else ""
-        )
-        return [
-            f"  {slot}: {type(comp).__name__}" + (f"  [{cfg}]" if cfg else "") + width,
+        extras = ""
+        if is_correlated:
+            extras = "  " + _basis_kind(comp)
+            if toa_data is not None:
+                extras += "  " + _basis_width(comp, toa_data, params)
+        lines = [
+            f"  {slot}: {type(comp).__name__}" + (f"  [{cfg}]" if cfg else "") + extras,
             f"       params: {_component_param_line(comp, params)}",
         ]
+        lines.extend(_ecorr_zero_epoch_warnings(comp))
+        return lines
 
     out.extend(_noise_lines("white (Ndiag)", noise_model.white_noise))
     if noise_model.correlated:

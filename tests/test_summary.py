@@ -322,3 +322,83 @@ class TestFitterSummary:
         fitter = WLSFitter(timing_model, toa_data, params)
         text = fitter.summary()
         assert "white (Ndiag): (none)" in text
+
+
+# ===========================================================================
+# Noise-section basis reporting (basis kind, host-side width, ECORR check)
+# ===========================================================================
+
+import numpy as np
+
+from jaxpint.noise import NoiseModel
+from jaxpint.noise.ecorr import EcorrNoise
+from jaxpint.summary import _basis_width
+from tests.test_chrom_noise import _make_plchrom
+from tests.test_red_noise import _make_plred
+
+_T3YR = 3.0 * 365.25 * 86400.0
+
+
+class TestNoiseBasisReporting:
+    def test_basis_width_is_host_side(self):
+        """Width comes from host columns: correct value, no device cache
+        populated -- a text dump must not defeat deferred device allocation."""
+        comp, params, toa_data, *_ = _make_plred(n_toas=30, n_freqs=4, T=_T3YR)
+        assert _basis_width(comp, toa_data, params) == "n_basis=8"
+        assert "_columns_jax_cache" not in comp.__dict__
+
+    def test_noise_section_basis_tags(self, simple_pulsar):
+        """Static (red) and dynamic (chromatic) components are tagged."""
+        _, timing_model, _, _ = simple_pulsar
+        red, _, toa_data, *_ = _make_plred(n_toas=20, n_freqs=3, T=_T3YR)
+        chrom, *_ = _make_plchrom(n_toas=20, n_freqs=3, T=_T3YR)
+        params = make_params(
+            ("TNREDAMP", "TNREDGAM", "TNCHROMAMP", "TNCHROMGAM", "TNCHROMIDX"),
+            (-13.0, 3.5, -13.0, 3.5, 4.0),
+            units=("",) * 5,
+        )
+        nm = NoiseModel(white_noise=None, correlated=(red, chrom))
+        text = summarize_model(timing_model, nm, params, toa_data=toa_data)
+        red_line = next(line for line in text.splitlines() if "PLRedNoise" in line)
+        chrom_line = next(line for line in text.splitlines() if "PLChromNoise" in line)
+        assert "basis=static" in red_line and "n_basis=6" in red_line
+        assert "basis=dynamic" in chrom_line and "n_basis=6" in chrom_line
+
+    def test_ecorr_zero_epoch_warning(self, simple_pulsar):
+        """An ECORR parameter whose quantization kept no epochs is flagged;
+        healthy siblings are not."""
+        _, timing_model, _, _ = simple_pulsar
+        n = 6
+        U = np.zeros((n, 2))
+        U[:3, 0] = 1.0
+        U[3:, 1] = 1.0
+        ec = EcorrNoise(
+            ecorr_names=("ECORR1", "ECORR2"),
+            quantization_matrix=jnp.asarray(U),
+            ecorr_epoch_slices=((0, 2), (2, 2)),  # ECORR2: empty slice
+        )
+        params = make_params(("ECORR1", "ECORR2"), (1e-6, 1e-6), units=("s", "s"))
+        nm = NoiseModel(white_noise=None, correlated=(ec,))
+        toa_data = make_toa_data(n_toas=n)
+        text = summarize_model(timing_model, nm, params, toa_data=toa_data)
+        warning = next(line for line in text.splitlines() if "zero kept epochs" in line)
+        assert "ECORR2" in warning
+        assert "ECORR1" not in warning
+
+    def test_no_ecorr_warning_when_all_slices_populated(self, simple_pulsar):
+        _, timing_model, _, _ = simple_pulsar
+        n = 6
+        U = np.zeros((n, 2))
+        U[:3, 0] = 1.0
+        U[3:, 1] = 1.0
+        ec = EcorrNoise(
+            ecorr_names=("ECORR1", "ECORR2"),
+            quantization_matrix=jnp.asarray(U),
+            ecorr_epoch_slices=((0, 1), (1, 2)),
+        )
+        params = make_params(("ECORR1", "ECORR2"), (1e-6, 1e-6), units=("s", "s"))
+        nm = NoiseModel(white_noise=None, correlated=(ec,))
+        text = summarize_model(
+            timing_model, nm, params, toa_data=make_toa_data(n_toas=n)
+        )
+        assert "zero kept epochs" not in text
