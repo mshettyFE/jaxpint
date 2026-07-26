@@ -145,3 +145,128 @@ class TestCorrelatedNoiseShared:
         d1 = component.generate(toa_data, params, jax.random.PRNGKey(0))
         d2 = component.generate(toa_data, params, jax.random.PRNGKey(1))
         assert not np.allclose(d1, d2, **noise_spec.different_keys_kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Basis-neutral contract (_BasisGPNoise): every basis-GP component -- the four
+# power-law Fourier components plus FreeSpectrumNoise and the epoch-indicator
+# EcorrNoise -- must satisfy the shared covariance/generate/caching contract,
+# independent of what its basis columns are.
+# ---------------------------------------------------------------------------
+
+from jaxpint.noise._basis_gp import _BasisGPNoise
+from jaxpint.noise.ecorr import EcorrNoise
+from jaxpint.noise.free_spectrum import FreeSpectrumNoise
+from jaxpint.utils import build_quantization_matrix
+from tests.helpers import make_fourier_basis, make_params, make_toa_data
+
+
+def _build_freespec(n_toas, n_freqs, T):
+    F, freqs, df, _ = make_fourier_basis(n_toas, n_freqs, T)
+    rho_names = tuple(f"TNFREERHO_{k:04d}" for k in range(n_freqs))
+    comp = FreeSpectrumNoise(
+        fourier_basis=F, freqs=freqs, freq_bin_widths=df, rho_names=rho_names
+    )
+    params = make_params(rho_names, [-7.0] * n_freqs, units=("",) * n_freqs)
+    return comp, params, make_toa_data(n_toas=n_toas)
+
+
+def _build_ecorr(n_toas, n_freqs, T):
+    # n_freqs/T unused: the epoch basis is built from the TOA times alone.
+    toa_data = make_toa_data(n_toas=n_toas)
+    tdb_s = np.asarray(toa_data.tdb_seconds)
+    masks = {
+        "ECORR1": np.arange(n_toas) % 2 == 0,
+        "ECORR2": np.arange(n_toas) % 2 == 1,
+    }
+    U, eslices = build_quantization_matrix(tdb_s, masks, dt=86400.0)
+    assert U.shape[1] > 0, "epoch grouping produced no epochs -- trivial test"
+    comp = EcorrNoise(
+        ecorr_names=("ECORR1", "ECORR2"),
+        quantization_matrix=jnp.asarray(U),
+        ecorr_epoch_slices=(eslices["ECORR1"], eslices["ECORR2"]),
+    )
+    params = make_params(("ECORR1", "ECORR2"), [5e-7, 3e-7], units=("s", "s"))
+    return comp, params, toa_data
+
+
+BASIS_GP_SPECS = NOISE_SPECS + [
+    NoiseSpec(name="freespec", build=_build_freespec),
+    NoiseSpec(name="ecorr", build=_build_ecorr),
+]
+
+
+@pytest.fixture(params=BASIS_GP_SPECS, ids=[s.name for s in BASIS_GP_SPECS])
+def basis_gp_spec(request):
+    return request.param
+
+
+class TestBasisGPContract:
+    """Contract shared by every _BasisGPNoise subclass, basis-agnostic."""
+
+    def test_covariance_triple_invariants(self, basis_gp_spec):
+        n_toas = 40
+        component, params, toa_data = basis_gp_spec.build(n_toas, 3, 365.25 * 86400.0)
+        Ndiag, U, Phi = component.covariance(toa_data, params)
+        assert Ndiag.shape == (n_toas,)
+        npt.assert_array_equal(Ndiag, jnp.zeros(n_toas))  # purely low-rank
+        assert U.shape[0] == n_toas
+        assert Phi.shape == (U.shape[1],)
+        assert bool(jnp.all(jnp.isfinite(U)))
+        assert bool(jnp.all(jnp.isfinite(Phi)))
+        assert bool(jnp.all(Phi >= 0))
+
+    def test_generate_consistent_with_covariance(self, basis_gp_spec):
+        """generate() and covariance() must consume the same (U, w) through the
+        same hooks with the same key convention: a draw equals the manual
+        projection U @ (sqrt(w) * z) of covariance()'s own outputs, bit-exact."""
+
+        component, params, toa_data = basis_gp_spec.build(40, 3, 365.25 * 86400.0)
+        key = jax.random.PRNGKey(7)
+        draw = component.generate(toa_data, params, key)
+        _, U, Phi = component.covariance(toa_data, params)
+        z = jax.random.normal(key, shape=(U.shape[1],))
+        npt.assert_array_equal(np.asarray(draw), np.asarray(U @ (jnp.sqrt(Phi) * z)))
+
+    def test_columns_cache_concrete_and_guarded(self, basis_gp_spec):
+        """The lazy device cache must (a) actually cache, (b) hold a concrete
+        array equal to the host columns, and (c) refuse to cache the tracer
+        that _host_columns() yields on a tree-reconstructed instance inside a
+        jit trace (the leak the guard in _columns_jax exists to prevent)."""
+        import equinox as eqx
+
+        component, params, toa_data = basis_gp_spec.build(40, 3, 365.25 * 86400.0)
+        # The assertions below inspect
+        # _BasisGPNoise internals and would pass vacuously on a component
+        # that silently left the hierarchy.
+        assert isinstance(component, _BasisGPNoise)
+
+        # (a) caching: repeated access returns the same object.
+        first = component._columns_jax
+        assert component._columns_jax is first
+        # (b) concrete and faithful to the host source of truth.
+        assert not isinstance(first, jax.core.Tracer)
+        npt.assert_array_equal(np.asarray(first), np.asarray(component._host_columns()))
+
+        # (c) the guard branch: partition/combine inside jit rebuilds the
+        # component with tracer fields, so _host_columns() returns a tracer
+        # there.  Capture the ephemeral instance at trace time and verify the
+        # guard refused to cache it.
+        dynamic, static = eqx.partition(component, eqx.is_array)
+        captured = []
+
+        @jax.jit
+        def evaluate(dyn):
+            comp = eqx.combine(dyn, static)
+            captured.append(comp)  # host-side capture, runs during tracing
+            _, U, Phi = comp.covariance(toa_data, params)
+            return jnp.sum(U) + jnp.sum(Phi)
+
+        evaluate(dynamic)
+        assert len(captured) == 1, "expected exactly one trace"
+        reconstructed = captured[0]
+        assert "_columns_jax_cache" not in reconstructed.__dict__, (
+            "tracer leaked into the reconstructed instance's cache"
+        )
+        # The persistent instance's cache is untouched by the traced call.
+        assert component.__dict__.get("_columns_jax_cache") is first

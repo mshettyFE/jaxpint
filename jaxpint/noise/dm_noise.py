@@ -97,4 +97,6 @@ class PLDMNoise(_PowerLawFourierNoise):
 
     def static_basis(self) -> Float[Array, "n_toas n_basis"]:
         # Fixed basis (DM scaling pre-baked) -> pre-stackable by NoiseModel.
-        return self.fourier_basis
+        # Via _host_columns so this always advertises the same array
+        # covariance() consumes.
+        return self._host_columns()

@@ -77,7 +77,9 @@ class PLRedNoise(_PowerLawFourierNoise):
 
     def static_basis(self) -> Float[Array, "n_toas n_basis"]:
         # Fixed basis -> advertise it so NoiseModel can pre-stack it once.
-        return self.fourier_basis
+        # Via _host_columns so this always advertises the same array
+        # covariance() consumes.
+        return self._host_columns()
 
     @classmethod
     def build(cls, ctx: "BuildContext") -> "Optional[PLRedNoise]":

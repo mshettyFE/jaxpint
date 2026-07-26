@@ -13,15 +13,15 @@ import logging
 from typing import TYPE_CHECKING, Optional
 
 import equinox as eqx
-import jax
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
 
-from jaxpint.components import NoiseComponent, ParamDecl
+from jaxpint.components import ParamDecl
+from jaxpint.noise._basis_gp import _BasisGPNoise
 from jaxpint.par._component_registry import register_component
 from jaxpint.par.registry import Component
-from jaxpint.types import TOAData, ParameterVector
+from jaxpint.types import ParameterVector
 
 if TYPE_CHECKING:
     from jaxpint._build_context import BuildContext
@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 
 @register_component(component=Component.ECORR_NOISE, pint_names=("EcorrNoise",))
-class EcorrNoise(NoiseComponent):
+class EcorrNoise(_BasisGPNoise):
     """Epoch-correlated noise model (ECORR).
 
     ECORR adds a low-rank contribution to the TOA covariance matrix::
@@ -39,7 +39,9 @@ class EcorrNoise(NoiseComponent):
 
     where *U* is a binary quantization matrix mapping TOAs to observing
     epochs (pre-computed by the bridge) and the weights are the squared
-    ECORR values.
+    ECORR values.  A non-Fourier (epoch-indicator) basis GP: the Woodbury
+    covariance and realization drawing are inherited from
+    :class:`~jaxpint.noise._basis_gp._BasisGPNoise`.
 
     Parameters
     ----------
@@ -114,32 +116,16 @@ class EcorrNoise(NoiseComponent):
         return None
 
     def __post_init__(self):
-        # Store the quantization matrix as numpy on host RAM (source of
-        # truth). See PLRedNoise for the rationale.
-        if not isinstance(self.quantization_matrix, np.ndarray):
-            object.__setattr__(
-                self,
-                "quantization_matrix",
-                np.asarray(self.quantization_matrix),
-            )
+        # Host numpy is the source of truth; the device view is built lazily
+        # by _BasisGPNoise._columns_jax. See that module's docstring.
+        self._coerce_host_field("quantization_matrix")
 
-    @property
-    def _quantization_matrix_jax(self) -> Float[Array, "n_toas n_epochs"]:
-        """Lazy device-converted view of ``quantization_matrix``;
-        see PLRedNoise.
+    def _host_columns(self) -> np.ndarray:
+        return self.quantization_matrix
 
-        Cached manually instead of via ``functools.cached_property``:
-        inside a jit trace ``jnp.asarray`` returns a tracer, and caching a
-        tracer on the (persistent) host instance leaks it into later traces.
-        Only concrete arrays are cached; traced conversions are recomputed
-        per trace (where they become jaxpr constants anyway).
-        """
-        cached = self.__dict__.get("_quantization_matrix_jax_cache")
-        if cached is None:
-            cached = jnp.asarray(self.quantization_matrix)
-            if not isinstance(cached, jax.core.Tracer):
-                self.__dict__["_quantization_matrix_jax_cache"] = cached  # pyright: ignore[reportIndexIssue]
-        return cached
+    def psd_weights(self, params: ParameterVector) -> Float[Array, " n_epochs"]:
+        """Prior diagonal for the epoch basis: ECORR² per epoch column."""
+        return self.ecorr_weights(params)
 
     def ecorr_weights(
         self,
@@ -165,70 +151,7 @@ class EcorrNoise(NoiseComponent):
         return weights
 
     def static_basis(self) -> Float[Array, "n_toas n_epochs"]:
-        return self.quantization_matrix
-
-    def covariance(
-        self,
-        toa_data: TOAData,
-        params: ParameterVector,
-    ) -> tuple[
-        Float[Array, " n_toas"],
-        Float[Array, "n_toas n_epochs"],
-        Float[Array, " n_epochs"],
-    ]:
-        """Return the Woodbury ``(Ndiag, U, Phidiag)`` triple for ECORR noise.
-
-        ECORR is purely low-rank: ``Ndiag = 0``. The basis is the
-        quantization matrix mapping TOAs to observing epochs.
-
-        Parameters
-        ----------
-        toa_data : TOAData
-            Observed TOA data (used for array sizing).
-        params : ParameterVector
-            Current parameter values for all ECORR parameters.
-
-        Returns
-        -------
-        Ndiag : (n_toas,)
-            Zero diagonal (ECORR has no white component).
-        U : (n_toas, n_epochs)
-            Binary quantization matrix.
-        Phidiag : (n_epochs,)
-            Squared ECORR values (seconds squared) per epoch.
-        """
-        U = self._quantization_matrix_jax
-        Phidiag = self.ecorr_weights(params)
-        Ndiag = jnp.zeros(toa_data.n_toas)
-        return Ndiag, U, Phidiag
-
-    def generate(
-        self,
-        toa_data: TOAData,
-        params: ParameterVector,
-        key: jax.Array,
-    ) -> Float[Array, " n_toas"]:
-        """Draw a random ECORR noise realization.
-
-        Draws standard-normal epoch amplitudes and projects them through
-        the quantization matrix scaled by sqrt(ECORR squared) values.
-
-        Parameters
-        ----------
-        toa_data : TOAData
-            Observed TOA data (used for array dimensions).
-        params : ParameterVector
-            Current parameter values for all ECORR parameters.
-        key : jax.Array
-            PRNG key for random sampling.
-
-        Returns
-        -------
-        noise : (n_toas,)
-            ECORR noise realization in seconds.
-        """
-        U = self._quantization_matrix_jax
-        weights = self.ecorr_weights(params)
-        n_epochs = U.shape[1]
-        a = jax.random.normal(key, shape=(n_epochs,))
-        return U @ (jnp.sqrt(weights) * a)
+        # Fixed basis -> advertise it so NoiseModel can pre-stack it once.
+        # Via _host_columns so this always advertises the same array
+        # covariance() consumes.
+        return self._host_columns()

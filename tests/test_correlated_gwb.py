@@ -662,8 +662,7 @@ class TestMultipleCorrelatedInjectors:
         """``jax.grad`` of K=2 ``pta_logL`` w.r.t. global params is finite.
 
         The only gradient guard for the correlated path — deliberately at
-        K=2, the superset configuration of the shared joint solve (a K=1
-        twin was removed 2026-07-23 as subsumed).
+        K=2, the superset configuration of the shared joint solve .
         """
         (toa_data_list, timing_models, noise_models,
          pulsar_params, cinjs, global_params) = two_injectors
