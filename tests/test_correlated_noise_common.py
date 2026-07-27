@@ -157,7 +157,7 @@ class TestCorrelatedNoiseShared:
 from jaxpint.noise._basis_gp import _BasisGPNoise
 from jaxpint.noise.ecorr import EcorrNoise
 from jaxpint.noise.free_spectrum import FreeSpectrumNoise
-from jaxpint.utils import build_quantization_matrix
+from jaxpint.utils import build_quantization_index
 from tests.helpers import make_fourier_basis, make_params, make_toa_data
 
 
@@ -179,11 +179,12 @@ def _build_ecorr(n_toas, n_freqs, T):
         "ECORR1": np.arange(n_toas) % 2 == 0,
         "ECORR2": np.arange(n_toas) % 2 == 1,
     }
-    U, eslices = build_quantization_matrix(tdb_s, masks, dt=86400.0)
-    assert U.shape[1] > 0, "epoch grouping produced no epochs -- trivial test"
+    idx, n_epochs, eslices = build_quantization_index(tdb_s, masks, dt=86400.0)
+    assert n_epochs > 0, "epoch grouping produced no epochs -- trivial test"
     comp = EcorrNoise(
         ecorr_names=("ECORR1", "ECORR2"),
-        quantization_matrix=jnp.asarray(U),
+        epoch_index=idx,
+        n_epochs=n_epochs,
         ecorr_epoch_slices=(eslices["ECORR1"], eslices["ECORR2"]),
     )
     params = make_params(("ECORR1", "ECORR2"), [5e-7, 3e-7], units=("s", "s"))

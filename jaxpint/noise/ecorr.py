@@ -15,12 +15,13 @@ from typing import TYPE_CHECKING, Optional
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Int
 
 from jaxpint.components import ParamDecl
 from jaxpint.noise._basis_gp import _BasisGPNoise
 from jaxpint.par._component_registry import register_component
 from jaxpint.par.registry import Component
+from jaxpint.utils import NO_EPOCH
 from jaxpint.types import ParameterVector
 
 if TYPE_CHECKING:
@@ -38,10 +39,15 @@ class EcorrNoise(_BasisGPNoise):
         C_ecorr = U · diag(ECORR²) · Uᵀ
 
     where *U* is a binary quantization matrix mapping TOAs to observing
-    epochs (pre-computed by the bridge) and the weights are the squared
-    ECORR values.  A non-Fourier (epoch-indicator) basis GP: the Woodbury
-    covariance and realization drawing are inherited from
+    epochs and the weights are the squared ECORR values.  A non-Fourier
+    (epoch-indicator) basis GP: the Woodbury covariance and realization
+    drawing are inherited from
     :class:`~jaxpint.noise._basis_gp._BasisGPNoise`.
+
+    *U* has exactly one nonzero per assigned row, so the component stores only the per-TOA
+    ``epoch_index`` (int32, ``-1`` = no epoch) and synthesizes the dense
+    columns on demand; Drastically reduces memory usage with no precision loss.
+    Use :meth:`from_dense` to construct from a pre-built dense matrix.
 
     Parameters
     ----------
@@ -49,12 +55,17 @@ class EcorrNoise(_BasisGPNoise):
         Parameter names for ECORR instances (e.g. ``("ECORR1", "ECORR2")``).
         Values must be in **seconds** (the bridge converts from PINT's
         native microseconds).
-    quantization_matrix : array, shape (n_toas, n_epochs)
-        Binary matrix mapping TOAs to epochs.  Pre-computed by the bridge
-        because epoch identification is data-dependent and not JIT-compatible.
+    epoch_index : array, shape (n_toas,), int32
+        Epoch column for each TOA (:data:`jaxpint.utils.NO_EPOCH` = -1
+        for TOAs in no kept epoch).
+        Pre-computed by the bridge (:func:`jaxpint.utils.
+        build_quantization_index`) because epoch identification is
+        data-dependent and not JIT-compatible.
+    n_epochs : int
+        Total number of epoch columns.
     ecorr_epoch_slices : tuple of (int, int)
         For each ECORR parameter, the ``(start_col, end_col)`` range in
-        the quantization matrix's column dimension.
+        the epoch-column dimension.
     """
 
     PARAMS = (
@@ -69,18 +80,16 @@ class EcorrNoise(_BasisGPNoise):
     )
 
     ecorr_names: tuple[str, ...] = eqx.field(static=True)
-    quantization_matrix: (
-        Float[Array, "n_toas n_epochs"] | Float[np.ndarray, "n_toas n_epochs"]
-    )
+    epoch_index: Int[Array, " n_toas"] | Int[np.ndarray, " n_toas"]
+    n_epochs: int = eqx.field(static=True)
     ecorr_epoch_slices: tuple[tuple[int, int], ...] = eqx.field(static=True)
 
     @classmethod
     def build(cls, ctx: "BuildContext") -> "Optional[EcorrNoise]":
         """Construct from a parsed model (co-located with the physics it builds)."""
         import numpy as np
-        import jax.numpy as jnp
         from jaxpint._build_context import basis_seconds
-        from jaxpint.utils import build_quantization_matrix
+        from jaxpint.utils import build_quantization_index
 
         par = ctx.par
         toa_data = ctx.toa_data
@@ -95,7 +104,9 @@ class EcorrNoise(_BasisGPNoise):
                 for ename in ecorr_names
             }
 
-            U, eslices = build_quantization_matrix(basis_s, ecorr_masks)
+            epoch_index, n_epochs, eslices = build_quantization_index(
+                basis_s, ecorr_masks
+            )
             # Slices are looked up BY NAME, never by position.  ``ecorr_names``
             # is sorted lexicographically, so with >=10 parameters the column
             # blocks of ``U`` run ECORR1, ECORR10, ECORR11, ECORR2, ...  That is
@@ -108,7 +119,8 @@ class EcorrNoise(_BasisGPNoise):
             ecorr_epoch_slices = tuple(eslices[n] for n in ecorr_names)
             return cls(
                 ecorr_names=ecorr_names,
-                quantization_matrix=jnp.asarray(U),
+                epoch_index=epoch_index,
+                n_epochs=n_epochs,
                 ecorr_epoch_slices=ecorr_epoch_slices,
             )
         elif toa_data is None and len(ecorr_names) > 0:
@@ -117,17 +129,68 @@ class EcorrNoise(_BasisGPNoise):
             )
         return None
 
+    @classmethod
+    def from_dense(
+        cls,
+        *,
+        ecorr_names: tuple[str, ...],
+        quantization_matrix,
+        ecorr_epoch_slices: tuple[tuple[int, int], ...],
+    ) -> "EcorrNoise":
+        """Construct from a dense binary quantization matrix.
+
+        Back-compat path for callers holding the dense form (one nonzero
+        per assigned row, value 1.0); converts to indexed storage.
+        """
+        U = np.asarray(quantization_matrix)
+        nz = U != 0
+        counts = nz.sum(axis=1)
+        if np.any(counts > 1) or (nz.any() and not np.all(U[nz] == 1.0)):
+            raise ValueError(
+                "quantization_matrix must be binary with at most one "
+                "nonzero per row (an epoch-indicator matrix)."
+            )
+        idx = np.where(counts == 1, nz.argmax(axis=1), NO_EPOCH).astype(np.int32)
+        return cls(
+            ecorr_names=ecorr_names,
+            epoch_index=idx,
+            n_epochs=int(U.shape[1]),
+            ecorr_epoch_slices=ecorr_epoch_slices,
+        )
+
     def __post_init__(self):
         # Host numpy is the source of truth; the device view is built lazily
         # by _BasisGPNoise._columns_jax. See that module's docstring.
-        self._coerce_host_field("quantization_matrix")
+        self._coerce_host_field("epoch_index")
 
     def _host_columns(
         self,
     ) -> Float[np.ndarray, "n_toas n_epochs"] | Float[Array, "n_toas n_epochs"]:
-        # Pass-through, never np.asarray: inside a jit trace of a
-        # reconstructed instance this field is a tracer (see base docstring).
-        return self.quantization_matrix
+        idx = self.epoch_index
+        if isinstance(idx, np.ndarray):
+            from jaxpint.utils import quantization_matrix_from_index
+
+            return quantization_matrix_from_index(idx, self.n_epochs)
+        rows = jnp.arange(idx.shape[0])
+        onehot = jnp.zeros((idx.shape[0], self.n_epochs), dtype=jnp.float64)
+        # NO_EPOCH rows: clip keeps the scatter in range, the >= 0 weight
+        # mask zeroes them .
+        return onehot.at[rows, jnp.clip(idx, 0)].add((idx >= 0).astype(jnp.float64))
+
+    def basis_width(self) -> int:
+        # Cheap width: no dense synthesis just to read a shape.
+        return self.n_epochs
+
+    @property
+    def quantization_matrix(
+        self,
+    ) -> Float[np.ndarray, "n_toas n_epochs"] | Float[Array, "n_toas n_epochs"]:
+        """Dense binary view (synthesized on access — O(n_toas × n_epochs)).
+
+        Back-compat for readers of the former field (diagnostics,
+        enterprise parity checks).  Storage is ``epoch_index``.
+        """
+        return self._host_columns()
 
     def psd_weights(self, params: ParameterVector) -> Float[Array, " n_epochs"]:
         """Prior diagonal for the epoch basis: ECORR² per epoch column."""
@@ -149,8 +212,7 @@ class EcorrNoise(_BasisGPNoise):
         weights : (n_epochs,)
             Squared ECORR values (seconds²), one per epoch.
         """
-        n_epochs = self.quantization_matrix.shape[1]
-        weights = jnp.zeros(n_epochs)
+        weights = jnp.zeros(self.n_epochs)
         for name, (start, end) in zip(self.ecorr_names, self.ecorr_epoch_slices):
             ecorr_val = params.param_value(name)
             weights = weights.at[start:end].set(ecorr_val**2)
@@ -161,5 +223,7 @@ class EcorrNoise(_BasisGPNoise):
     ) -> Float[np.ndarray, "n_toas n_epochs"] | Float[Array, "n_toas n_epochs"]:
         # Fixed basis -> advertise it so NoiseModel can pre-stack it once.
         # Via _host_columns so this always advertises the same array
-        # covariance() consumes.
+        # covariance() consumes.  NOTE: under indexed storage this call
+        # SYNTHESIZES the dense matrix (O(n_toas x n_epochs) transient) —
+        # cheap width queries must use basis_width() instead.
         return self._host_columns()

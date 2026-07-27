@@ -101,6 +101,16 @@ class _BasisGPNoise(NoiseComponent):
         """
         return self._columns_jax
 
+    def basis_width(self) -> int:
+        """Number of basis columns, as cheaply as the subclass allows.
+
+        Default reads the host columns' shape (free for stored bases);
+        subclasses whose ``_host_columns`` *synthesizes* a matrix
+        (indexed ECORR) override this so width queries — e.g. the
+        summary's ``n_basis`` line — never materialize a dense basis.
+        """
+        return int(self._host_columns().shape[1])
+
     def basis_at(
         self,
         times_seconds: Float[Array, " n_times"],

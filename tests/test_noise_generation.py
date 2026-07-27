@@ -110,7 +110,7 @@ class TestEcorrNoiseGenerate:
             U_np[i * 4 : (i + 1) * 4, i] = 1.0
         U = jnp.array(U_np)
 
-        ecorr = EcorrNoise(
+        ecorr = EcorrNoise.from_dense(
             ecorr_names=("ECORR1",),
             quantization_matrix=U,
             ecorr_epoch_slices=((0, n_epochs),),
@@ -204,7 +204,7 @@ class TestSimulateNoise:
         )
 
         white = ScaleToaError(efac_names=("EFAC1",), equad_names=("EQUAD1",))
-        ecorr = EcorrNoise(
+        ecorr = EcorrNoise.from_dense(
             ecorr_names=("ECORR1",),
             quantization_matrix=U,
             ecorr_epoch_slices=((0, n_epochs),),

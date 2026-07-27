@@ -372,7 +372,7 @@ class TestNoiseBasisReporting:
         U = np.zeros((n, 2))
         U[:3, 0] = 1.0
         U[3:, 1] = 1.0
-        ec = EcorrNoise(
+        ec = EcorrNoise.from_dense(
             ecorr_names=("ECORR1", "ECORR2"),
             quantization_matrix=jnp.asarray(U),
             ecorr_epoch_slices=((0, 2), (2, 2)),  # ECORR2: empty slice
@@ -391,7 +391,7 @@ class TestNoiseBasisReporting:
         U = np.zeros((n, 2))
         U[:3, 0] = 1.0
         U[3:, 1] = 1.0
-        ec = EcorrNoise(
+        ec = EcorrNoise.from_dense(
             ecorr_names=("ECORR1", "ECORR2"),
             quantization_matrix=jnp.asarray(U),
             ecorr_epoch_slices=((0, 1), (1, 2)),

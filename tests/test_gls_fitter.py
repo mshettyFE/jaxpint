@@ -98,7 +98,7 @@ class TestEcorrWeights:
         n_toas, n_epochs = 10, 3
         U = jnp.zeros((n_toas, n_epochs))
 
-        ecorr = EcorrNoise(
+        ecorr = EcorrNoise.from_dense(
             ecorr_names=("ECORR1",),
             quantization_matrix=U,
             ecorr_epoch_slices=((0, 3),),
@@ -115,7 +115,7 @@ class TestEcorrWeights:
         n_toas = 10
         U = jnp.zeros((n_toas, 5))  # 3 epochs for ECORR1, 2 for ECORR2
 
-        ecorr = EcorrNoise(
+        ecorr = EcorrNoise.from_dense(
             ecorr_names=("ECORR1", "ECORR2"),
             quantization_matrix=U,
             ecorr_epoch_slices=((0, 3), (3, 5)),
@@ -130,7 +130,7 @@ class TestEcorrWeights:
     def test_jit_compatible(self):
         """ecorr_weights should be JIT-compilable."""
         U = jnp.zeros((5, 2))
-        ecorr = EcorrNoise(
+        ecorr = EcorrNoise.from_dense(
             ecorr_names=("ECORR1",),
             quantization_matrix=U,
             ecorr_epoch_slices=((0, 2),),
@@ -579,4 +579,104 @@ class TestGLSCovarianceIllConditioned:
                 cov_ref / np.outer(ref_err, ref_err),
                 atol=1e-6,
                 err_msg=f"{label}: correlation mismatch vs dense oracle",
+            )
+
+
+class TestQuantizationIndexEquivalence:
+    """Indexed ECORR storage must be interchangeable with the dense form."""
+
+    def _times_masks(self, n=40, seed=3):
+        rng = np.random.default_rng(seed)
+        times = np.sort(rng.uniform(0.0, 20 * 86400.0, n))
+        masks = {
+            "ECORR1": np.arange(n) % 2 == 0,
+            "ECORR2": np.arange(n) % 2 == 1,
+        }
+        return times, masks
+
+    def test_index_matches_dense_builder(self):
+        from jaxpint.utils import (
+            build_quantization_index,
+            build_quantization_matrix,
+            quantization_matrix_from_index,
+        )
+
+        times, masks = self._times_masks()
+        U, slices_dense = build_quantization_matrix(times, masks, dt=86400.0)
+        idx, n_epochs, slices_idx = build_quantization_index(
+            times, masks, dt=86400.0
+        )
+        assert slices_idx == slices_dense
+        assert n_epochs == U.shape[1]
+        npt.assert_array_equal(quantization_matrix_from_index(idx, n_epochs), U)
+
+    def test_unassigned_rows_are_minus_one(self):
+        from jaxpint.utils import NO_EPOCH, build_quantization_index
+
+        # nmin=2 with an isolated TOA -> that TOA's singleton epoch dropped.
+        times = np.array([0.0, 10.0, 20.0, 5 * 86400.0])
+        masks = {"ECORR1": np.ones(4, dtype=bool)}
+        idx, n_epochs, _ = build_quantization_index(times, masks, dt=3600.0)
+        assert idx[3] == NO_EPOCH
+        assert (idx[:3] >= 0).all()
+
+    def test_overlapping_masks_raise(self):
+        from jaxpint.utils import build_quantization_index
+
+        times = np.linspace(0.0, 1000.0, 6)
+        masks = {
+            "ECORR1": np.ones(6, dtype=bool),
+            "ECORR2": np.array([True, True, False, False, False, False]),
+        }
+        with pytest.raises(ValueError, match="overlap"):
+            build_quantization_index(times, masks, dt=1e6)
+
+    def test_component_covariance_matches_dense_reference(self):
+        from jaxpint.utils import build_quantization_index
+        from tests.helpers import make_params, make_toa_data
+
+        times, masks = self._times_masks()
+        idx, n_epochs, eslices = build_quantization_index(times, masks, dt=86400.0)
+        ecorr = EcorrNoise(
+            ecorr_names=("ECORR1", "ECORR2"),
+            epoch_index=idx,
+            n_epochs=n_epochs,
+            ecorr_epoch_slices=(eslices["ECORR1"], eslices["ECORR2"]),
+        )
+        params = make_params(
+            ("ECORR1", "ECORR2"), (5e-7, 3e-7), units=("s", "s")
+        )
+        toa_data = make_toa_data(n_toas=len(times))
+        _, U, Phi = ecorr.covariance(toa_data, params)
+        # Dense reference built independently of the component.
+        U_ref = np.zeros((len(times), n_epochs))
+        valid = idx >= 0
+        U_ref[np.nonzero(valid)[0], idx[valid]] = 1.0
+        npt.assert_array_equal(np.asarray(U), U_ref)
+        C = np.asarray(U) @ np.diag(np.asarray(Phi)) @ np.asarray(U).T
+        C_ref = U_ref @ np.diag(np.asarray(Phi)) @ U_ref.T
+        npt.assert_array_equal(C, C_ref)
+
+    def test_from_dense_round_trip(self):
+        from jaxpint.utils import build_quantization_matrix
+
+        times, masks = self._times_masks()
+        U, eslices = build_quantization_matrix(times, masks, dt=86400.0)
+        ecorr = EcorrNoise.from_dense(
+            ecorr_names=("ECORR1", "ECORR2"),
+            quantization_matrix=U,
+            ecorr_epoch_slices=(eslices["ECORR1"], eslices["ECORR2"]),
+        )
+        npt.assert_array_equal(np.asarray(ecorr.quantization_matrix), U)
+        assert ecorr.n_epochs == U.shape[1]
+        assert ecorr.basis_width() == U.shape[1]
+
+    def test_from_dense_rejects_multihot_rows(self):
+        bad = np.zeros((3, 2))
+        bad[0, 0] = bad[0, 1] = 1.0
+        with pytest.raises(ValueError, match="one"):
+            EcorrNoise.from_dense(
+                ecorr_names=("ECORR1",),
+                quantization_matrix=bad,
+                ecorr_epoch_slices=((0, 2),),
             )

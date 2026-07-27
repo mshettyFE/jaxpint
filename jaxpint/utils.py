@@ -1205,24 +1205,119 @@ def _group_toas_into_epochs(
     return [ep for ep in epochs if len(ep) >= nmin]
 
 
-def build_quantization_matrix(
+# Sentinel epoch index: the TOA belongs to no kept ECORR epoch.  Negative by
+# design, for three load-bearing reasons: (1) every value in
+# ``[0, n_epochs)`` is a real column, so an in-range sentinel would recreate
+# the garbage-bin bug class (cf. discovery's ``first_valid_bin`` dance);
+# (2) the jnp synthesis path zeroes sentinel rows explicitly via
+# ``clip(idx, 0)`` + an ``idx >= 0`` weight mask, which requires negativity
+# and never relies on backend out-of-bounds semantics; (3)
+# ``jax.ops.segment_sum`` — the future kernel-ECORR path sharing this array —
+# documents negative segment ids as "belongs to no segment".
+NO_EPOCH: int = -1
+assert NO_EPOCH < 0, "clip/mask synthesis and segment_sum dropping require it"
+
+
+def build_quantization_index(
     tdb_times_s: np.ndarray,
     ecorr_masks: dict[str, np.ndarray],
     dt: float = 1.0,
     nmin: int = 2,
-) -> tuple[np.ndarray, dict[str, tuple[int, int]]]:
-    """Build the ECORR quantization matrix (NumPy, not JIT-compatible).
+) -> tuple[np.ndarray, int, dict[str, tuple[int, int]]]:
+    """Build the indexed ECORR epoch assignment (NumPy, not JIT-compatible).
 
-    Groups TOAs within *dt* seconds into epochs and creates a binary
-    matrix ``U`` mapping TOAs to epochs.  Only epochs with at least
-    *nmin* TOAs are kept.
+    The compressed form of :func:`build_quantization_matrix`: the dense
+    quantization matrix has exactly one nonzero per assigned row, so a
+    per-TOA epoch index carries identical information with much better compression.
+    Groups TOAs within *dt* seconds into epochs, keeping only epochs with at least
+    *nmin* TOAs; epoch columns are numbered in the same order the dense
+    builder emits them (sorted parameter name, then time order), so the
+    two representations are interchangeable.
 
     Parameters
     ----------
     tdb_times_s : (n_toas,) float64
         TOA times in TDB seconds.
     ecorr_masks : dict[str, ndarray]
-        Boolean masks keyed by ECORR parameter name.
+        Boolean masks keyed by ECORR parameter name.  Masks must be
+        disjoint: a TOA in two ECORR groups has no single epoch index
+        (and no physical meaning) — ``ValueError``.
+    dt, nmin : float, int
+        Epoch grouping threshold (seconds) and minimum TOAs per epoch.
+
+    Returns
+    -------
+    epoch_index : (n_toas,) int32
+        Epoch column for each TOA; :data:`NO_EPOCH` (= -1) for TOAs in no
+        kept epoch.
+    n_epochs : int
+        Total number of kept epoch columns.
+    epoch_slices : dict[str, (int, int)]
+        Column-index range for each ECORR parameter.
+    """
+    tdb_times_s = np.asarray(tdb_times_s)
+    n_toas = len(tdb_times_s)
+    epoch_index = np.full(n_toas, NO_EPOCH, dtype=np.int32)
+    epoch_slices: dict[str, tuple[int, int]] = {}
+    col = 0
+
+    for ecorr_name in sorted(ecorr_masks):
+        start = col
+        toa_indices = np.where(ecorr_masks[ecorr_name])[0]
+        if len(toa_indices) > 0:
+            order = np.argsort(tdb_times_s[toa_indices])
+            sorted_times = tdb_times_s[toa_indices][order]
+            sorted_indices = toa_indices[order]
+            for epoch in _group_toas_into_epochs(
+                sorted_times, sorted_indices, dt, nmin
+            ):
+                clash = [t for t in epoch if epoch_index[t] != NO_EPOCH]
+                if clash:
+                    raise ValueError(
+                        f"ECORR masks overlap: TOA indices {clash[:8]} selected "
+                        f"by {ecorr_name!r} already belong to another ECORR "
+                        "group; indexed epoch storage requires disjoint masks "
+                        "(one epoch per TOA)."
+                    )
+                epoch_index[epoch] = col
+                col += 1
+        epoch_slices[ecorr_name] = (start, col)
+
+    return epoch_index, col, epoch_slices
+
+
+def quantization_matrix_from_index(
+    epoch_index: np.ndarray, n_epochs: int
+) -> np.ndarray:
+    """Materialize the dense binary quantization matrix from an epoch index."""
+    epoch_index = np.asarray(epoch_index)
+    U = np.zeros((len(epoch_index), n_epochs), dtype=np.float64)
+    valid = epoch_index != NO_EPOCH
+    U[np.nonzero(valid)[0], epoch_index[valid]] = 1.0
+    return U
+
+
+def build_quantization_matrix(
+    tdb_times_s: np.ndarray,
+    ecorr_masks: dict[str, np.ndarray],
+    dt: float = 1.0,
+    nmin: int = 2,
+) -> tuple[np.ndarray, dict[str, tuple[int, int]]]:
+    """Build the dense ECORR quantization matrix (NumPy, not JIT-compatible).
+
+    Dense-materialized view of :func:`build_quantization_index` (the
+    single source of truth for the epoch grouping; column order is
+    identical by construction).  Prefer the indexed form for storage —
+    the dense matrix is O(n_toas × n_epochs) with one nonzero per
+    assigned row.
+
+    Parameters
+    ----------
+    tdb_times_s : (n_toas,) float64
+        TOA times in TDB seconds.
+    ecorr_masks : dict[str, ndarray]
+        Boolean masks keyed by ECORR parameter name (disjoint; see
+        :func:`build_quantization_index`).
     dt, nmin : float, int
         Epoch grouping threshold (seconds) and minimum TOAs per epoch.
 
@@ -1233,31 +1328,10 @@ def build_quantization_matrix(
     epoch_slices : dict[str, (int, int)]
         Column-index range for each ECORR parameter.
     """
-    n_toas = len(tdb_times_s)
-    columns: list[np.ndarray] = []  # one binary (n_toas,) column per kept epoch
-    epoch_slices: dict[str, tuple[int, int]] = {}
-
-    for ecorr_name in sorted(ecorr_masks):
-        # Column index where this parameter's epochs will start. The running
-        # column count *is* the offset, so no separate bookkeeping is needed.
-        start = len(columns)
-
-        toa_indices = np.where(ecorr_masks[ecorr_name])[0]
-        if len(toa_indices) > 0:
-            order = np.argsort(tdb_times_s[toa_indices])
-            sorted_times = tdb_times_s[toa_indices][order]
-            sorted_indices = toa_indices[order]
-            for epoch in _group_toas_into_epochs(
-                sorted_times, sorted_indices, dt, nmin
-            ):
-                col = np.zeros(n_toas, dtype=np.float64)
-                col[epoch] = 1.0
-                columns.append(col)
-
-        epoch_slices[ecorr_name] = (start, len(columns))
-
-    U = np.column_stack(columns) if columns else np.zeros((n_toas, 0), dtype=np.float64)
-    return U, epoch_slices
+    epoch_index, n_epochs, epoch_slices = build_quantization_index(
+        tdb_times_s, ecorr_masks, dt=dt, nmin=nmin
+    )
+    return quantization_matrix_from_index(epoch_index, n_epochs), epoch_slices
 
 
 def build_linear_interp_basis(

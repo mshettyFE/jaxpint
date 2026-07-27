@@ -43,7 +43,7 @@ def _setup(n_toas=24, n_epochs=3):
         units=("", "s", "s"),
     )
     white = ScaleToaError(efac_names=("EFAC1",), equad_names=("EQUAD1",))
-    ecorr = EcorrNoise(
+    ecorr = EcorrNoise.from_dense(
         ecorr_names=("ECORR1",),
         quantization_matrix=jnp.array(U_np),
         ecorr_epoch_slices=((0, n_epochs),),

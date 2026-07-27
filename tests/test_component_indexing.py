@@ -341,7 +341,7 @@ class TestNoiseModelIndexing:
 
     def test_correlated_components_included(self):
         white = ScaleToaError(efac_names=("EFAC1",), equad_names=())
-        ecorr = EcorrNoise(
+        ecorr = EcorrNoise.from_dense(
             ecorr_names=("ECORR1",),
             quantization_matrix=jnp.eye(3),
             ecorr_epoch_slices=((0, 1), (1, 2), (2, 3)),

@@ -218,16 +218,14 @@ def _toa_data_section(toa_data: TOAData) -> list[str]:
 
 
 def _basis_width(comp, toa_data: TOAData, params: ParameterVector) -> str:
-    # Host-side fast path: basis-GP components know their column count from
-    # the host-numpy source of truth, so a text dump costs no host->device
-    # transfer and does not defeat the deferred device allocation (bases
-    # stay off-device until a real likelihood evaluation).  The width is
-    # correct even for dynamic (parameter-scaled) bases: scaling changes
-    # column values, never column counts.
-    probe = getattr(comp, "_host_columns", None)
+    # Host-side fast path: basis-GP components report their column count
+    # via basis_width() — no device transfer (deferred allocation stays
+    # deferred) and no dense synthesis . Correct even for dynamic (parameter-scaled)
+    # bases: scaling changes column values, never column counts.
+    probe = getattr(comp, "basis_width", None)
     if probe is not None:
         try:
-            return f"n_basis={probe().shape[1]}"
+            return f"n_basis={probe()}"
         except Exception:
             pass  # fall through to the eager path
     try:
