@@ -1260,6 +1260,53 @@ def build_quantization_matrix(
     return U, epoch_slices
 
 
+def build_linear_interp_basis(
+    times_s: np.ndarray,
+    dt: float = 30.0 * 86400.0,
+    node_times_s: Optional[np.ndarray] = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Linear-interpolation ("tent") basis on a coarse time grid (NumPy, not JIT).
+
+    Let a node by the TOAs which serve as the anchors for the interpolation.
+    Each kept column is one node's  piecewise-linear interpolation weight evaluated at the TOA times, anchored to the adjacent nodes.
+
+    Parameters
+    ----------
+    times_s : (n_toas,)
+        TOA times in seconds (any monotonic time coordinate).
+    dt : float
+        Node spacing in seconds (default 30 days).  Ignored when
+        *node_times_s* is given.
+    node_times_s : (n_nodes,), optional
+        Explicit, sorted node times in seconds; overrides the uniform grid.
+
+    Returns
+    -------
+    U : (n_toas, n_kept)
+        Tent/interpolation basis.  Columns whose node has no TOA support are dropped
+        (a group of TOAs far from a node contributes nothing to it).
+    nodes : (n_kept,)
+        Node times of the kept columns, in seconds.
+    """
+    t = np.asarray(times_s, dtype=np.float64)
+    if node_times_s is None:
+        x = np.arange(t.min(), t.max() + dt, dt)
+    else:
+        x = np.asarray(node_times_s, dtype=np.float64)
+    M = np.zeros((len(t), len(x)))
+    # Mirror enterprise's loop verbatim (inclusive on both interval ends;
+    # a TOA exactly on an interior node is written twice with identical
+    # weights) — You should only have to call this function once at
+    # construction time anyways
+
+    for ii in range(len(x) - 1):
+        idx = np.logical_and(t >= x[ii], t <= x[ii + 1])
+        M[idx, ii] = (t[idx] - x[ii + 1]) / (x[ii] - x[ii + 1])
+        M[idx, ii + 1] = (t[idx] - x[ii]) / (x[ii + 1] - x[ii])
+    keep = M.sum(axis=0) != 0
+    return M[:, keep], x[keep]
+
+
 def build_fourier_basis(
     tdb_times_s: np.ndarray,
     n_freqs: int,
@@ -1284,7 +1331,7 @@ def build_fourier_basis(
     freqs : (n_freqs,)
         Frequency array in Hz.
     freq_bin_widths : (n_freqs,)
-        Δf for each frequency bin.
+        \Delta f for each frequency bin.
     """
     freqs = np.arange(1, n_freqs + 1) / T
     freq_bin_widths = np.diff(np.concatenate([[0.0], freqs]))

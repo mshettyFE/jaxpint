@@ -26,6 +26,7 @@ enterprise/discovery noise dictionaries and chain files, named
 from __future__ import annotations
 
 import equinox as eqx
+import numpy as np
 from jaxtyping import Array, Float
 
 from jaxpint.noise._fourier_gp import _FourierGPNoise
@@ -72,7 +73,9 @@ class FreeSpectrumNoise(_FourierGPNoise):
             spec, dict(zip(spec.param_names, self.rho_names)), params
         )
 
-    def static_basis(self) -> Float[Array, "n_toas n_basis"]:
+    def static_basis(
+        self,
+    ) -> Float[np.ndarray, "n_toas n_basis"] | Float[Array, "n_toas n_basis"]:
         # Fixed basis -> advertise it so NoiseModel can pre-stack it once.
         # Via _host_columns so this always advertises the same array
         # covariance() consumes.

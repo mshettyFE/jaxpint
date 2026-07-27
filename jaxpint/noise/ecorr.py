@@ -69,7 +69,9 @@ class EcorrNoise(_BasisGPNoise):
     )
 
     ecorr_names: tuple[str, ...] = eqx.field(static=True)
-    quantization_matrix: Float[Array, "n_toas n_epochs"]
+    quantization_matrix: (
+        Float[Array, "n_toas n_epochs"] | Float[np.ndarray, "n_toas n_epochs"]
+    )
     ecorr_epoch_slices: tuple[tuple[int, int], ...] = eqx.field(static=True)
 
     @classmethod
@@ -120,7 +122,11 @@ class EcorrNoise(_BasisGPNoise):
         # by _BasisGPNoise._columns_jax. See that module's docstring.
         self._coerce_host_field("quantization_matrix")
 
-    def _host_columns(self) -> np.ndarray:
+    def _host_columns(
+        self,
+    ) -> Float[np.ndarray, "n_toas n_epochs"] | Float[Array, "n_toas n_epochs"]:
+        # Pass-through, never np.asarray: inside a jit trace of a
+        # reconstructed instance this field is a tracer (see base docstring).
         return self.quantization_matrix
 
     def psd_weights(self, params: ParameterVector) -> Float[Array, " n_epochs"]:
@@ -150,7 +156,9 @@ class EcorrNoise(_BasisGPNoise):
             weights = weights.at[start:end].set(ecorr_val**2)
         return weights
 
-    def static_basis(self) -> Float[Array, "n_toas n_epochs"]:
+    def static_basis(
+        self,
+    ) -> Float[np.ndarray, "n_toas n_epochs"] | Float[Array, "n_toas n_epochs"]:
         # Fixed basis -> advertise it so NoiseModel can pre-stack it once.
         # Via _host_columns so this always advertises the same array
         # covariance() consumes.

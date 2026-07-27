@@ -8,6 +8,7 @@ from jaxpint.noise.red_noise import PLRedNoise
 from jaxpint.noise.dm_noise import PLDMNoise
 from jaxpint.noise.chrom_noise import PLChromNoise
 from jaxpint.noise.sw_noise import PLSWNoise
+from jaxpint.noise.time_node import TimeNodeGPNoise
 from jaxpint.noise.noise_model import NoiseModel
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "PLSWNoise",
     "ScaleDmError",
     "ScaleToaError",
+    "TimeNodeGPNoise",
 ]

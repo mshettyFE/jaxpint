@@ -190,9 +190,33 @@ def _build_ecorr(n_toas, n_freqs, T):
     return comp, params, toa_data
 
 
+
+
+def _build_timenode(n_toas, n_freqs, T):
+    # Wraps the per-model builder, same as _build_red wraps _make_plred.
+    from tests.test_time_node_noise import _make_timenode
+
+    comp, params, toa_data, *_ = _make_timenode(n_toas=n_toas, n_freqs=n_freqs, T=T)
+    return comp, params, toa_data
+
+
+def _build_timenode_chrom(n_toas, n_freqs, T):
+    from tests.test_time_node_noise import _make_timenode
+
+    comp, params, toa_data, *_ = _make_timenode(
+        n_toas=n_toas, n_freqs=n_freqs, T=T, chrom=True
+    )
+    return comp, params, toa_data
+
+
+# NOTE: the basis_gp_spec fixture binds params=BASIS_GP_SPECS at decoration
+# time -- new specs must be added HERE, before the fixture; appending later
+# is silently ignored.
 BASIS_GP_SPECS = NOISE_SPECS + [
     NoiseSpec(name="freespec", build=_build_freespec),
     NoiseSpec(name="ecorr", build=_build_ecorr),
+    NoiseSpec(name="timenode", build=_build_timenode),
+    NoiseSpec(name="timenode_chrom", build=_build_timenode_chrom),
 ]
 
 
@@ -270,3 +294,4 @@ class TestBasisGPContract:
         )
         # The persistent instance's cache is untouched by the traced call.
         assert component.__dict__.get("_columns_jax_cache") is first
+

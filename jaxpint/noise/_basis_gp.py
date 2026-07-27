@@ -46,6 +46,11 @@ from jaxpint.components import NoiseComponent
 from jaxpint.types import TOAData, ParameterVector
 
 
+def chromatic_row_scale(freq_mhz, alpha, fref: float = 1400.0):
+    """Per-TOA chromatic column weights ``(fref / f_obs)^alpha``."""
+    return (fref / freq_mhz) ** alpha
+
+
 class _BasisGPNoise(NoiseComponent):
     """Base for low-rank basis-GP noise (``C = U · diag(w) · Uᵀ``).
 
@@ -57,12 +62,20 @@ class _BasisGPNoise(NoiseComponent):
 
     # -- subclass hooks --------------------------------------------------
 
-    def _host_columns(self) -> np.ndarray:
-        """Source-of-truth basis columns as host numpy, shape (n_toas, n_basis).
+    def _host_columns(
+        self,
+    ) -> Float[np.ndarray, "n_toas n_basis"] | Float[Array, "n_toas n_basis"]:
+        """Source-of-truth basis columns, shape (n_toas, n_basis).
 
         The mandatory basis hook (re: derived classes need to define this!).
         The point is to separate the decleration of the bases from the caching
         mechanism that prevents memory blowup (see :attr:`_columns_jax`).
+
+        Host numpy on persistent instances (``__post_init__`` coercion).  On a
+        tree-reconstructed instance inside a jit trace the field is a tracer
+        and MUST be passed through untouched — implementations return the
+        field directly, never ``np.asarray`` it (that raises
+        ``TracerArrayConversionError``); :attr:`_columns_jax` handles both.
         """
         raise NotImplementedError
 
@@ -130,7 +143,7 @@ class _BasisGPNoise(NoiseComponent):
         cached = self.__dict__.get("_columns_jax_cache")
         if cached is None:
             cached = jnp.asarray(self._host_columns())
-            if not isinstance(cached, jax.core.Tracer):
+            if not isinstance(cached, jax.core.Tracer):  # pyright: ignore[reportAttributeAccessIssue]
                 self.__dict__["_columns_jax_cache"] = cached  # pyright: ignore[reportIndexIssue]
         return cached
 
@@ -178,4 +191,4 @@ class _BasisGPNoise(NoiseComponent):
         return U @ K_chol, jnp.ones(K_chol.shape[1])
 
 
-__all__ = ["_BasisGPNoise"]
+__all__ = ["_BasisGPNoise", "chromatic_row_scale"]

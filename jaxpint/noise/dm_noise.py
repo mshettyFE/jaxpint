@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 import equinox as eqx
+import numpy as np
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl
@@ -75,8 +76,12 @@ class PLDMNoise(_PowerLawFourierNoise):
 
         F, freqs, freq_bin_widths = build_fourier_basis(basis_s, n_freqs, T)
 
+        from jaxpint.noise._basis_gp import chromatic_row_scale
+
         bary_freqs_mhz = np.asarray(toa_data.freq)
-        D = (1400.0 / bary_freqs_mhz) ** 2
+        # Integer alpha=2 keeps numpy's integer-power fast path -> the
+        # pre-baked basis stays bit-identical to the historical formula.
+        D = chromatic_row_scale(bary_freqs_mhz, 2)
         F_dm = F * D[:, None]
 
         return cls(
@@ -95,7 +100,9 @@ class PLDMNoise(_PowerLawFourierNoise):
     def _gam_name(self) -> str:
         return self.tndmgam_name
 
-    def static_basis(self) -> Float[Array, "n_toas n_basis"]:
+    def static_basis(
+        self,
+    ) -> Float[np.ndarray, "n_toas n_basis"] | Float[Array, "n_toas n_basis"]:
         # Fixed basis (DM scaling pre-baked) -> pre-stackable by NoiseModel.
         # Via _host_columns so this always advertises the same array
         # covariance() consumes.

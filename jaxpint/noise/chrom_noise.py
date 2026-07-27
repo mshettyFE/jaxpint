@@ -16,6 +16,7 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from jaxpint.components import ParamDecl
+from jaxpint.noise._basis_gp import chromatic_row_scale
 from jaxpint.noise._fourier_gp import _PowerLawFourierNoise
 from jaxpint.par._component_registry import register_component
 from jaxpint.par.registry import Component
@@ -106,5 +107,5 @@ class PLChromNoise(_PowerLawFourierNoise):
     ) -> Float[Array, "n_toas n_basis"]:
         """Fourier basis scaled by ``(f_ref / f_obs)^α`` per TOA."""
         alpha = params.param_value(self.tnchromidx_name)
-        D = (self.fref / toa_data.freq) ** alpha  # (n_toas,)
+        D = chromatic_row_scale(toa_data.freq, alpha, self.fref)  # (n_toas,)
         return self._fourier_basis_jax * D[:, None]

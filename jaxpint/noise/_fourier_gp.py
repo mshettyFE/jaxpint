@@ -36,7 +36,9 @@ class _FourierGPNoise(_BasisGPNoise):
     override :meth:`_basis`.
     """
 
-    fourier_basis: Float[Array, "n_toas n_basis"]
+    # Constructors may pass a jax array; __post_init__ coerces to host
+    # numpy (the source of truth) -- the union reflects both stages.
+    fourier_basis: Float[Array, "n_toas n_basis"] | Float[np.ndarray, "n_toas n_basis"]
     freqs: Float[Array, " n_freqs"]
     freq_bin_widths: Float[Array, " n_freqs"]
 
@@ -45,7 +47,11 @@ class _FourierGPNoise(_BasisGPNoise):
         # by _BasisGPNoise._columns_jax. See that module's docstring.
         self._coerce_host_field("fourier_basis")
 
-    def _host_columns(self) -> np.ndarray:
+    def _host_columns(
+        self,
+    ) -> Float[np.ndarray, "n_toas n_basis"] | Float[Array, "n_toas n_basis"]:
+        # Pass-through, never np.asarray: inside a jit trace of a
+        # reconstructed instance this field is a tracer (see base docstring).
         return self.fourier_basis
 
     @property

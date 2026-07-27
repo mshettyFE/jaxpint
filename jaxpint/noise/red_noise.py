@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 import equinox as eqx
+import numpy as np
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
@@ -75,7 +76,9 @@ class PLRedNoise(_PowerLawFourierNoise):
     def _gam_name(self) -> str:
         return self.tnredgam_name
 
-    def static_basis(self) -> Float[Array, "n_toas n_basis"]:
+    def static_basis(
+        self,
+    ) -> Float[np.ndarray, "n_toas n_basis"] | Float[Array, "n_toas n_basis"]:
         # Fixed basis -> advertise it so NoiseModel can pre-stack it once.
         # Via _host_columns so this always advertises the same array
         # covariance() consumes.

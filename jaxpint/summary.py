@@ -694,7 +694,7 @@ def summarize_pta(
             for p in range(n_psr):
                 # Credit signal injectors in this pulsar's "read by" column;
                 # labels match the numbered injector section above.
-                extra: dict[str, list[str]] = {}
+                injector_readers: dict[str, list[str]] = {}
                 for i, inj in enumerate(config.signal_injectors, 1):
                     probe = getattr(inj, "required_pulsar_params", None)
                     if probe is None:
@@ -704,7 +704,9 @@ def summarize_pta(
                     except Exception:
                         continue
                     for pname in req:
-                        extra.setdefault(pname, []).append(f"{type(inj).__name__}#{i}")
+                        injector_readers.setdefault(pname, []).append(
+                            f"{type(inj).__name__}#{i}"
+                        )
                 out.append("")
                 out.append(
                     summarize_model(
@@ -713,7 +715,7 @@ def summarize_pta(
                         pulsar_params[p],
                         toa_data=config.toa_data_list[p],
                         name=names[p],
-                        extra_readers=extra or None,
+                        extra_readers=injector_readers or None,
                     ).rstrip()
                 )
 

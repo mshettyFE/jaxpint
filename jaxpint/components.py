@@ -50,6 +50,7 @@ from typing import ClassVar, Optional
 
 import equinox as eqx
 import jax
+import numpy as np
 from jaxtyping import Array, Float
 
 from jaxpint.constants import DMCONST
@@ -398,8 +399,15 @@ class NoiseComponent(Component):
     # ``CompoundGP`` pattern).
     # ------------------------------------------------------------------
 
-    def static_basis(self) -> Optional[Float[Array, "n_toas n_basis"]]:
-        """Return ``U`` if it is parameter-independent, else ``None``."""
+    def static_basis(
+        self,
+    ) -> Optional[Float[Array, "n_toas n_basis"] | Float[np.ndarray, "n_toas n_basis"]]:
+        """Return ``U`` if it is parameter-independent, else ``None``.
+
+        Static bases live as *host numpy* on the component (the
+        ``_BasisGPNoise`` source-of-truth convention), so implementations
+        typically return numpy; the annotation admits both.
+        """
         return None
 
 
