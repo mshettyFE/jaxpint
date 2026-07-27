@@ -502,6 +502,7 @@ def sweep_1d_logL(
     grid: np.ndarray,
     *,
     jit_eval_fn: bool = True,
+    max_batch: int = 64,
 ) -> np.ndarray:
     """Evaluate ``eval_fn`` on a 1D grid with JIT + vmap + warmup.
 
@@ -536,7 +537,19 @@ def sweep_1d_logL(
 
     eval_vmap = jax.jit(jax.vmap(eval_fn))
     _ = eval_vmap(grid_jax[:2]).block_until_ready()
-    return np.asarray(eval_vmap(grid_jax))
+
+    # Batched, not one giant vmap: a PTA logL materializes per-point
+    # covariance intermediates, so vmapping a whole grid at once makes peak
+    # memory scale with grid size and OOMs on big sweeps. Batching caps peak
+    # memory at ``max_batch`` points while keeping one jitted call per batch.
+    n = grid_jax.shape[0]
+    if n <= max_batch:
+        return np.asarray(eval_vmap(grid_jax))
+    out = [
+        np.asarray(eval_vmap(grid_jax[i : i + max_batch]))
+        for i in range(0, n, max_batch)
+    ]
+    return np.concatenate(out)
 
 
 def sweep_2d_logL(
@@ -546,6 +559,7 @@ def sweep_2d_logL(
     *,
     extra_args: tuple = (),
     jit_eval_fn: bool = True,
+    max_batch: int = 64,
 ) -> np.ndarray:
     """Evaluate ``eval_fn(x, y, *extra_args)`` on a 2D grid, returned with shape ``(n_y, n_x)``.
 
@@ -596,7 +610,19 @@ def sweep_2d_logL(
         )
     )
     _ = eval_grid(grid_x_jax[:2], grid_y_jax[:2], *extra_args).block_until_ready()
-    return np.asarray(eval_grid(grid_x_jax, grid_y_jax, *extra_args))
+
+    # Batched over y (see sweep_1d_logL): the full nested vmap evaluates
+    # n_x*n_y points simultaneously, so peak memory scales with grid AREA and
+    # a 40x40 PTA sweep can want gigabytes in one allocation. Rows per batch
+    # are chosen so at most ``max_batch`` points are in flight.
+    rows = max(1, max_batch // max(1, n_x))
+    if n_y <= rows:
+        return np.asarray(eval_grid(grid_x_jax, grid_y_jax, *extra_args))
+    out = [
+        np.asarray(eval_grid(grid_x_jax, grid_y_jax[j : j + rows], *extra_args))
+        for j in range(0, n_y, rows)
+    ]
+    return np.concatenate(out, axis=0)
 
 
 # ---------------------------------------------------------------------------
