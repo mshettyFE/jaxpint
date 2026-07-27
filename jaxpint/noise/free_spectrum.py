@@ -80,3 +80,13 @@ class FreeSpectrumNoise(_FourierGPNoise):
         # Via _host_columns so this always advertises the same array
         # covariance() consumes.
         return self._host_columns()
+
+    def basis_at(
+        self,
+        times_seconds: Float[Array, " n_times"],
+        params: ParameterVector,
+        *,
+        freq_mhz=None,
+    ) -> Float[Array, "n_times n_basis"]:
+        """Analytic sin/cos basis at arbitrary times (achromatic: ``freq_mhz`` ignored)."""
+        return self._fourier_basis_at(times_seconds)

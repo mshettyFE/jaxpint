@@ -140,18 +140,22 @@ class TimeNodeGPNoise(_BasisGPNoise):
         self,
         times_seconds: Float[Array, " n_times"],
         params: ParameterVector,
+        *,
+        freq_mhz=None,
     ) -> Optional[Float[Array, "n_times n_nodes"]]:
-        """Tent weights at arbitrary times (achromatic only for now).
+        """Tent weights at arbitrary times.
 
         Evaluates on the *kept* node grid, treating consecutive kept nodes
         as intervals: on TOA times this agrees with ``interp_basis`` (a
         training TOA never lies in a pruned region), while times inside a
         pruned gap interpolate across it — the honest behavior for a basis
         with no support there.  Times outside the node span get zero
-        weight.  Chromatic mode returns ``None``: off-grid times carry no
-        radio frequency, so the per-TOA scaling is undefined (purely func signature problem).
+        weight.  Chromatic mode requires ``freq_mhz`` (scalar reference
+        frequency or per-time array) to rebuild the ``(fref/f)^alpha``
+        scaling and returns ``None`` without it; achromatic mode ignores
+        ``freq_mhz``.
         """
-        if self.chrom_idx_name is not None:
+        if self.chrom_idx_name is not None and freq_mhz is None:
             return None
         x = jnp.asarray(self.node_times)
         n_nodes = self.interp_basis.shape[1]
@@ -164,6 +168,10 @@ class TimeNodeGPNoise(_BasisGPNoise):
         U = jnp.zeros((t.shape[0], n_nodes))
         U = U.at[rows, i].add(jnp.where(inside, 1.0 - w_right, 0.0))
         U = U.at[rows, i + 1].add(jnp.where(inside, w_right, 0.0))
+        if self.chrom_idx_name is not None:
+            alpha = params.param_value(self.chrom_idx_name)
+            D = chromatic_row_scale(jnp.asarray(freq_mhz), alpha, self.fref)
+            U = U * jnp.atleast_1d(D)[:, None]
         return U
 
 

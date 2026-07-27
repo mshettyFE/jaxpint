@@ -104,21 +104,28 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
         self,
         toa_data: TOAData,
     ) -> Float[Array, "n_toas n_basis"]:
-        return self.get_fourier_basis_at(toa_data.tdb_seconds)
+        return self.basis_at(toa_data.tdb_seconds)
 
-    def get_fourier_basis_at(
+    def basis_at(
         self,
-        toas_seconds: Float[Array, " n_times"],
+        times_seconds: Float[Array, " n_times"],
     ) -> Float[Array, "n_times n_basis"]:
         """Fourier basis evaluated at arbitrary times (seconds).
 
         The basis is analytic in time, so conditional-GP realizations can
         be evaluated on a dense grid (smooth waveform-reconstruction
         curves) or beyond the observed span, not just at TOA epochs.
-        Not base abstract method since tabulated bases without interpolation
-        cant evaluate except at existing TOAs
+
+        Same name and ``None``-means-"on-grid-only" contract as the
+        noise-component hook
+        (:meth:`jaxpint.noise._basis_gp._BasisGPNoise.basis_at`), so both
+        reconstruction tiers share one protocol.  Signatures differ where
+        the physics does: injector bases are parameter-free and achromatic,
+        so there is no ``params`` / ``freq_mhz`` here.  Not a base abstract
+        method: tabulated bases without interpolation can only evaluate at
+        existing TOAs (they would return ``None``).
         """
-        F, _ = fourier_basis(jnp.asarray(toas_seconds), self.n_components, self.T_span)
+        F, _ = fourier_basis(jnp.asarray(times_seconds), self.n_components, self.T_span)
         return F
 
     def get_psd(

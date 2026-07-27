@@ -17,13 +17,13 @@ from jaxtyping import Array, Float
 
 
 def hd_orf(pos1: Float[Array, "3"], pos2: Float[Array, "3"]) -> Float[Array, ""]:
-    """Hellings-Downs overlap reduction function.
+    r"""Hellings-Downs overlap reduction function.
 
     Implements Eq. 2 of Hellings & Downs (1983) [orf_hd83]_:
 
     .. math::
-        C(\\xi) = \\frac{3}{2} x \\ln x - \\frac{x}{4} + \\frac{1}{2},
-        \\quad x = \\frac{1 - \\cos\\xi}{2}
+        C(\xi) = \frac{3}{2} x \ln x - \frac{x}{4} + \frac{1}{2},
+        \quad x = \frac{1 - \cos\xi}{2}
 
     Parameters
     ----------

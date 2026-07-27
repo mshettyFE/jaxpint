@@ -20,6 +20,7 @@ directly and supplies its own ``psd_weights``.
 from __future__ import annotations
 
 
+import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
 
@@ -58,6 +59,18 @@ class _FourierGPNoise(_BasisGPNoise):
     def _fourier_basis_jax(self) -> Float[Array, "n_toas n_basis"]:
         """Device view of ``fourier_basis`` (alias of the generic lazy cache)."""
         return self._columns_jax
+
+    def _fourier_basis_at(
+        self,
+        times_seconds: Float[Array, " n_times"],
+    ) -> Float[Array, "n_times n_basis"]:
+        """Analytic alternating sin/cos design matrix at arbitrary times."""
+        t = jnp.asarray(times_seconds)
+        phase = 2.0 * jnp.pi * t[:, None] * jnp.asarray(self.freqs)[None, :]
+        F = jnp.zeros((t.shape[0], 2 * phase.shape[1]))
+        F = F.at[:, 0::2].set(jnp.sin(phase))
+        F = F.at[:, 1::2].set(jnp.cos(phase))
+        return F
 
     # -- Fourier-specific prior plumbing -----------------------------------
 

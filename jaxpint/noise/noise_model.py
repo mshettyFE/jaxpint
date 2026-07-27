@@ -75,13 +75,12 @@ class NoiseModel(ComponentIndexed):
     ]:
         """Return the combined Woodbury ``(Ndiag, U, Phidiag)`` triple.
 
-        Column layout of the returned ``U`` is: pre-stacked static-basis
-        columns first (in original ``correlated`` order, restricted to
-        static components), followed by per-call dynamic-basis blocks
-        (in original ``correlated`` order, restricted to dynamic
-        components). ``Phidiag`` follows the same layout. The ordering
-        of basis columns does not affect the value of ``C`` so long as
-        ``U`` and ``Phidiag`` agree.
+        Column layout of the returned ``U``: each component's basis
+        block in original ``correlated`` order, concatenated left to
+        right; ``Phidiag`` follows the same layout. Consumers that slice
+        the stacked coefficient vector per component
+        (:func:`~jaxpint.pta.conditional_noise_delays`) rely on this
+        ordering.
 
         Returns
         -------

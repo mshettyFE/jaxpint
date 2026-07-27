@@ -1,4 +1,4 @@
-"""Conditional GP posteriors: coefficient distributions given the data.
+r"""Conditional GP posteriors: coefficient distributions given the data.
 
 Injection samples the prior, ``a ~ N(0, \Phi)``; conditioning inverts it.
 Given observed residuals ``r = F a + n`` with ``n ~ N(0, C)``, the
@@ -6,9 +6,9 @@ coefficients are Gaussian, ``a | r ~ N(\hat{a}, \Sigma)``, with
 
 .. math::
 
-    P \\equiv \\Sigma^{-1} = \\Phi^{-1} + F^T C^{-1} F,
-    \\qquad
-    \\hat a = \\Sigma\\, F^T C^{-1} r
+    P \equiv \Sigma^{-1} = \Phi^{-1} + F^T C^{-1} F,
+    \qquad
+    \hat a = \Sigma\, F^T C^{-1} r
 
 — discovery's ``conditional`` / ``sample_conditional``.  Two levels:
 
@@ -44,6 +44,7 @@ from jaxtyping import Array, Float, Int
 from jaxpint.likelihood import _residuals_and_woodbury
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
+from jaxpint.noise._basis_gp import _BasisGPNoise
 from jaxpint.types import GlobalParams, ParameterVector, TOAData
 from jaxpint.pta.likelihood import (
     PTAConfig,
@@ -55,6 +56,8 @@ __all__ = [
     "ConditionalGP",
     "DelayBand",
     "conditional_single_pulsar",
+    "conditional_noise_delays",
+    "conditional_noise_delay_bands",
     "conditional_gwb",
     "conditional_gwb_delays",
     "conditional_gwb_delay_bands",
@@ -64,7 +67,7 @@ __all__ = [
 
 
 class ConditionalGP(NamedTuple):
-    """Gaussian posterior of GP coefficients, ``a | r ~ N(mean, \Sigma)``.
+    r"""Gaussian posterior of GP coefficients, ``a | r ~ N(mean, \Sigma)``.
 
     Stored in precision form: ``precision_chol`` is the lower-triangular
     Cholesky factor ``L`` of the posterior precision ``P = \Sigma^{-1} = L L^{T}``.
@@ -178,6 +181,199 @@ def conditional_single_pulsar(
 
     Ninv_U = U / Ndiag[:, None]
     return _conditional_from_blocks(jnp.diag(1.0 / Phi), U.T @ Ninv_U, Ninv_U.T @ r)
+
+
+def _noise_component_layout(
+    toa_data: TOAData,
+    noise_model: NoiseModel,
+    params: ParameterVector,
+    times: Optional[Float[Array, " n_times"]],
+    freq_mhz: Optional[Float[Array, " n_times"] | float] = None,
+) -> list[tuple[str, Optional[Float[Array, "n_times n_basis"]], int]]:
+    """Per-component ``(name, basis, width)`` in the conditional's column order.
+
+    Walks ``noise_model.correlated`` in order — the same order
+    ``NoiseModel.covariance`` stacks basis blocks, hence the layout of
+    :func:`conditional_single_pulsar`'s coefficient vector.  ``times is
+    None`` evaluates each component's on-grid basis (always possible);
+    otherwise ``basis_at`` is asked, and components that cannot evaluate
+    off-grid get ``basis = None`` with their ``width`` still counted, so
+    the coefficient offsets of later components stay correct.
+
+    Names are the component class names, suffixed ``_1``, ``_2``, … in
+    ``correlated`` order when a class appears more than once.
+    """
+    base_names = [type(c).__name__ for c in noise_model.correlated]
+    duplicated = {n for n in base_names if base_names.count(n) > 1}
+    seen: dict[str, int] = {}
+    layout: list[tuple[str, Optional[Float[Array, "n_times n_basis"]], int]] = []
+    for comp, base in zip(noise_model.correlated, base_names):
+        if base in duplicated:
+            seen[base] = seen.get(base, 0) + 1
+            name = f"{base}_{seen[base]}"
+        else:
+            name = base
+        if times is None:
+            basis = comp.covariance(toa_data, params)[1]
+            width = int(basis.shape[1])
+        elif isinstance(comp, _BasisGPNoise):
+            width = comp.basis_width()
+            basis = comp.basis_at(times, params, freq_mhz=freq_mhz)
+        else:
+            # Non-basis-GP correlated component (none in-tree): count its
+            # width from the covariance triple; no off-grid capability.
+            width = int(comp.covariance(toa_data, params)[1].shape[1])
+            basis = None
+        layout.append((name, basis, width))
+    return layout
+
+
+def _reject_ungridded(
+    layout: list[tuple[str, Optional[Float[Array, "n_times n_basis"]], int]],
+) -> None:
+    """Raise for components that cannot evaluate at the requested times."""
+    ungridded = [name for name, basis, _ in layout if basis is None]
+    if ungridded:
+        raise ValueError(
+            f"{', '.join(ungridded)} cannot be evaluated at arbitrary times. "
+            "Chromatic/DM components need the evaluation frequency: pass "
+            "freq_mhz (e.g. freq_mhz=1400.0 for the standard reference). "
+            "Epoch-indicator ECORR has no off-grid form: evaluate at the "
+            "TOA epochs (times_seconds=None) or pass skip_ungridded=True "
+            "to get explicit None entries for such components."
+        )
+
+
+def conditional_noise_delays(
+    toa_data: TOAData,
+    noise_model: NoiseModel,
+    params: ParameterVector,
+    coefficients: Float[Array, " n_coeff"],
+    times_seconds: Optional[ArrayLike] = None,
+    *,
+    freq_mhz: Optional[ArrayLike] = None,
+    skip_ungridded: bool = False,
+) -> dict[str, Optional[Float[Array, " n_times"]]]:
+    r"""Per-component time-domain noise realizations of a coefficient vector.
+
+    The per-pulsar counterpart of :func:`conditional_gwb_delays`: maps a
+    coefficient vector in :func:`conditional_single_pulsar`'s stacked
+    layout — the posterior ``mean`` or a :func:`sample_conditional` draw
+    — to one delay array per correlated component,
+    ``delay_c = U_c\, a_c``.
+
+    Parameters
+    ----------
+    toa_data, noise_model, params
+        Exactly what :func:`conditional_single_pulsar` conditioned with —
+        the layout (and any parameter-dependent basis scaling) must match.
+    coefficients : (n_coeff,) array
+        Stacked GP coefficients.  Trailing entries beyond the noise
+        model's own blocks (an ``external_cov`` block passed to the
+        conditional) are ignored here; fewer than the noise model needs
+        is an error.
+    times_seconds : optional
+        ``None`` (default) evaluates each component at the TOA epochs.
+        An array of TDB seconds evaluates on that grid instead (smooth
+        curves) via each component's ``basis_at`` hook.
+    freq_mhz : float or (n_times,) array, optional
+        Radio frequency of the evaluation points in MHz, forwarded to
+        every component's ``basis_at`` (achromatic components ignore
+        it).  Chromatic/DM components need it off-grid: a scalar
+        evaluates at one reference frequency (``1400.0`` is the
+        plotting convention); an array gives each time its own
+        observing frequency.
+    skip_ungridded : bool
+        Components that cannot evaluate off-grid (epoch-indicator ECORR;
+        chromatic components without ``freq_mhz``) raise a
+        ``ValueError`` by default when ``times_seconds`` is given.  Pass
+        ``True`` to acknowledge the gap: such components map to explicit
+        ``None`` entries instead (never silently dropped) while the
+        capable ones are evaluated.
+
+    Returns
+    -------
+    dict
+        Component name (class name, ``_k``-suffixed on duplicates, in
+        ``correlated`` order) → delay array, or ``None`` under
+        ``skip_ungridded=True`` for components that cannot be evaluated
+        at ``times_seconds``.  Kernel ECORR never appears: it has no
+        coefficients to reconstruct (use the basis form when epoch
+        offsets are wanted).
+    """
+    coeff = jnp.asarray(coefficients)
+    times = None if times_seconds is None else jnp.asarray(times_seconds)
+    freq = None if freq_mhz is None else jnp.asarray(freq_mhz)
+    layout = _noise_component_layout(toa_data, noise_model, params, times, freq)
+    if not skip_ungridded:
+        _reject_ungridded(layout)
+    total = sum(width for _, _, width in layout)
+    if coeff.shape[0] < total:
+        raise ValueError(
+            f"coefficients has {coeff.shape[0]} entries; the noise model's "
+            f"correlated blocks span {total}."
+        )
+    delays: dict[str, Optional[Float[Array, " n_times"]]] = {}
+    offset = 0
+    for name, basis, width in layout:
+        delays[name] = None if basis is None else basis @ coeff[offset : offset + width]
+        offset += width
+    return delays
+
+
+def conditional_noise_delay_bands(
+    toa_data: TOAData,
+    noise_model: NoiseModel,
+    params: ParameterVector,
+    cond: ConditionalGP,
+    times_seconds: Optional[ArrayLike] = None,
+    *,
+    freq_mhz: Optional[ArrayLike] = None,
+    skip_ungridded: bool = False,
+) -> dict[str, Optional[DelayBand]]:
+    r"""Per-component reconstruction bands: posterior mean ± 1\sigma delay.
+
+    The per-pulsar counterpart of :func:`conditional_gwb_delay_bands`,
+    from a :func:`conditional_single_pulsar` posterior: for each
+    correlated component, the mean delay curve and its pointwise
+    uncertainty ``std_c(t) = \sqrt{diag(U_c \Sigma_c U_c^T)}``, where
+    ``\Sigma_c`` is the component's diagonal block of the joint
+    coefficient covariance — i.e. the *marginal* posterior of that
+    component's coefficients, coupling to the other components already
+    integrated over.
+
+    Parameters
+    ----------
+    toa_data, noise_model, params, times_seconds, freq_mhz, skip_ungridded
+        As for :func:`conditional_noise_delays`.
+    cond
+        The posterior from :func:`conditional_single_pulsar` (built with
+        the same ``toa_data`` / ``noise_model`` / ``params``).
+    """
+    times = None if times_seconds is None else jnp.asarray(times_seconds)
+    freq = None if freq_mhz is None else jnp.asarray(freq_mhz)
+    layout = _noise_component_layout(toa_data, noise_model, params, times, freq)
+    if not skip_ungridded:
+        _reject_ungridded(layout)
+    total = sum(width for _, _, width in layout)
+    if cond.mean.shape[0] < total:
+        raise ValueError(
+            f"cond has {cond.mean.shape[0]} coefficients; the noise model's "
+            f"correlated blocks span {total}."
+        )
+    cov = conditional_covariance(cond)
+    bands: dict[str, Optional[DelayBand]] = {}
+    offset = 0
+    for name, basis, width in layout:
+        if basis is None:
+            bands[name] = None
+        else:
+            sl = slice(offset, offset + width)
+            mean_c = basis @ cond.mean[sl]
+            var_c = jnp.einsum("tb,bc,tc->t", basis, cov[sl, sl], basis)
+            bands[name] = DelayBand(mean=mean_c, std=jnp.sqrt(var_c))
+        offset += width
+    return bands
 
 
 def conditional_gwb(
@@ -313,11 +509,11 @@ def _pulsar_bases_and_indices(
             if times[p] is None:
                 F_kp = cinj.get_fourier_basis(config.toa_data_list[p])
             else:
-                basis_at = getattr(cinj, "get_fourier_basis_at", None)
+                basis_at = getattr(cinj, "basis_at", None)
                 if basis_at is None:
                     raise NotImplementedError(
                         f"{type(cinj).__name__} does not implement "
-                        "get_fourier_basis_at(times); evaluation at "
+                        "basis_at(times_seconds); evaluation at "
                         "non-TOA times needs it."
                     )
                 F_kp = basis_at(times[p])

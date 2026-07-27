@@ -23,6 +23,7 @@ from jaxpint.par.registry import Component
 
 if TYPE_CHECKING:
     from jaxpint._build_context import BuildContext
+    from jaxpint.types import ParameterVector
 
 
 @register_component(component=Component.PL_DM_NOISE, pint_names=("PLDMNoise",))
@@ -107,3 +108,27 @@ class PLDMNoise(_PowerLawFourierNoise):
         # Via _host_columns so this always advertises the same array
         # covariance() consumes.
         return self._host_columns()
+
+    def basis_at(
+        self,
+        times_seconds: Float[Array, " n_times"],
+        params: ParameterVector,
+        *,
+        freq_mhz=None,
+    ) -> Optional[Float[Array, "n_times n_basis"]]:
+        """DM basis at arbitrary times; requires ``freq_mhz``.
+
+        The stored basis pre-bakes ``(1400/f_obs)^2`` per TOA, so off-grid
+        evaluation rebuilds it analytically: pure sin/cos columns scaled
+        by ``(1400/freq_mhz)^2`` (alpha fixed at 2, the DM convention —
+        no fitted parameter involved).  ``freq_mhz=1400.0`` gives the
+        delay at the standard reference frequency.
+        """
+        if freq_mhz is None:
+            return None
+        import jax.numpy as jnp
+
+        from jaxpint.noise._basis_gp import chromatic_row_scale
+
+        D = chromatic_row_scale(jnp.asarray(freq_mhz), 2)
+        return self._fourier_basis_at(times_seconds) * jnp.atleast_1d(D)[:, None]

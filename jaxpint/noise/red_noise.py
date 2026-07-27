@@ -30,6 +30,7 @@ from jaxpint.par.registry import Component
 
 if TYPE_CHECKING:
     from jaxpint._build_context import BuildContext
+    from jaxpint.types import ParameterVector
 
 
 @register_component(component=Component.PL_RED_NOISE, pint_names=("PLRedNoise",))
@@ -83,6 +84,16 @@ class PLRedNoise(_PowerLawFourierNoise):
         # Via _host_columns so this always advertises the same array
         # covariance() consumes.
         return self._host_columns()
+
+    def basis_at(
+        self,
+        times_seconds: Float[Array, " n_times"],
+        params: "ParameterVector",
+        *,
+        freq_mhz=None,
+    ) -> Float[Array, "n_times n_basis"]:
+        """Analytic sin/cos basis at arbitrary times (achromatic: ``freq_mhz`` ignored)."""
+        return self._fourier_basis_at(times_seconds)
 
     @classmethod
     def build(cls, ctx: "BuildContext") -> "Optional[PLRedNoise]":

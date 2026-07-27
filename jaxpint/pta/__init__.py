@@ -16,6 +16,8 @@ from jaxpint.pta.conditional import (
     conditional_gwb,
     conditional_gwb_delay_bands,
     conditional_gwb_delays,
+    conditional_noise_delay_bands,
+    conditional_noise_delays,
     conditional_single_pulsar,
     sample_conditional,
 )
@@ -93,6 +95,8 @@ __all__ = [
     "ConditionalGP",
     "DelayBand",
     "conditional_single_pulsar",
+    "conditional_noise_delays",
+    "conditional_noise_delay_bands",
     "conditional_gwb",
     "conditional_gwb_delays",
     "conditional_gwb_delay_bands",

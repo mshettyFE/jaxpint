@@ -109,3 +109,25 @@ class PLChromNoise(_PowerLawFourierNoise):
         alpha = params.param_value(self.tnchromidx_name)
         D = chromatic_row_scale(toa_data.freq, alpha, self.fref)  # (n_toas,)
         return self._fourier_basis_jax * D[:, None]
+
+    def basis_at(
+        self,
+        times_seconds: Float[Array, " n_times"],
+        params: ParameterVector,
+        *,
+        freq_mhz=None,
+    ) -> Optional[Float[Array, "n_times n_basis"]]:
+        """Chromatic basis at arbitrary times; requires ``freq_mhz``.
+
+        Off-grid points carry no radio frequency, so the caller must
+        supply one (scalar reference frequency for plots, or a per-time
+        array); without it this returns ``None`` rather than silently
+        picking a frequency.
+        """
+        if freq_mhz is None:
+            return None
+        import jax.numpy as jnp
+
+        alpha = params.param_value(self.tnchromidx_name)
+        D = chromatic_row_scale(jnp.asarray(freq_mhz), alpha, self.fref)
+        return self._fourier_basis_at(times_seconds) * jnp.atleast_1d(D)[:, None]

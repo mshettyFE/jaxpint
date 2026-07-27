@@ -115,15 +115,43 @@ class _BasisGPNoise(NoiseComponent):
         self,
         times_seconds: Float[Array, " n_times"],
         params: ParameterVector,
+        *,
+        freq_mhz: Optional[Float[Array, " n_times"] | float] = None,
     ) -> Optional[Float[Array, "n_times n_basis"]]:
         """Basis evaluated at arbitrary times, or ``None`` if impossible.
 
         Capability hook for conditional-GP reconstruction off the TOA
-        grid. Analytic bases (Fourier) and interpolating bases (time
-        nodes) can override this; indicator bases (epoch quantization)
-        cannot and keep the ``None`` default, which consumers must treat
-        as "on-grid evaluation only". Not yet wired into the conditional
-        machinery (phase 2 of ``Plans/basis_neutral_gp_plan.md``).
+        grid, consumed by
+        :func:`~jaxpint.pta.conditional_noise_delays` /
+        :func:`~jaxpint.pta.conditional_noise_delay_bands`.  The
+        correlated-injector tier exposes the same name and ``None``
+        contract (parameter-free signature) so both reconstruction tiers
+        share one protocol.
+
+        Parameters
+        ----------
+        times_seconds : (n_times,)
+            Evaluation times, TDB seconds.
+        params
+            Read by components whose scaling is parameter-dependent
+            (chromatic index).
+        freq_mhz : float or (n_times,) array, optional
+            Radio frequency of the evaluation points, in MHz (same units
+            as ``toa_data.freq``).  Chromatic bases need it to rebuild
+            their per-point ``(fref/f)^alpha`` scaling: a scalar
+            evaluates the whole grid at one reference frequency (the
+            plotting convention, e.g. ``1400.0``); an array gives each
+            time its own observing frequency (posterior prediction at
+            held-out TOAs).  Achromatic bases ignore it.
+
+        Returns
+        -------
+        ``(n_times, n_basis)`` array, or ``None`` when the component
+        cannot evaluate at these points — consumers must treat ``None``
+        as "on-grid evaluation only".  Chromatic components return
+        ``None`` when ``freq_mhz`` is not given rather than silently
+        picking a frequency.
+
         """
         return None
 
