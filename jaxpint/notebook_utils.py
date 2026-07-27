@@ -895,6 +895,7 @@ def load_filtered_pta(
     *,
     pulsar_names: Optional[list[str]] = None,
     drop: frozenset[str] = DROP_PULSARS,
+    clear_jit_cache: bool = True,
 ) -> LoadedPTA:
     """Load a NANOGrav-style par/tim dataset, drop duplicates, compute positions.
 
@@ -911,6 +912,14 @@ def load_filtered_pta(
     drop : frozenset[str]
         Pulsar names to discard after loading (default :data:`DROP_PULSARS`,
         the per-telescope split duplicates).
+    clear_jit_cache : bool
+        Call :func:`jax.clear_caches` after loading (default ``True``).
+        Loading jit-compiles per-pulsar-shape one-offs whose executables
+        (with baked constant buffers) otherwise stay in the global cache —
+        No later stage ever hits those cache entries (every downstream jit
+        is a new trace), so clearing costs nothing but invalidates any
+        compilations the *caller* made before loading — pass ``False`` in
+        the rare interleaved-compilation workflow.
     """
     from pathlib import Path
 
@@ -924,7 +933,7 @@ def load_filtered_pta(
     keep = [i for i, n in enumerate(psrs.pulsar_names) if n not in drop]
     pp_list = tuple(psrs.pulsar_params_list[i] for i in keep)
     positions = np.stack([np.asarray(pulsar_unit_vector(pp)) for pp in pp_list])
-    return LoadedPTA(
+    pta = LoadedPTA(
         toa_data_list=tuple(psrs.toa_data_list[i] for i in keep),
         pulsar_params_list=pp_list,
         timing_models=tuple(psrs.timing_models[i] for i in keep),
@@ -932,6 +941,11 @@ def load_filtered_pta(
         names=tuple(psrs.pulsar_names[i] for i in keep),
         positions=positions,
     )
+    if clear_jit_cache:
+        import jax
+
+        jax.clear_caches()
+    return pta
 
 
 def marginalize_each_pulsar(
