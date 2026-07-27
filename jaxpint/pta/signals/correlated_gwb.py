@@ -117,8 +117,7 @@ class HDCorrelatedGWBInjector(CorrelatedSignalInjector):
         curves) or beyond the observed span, not just at TOA epochs.
 
         Same name and ``None``-means-"on-grid-only" contract as the
-        noise-component hook
-        (:meth:`jaxpint.noise._basis_gp._BasisGPNoise.basis_at`), so both
+        noise-component hook (``_BasisGPNoise.basis_at``), so both
         reconstruction tiers share one protocol.  Signatures differ where
         the physics does: injector bases are parameter-free and achromatic,
         so there is no ``params`` / ``freq_mhz`` here.  Not a base abstract
