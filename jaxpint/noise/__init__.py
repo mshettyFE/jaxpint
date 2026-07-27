@@ -3,6 +3,7 @@
 from jaxpint.noise.white import ScaleToaError
 from jaxpint.noise.dm_white import ScaleDmError
 from jaxpint.noise.ecorr import EcorrNoise
+from jaxpint.noise.ecorr_kernel import EcorrKernelNoise, SMWhitener
 from jaxpint.noise.free_spectrum import FreeSpectrumNoise
 from jaxpint.noise.red_noise import PLRedNoise
 from jaxpint.noise.dm_noise import PLDMNoise
@@ -12,6 +13,7 @@ from jaxpint.noise.time_node import TimeNodeGPNoise
 from jaxpint.noise.noise_model import NoiseModel
 
 __all__ = [
+    "EcorrKernelNoise",
     "EcorrNoise",
     "FreeSpectrumNoise",
     "NoiseModel",
@@ -21,5 +23,6 @@ __all__ = [
     "PLSWNoise",
     "ScaleDmError",
     "ScaleToaError",
+    "SMWhitener",
     "TimeNodeGPNoise",
 ]

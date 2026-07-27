@@ -753,6 +753,59 @@ def concat_woodbury_blocks(
 # ---------------------------------------------------------------------------
 
 
+class SMWhitener(eqx.Module):
+    r"""Sherman–Morrison whitener for diagonal + rank-1-per-group covariance.
+
+    For ``N = D + \sum_g j_g^2 u_g u_g^T`` (disjoint groups ``u_g``), holds
+    the per-element gather arrays of the closed-form whitener
+    ``W = (I + gamma_g v v^T) D^{-1/2}`` (``v = D^{-1/2} u_g``,
+    ``gamma_g = (1/sqrt(1 + j^2 s_g) - 1)/s_g``), which satisfies
+    ``W N W^T = I`` exactly, heteroscedastic ``D`` included.  Built
+    in-trace per evaluation (e.g. by ``EcorrKernelNoise.ops``); transient —
+    never stored on components, but cacheable inside a
+    :class:`~jaxpint.utils.WoodburyFactor` under the factor's params-frozen contract.
+
+    ``whiten`` applies ``W`` (whitened space: ``W N W^T = I``); ``whiten_t``
+    applies ``W^T``, needed to map whitened-space solves back to data space:
+    ``N^{-1} = W^T W`` and ``C^{-1} x = W^T (W C W^T)^{-1} W x``.
+    """
+
+    inv_sigma: Float[Array, " n"]
+    inv_var: Float[Array, " n"]
+    gamma_toa: Float[Array, " n"]  # gamma_g gathered per element; 0 if ungrouped
+    idx_c: Array  # group index clipped to [0, n_groups)
+    valid_f: Float[Array, " n"]  # 1.0 where grouped, else 0.0
+    extra_logdet: Float[Array, ""]  # log|N| (full), to add to log|C|
+    n_epochs: int = eqx.field(static=True)
+
+    def _seg(self, weighted: Float[Array, "n k"]) -> Float[Array, "g k"]:
+        return jax.ops.segment_sum(weighted, self.idx_c, num_segments=self.n_epochs)
+
+    def whiten(
+        self, x: Float[Array, " n"] | Float[Array, "n k"]
+    ) -> Float[Array, " n"] | Float[Array, "n k"]:
+        """Apply ``W`` to a vector or to each column of a matrix."""
+        squeeze = x.ndim == 1
+        xm = x[:, None] if squeeze else x
+        seg = self._seg(xm * (self.inv_var * self.valid_f)[:, None])
+        out = xm * self.inv_sigma[:, None] + (
+            (self.gamma_toa * self.inv_sigma)[:, None] * seg[self.idx_c]
+        )
+        return out[:, 0] if squeeze else out
+
+    def whiten_t(
+        self, x: Float[Array, " n"] | Float[Array, "n k"]
+    ) -> Float[Array, " n"] | Float[Array, "n k"]:
+        """Apply ``W^T`` (``W = M D^{-1/2}`` with symmetric ``M`` -> ``W^T = D^{-1/2} M``)."""
+        squeeze = x.ndim == 1
+        xm = x[:, None] if squeeze else x
+        seg = self._seg(xm * (self.inv_sigma * self.valid_f)[:, None])
+        out = xm * self.inv_sigma[:, None] + (
+            (self.gamma_toa * self.inv_var)[:, None] * seg[self.idx_c]
+        )
+        return out[:, 0] if squeeze else out
+
+
 class WoodburyFactor(eqx.Module):
     r"""Precomputed Woodbury factorization for repeated solves.
 
@@ -781,6 +834,11 @@ class WoodburyFactor(eqx.Module):
         ``lower`` flag from :func:`jax.scipy.linalg.cho_factor`. Static metadata.
     logdet_C : scalar
         ``log det(C) = sum log N + sum log Φ + log det Σ``, precomputed.
+        With a whitener, additionally includes ``log det(N_full)``.
+    whitener : SMWhitener or None
+        Kernel-ECORR whitener. When set, ``Ndiag`` is ones and ``U`` is
+        stored pre-whitened; apply calls whiten their inputs. Frozen
+        under the same params-frozen contract as the Cholesky.
     """
 
     Ndiag: Float[Array, " n"]
@@ -788,6 +846,11 @@ class WoodburyFactor(eqx.Module):
     Sigma_cf_factor: Float[Array, "k k"]
     Sigma_cf_lower: bool = eqx.field(static=True)
     logdet_C: Float[Array, ""]
+    # Kernel-ECORR support: when set, ``Ndiag`` is ones, ``U`` is stored
+    # pre-whitened, ``logdet_C`` already includes log|N_full|, and apply
+    # calls whiten their incoming vectors.  Frozen under the same
+    # params-frozen contract as the Cholesky.
+    whitener: Optional[SMWhitener] = None
 
     @property
     def Sigma_cf(self):
@@ -799,6 +862,7 @@ def precompute_woodbury_factor(
     Ndiag: Float[Array, " n"],
     U: Float[Array, "n k"],
     Phidiag: Float[Array, " k"],
+    whitener: Optional[SMWhitener] = None,
 ) -> WoodburyFactor:
     r"""Precompute the parameter-independent half of :func:`woodbury_dot`.
 
@@ -821,6 +885,13 @@ def precompute_woodbury_factor(
     factor : WoodburyFactor
         Precomputed factor; pass to :func:`apply_woodbury_dot_factor`.
     """
+    extra_logdet = jnp.float64(0.0)
+    if whitener is not None:
+        # Kernel ECORR: factor the *whitened* system (W C Wᵀ = I + ŨΦŨᵀ);
+        # log|C| = log|whitened C| + log|N_full|.
+        U = whitener.whiten(U)
+        Ndiag = jnp.ones_like(Ndiag)
+        extra_logdet = whitener.extra_logdet
     Ninv = 1.0 / Ndiag
     Sigma = jnp.diag(1.0 / Phidiag) + (U.T * Ninv) @ U  # (k, k)
     Sigma_cf_factor, Sigma_cf_lower = jax.scipy.linalg.cho_factor(Sigma)
@@ -830,7 +901,7 @@ def precompute_woodbury_factor(
     # Use the Cholesky factor (already computed above) instead of jnp.linalg.slogdet:
     # det(Sigma) = det(L L^T) = (prod diag(L))^2, so logdet = 2 sum log diag(L).
     logdet_Sigma = 2.0 * jnp.sum(jnp.log(jnp.abs(jnp.diag(Sigma_cf_factor))))
-    logdet_C = logdet_N + logdet_Phi + logdet_Sigma
+    logdet_C = logdet_N + logdet_Phi + logdet_Sigma + extra_logdet
 
     return WoodburyFactor(
         Ndiag=Ndiag,
@@ -838,6 +909,7 @@ def precompute_woodbury_factor(
         Sigma_cf_factor=Sigma_cf_factor,
         Sigma_cf_lower=bool(Sigma_cf_lower),
         logdet_C=logdet_C,
+        whitener=whitener,
     )
 
 
@@ -871,6 +943,9 @@ def apply_woodbury_dot_factor(
     (x_Cinv_y, logdet_C)
         Same return contract as :func:`woodbury_dot`.
     """
+    if factor.whitener is not None:
+        x = factor.whitener.whiten(x)
+        y = factor.whitener.whiten(y)
     Ninv = 1.0 / factor.Ndiag
     x_Ninv_y = jnp.sum(x * y * Ninv)
     x_Ninv_U = (x * Ninv) @ factor.U  # (k,)
@@ -1205,16 +1280,18 @@ def _group_toas_into_epochs(
     return [ep for ep in epochs if len(ep) >= nmin]
 
 
-# Sentinel epoch index: the TOA belongs to no kept ECORR epoch.  Negative by
-# design, for three load-bearing reasons: (1) every value in
-# ``[0, n_epochs)`` is a real column, so an in-range sentinel would recreate
-# the garbage-bin bug class (cf. discovery's ``first_valid_bin`` dance);
-# (2) the jnp synthesis path zeroes sentinel rows explicitly via
-# ``clip(idx, 0)`` + an ``idx >= 0`` weight mask, which requires negativity
-# and never relies on backend out-of-bounds semantics; (3)
-# ``jax.ops.segment_sum`` — the future kernel-ECORR path sharing this array —
-# documents negative segment ids as "belongs to no segment".
 NO_EPOCH: int = -1
+"""Sentinel epoch index — the TOA belongs to no kept ECORR epoch.
+
+Negative by design, for three load-bearing reasons: (1) every value in
+``[0, n_epochs)`` is a real column, so an in-range sentinel would recreate
+the garbage-bin bug class (cf. discovery's ``first_valid_bin`` dance);
+(2) the jnp synthesis path zeroes sentinel rows explicitly via
+``clip(idx, 0)`` + an ``idx >= 0`` weight mask, which requires negativity
+and never relies on backend out-of-bounds semantics; (3)
+``jax.ops.segment_sum`` — the kernel-ECORR path sharing this array —
+documents negative segment ids as "belongs to no segment".
+"""
 assert NO_EPOCH < 0, "clip/mask synthesis and segment_sum dropping require it"
 
 
@@ -1386,7 +1463,7 @@ def build_fourier_basis(
     n_freqs: int,
     T: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Build an alternating sin/cos Fourier design matrix.
+    r"""Build an alternating sin/cos Fourier design matrix.
 
     Parameters
     ----------

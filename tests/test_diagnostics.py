@@ -568,7 +568,7 @@ class TestEcorrAverage:
             white_noise=ScaleToaError(efac_names=("EFAC1",), equad_names=("EQUAD1",)),
             correlated=(),
         )
-        with pytest.raises(ValueError, match="EcorrNoise"):
+        with pytest.raises(ValueError, match="ECORR component"):
             ecorr_average(np.zeros(24), toa_data, params, nm)
 
     @pytest.mark.slow

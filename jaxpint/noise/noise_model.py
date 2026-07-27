@@ -18,6 +18,7 @@ from jaxtyping import Array, Float
 
 from jaxpint.components import ComponentIndexed, NoiseComponent
 from jaxpint.noise.dm_white import ScaleDmError
+from jaxpint.noise.ecorr_kernel import EcorrKernelNoise
 from jaxpint.noise.white import ScaleToaError
 from jaxpint.types import TOAData, ParameterVector
 
@@ -46,6 +47,12 @@ class NoiseModel(ComponentIndexed):
     white_noise: Optional[ScaleToaError]
     correlated: tuple[NoiseComponent, ...]
     dm_white_noise: Optional[ScaleDmError] = None
+    # Sherman–Morrison kernel ECORR: applied by the likelihood front-end
+    # as a whitening of (r, U) plus a log|N| correction — deliberately NOT
+    # part of the (Ndiag, U, Phi) triple below.  Callers that consume
+    # covariance() directly for a full solve must handle or reject it
+    # (the fitters and factor-precompute paths guard explicitly).
+    ecorr_kernel: "Optional[EcorrKernelNoise]" = None
 
     def scaled_sigma(
         self,
@@ -157,6 +164,8 @@ class NoiseModel(ComponentIndexed):
         result.extend(self.correlated)
         if self.dm_white_noise is not None:
             result.append(self.dm_white_noise)
+        if self.ecorr_kernel is not None:
+            result.append(self.ecorr_kernel)
         return tuple(result)
 
     # component_names + __getitem__ (name/index access) inherited from

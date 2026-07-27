@@ -20,7 +20,7 @@ References
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import jax.numpy as jnp
 from jaxtyping import Array, Float
@@ -28,6 +28,9 @@ from jaxtyping import Array, Float
 from jaxpint.fitters import compute_time_residuals
 from jaxpint.model import TimingModel
 from jaxpint.noise import NoiseModel
+
+if TYPE_CHECKING:
+    from jaxpint.noise.ecorr_kernel import SMWhitener
 from jaxpint.types import TOAData, ParameterVector
 from jaxpint.utils import (
     WoodburyFactor,
@@ -53,8 +56,9 @@ def _residuals_and_woodbury(
     Float[Array, " n_toas"],
     Float[Array, "n_toas n_basis"],
     Float[Array, " n_basis"],
+    "Optional[SMWhitener]",
 ]:
-    """Residuals and the assembled per-pulsar Woodbury blocks ``(r, Ndiag, U, Phi)``.
+    """Residuals and per-pulsar Woodbury blocks ``(r, Ndiag, U, Phi, whitener)``.
 
     The shared front half of every per-pulsar likelihood path
     (:func:`single_pulsar_logL`, :func:`single_pulsar_clogL`,
@@ -71,7 +75,18 @@ def _residuals_and_woodbury(
     woodbury = concat_woodbury_blocks((U_noise, Phi_noise), external_cov)
     assert woodbury is not None  # first block is always non-None
     U, Phi = woodbury
-    return r, Ndiag, U, Phi
+
+    # Sherman–Morrison kernel ECORR: pre-whiten (r, U) with the closed-form
+    # W (W N W^T = I) so every downstream solve runs on Ndiag = 1 unchanged;
+    # coefficient-space quantities are invariant under consistent whitening,
+    # and consumers add whitener.extra_logdet (= log|N|) to their log|C|.
+    whitener = None
+    if noise_model.ecorr_kernel is not None:
+        whitener = noise_model.ecorr_kernel.ops(Ndiag, params)
+        r = whitener.whiten(r)
+        U = whitener.whiten(U)
+        Ndiag = jnp.ones_like(Ndiag)
+    return r, Ndiag, U, Phi, whitener
 
 
 def single_pulsar_logL(
@@ -118,7 +133,7 @@ def single_pulsar_logL(
     logL : float
         Log-likelihood value.
     """
-    r, Ndiag, U, Phi = _residuals_and_woodbury(
+    r, Ndiag, U, Phi, whitener = _residuals_and_woodbury(
         toa_data, timing_model, noise_model, params, external_delay, external_cov
     )
 
@@ -126,6 +141,8 @@ def single_pulsar_logL(
     # collinear, e.g. the marginalization design-matrix block at Φ=1e40).
     dot = woodbury_dot_qr if use_qr else woodbury_dot
     rCr, logdetC = dot(Ndiag, U, Phi, r, r)
+    if whitener is not None:
+        logdetC = logdetC + whitener.extra_logdet  # log|C| = log|WCWᵀ| + log|N|
     n = r.shape[0]
     return -0.5 * rCr - 0.5 * logdetC - 0.5 * n * jnp.log(2 * jnp.pi)
 
@@ -201,7 +218,7 @@ def single_pulsar_clogL(
     clogL : float
         Joint log-density of the residuals and the supplied coefficients.
     """
-    r, Ndiag, U, Phi = _residuals_and_woodbury(
+    r, Ndiag, U, Phi, whitener = _residuals_and_woodbury(
         toa_data, timing_model, noise_model, params, external_delay, external_cov
     )
 
@@ -222,6 +239,10 @@ def single_pulsar_clogL(
         - 0.5 * jnp.sum(jnp.log(Ndiag))
         - 0.5 * n * log2pi
     )
+    if whitener is not None:
+        # Whitened blocks: resid = W(r_true - U_true c) and log|Ndiag| = 0;
+        # restore the true white log-det.
+        data_term = data_term - 0.5 * whitener.extra_logdet
     # Coefficient prior (diagonal Phi).
     n_coeff = coefficients.shape[0]
     prior_term = (
@@ -259,11 +280,16 @@ def precompute_single_pulsar_factor(
         Same as :func:`single_pulsar_logL` — augments ``(U, Phi)``.
     """
     Ndiag, U, Phi = noise_model.covariance(toa_data, params)
+    whitener = None
+    if noise_model.ecorr_kernel is not None:
+        whitener = noise_model.ecorr_kernel.ops(Ndiag, params)
     if external_cov is not None:
         U_ext, Phi_ext = external_cov
         U = jnp.concatenate([U, U_ext], axis=1)
         Phi = jnp.concatenate([Phi, Phi_ext])
-    return precompute_woodbury_factor(Ndiag, U, Phi)
+    # Whitening (of the full concatenated U) happens inside the factor;
+    # the factor's params-frozen contract covers the whitener too.
+    return precompute_woodbury_factor(Ndiag, U, Phi, whitener=whitener)
 
 
 def single_pulsar_logL_with_factor(
@@ -307,6 +333,8 @@ def single_pulsar_logL_with_factor(
     r = compute_time_residuals(timing_model, toa_data, params)
     if external_delay is not None:
         r = r - external_delay
+    # Kernel ECORR: apply_woodbury_dot_factor whitens r internally when the
+    # factor carries a whitener; logdet_C already includes log|N_full|.
     rCr, logdetC = apply_woodbury_dot_factor(factor, r, r)
     n = r.shape[0]
     return -0.5 * rCr - 0.5 * logdetC - 0.5 * n * jnp.log(2 * jnp.pi)

@@ -50,6 +50,10 @@ nitpick_ignore: list[tuple[str, str]] = [
     # for the first time via jaxpint.frequentist's curated re-exports).
     ("py:class", "PRNGKey"),
     ("py:class", "array-like"),
+    # Bare array/dtype tokens from Float[np.ndarray, ...] union annotations
+    # and napoleon type-string parsing ("(n_toas,) int32").
+    ("py:class", "ndarray"),
+    ("py:class", "int32"),
 ]
 # jaxtyping annotations (e.g. ``Float[Array, "n_toas"]``) tokenize into several
 # pieces that autodoc emits as separate ``py:class`` refs — none of which

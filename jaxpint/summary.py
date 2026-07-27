@@ -370,6 +370,13 @@ def summarize_model(
     else:
         out.append("  correlated   : (none)")
     out.extend(_noise_lines("dm_white     ", noise_model.dm_white_noise))
+    kernel = getattr(noise_model, "ecorr_kernel", None)
+    if kernel is not None:
+        out.extend(_noise_lines("ecorr kernel ", kernel))
+        out.append(
+            "       (Sherman–Morrison whitening: absorbed into N, not a "
+            "basis block — the 'total' line below excludes it)"
+        )
     if toa_data is not None:
         try:
             Ndiag, U, Phi = noise_model.covariance(toa_data, params)

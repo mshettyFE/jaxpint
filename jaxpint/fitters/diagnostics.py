@@ -73,6 +73,16 @@ def whiten_residuals(
     r = jnp.asarray(residuals)
     sigma = noise_model.scaled_sigma(toa_data, params)
     Ndiag, U, Phidiag = noise_model.covariance(toa_data, params)
+    kernel = getattr(noise_model, "ecorr_kernel", None)
+    if kernel is not None:
+        # Kernel ECORR: whiten (r, U) so the white part becomes identity;
+        # the result is decorrelated across epochs too — a *stronger*
+        # whitening than the basis form's conditional-mean subtraction.
+        w = kernel.ops(Ndiag, params)
+        r = w.whiten(r)
+        U = w.whiten(U)
+        Ndiag = jnp.ones_like(Ndiag)
+        sigma = jnp.ones_like(sigma)
     return _whiten(r, sigma, Ndiag, U, Phidiag, noise_realizations)
 
 
@@ -313,6 +323,8 @@ def ecorr_average(
     """
     from jaxpint.noise import EcorrNoise
 
+    # Either representation works: both carry epoch_index / n_epochs /
+    # ecorr_weights, and this function is index-native.
     ecorr = next(
         (
             c
@@ -322,7 +334,12 @@ def ecorr_average(
         None,
     )
     if ecorr is None:
-        raise ValueError("ecorr_average requires an EcorrNoise component")
+        ecorr = getattr(noise_model, "ecorr_kernel", None)
+    if ecorr is None:
+        raise ValueError(
+            "ecorr_average requires an ECORR component (basis form in "
+            "NoiseModel.correlated or kernel form in NoiseModel.ecorr_kernel)"
+        )
 
     from jaxpint.utils import NO_EPOCH
 

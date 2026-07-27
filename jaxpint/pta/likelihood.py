@@ -334,9 +334,14 @@ def _per_pulsar_intermediates(
         the Fisher information matrix for pulsar p's Fourier coefficients.
     """
     # 1-2. Residuals and the per-pulsar Woodbury blocks (shared preamble)
-    r, Ndiag, U, Phi = _residuals_and_woodbury(
+    r, Ndiag, U, Phi, whitener = _residuals_and_woodbury(
         toa_data, timing_model, noise_model, params, external_delay, external_cov
     )
+    if whitener is not None:
+        # Whiten the correlated basis with the same W: then every projected
+        # quantity below equals its unwhitened counterpart
+        # (F̃ᵀ (WCWᵀ)⁻¹ r̃ = Fᵀ C⁻¹ r), and log|C| gains log|N|.
+        F_corr = whitener.whiten(F_corr)
 
     # 3-4. Inner tier: quadratic form + solve against C_p, combined into one
     #      solve over B = [r[:, None], F_corr].
@@ -361,6 +366,9 @@ def _per_pulsar_intermediates(
     # 5. Project onto the correlated-signal Fourier basis
     basis_proj_residual_p = F_corr.T @ Cinv_r  # (n_basis,)
     basis_overlap_p = F_corr.T @ Cinv_F  # (n_basis, n_basis)
+
+    if whitener is not None:
+        logdetC_p = logdetC_p + whitener.extra_logdet
 
     return rCr_p, logdetC_p, basis_proj_residual_p, basis_overlap_p
 
@@ -936,7 +944,10 @@ def precompute_single_pulsar_pta_factor(
     contributions from stochastic signal injectors. Pair with
     :func:`single_pulsar_pta_logL_with_factor` to evaluate the
     likelihood at varying timing-domain parameters without redoing the
-    factorization.
+    factorization.  Kernel ECORR (``NoiseModel.ecorr_kernel``) is
+    supported: the delegated
+    :func:`~jaxpint.likelihood.precompute_single_pulsar_factor` stores the
+    whitener inside the factor, under the same params-frozen contract.
 
     The factor is valid as long as ``noise_model.covariance(toa_data,
     params)`` and every injector's ``covariance(p, ...)`` return the

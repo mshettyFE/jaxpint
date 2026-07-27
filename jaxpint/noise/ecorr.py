@@ -30,6 +30,26 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def epoch_jitter2(
+    params: ParameterVector,
+    ecorr_names: tuple[str, ...],
+    ecorr_epoch_slices: tuple[tuple[int, int], ...],
+    n_epochs: int,
+) -> Float[Array, " n_epochs"]:
+    """Per-epoch ECORR^2 weights (seconds^2) from named parameters and slices.
+
+    The single home for the ECORR value → per-epoch jitter mapping, shared
+    by the basis form (:class:`EcorrNoise`, as its prior diagonal) and the
+    kernel form (:class:`~jaxpint.noise.EcorrKernelNoise`, as the rank-1
+    update amplitudes)
+    """
+    weights = jnp.zeros(n_epochs)
+    for name, (start, end) in zip(ecorr_names, ecorr_epoch_slices):
+        val = params.param_value(name)
+        weights = weights.at[start:end].set(val**2)
+    return weights
+
+
 @register_component(component=Component.ECORR_NOISE, pint_names=("EcorrNoise",))
 class EcorrNoise(_BasisGPNoise):
     """Epoch-correlated noise model (ECORR).
@@ -58,9 +78,9 @@ class EcorrNoise(_BasisGPNoise):
     epoch_index : array, shape (n_toas,), int32
         Epoch column for each TOA (:data:`jaxpint.utils.NO_EPOCH` = -1
         for TOAs in no kept epoch).
-        Pre-computed by the bridge (:func:`jaxpint.utils.
-        build_quantization_index`) because epoch identification is
-        data-dependent and not JIT-compatible.
+        Pre-computed by the bridge
+        (:func:`~jaxpint.utils.build_quantization_index`) because epoch
+        identification is data-dependent and not JIT-compatible.
     n_epochs : int
         Total number of epoch columns.
     ecorr_epoch_slices : tuple of (int, int)
@@ -201,11 +221,9 @@ class EcorrNoise(_BasisGPNoise):
         weights : (n_epochs,)
             Squared ECORR values (seconds²), one per epoch.
         """
-        weights = jnp.zeros(self.n_epochs)
-        for name, (start, end) in zip(self.ecorr_names, self.ecorr_epoch_slices):
-            ecorr_val = params.param_value(name)
-            weights = weights.at[start:end].set(ecorr_val**2)
-        return weights
+        return epoch_jitter2(
+            params, self.ecorr_names, self.ecorr_epoch_slices, self.n_epochs
+        )
 
     def static_basis(
         self,

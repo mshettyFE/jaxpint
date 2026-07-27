@@ -169,7 +169,10 @@ def conditional_single_pulsar(
         Extra stochastic blocks (e.g. a CURN injector's contribution)
         appended to the noise model's basis.
     """
-    r, Ndiag, U, Phi = _residuals_and_woodbury(
+    # Kernel ECORR note: the returned blocks may be pre-whitened (Ndiag = 1);
+    # everything below is coefficient-space (Uᵀ N⁻¹ U, Uᵀ N⁻¹ r), which is
+    # invariant under consistent whitening — no correction needed.
+    r, Ndiag, U, Phi, _whitener = _residuals_and_woodbury(
         toa_data, timing_model, noise_model, params, external_delay, external_cov
     )
 
