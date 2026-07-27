@@ -314,8 +314,12 @@ def test_quantization_matrix(white_bundle):
     from jaxpint.noise.ecorr import EcorrNoise
 
     b = white_bundle
+    from jaxpint.utils import quantization_matrix_from_index
+
     ecorr = next(c for c in b.noise_model.correlated if isinstance(c, EcorrNoise))
-    U_jax = np.asarray(ecorr.quantization_matrix)
+    U_jax = quantization_matrix_from_index(
+        np.asarray(ecorr.epoch_index), ecorr.n_epochs
+    )
     U_ent, _ = create_quantization_matrix(b.psr.toas, dt=1, nmin=2)
     assert U_jax.shape[1] > 0, "JaxPINT ECORR basis is empty — fixture regression"
     assert U_ent.shape == U_jax.shape

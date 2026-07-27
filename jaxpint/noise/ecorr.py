@@ -181,17 +181,6 @@ class EcorrNoise(_BasisGPNoise):
         # Cheap width: no dense synthesis just to read a shape.
         return self.n_epochs
 
-    @property
-    def quantization_matrix(
-        self,
-    ) -> Float[np.ndarray, "n_toas n_epochs"] | Float[Array, "n_toas n_epochs"]:
-        """Dense binary view (synthesized on access — O(n_toas × n_epochs)).
-
-        Back-compat for readers of the former field (diagnostics,
-        enterprise parity checks).  Storage is ``epoch_index``.
-        """
-        return self._host_columns()
-
     def psd_weights(self, params: ParameterVector) -> Float[Array, " n_epochs"]:
         """Prior diagonal for the epoch basis: ECORR² per epoch column."""
         return self.ecorr_weights(params)

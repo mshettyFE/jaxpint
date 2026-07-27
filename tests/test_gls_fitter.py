@@ -667,7 +667,14 @@ class TestQuantizationIndexEquivalence:
             quantization_matrix=U,
             ecorr_epoch_slices=(eslices["ECORR1"], eslices["ECORR2"]),
         )
-        npt.assert_array_equal(np.asarray(ecorr.quantization_matrix), U)
+        from jaxpint.utils import quantization_matrix_from_index
+
+        npt.assert_array_equal(
+            quantization_matrix_from_index(
+                np.asarray(ecorr.epoch_index), ecorr.n_epochs
+            ),
+            U,
+        )
         assert ecorr.n_epochs == U.shape[1]
         assert ecorr.basis_width() == U.shape[1]
 

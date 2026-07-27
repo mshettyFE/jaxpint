@@ -324,7 +324,11 @@ def ecorr_average(
     if ecorr is None:
         raise ValueError("ecorr_average requires an EcorrNoise component")
 
-    U = np.asarray(ecorr.quantization_matrix, dtype=np.float64)
+    from jaxpint.utils import NO_EPOCH
+
+    idx = np.asarray(ecorr.epoch_index)
+    n_epochs = ecorr.n_epochs
+    valid = idx != NO_EPOCH
     ecorr_err2 = np.asarray(ecorr.ecorr_weights(params), dtype=np.float64)  # s^2
     if use_noise_model:
         err = np.asarray(noise_model.scaled_sigma(toa_data, params))
@@ -333,10 +337,11 @@ def ecorr_average(
         ecorr_err2 = np.zeros_like(ecorr_err2)
 
     w = 1.0 / err**2
-    a_norm = U.T @ w
+    a_norm = np.bincount(idx[valid], weights=w[valid], minlength=n_epochs)
 
     def wtsum(x):
-        return (U.T @ (w * np.asarray(x))) / a_norm
+        wx = w * np.asarray(x, dtype=np.float64)
+        return np.bincount(idx[valid], weights=wx[valid], minlength=n_epochs) / a_norm
 
     mjd = np.asarray(toa_data.mjd_int) + np.asarray(toa_data.mjd_frac)
     return EpochAverage(
@@ -344,5 +349,5 @@ def ecorr_average(
         freqs=wtsum(toa_data.freq),
         time_resids=wtsum(residuals),
         errors=np.sqrt(1.0 / a_norm + ecorr_err2),
-        indices=tuple(np.flatnonzero(U[:, i]) for i in range(U.shape[1])),
+        indices=tuple(np.flatnonzero(idx == i) for i in range(n_epochs)),
     )
