@@ -16,3 +16,12 @@ jaxpint/data/clock/*
 !jaxpint/data/clock/clock_metadata.json
 TODO
 .jax_cache/
+
+# marimo per-notebook state. NB: __marimo__/ is also where the HTML snapshot
+# from [tool.marimo.runtime] default_auto_download lands, so ignore only the
+# machine-local subdirectories -- not the whole directory.
+# (interior-slash patterns are anchored to this file's directory, so these
+# need the ** prefix to match examples/__marimo__/... too)
+**/__marimo__/session/
+**/__marimo__/cache/
+**/__marimo__/assets/

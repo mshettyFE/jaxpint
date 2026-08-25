@@ -90,10 +90,24 @@ dev = [
     "ipykernel>=7.2.0",
     "ipympl>=0.10.0",
     "jupyterlab>=4.6.1",
+    # marimo: reactive-notebook alternative to jupyter (notebooks are plain .py).
+    "marimo>=0.24.0",
     "nbconvert>=7.0",
     "git-filter-repo>=2.47.0",
     "sphinx-autobuild>=2024.10.3",
 ]
+
+[tool.marimo.runtime]
+# marimo notebooks (examples/marimo_*.py) are plain Python; the rendered
+# notebook is NOT emitted unless asked for. Snapshot an HTML copy on every
+# save, into <notebook_dir>/__marimo__/.
+default_auto_download = ["html"]
+
+[tool.marimo.package_management]
+# Have marimo's "install missing package" UI shell out to uv against this
+# project's venv rather than pip.
+manager = "uv"
+
 
 [tool.pytest.ini_options]
 markers = [
