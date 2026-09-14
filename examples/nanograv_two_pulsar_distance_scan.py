@@ -1,6 +1,6 @@
 """NANOGrav PTA likelihood: 2D distance scan of the two most-constraining pulsars.
 
-Real-data analogue of `likelihood_contour_pulsar0_vs_pulsar1_distance.ipynb`.
+Real-data two-pulsar distance-distance likelihood contour (synthetic-data analogue: `pta_distance_corner_scan.ipynb`).
 We
 
 1. load the NANOGrav 15-yr narrowband dataset via `jaxpint.load_nanograv_pta`,

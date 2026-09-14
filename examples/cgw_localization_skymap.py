@@ -1,10 +1,4 @@
-"""CGW sky-localization map vs. anchor-pulsar count.
-
-Reproduces, approximately, the anchor-pulsar scaling result of Wen et al. 2026
-(arXiv:2603.28897, "From Detection to Host Galaxy Identification: Precision
-CGW Localization with a Few Anchor Pulsars"): a small subset of pulsars with
-sub-wavelength PX precision is enough to phase-lock the array and dramatically
-shrink the 90% credible sky-localization area.
+"""CGW sky-localization map via the signal-agnostic BILINEAR path.
 
 Method (Fisher matrix at the truth point; see ``jaxpint/pta/cw_localization.py``):
 
