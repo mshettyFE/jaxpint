@@ -1017,13 +1017,16 @@ def marginalize_pta_timing(
     marg_params: set[str] = MARG_PARAMS,
     allow_nonlinear: bool = True,
     validate_linearity: bool = False,
+    return_config: bool = False,
 ):
     """PTA-level analytic timing-model marginalization (improper priors).
 
     Builds the fully-qualified ``{pulsar}_{param}`` name set from each pulsar's
     free parameters that appear in ``marg_params`` and calls
     :func:`jaxpint.bayes.marginalize_pta`.  Returns whatever ``marginalize_pta``
-    returns (``(g, ..., reduced_pulsar_params)``).
+    returns (``(g, ..., reduced_pulsar_params)``), with ``return_config``
+    forwarded — pass it to also get the marg-augmented ``PTAConfig`` that the
+    direct Gram / signal-power helpers need.
     """
     from jaxpint.bayes import marginalize_pta
 
@@ -1040,6 +1043,7 @@ def marginalize_pta_timing(
         fiducial_global_params=gp,
         validate_linearity=validate_linearity,
         allow_nonlinear=allow_nonlinear,
+        return_config=return_config,
     )
 
 

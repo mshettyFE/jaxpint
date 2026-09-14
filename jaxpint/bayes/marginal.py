@@ -599,7 +599,8 @@ def marginalize_pta(
     allow_nonlinear: bool = False,
     validate_linearity: bool = True,
     laplace_error_tol: float = 1e-6,
-) -> tuple[Callable, frozenset[str], tuple[ParameterVector, ...]]:
+    return_config: bool = False,
+) -> tuple:
     """Analytically marginalize per-pulsar timing parameters across a PTA.
 
     Wraps :func:`~jaxpint.pta.pta_logL`, integrating out the parameters in
@@ -648,7 +649,9 @@ def marginalize_pta(
     laplace_error_tol
         Threshold for the relative Laplace-approximation error within the prior
         support (default ``1e-6``); see the module docstring for the formula.
-
+    return_config
+        If ``True``, append the marginalization-augmented :class:`~jaxpint.pta.likelihood.PTAConfig` to
+        the returned tuple (4 elements instead of 3).
     Returns
     -------
     g : callable
@@ -770,4 +773,11 @@ def marginalize_pta(
         )
         return pta_logL(global_params, full_pulsar_params, modified_config)
 
+    if return_config:
+        return (
+            likelihood_marg_pta,
+            frozenset(over_set),
+            reduced_pulsar_skeletons,
+            modified_config,
+        )
     return likelihood_marg_pta, frozenset(over_set), reduced_pulsar_skeletons

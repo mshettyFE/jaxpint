@@ -1,10 +1,10 @@
 """Tests for the CW Fisher sky-localization machinery (:mod:`jaxpint.pta.cw_localization`).
 
 Exercises the ``make_logL_2sky`` construction helper, the bilinear-derivative
-Gram extraction (``gram_at_pixel`` / ``gram_block_at_pair``), the joint-Fisher
-assembly (input validation + structure), and the per-source marginal credible
-areas — using a toy, exactly-bilinear log-likelihood so the derivative trick is
-exercised end-to-end without a real PTA.
+Gram extraction (``gram_block_at_pair``), the joint-Fisher assembly (input
+validation + structure), and the per-source marginal credible areas — using a
+toy, exactly-bilinear log-likelihood so the derivative trick is exercised
+end-to-end without a real PTA.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ import pytest
 from jaxpint.types import GlobalParams
 from jaxpint.pta.cw_localization import (
     assemble_joint_fisher,
-    gram_at_pixel,
     gram_block_at_pair,
     make_logL_2sky,
     per_source_credible_areas_deg2,
@@ -91,15 +90,6 @@ class TestGram:
         sa, sb = jnp.array([0.3, 0.5]), jnp.array([0.1, -0.2])
         ref = jax.jacfwd(jax.jacrev(_Z, argnums=0), argnums=1)(sa, sb)
         npt.assert_allclose(np.array(gram_block_at_pair(logL, sa, sb)), np.array(ref), rtol=1e-9)
-
-    def test_gram_at_pixel_is_diagonal_case(self):
-        logL = make_logL_2sky(_toy_g("cwt", "cwd"), _toy_gp("cwt", "cwd"), (), "cwt", "cwd")
-        s = jnp.array([0.4, 1.2])
-        npt.assert_allclose(
-            np.array(gram_at_pixel(logL, s)),
-            np.array(gram_block_at_pair(logL, s, s)),
-            rtol=1e-12,
-        )
 
 
 class TestAssembleJointFisher:

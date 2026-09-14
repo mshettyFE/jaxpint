@@ -16,11 +16,15 @@ frequentist statistics in ``jaxpint.frequentist``), which is why it lives in
 ``pta/`` below both.
 
 
-A planned consolidation: ``jaxpint.pta.likelihood._per_pulsar_intermediates``
-computes the same mathematical objects (``FᵀC⁻¹r``, ``FᵀC⁻¹F``) through the
-``PTAConfig`` interface for the correlated two-tier solve; unifying it with
-:func:`extract_pulsar_blocks` here would give the optimal statistic and the
-HD likelihood one canonical block producer.
+On the parallel block producer in ``likelihood.py``:
+``jaxpint.pta.likelihood._per_pulsar_intermediates`` computes the same
+mathematical objects (``FᵀC⁻¹r``, ``FᵀC⁻¹F``) through the ``PTAConfig``
+interface for the correlated two-tier solve. This module's autodiff path is
+*template-agnostic* -- it recovers ``(b, M)`` by differentiating the real
+single-pulsar likelihood with the template injected as a delay, so the
+amplitude-linearity that makes ``logL`` quadratic holds even for a
+time-evolving template.  That is intentional future-proofing for chirping
+CGW signals, which cannot be forced into a stationary Fourier-GP basis.
 """
 
 from __future__ import annotations

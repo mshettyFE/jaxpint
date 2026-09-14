@@ -19,14 +19,19 @@ no-anchor regime, prefer sampling-based methods.
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import TYPE_CHECKING, Callable, NamedTuple, Sequence
 
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
 
+from jaxpint.constants import C_KM_PER_S, KPC_TO_KM
+from jaxpint.pta.blocks import pulsar_woodbury_blocks, whitened_quadratic
 from jaxpint.stats.regions import gaussian_credible_area
-from jaxpint.types import GlobalParams
+from jaxpint.types import GlobalParams, ParameterVector
+
+if TYPE_CHECKING:
+    from jaxpint.pta.likelihood import PTAConfig
 
 __all__ = [
     "h0_for_snr",
@@ -53,6 +58,18 @@ def h0_for_snr(
     """
     Y = jnp.maximum(Y, jnp.finfo(jnp.float64).tiny)
     return snr_target / jnp.sqrt(Y)
+
+
+# ---------------------------------------------------------------------------
+# General bilinear extraction -- the signal-agnostic fallback
+#
+# These functions need nothing but a callable log-likelihood, so they work for
+# ANY signal (chirping sources, models without a linear amplitude).  The price
+# is a fourth-order autodiff tape whose compiled graph is orders of magnitude
+# larger than the direct machinery below -- prefer the direct family whenever
+# ``linear_amplitude=True`` holds.  (Continued after the direct section:
+# ``gram_block_at_pair`` / ``assemble_joint_fisher`` for multi-source joints.)
+# ---------------------------------------------------------------------------
 
 
 def make_logL_2sky(
@@ -87,7 +104,7 @@ def make_logL_2sky(
     -------
     logL_2sky : callable
         ``(h_a, h_b, sky_a, sky_b) -> scalar``, ready for
-        :func:`gram_block_at_pair` / :func:`gram_at_pixel`.
+        :func:`gram_block_at_pair`.
     """
 
     def logL_2sky(h_a, h_b, sky_a, sky_b):
@@ -104,31 +121,309 @@ def make_logL_2sky(
     return logL_2sky
 
 
-def gram_at_pixel(
-    logL_2sky: Callable[
-        [Float[Array, ""], Float[Array, ""], Float[Array, " 2"], Float[Array, " 2"]],
-        Float[Array, ""],
-    ],
-    sky_pixel: Float[Array, " 2"],
-) -> Float[Array, "2 2"]:
-    r"""The 2x2 sky Gram matrix at ``sky_pixel`` — the same-source (diagonal) case.
+# ---------------------------------------------------------------------------
+# Direct (linear-amplitude) machinery
+#
+# ``CWInjector(linear_amplitude=True)`` makes the residual exactly linear in
+# ``h0``, so the delay at unit amplitude IS the unit-strain waveform.  Every
+# quantity in this section derives from ONE objective function::
+#
+#     neg_logpost(theta, data) = 1/2 sum_p |d_p - m_p(theta)|^2_{C_p^-1}
+#                                + 1/2 sum_j ((dist_j - d0_j)/sigma_j)^2
+#
+# with ``theta = (cos_gwtheta, gwphi, log10_h, *nuisance, *coherent dists)``
+# built by :func:`make_cw_objective`.  At a zero-residual point the Hessian is
+# exactly the (Gauss-Newton) Fisher ``J^T C^-1 J`` plus the prior block, so:
+#
+# * expected Fisher  = ``hessian`` at truth on NOISE-FREE data
+#   (:func:`marginal_sky_fisher`, :func:`gram_at_pixel`);
+# * signal power     = the same whitened quadratic on the waveform itself
+#   (:func:`signal_power_direct`).
+# ---------------------------------------------------------------------------
 
-    Parameters
-    ----------
-    logL_2sky : callable
-        ``(h_a, h_b, sky_a, sky_b) -> scalar`` log-likelihood with both injectors
-        active.  Non-amplitude, non-sky CW parameters (frequency, orientation)
-        should be closed over in the caller, identical for the two injectors.
-    sky_pixel : (2,) array
-        Sky position ``(cos_gwtheta, gwphi)`` at which to evaluate.
 
-    Returns
-    -------
-    Gram : (2, 2) array
-        The 2x2 Gram matrix at ``sky_pixel``.  Multiply by ``h0_target**2`` to
-        get the sky Fisher information.
+def _cw_unit_waveform(inj, p, toa_data_p, pulsar_params_p, global_params, sky):
+    r"""Unit-strain waveform :math:`\hat s_p` at ``sky`` -- ``delay`` at ``h0 = 1``.
+
+    Exact rather than approximate: ``CWInjector(linear_amplitude=True)`` makes
+    the residual exactly linear in the amplitude, so the delay evaluated at unit
+    amplitude *is* the unit-strain waveform.
     """
-    return gram_block_at_pair(logL_2sky, sky_pixel, sky_pixel)
+    gp_ = (
+        global_params.with_value(f"{inj.prefix}{inj.amp_name}", jnp.float64(1.0))
+        .with_value(f"{inj.prefix}cos_gwtheta", sky[0])
+        .with_value(f"{inj.prefix}gwphi", sky[1])
+    )
+    return inj.delay(p, toa_data_p, pulsar_params_p, gp_)
+
+
+class CWObjective(NamedTuple):
+    """The single objective behind the direct-formulation Fisher family.
+
+    Fields
+    ------
+    neg_logpost : callable
+        ``(theta, data) -> scalar`` -- whitened residual quadratic plus the
+        Gaussian distance-prior term.  ``data`` is a tuple of per-pulsar
+        arrays; jit/grad/hessian-safe.
+    model_delays : callable
+        ``theta -> tuple`` of per-pulsar model delays ``h * s_hat``.
+    theta_truth : callable
+        ``(sky, log10_h) -> theta`` at the stored global-parameter values and
+        par-file distances.
+    theta_names : tuple of str
+        ``("cos_gwtheta", "gwphi", "log10_h", *nuisance, "dist_<psr>"...)``.
+    n_sky, i_h : int
+        Layout constants: sky occupies ``theta[:n_sky]``; ``theta[i_h]`` is
+        ``log10_h``.
+    """
+
+    neg_logpost: Callable
+    model_delays: Callable
+    theta_truth: Callable
+    theta_names: tuple
+    n_sky: int
+    i_h: int
+
+
+def make_cw_objective(
+    config: PTAConfig,
+    global_params: GlobalParams,
+    pulsar_params: tuple[ParameterVector, ...],
+    *,
+    global_nuisance: tuple[str, ...] = (),
+    dist_sigma_kpc: Sequence[float] | None = None,
+    injector_index: int = 0,
+) -> CWObjective:
+    r"""Build the shared CW objective (see the section banner above).
+
+    ``theta`` layout: ``[cos_gwtheta, gwphi, log10_h, *global_nuisance,
+    *coherent distances]``.  Distances appear only when ``dist_sigma_kpc`` is
+    given, only for pulsars whose pulsar term is in the model, and carry
+    Gaussian priors centered on the par-file values -- so the prior block of
+    the Hessian is exactly the ``Lambda`` of the Schur-marginalized Fisher.
+    """
+    inj = config.signal_injectors[injector_index]
+    names = tuple(global_nuisance)
+    coherent = [
+        p
+        for p in range(config.n_pulsars)
+        if (not inj.earth_term_only) and bool(inj.pulsar_term_mask[p])
+    ]
+    use_dists = dist_sigma_kpc is not None and len(coherent) > 0
+    if not use_dists:
+        coherent = []
+    # NB: param_value goes through jnp indexing, so under jit these are
+    # (constant-valued) tracers -- keep them as jnp scalars, never float().
+    d0 = (
+        jnp.stack(
+            [1.0 / pulsar_params[p].param_value(inj.dist_param) for p in coherent]
+        )
+        if coherent
+        else jnp.zeros(0, dtype=jnp.float64)
+    )
+    sig_d = (
+        jnp.asarray([float(dist_sigma_kpc[p]) for p in coherent])
+        if coherent
+        else jnp.zeros(0, dtype=jnp.float64)
+    )
+    n_nui = len(names)
+    theta_names = (
+        ("cos_gwtheta", "gwphi", "log10_h")
+        + names
+        + tuple(f"dist_p{p}" for p in coherent)
+    )
+
+    blocks = [
+        pulsar_woodbury_blocks(config, global_params, pulsar_params[p], p)
+        for p in range(config.n_pulsars)
+    ]
+
+    def _model_one(p, theta):
+        gp_ = global_params
+        for k, nm in enumerate(names):
+            gp_ = gp_.with_value(f"{inj.prefix}{nm}", theta[3 + k])
+        pp_ = pulsar_params[p]
+        if p in coherent:
+            j = coherent.index(p)
+            pp_ = pp_.with_value(inj.dist_param, 1.0 / theta[3 + n_nui + j])
+        s = _cw_unit_waveform(inj, p, config.toa_data_list[p], pp_, gp_, theta[:2])
+        return (10.0 ** theta[2]) * s
+
+    def model_delays(theta):
+        return tuple(_model_one(p, theta) for p in range(config.n_pulsars))
+
+    def neg_logpost(theta, data):
+        total = jnp.float64(0.0)
+        for p in range(config.n_pulsars):
+            total = total + whitened_quadratic(
+                blocks[p], data[p] - _model_one(p, theta)
+            )
+        if use_dists:
+            total = total + 0.5 * jnp.sum(((theta[3 + n_nui :] - d0) / sig_d) ** 2)
+        return total
+
+    def theta_truth(sky, log10_h):
+        parts = [
+            jnp.asarray(sky, dtype=jnp.float64).reshape(2),
+            jnp.asarray(log10_h, dtype=jnp.float64).reshape(1),
+        ]
+        if names:
+            parts.append(
+                jnp.stack(
+                    [
+                        jnp.asarray(
+                            global_params.param_value(f"{inj.prefix}{nm}"),
+                            dtype=jnp.float64,
+                        )
+                        for nm in names
+                    ]
+                )
+            )
+        if coherent:
+            parts.append(d0)
+        return jnp.concatenate(parts)
+
+    return CWObjective(neg_logpost, model_delays, theta_truth, theta_names, 2, 2)
+
+
+def _schur_to_sky(H, *, drop_h: bool):
+    r"""Reduce a full-``theta`` information matrix to the 2x2 sky block.
+
+    ``drop_h=True`` CONDITIONS on the amplitude (deletes its row/column --
+    the expected-Fisher convention, where ``h0`` is a fixed calibration);
+    ``drop_h=False`` MARGINALIZES it along with the rest (the bootstrap /
+    posterior convention).
+    """
+    H = jnp.asarray(H)
+    if drop_h:
+        keep = jnp.asarray([0, 1] + list(range(3, H.shape[0])))
+        H = H[keep][:, keep]
+    F_ss, F_sn, F_nn = H[:2, :2], H[:2, 2:], H[2:, 2:]
+    if F_nn.size == 0:  # static shape -> plain python branch is fine
+        return F_ss
+    return F_ss - F_sn @ jnp.linalg.pinv(F_nn) @ F_sn.T
+
+
+def signal_power_direct(
+    config: PTAConfig,
+    global_params: GlobalParams,
+    pulsar_params: tuple[ParameterVector, ...],
+    sky_pixel: Float[Array, " 2"],
+    *,
+    injector_index: int = 0,
+) -> Float[Array, ""]:
+    r"""Unit-strain signal power :math:`Y = (\hat s \mid \hat s)`, computed directly.
+
+    .. math::
+        Y \;=\; \sum_p \big(\hat s_p \,\big|\, \hat s_p\big)_{C_p^{-1}}
+
+    Pair with :func:`h0_for_snr` to calibrate ``h0`` per pixel.
+    """
+    inj = config.signal_injectors[injector_index]
+    total = jnp.float64(0.0)
+    for p in range(config.n_pulsars):
+        s = _cw_unit_waveform(
+            inj,
+            p,
+            config.toa_data_list[p],
+            pulsar_params[p],
+            global_params,
+            sky_pixel,
+        )
+        block = pulsar_woodbury_blocks(config, global_params, pulsar_params[p], p)
+        total = total + 2.0 * whitened_quadratic(block, s)
+    return total
+
+
+def marginal_sky_fisher(
+    config: PTAConfig,
+    global_params: GlobalParams,
+    pulsar_params: tuple[ParameterVector, ...],
+    sky_pixel: Float[Array, " 2"],
+    *,
+    h0: Float[Array, ""],
+    global_nuisance: tuple[str, ...] = (),
+    dist_sigma_kpc: Sequence[float] | None = None,
+    injector_index: int = 0,
+) -> Float[Array, "2 2"]:
+    r"""Expected sky Fisher with a nuisance block marginalized out.
+
+    The Hessian of :func:`make_cw_objective`'s objective at truth on
+    noise-free data -- exactly ``J^T C^-1 J`` plus the distance-prior
+    ``Lambda``, since the residual vanishes there -- Schur-complemented to the
+    sky.  ``h0`` is a fixed calibration (conditioned, not marginalized),
+    matching the convention of the sky-map pipelines.
+
+    With ``global_nuisance=()`` and ``dist_sigma_kpc=None`` this reduces to
+    ``h0**2 *`` the sky Gram (the plain conditional Fisher).
+
+    .. warning::
+        The Gaussian treatment of coherent distances is valid for
+        :math:`\sigma_\varphi \lesssim 1` rad (:func:`phase_sigma_rad`).  In
+        the comb regime the result is a central-lobe LOWER BOUND -- measured
+        at ~100x under honest sampling for Wen-style anchors.
+    """
+    obj = make_cw_objective(
+        config,
+        global_params,
+        pulsar_params,
+        global_nuisance=global_nuisance,
+        dist_sigma_kpc=dist_sigma_kpc,
+        injector_index=injector_index,
+    )
+    th0 = obj.theta_truth(sky_pixel, jnp.log10(jnp.asarray(h0)))
+    data = obj.model_delays(th0)
+    H = jax.hessian(obj.neg_logpost)(th0, data)
+    return _schur_to_sky(H, drop_h=True)
+
+
+def gram_at_pixel(
+    config: PTAConfig,
+    global_params: GlobalParams,
+    pulsar_params: tuple[ParameterVector, ...],
+    sky_pixel: Float[Array, " 2"],
+    *,
+    injector_index: int = 0,
+) -> Float[Array, "2 2"]:
+    r"""The 2x2 sky Gram matrix :math:`(\partial_i \hat s \mid \partial_j \hat s)`.
+
+    Equal to :func:`marginal_sky_fisher` at ``h0 = 1`` with an empty nuisance
+    block.  Multiply by ``h0**2`` for the conditional sky Fisher.
+
+    Requires ``CWInjector(linear_amplitude=True)``.  For a signal without a
+    linear amplitude (or a chirping template), the signal-agnostic bilinear
+    route gives the same matrix (validated to ~4e-12) as the diagonal case of
+    :func:`gram_block_at_pair`: ``gram_block_at_pair(logL_2sky, sky, sky)``.
+    """
+    return marginal_sky_fisher(
+        config,
+        global_params,
+        pulsar_params,
+        sky_pixel,
+        h0=jnp.float64(1.0),
+        injector_index=injector_index,
+    )
+
+
+def phase_sigma_rad(
+    dist_sigma_kpc: Float[Array, ""],
+    log10_fgw: float,
+    cos_mu: Float[Array, ""],
+) -> Float[Array, ""]:
+    r"""Pulsar-term phase uncertainty :math:`\sigma_\varphi` in radians.
+
+    .. math::
+        \sigma_\varphi = 2\pi\,f_{\rm gw}\,\frac{\sigma_d}{c}\,(1+\cos\mu)
+                       = 2\pi\,\frac{\sigma_d}{\lambda_{\rm GW}}\,(1+\cos\mu)
+    """
+    lambda_gw_kpc = (C_KM_PER_S / 10.0**log10_fgw) / KPC_TO_KM
+    return 2.0 * jnp.pi * (dist_sigma_kpc / lambda_gw_kpc) * (1.0 + cos_mu)
+
+
+# ---------------------------------------------------------------------------
+# Bilinear family, continued: multi-source joint Fisher
+# ---------------------------------------------------------------------------
 
 
 def gram_block_at_pair(
@@ -150,7 +445,8 @@ def gram_block_at_pair(
         Z(\theta_a, \theta_b) = (\hat s(\theta_a) \,|\, \hat s(\theta_b))_N,
 
     the building block of the joint multi-source Fisher; the diagonal
-    (``sky_a == sky_b``, both injectors on one source) is :func:`gram_at_pixel`.
+    (``sky_a == sky_b``, both injectors on one source) is the bilinear route
+    to the single-pixel Gram that :func:`gram_at_pixel` computes directly.
 
     Construction: ``logL_2sky(h_a, h_b, sky_a, sky_b)`` is the timing-marginalized
     log-likelihood with *two* CW injectors active.  The Gaussian likelihood is

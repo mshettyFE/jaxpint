@@ -34,7 +34,6 @@ from jaxpint.pta.likelihood import (
     single_pulsar_pta_logL,
     single_pulsar_pta_logL_with_factor,
 )
-from jaxpint.pta.fisher import fisher_matrix, flatten_params, unflatten_params
 from jaxpint.pta.scan import (
     GlobalScanAxis,
     PerPulsarScanAxis,
@@ -73,9 +72,19 @@ from jaxpint.pta.cw_localization import (
     h0_for_snr,
     make_logL_2sky,
     per_source_credible_areas_deg2,
+    marginal_sky_fisher,
+    signal_power_direct,
+    make_cw_objective,
+    CWObjective,
+    phase_sigma_rad,
 )
 
 __all__ = [
+    "phase_sigma_rad",
+    "make_cw_objective",
+    "CWObjective",
+    "signal_power_direct",
+    "marginal_sky_fisher",
     # Core
     "GlobalParams",
     "PTAConfig",
@@ -107,10 +116,6 @@ __all__ = [
     "PerPulsarScanAxis",
     "GlobalScanAxis",
     "ScanAxis",
-    # Fisher
-    "fisher_matrix",
-    "flatten_params",
-    "unflatten_params",
     # CW signals
     "CW_PARAM_DEFAULTS",
     "CWInjector",

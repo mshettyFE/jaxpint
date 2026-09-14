@@ -29,7 +29,6 @@ from jaxpint._psd import powerlaw_psd
 from jaxpint.constants import FYR
 from jaxpint.pta.signals.orf import hd_orf, dipole_orf
 from jaxpint.pta.likelihood import PTAConfig
-from jaxpint.pta.fisher import flatten_params, unflatten_params
 
 from tests.helpers import make_toa_data, make_params
 
@@ -789,46 +788,3 @@ class TestPTAConfig:
         assert config.n_pulsars == 3
 
 
-# ===================================================================
-# TestFlattenUnflatten
-# ===================================================================
-
-
-class TestFlattenUnflatten:
-    def _make_test_data(self):
-        gp = GlobalParams.empty().add_params(["a", "b"], [1.0, 2.0])
-        pp0 = make_params(["x", "y", "z"], [10.0, 20.0, 30.0])
-        pp1 = make_params(["u", "v"], [40.0, 50.0])
-        return gp, (pp0, pp1)
-
-    def test_round_trip(self):
-        gp, pp = self._make_test_data()
-        flat = flatten_params(gp, pp)
-        gp2, pp2 = unflatten_params(flat, gp, pp)
-
-        assert jnp.allclose(gp2.values, gp.values)
-        assert gp2.names == gp.names
-        for orig, recovered in zip(pp, pp2):
-            assert jnp.allclose(recovered.values, orig.values)
-            assert recovered.names == orig.names
-            assert recovered.frozen_mask == orig.frozen_mask
-
-    def test_layout_order(self):
-        gp, pp = self._make_test_data()
-        flat = flatten_params(gp, pp)
-        expected = jnp.array([1.0, 2.0, 10.0, 20.0, 30.0, 40.0, 50.0])
-        assert jnp.allclose(flat, expected)
-
-    def test_jax_differentiable(self):
-        """Gradient through flatten → unflatten → param_value."""
-        gp, pp = self._make_test_data()
-        flat = flatten_params(gp, pp)
-
-        def f(flat_params):
-            gp2, pp2 = unflatten_params(flat_params, gp, pp)
-            return gp2.param_value("a") + pp2[0].param_value("x")
-
-        grad = jax.grad(f)(flat)
-        # d/d(flat[0]) = 1 (param "a"), d/d(flat[2]) = 1 (param "x")
-        expected = jnp.array([1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0])
-        assert jnp.allclose(grad, expected)

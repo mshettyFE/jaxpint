@@ -186,7 +186,8 @@ def compute_localization_skymap(
     exists only to give the autodiff machinery two independent sky parameters
     to differentiate against.
 
-    Per-pixel Fisher comes from :func:`jaxpint.pta.cw_localization.gram_at_pixel`:
+    Per-pixel Fisher comes from the diagonal case of
+    :func:`jaxpint.pta.cw_localization.gram_block_at_pair`:
     the bilinear structure of the Gaussian likelihood in
     ``(h_a, h_b)`` means the mixed amplitude derivative
     ``-d²logL/dh_a dh_b`` isolates the cross-inner-product
@@ -214,7 +215,7 @@ def compute_localization_skymap(
     from jaxpint.pta.cw_localization import (
         h0_for_snr,
         credible_area_deg2,
-        gram_at_pixel,
+        gram_block_at_pair,
         make_logL_2sky,
     )
 
@@ -311,7 +312,7 @@ def compute_localization_skymap(
         # (h_t, h_d), so the mixed h-derivative isolates Z(sky_t, sky_d); the
         # mixed sky-Hessian of Z then gives Gram_ij at sky_t = sky_d = pixel.
         # F = h0**2 * Gram is the proper Wen-style sensitivity Fisher.
-        Gram = gram_at_pixel(logL_full, sky_row)
+        Gram = gram_block_at_pair(logL_full, sky_row, sky_row)
         F = h0**2 * Gram
         return (credible_area_deg2(F, level=0.9), credible_area_deg2(F, level=0.5))
 

@@ -25,6 +25,8 @@ dependencies = [
     "certifi>=2023.7.22",
     # Required by ipykernel 7.x for kernel metrics; not pulled in transitively.
     "prometheus-client>=0.25.0",
+    "jupyter>=1.1.1",
+    "playwright>=1.62.0",
 ]
 
 [project.optional-dependencies]
